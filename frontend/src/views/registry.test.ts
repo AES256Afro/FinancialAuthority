@@ -8,6 +8,6 @@ describe("registries", () => {
     expect(new Set(LOOKS.map((l) => l.id)).size).toBe(LOOKS.length);
     expect(VIEWS.length).toBe(8);
     expect(viewById("nope").id).toBe("river");
-    expect(VIEWS.filter((v) => v.status === "ready").map((v) => v.id)).toEqual(["river", "windows", "month", "flow"]);
+    expect(VIEWS.filter((v) => v.status === "ready").length).toBe(8);
   });
 });
