@@ -139,13 +139,27 @@ def import_watch() -> str:
     with session_scope() as session:
         processed = {tuple(p) for p in get_setting(session, "imports.processed", [])}
         taken: list[str] = []
-        for path in sorted(settings.import_root.glob("*.csv")):
+        for path in sorted(list(settings.import_root.glob("*.csv")) + list(settings.import_root.glob("*.ofx")) + list(settings.import_root.glob("*.qfx")) + list(settings.import_root.glob("*.qbo"))):
             stamp = (path.name, int(path.stat().st_mtime))
             if stamp in processed:
                 continue
             text = path.read_text(encoding="utf-8-sig", errors="replace")
-            result = CONNECTORS["rocketmoney"].sync(session, text=text, source_file=path.name)
-            taken.append(f"{path.name}: {result.summary}")
+            from ..connectors.files import detect, import_rows, parse_csv_rows, parse_ofx
+            from ..connectors.rocketmoney import parse_csv as parse_rocketmoney
+
+            if path.suffix.lower() == ".csv" and parse_rocketmoney(text, path.name) is not None:
+                result = CONNECTORS["rocketmoney"].sync(session, text=text, source_file=path.name)
+            else:
+                found = detect(text)
+                if found["kind"] == "ofx":
+                    parsed = parse_ofx(text)
+                    rows = parsed["rows"]
+                    name = f"{parsed['vendor']} {parsed['account_type'] or 'account'}".strip() if parsed["vendor"] else path.stem
+                    result = import_rows(session, rows, source_file=path.name, account_name=name, institution=parsed["vendor"]) if rows else None
+                else:
+                    rows = parse_csv_rows(text) if found["ready"] else []
+                    result = import_rows(session, rows, source_file=path.name, account_name=path.stem) if rows else None
+            taken.append(f"{path.name}: {result.summary if result else 'no rows found'}")
             processed.add(stamp)
         set_setting(session, "imports.processed", sorted(processed))
     if taken:
