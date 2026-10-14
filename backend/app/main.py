@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import auth
-from .api import registers, routes
+from .api import mail, registers, routes
 from .config import settings
 from .db import init_db, session_scope
 from .engine.household import seed
@@ -56,6 +56,7 @@ app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_cr
 app.include_router(auth.router)
 app.include_router(routes.router)
 app.include_router(registers.router)
+app.include_router(mail.router)
 for route in asgi_routes():
     app.router.routes.append(route)
 

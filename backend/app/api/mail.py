@@ -1,0 +1,298 @@
+"""Mail: accounts, a test and a sync, message search, a boxed read, and the facts that wait for the owner."""
+
+from __future__ import annotations
+
+import json
+from datetime import date
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+from sqlmodel import Session, select
+
+from .. import auth, crypto
+from ..connectors import CONNECTORS
+from ..connectors.mail import MailConnector, account_password, test_account
+from ..db import get_session
+from ..engine.recurring import merchant_key
+from ..mail.box import box_untrusted
+from ..mail.imap import parse_message
+from ..models import Bill, ExtractedFact, MailAccount, MessageRef, utcnow
+from .routes import today
+
+router = APIRouter(prefix="/api/v1", tags=["mail"])
+
+PRESETS = {
+    "proton": {"host": "bridge", "port": 1143, "use_ssl": False, "starttls": True, "help": "The Proton Mail Bridge sidecar. Sign in to the Bridge once from the server, then enter the local password it prints."},
+    "gmail": {"host": "imap.gmail.com", "port": 993, "use_ssl": True, "starttls": False, "help": "Gmail with an app password (Google Account › Security › 2-Step Verification › App passwords)."},
+    "imap": {"host": "", "port": 993, "use_ssl": True, "starttls": False, "help": "Any mailbox over IMAP."},
+}
+
+
+def mail_connector() -> MailConnector:
+    return CONNECTORS["mail"]  # type: ignore[return-value]
+
+
+def account_out(a: MailAccount) -> dict:
+    return {
+        "id": a.id, "label": a.label, "kind": a.kind, "host": a.host, "port": a.port, "username": a.username, "use_ssl": a.use_ssl, "starttls": a.starttls,
+        "folders": a.folders, "active": a.active, "last_sync_at": a.last_sync_at.isoformat() if a.last_sync_at else None, "last_error": a.last_error, "messages_seen": a.messages_seen,
+        "has_password": bool(a.password_enc),
+    }
+
+
+class MailAccountIn(BaseModel):
+    label: str | None = None
+    kind: str | None = None
+    host: str | None = None
+    port: int | None = None
+    username: str | None = None
+    password: str | None = None
+    use_ssl: bool | None = None
+    starttls: bool | None = None
+    folders: str | None = None
+    active: bool | None = None
+
+
+@router.get("/mail/presets")
+def presets(_: auth.Principal = Depends(auth.require_read)) -> dict:
+    return {"presets": PRESETS}
+
+
+@router.get("/mail/accounts")
+def list_accounts(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+    return {"accounts": [account_out(a) for a in session.exec(select(MailAccount).order_by(MailAccount.id)).all()]}
+
+
+@router.post("/mail/accounts")
+def create_account(body: MailAccountIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    kind = body.kind or "imap"
+    if kind not in PRESETS:
+        raise HTTPException(400, "kind must be proton, gmail or imap")
+    preset = PRESETS[kind]
+    if not body.username or not body.password:
+        raise HTTPException(400, "A mailbox needs a username and a password")
+    host = body.host or preset["host"]
+    if not host:
+        raise HTTPException(400, "An IMAP host is needed")
+    try:
+        enc = crypto.encrypt(body.password)
+    except crypto.DataKeyMissing as error:
+        raise HTTPException(400, str(error)) from error
+    account = MailAccount(
+        label=body.label or kind.title(), kind=kind, host=host, port=body.port or preset["port"], username=body.username, password_enc=enc,
+        use_ssl=body.use_ssl if body.use_ssl is not None else preset["use_ssl"], starttls=body.starttls if body.starttls is not None else preset["starttls"],
+        folders=body.folders or "INBOX", active=body.active if body.active is not None else True,
+    )
+    session.add(account)
+    session.commit()
+    session.refresh(account)
+    return account_out(account)
+
+
+@router.put("/mail/accounts/{account_id}")
+def update_account(account_id: int, body: MailAccountIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    account = session.get(MailAccount, account_id)
+    if account is None:
+        raise HTTPException(404, "No such mailbox")
+    for field, value in body.model_dump(exclude_unset=True).items():
+        if value is None:
+            continue
+        if field == "password":
+            account.password_enc = crypto.encrypt(value)
+        elif field == "kind" and value not in PRESETS:
+            raise HTTPException(400, "kind must be proton, gmail or imap")
+        else:
+            setattr(account, field, value)
+    session.add(account)
+    session.commit()
+    session.refresh(account)
+    return account_out(account)
+
+
+@router.delete("/mail/accounts/{account_id}")
+def remove_account(account_id: int, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    account = session.get(MailAccount, account_id)
+    if account is None:
+        raise HTTPException(404, "No such mailbox")
+    account.active = False
+    account.password_enc = ""
+    session.add(account)
+    session.commit()
+    return {"ok": True}
+
+
+class TestIn(BaseModel):
+    id: int | None = None
+    kind: str | None = None
+    host: str | None = None
+    port: int | None = None
+    username: str | None = None
+    password: str | None = None
+    use_ssl: bool | None = None
+    starttls: bool | None = None
+
+
+@router.post("/mail/accounts/test")
+def test_mailbox(body: TestIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    if body.id is not None:
+        account = session.get(MailAccount, body.id)
+        if account is None:
+            raise HTTPException(404, "No such mailbox")
+        host, port, username, password, use_ssl, starttls = account.host, account.port, account.username, account_password(account), account.use_ssl, account.starttls
+    else:
+        preset = PRESETS.get(body.kind or "imap", PRESETS["imap"])
+        host, port = body.host or preset["host"], body.port or preset["port"]
+        username, password = body.username or "", body.password or ""
+        use_ssl = body.use_ssl if body.use_ssl is not None else preset["use_ssl"]
+        starttls = body.starttls if body.starttls is not None else preset["starttls"]
+    try:
+        return test_account(host, port, username, password, use_ssl, starttls, client_factory=mail_connector().client_factory)
+    except Exception as error:  # noqa: BLE001
+        return {"ok": False, "error": f"{type(error).__name__}: {error}"[:300]}
+
+
+@router.post("/mail/accounts/{account_id}/sync")
+def sync_mailbox(account_id: int, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    result = mail_connector().sync(session, today=today(), account_id=account_id)
+    return {"ok": result.ok, "summary": result.summary, "new": result.inserted}
+
+
+# ---- messages ------------------------------------------------------------------------------
+
+
+def message_out(m: MessageRef, labels: dict[int, str]) -> dict:
+    return {"id": m.id, "account": labels.get(m.account_id, "?"), "folder": m.folder, "uid": m.uid, "sender": m.sender, "sender_name": m.sender_name, "subject": m.subject,
+            "date": m.date.isoformat() if m.date else None, "has_attachments": m.has_attachments, "attachment_names": m.attachment_names, "kind": m.kind, "snippet": m.snippet}
+
+
+@router.get("/mail/messages")
+def search_messages(q: str | None = None, sender: str | None = None, kind: str | None = None, limit: int = Query(30, ge=1, le=200), session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+    query = select(MessageRef)
+    if q:
+        like = f"%{q}%"
+        query = query.where((MessageRef.subject.ilike(like)) | (MessageRef.sender.ilike(like)) | (MessageRef.sender_name.ilike(like)) | (MessageRef.snippet.ilike(like)))
+    if sender:
+        query = query.where(MessageRef.sender.ilike(f"%{sender}%"))
+    if kind:
+        query = query.where(MessageRef.kind == kind)
+    rows = session.exec(query.order_by(MessageRef.date.desc(), MessageRef.id.desc()).limit(limit)).all()
+    labels = {a.id: a.label for a in session.exec(select(MailAccount)).all()}
+    return {"returned": len(rows), "messages": [message_out(m, labels) for m in rows]}
+
+
+@router.get("/mail/messages/{message_id}")
+def read_message(message_id: int, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+    ref = session.get(MessageRef, message_id)
+    if ref is None:
+        raise HTTPException(404, "No such message")
+    account = session.get(MailAccount, ref.account_id)
+    if account is None or not account.active:
+        raise HTTPException(409, "That mailbox is no longer connected")
+    client = mail_connector().client_factory(account.host, account.port, account.username, account_password(account), account.use_ssl, account.starttls)
+    try:
+        client.connect()
+        client.select_readonly(ref.folder)
+        parsed = parse_message(client.fetch_raw(ref.uid))
+    except Exception as error:  # noqa: BLE001
+        raise HTTPException(502, f"Could not fetch the message: {type(error).__name__}") from error
+    finally:
+        client.close()
+    facts = session.exec(select(ExtractedFact).where(ExtractedFact.message_ref_id == ref.id)).all()
+    labels = {account.id: account.label}
+    return {
+        **message_out(ref, labels),
+        "boxed": box_untrusted(parsed.text, f"{parsed.sender_name or parsed.sender} ({account.label})"),
+        "attachments": [{"name": a.name, "content_type": a.content_type, "size": a.size} for a in parsed.attachments],
+        "facts": [fact_out(f, ref) for f in facts],
+    }
+
+
+# ---- facts ---------------------------------------------------------------------------------
+
+
+def fact_out(f: ExtractedFact, ref: MessageRef | None) -> dict:
+    return {
+        "id": f.id, "kind": f.kind, "fields": json.loads(f.fields or "{}"), "confidence": f.confidence, "status": f.status, "excerpt": f.excerpt, "produced_by": f.produced_by,
+        "applied_to": f.applied_to, "created_at": f.created_at.isoformat(),
+        "message": {"id": ref.id, "sender": ref.sender, "sender_name": ref.sender_name, "subject": ref.subject, "date": ref.date.isoformat() if ref.date else None} if ref else None,
+    }
+
+
+def list_facts_rows(session: Session, status: str | None, limit: int) -> list[dict]:
+    query = select(ExtractedFact)
+    if status:
+        query = query.where(ExtractedFact.status == status)
+    rows = session.exec(query.order_by(ExtractedFact.created_at.desc()).limit(limit)).all()
+    refs = {r.id: r for r in session.exec(select(MessageRef).where(MessageRef.id.in_([f.message_ref_id for f in rows if f.message_ref_id]))).all()} if rows else {}
+    return [fact_out(f, refs.get(f.message_ref_id)) for f in rows]
+
+
+@router.get("/facts")
+def list_facts(status: str | None = "pending", limit: int = Query(50, ge=1, le=500), session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+    rows = list_facts_rows(session, status, limit)
+    pending = len(session.exec(select(ExtractedFact.id).where(ExtractedFact.status == "pending")).all())
+    return {"facts": rows, "pending": pending}
+
+
+class ConfirmIn(BaseModel):
+    apply: bool = True
+    name: str | None = None
+    amount: float | None = None
+    due_date: date | None = None
+    autopay: bool | None = None
+
+
+def apply_fact(session: Session, fact: ExtractedFact, ref: MessageRef | None, body: ConfirmIn) -> str:
+    """What a confirmed fact changes in the registers. Returns the applied_to tag."""
+    fields = json.loads(fact.fields or "{}")
+    if fact.kind in ("bill_due", "past_due", "price_change"):
+        name = (body.name or fields.get("sender_name") or (ref.sender_name if ref else "") or "Bill").strip()
+        amount = body.amount if body.amount is not None else fields.get("amount")
+        due = body.due_date or (date.fromisoformat(fields["due_date"]) if fields.get("due_date") else None)
+        key = merchant_key(name)
+        bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
+        bill = next((b for b in bills if merchant_key(b.name) == key or merchant_key(b.name).startswith(key) or key.startswith(merchant_key(b.name))), None)
+        if bill is None:
+            if amount is None or due is None:
+                raise HTTPException(400, "A new bill needs an amount and a due date; add them to the confirmation")
+            bill = Bill(name=name, amount=round(float(amount), 2), amount_mode="estimate", due_day=min(due.day, 28), autopay=bool(body.autopay), movable=True, move_window="1-28", category="")
+            session.add(bill)
+            session.flush()
+        else:
+            if amount is not None:
+                bill.amount = round(float(amount), 2)
+            if due is not None:
+                bill.due_day = min(due.day, 28)
+            if body.autopay is not None:
+                bill.autopay = body.autopay
+            session.add(bill)
+        return f"bill:{bill.id}"
+    return ""
+
+
+@router.post("/facts/{fact_id}/confirm")
+def confirm_fact(fact_id: int, body: ConfirmIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_scope("confirm"))) -> dict:
+    fact = session.get(ExtractedFact, fact_id)
+    if fact is None:
+        raise HTTPException(404, "No such fact")
+    ref = session.get(MessageRef, fact.message_ref_id) if fact.message_ref_id else None
+    applied = apply_fact(session, fact, ref, body) if body.apply else ""
+    fact.status = "applied" if applied else "confirmed"
+    fact.applied_to = applied
+    fact.resolved_at = utcnow()
+    session.add(fact)
+    session.commit()
+    session.refresh(fact)
+    return fact_out(fact, ref)
+
+
+@router.post("/facts/{fact_id}/reject")
+def reject_fact(fact_id: int, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_scope("confirm"))) -> dict:
+    fact = session.get(ExtractedFact, fact_id)
+    if fact is None:
+        raise HTTPException(404, "No such fact")
+    fact.status = "rejected"
+    fact.resolved_at = utcnow()
+    session.add(fact)
+    session.commit()
+    return {"ok": True}

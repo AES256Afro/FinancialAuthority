@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 
+from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
@@ -232,3 +233,62 @@ class Setting(SQLModel, table=True):
     __tablename__ = "settings"
     key: str = Field(primary_key=True)
     value: str = ""  # JSON
+
+
+class MailAccount(SQLModel, table=True):
+    """A mailbox read over IMAP: Proton through the Bridge, Gmail with an app password, or any other."""
+
+    __tablename__ = "mail_accounts"
+    id: int | None = Field(default=None, primary_key=True)
+    label: str
+    kind: str = "imap"  # proton | gmail | imap
+    host: str
+    port: int = 993
+    username: str
+    password_enc: str = ""
+    use_ssl: bool = True
+    starttls: bool = False
+    folders: str = "INBOX"  # comma separated
+    active: bool = True
+    created_at: dt.datetime = Field(default_factory=utcnow)
+    last_sync_at: dt.datetime | None = None
+    last_error: str = ""
+    messages_seen: int = 0
+
+
+class MessageRef(SQLModel, table=True):
+    """A message by account, folder and UID. The body is not stored; a short excerpt stays with each fact."""
+
+    __tablename__ = "message_refs"
+    __table_args__ = (UniqueConstraint("account_id", "folder", "uid", name="uq_message_ref"),)
+    id: int | None = Field(default=None, primary_key=True)
+    account_id: int = Field(foreign_key="mail_accounts.id", index=True)
+    folder: str
+    uid: int
+    message_id: str = ""
+    sender: str = Field(default="", index=True)
+    sender_name: str = ""
+    subject: str = ""
+    date: dt.datetime | None = Field(default=None, index=True)
+    has_attachments: bool = False
+    attachment_names: str = ""
+    snippet: str = ""
+    kind: str = ""  # what the classifier called it
+    created_at: dt.datetime = Field(default_factory=utcnow)
+
+
+class ExtractedFact(SQLModel, table=True):
+    """Something the app took from a message or a document: pending until the owner, or an earned rule, confirms it."""
+
+    __tablename__ = "extracted_facts"
+    id: int | None = Field(default=None, primary_key=True)
+    kind: str = Field(index=True)  # bill_due | statement | paystub | installment | advance | price_change | payday | payment_confirmation | past_due | bank_alert | export
+    message_ref_id: int | None = Field(default=None, foreign_key="message_refs.id", index=True)
+    fields: str = "{}"  # JSON
+    confidence: float = 0.0
+    status: str = Field(default="pending", index=True)  # pending | confirmed | auto | rejected | applied
+    excerpt: str = ""
+    produced_by: str = ""
+    applied_to: str = ""
+    created_at: dt.datetime = Field(default_factory=utcnow)
+    resolved_at: dt.datetime | None = None

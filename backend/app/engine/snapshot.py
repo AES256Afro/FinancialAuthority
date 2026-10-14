@@ -6,11 +6,11 @@ arithmetic with the full projection, set-asides and goals; the shape of the resu
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from sqlmodel import Session, select
 
-from ..models import Account, Advance, Bill, Debt, Income, InstallmentPlan, RecurringSeries, Transaction
+from ..models import Account, Advance, Bill, Debt, ExtractedFact, Income, InstallmentPlan, MessageRef, RecurringSeries, Transaction
 from ..store import get_setting
 
 CASH_KINDS = {"checking", "savings", "cash"}
@@ -63,6 +63,25 @@ def line_of(category: str, kind: str) -> str:
     return "utilities"
 
 
+def _mail_facts(session: Session, today: date) -> dict:
+    """What the mailboxes yielded: facts waiting for the owner, and the last three days of bank alerts."""
+    import json
+
+    pending_rows = session.exec(select(ExtractedFact).where(ExtractedFact.status == "pending").order_by(ExtractedFact.created_at.desc()).limit(30)).all()
+    since = datetime.combine(today - timedelta(days=3), datetime.min.time(), tzinfo=timezone.utc)
+    alert_rows = session.exec(select(ExtractedFact).where(ExtractedFact.kind == "bank_alert", ExtractedFact.created_at >= since).order_by(ExtractedFact.created_at.desc()).limit(20)).all()
+    ids = [f.message_ref_id for f in [*pending_rows, *alert_rows] if f.message_ref_id]
+    refs = {r.id: r for r in session.exec(select(MessageRef).where(MessageRef.id.in_(ids))).all()} if ids else {}
+
+    def out(f: ExtractedFact) -> dict:
+        r = refs.get(f.message_ref_id)
+        fields = json.loads(f.fields or "{}")
+        return {"id": f.id, "kind": f.kind, "fields": fields, "confidence": f.confidence, "status": f.status, "sender_name": r.sender_name if r else fields.get("sender_name", ""),
+                "subject": r.subject if r else "", "date": r.date.date().isoformat() if r and r.date else fields.get("message_date"), "source": f"fact:{f.id}"}
+
+    return {"pending": [out(f) for f in pending_rows], "alerts": [out(f) for f in alert_rows]}
+
+
 def finance_snapshot(session: Session, today: date) -> dict:
     accounts = session.exec(select(Account).where(Account.active == True)).all()  # noqa: E712
     cash = sum((a.balance or 0.0) for a in accounts if a.kind in CASH_KINDS)
@@ -80,6 +99,7 @@ def finance_snapshot(session: Session, today: date) -> dict:
     advances = session.exec(select(Advance).where(Advance.repaid == False)).all()  # noqa: E712
     debts = session.exec(select(Debt).where(Debt.active == True)).all()  # noqa: E712
     unconfirmed = len(session.exec(select(RecurringSeries.id).where(RecurringSeries.confirmed == False, RecurringSeries.active == True)).all())  # noqa: E712
+    facts = _mail_facts(session, today)
 
     events: list[dict] = []
     horizon = today + timedelta(days=75)
@@ -204,7 +224,8 @@ def finance_snapshot(session: Session, today: date) -> dict:
         "safe_to_spend": {"amount": _money(safe), "through": (following_payday - timedelta(days=1)).isoformat(), "version": "v0"},
         "usual_pace": pace,
         "debts": [{"id": d.id, "name": d.name, "kind": d.kind, "balance": d.balance, "apr": d.apr, "minimum": d.minimum, "due_day": d.due_day} for d in debts],
-        "pending": {"confirmations": unconfirmed, "approvals": 0, "past_due": len(payments["past_due"])},
+        "pending": {"confirmations": unconfirmed + len(facts["pending"]), "series": unconfirmed, "facts": len(facts["pending"]), "approvals": 0, "past_due": len(payments["past_due"])},
+        "mail": facts,
         "projection": projection,
         "not_advice": "Computed by the engine from the registers above. Not financial advice.",
     }

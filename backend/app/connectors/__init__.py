@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .base import Connector
+from .mail import MailConnector
 from .rocketmoney import RocketMoneyConnector
 
-CONNECTORS: dict[str, Connector] = {c.id: c for c in (RocketMoneyConnector(),)}
+CONNECTORS: dict[str, Connector] = {c.id: c for c in (RocketMoneyConnector(), MailConnector())}
