@@ -14,6 +14,7 @@ import { Home } from "./pages/Home";
 import { Jobs } from "./pages/Jobs";
 import { Mail } from "./pages/Mail";
 import { Models } from "./pages/Models";
+import { Notifications } from "./pages/Notifications";
 import { Paystubs } from "./pages/Paystubs";
 import { Reports } from "./pages/Reports";
 import { SettingsIndex } from "./pages/Settings";
@@ -59,6 +60,7 @@ export default function App() {
         <Route path="/settings/appearance" element={<Appearance />} />
         <Route path="/settings/clients" element={<Clients />} />
         <Route path="/settings/models" element={<Models />} />
+        <Route path="/settings/notifications" element={<Notifications />} />
         <Route path="/settings/connectors" element={<Connectors />} />
         <Route path="/settings/jobs" element={<Jobs />} />
         <Route path="/settings/audit" element={<Audit />} />

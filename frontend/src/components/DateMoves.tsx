@@ -17,9 +17,21 @@ interface Suggestion {
   draft: string;
 }
 
+interface Step {
+  bill_id: number;
+  name: string;
+  from_day: number;
+  to_day: number;
+  low_after: number;
+  low_date: string;
+  improvement: number;
+}
+
 interface Moves {
   baseline: { low: number; low_date: string };
   suggestions: Suggestion[];
+  plan: Step[];
+  plan_low: number;
   movable: number;
   drafts_only: string;
   not_advice: string;
@@ -51,6 +63,16 @@ export function DateMoves({ refreshKey }: { refreshKey?: number }) {
       </div>
       {error && <div style={{ fontSize: 13, color: "var(--critical)" }}>{error.message}</div>}
       {data && data.suggestions.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)" }}>{data.movable === 0 ? "No bill is marked movable yet. Mark the ones whose biller allows a date change." : "No move lifts the low point by a dollar or more; the dates are already as good as they get."}</div>}
+      {data && data.plan.length > 0 && (
+        <div style={{ borderTop: "1px solid var(--surface-2)", paddingTop: 8, fontSize: 13 }}>
+          <strong>Together, in this order:</strong>{" "}
+          {data.plan.map((p, i) => (
+            <span key={p.bill_id}>{i > 0 ? "; then " : ""}{p.name} to the {ordinal(p.to_day)} (low point {money(p.low_after)})</span>
+          ))}
+          . <span style={{ color: data.plan_low < 0 ? "var(--warning)" : "var(--safe)", fontWeight: 700 }}>{data.plan_low < 0 ? `Still ${money(-data.plan_low)} short at the worst point.` : `The worst point stays ${money(data.plan_low)} above the buffer.`}</span>
+        </div>
+      )}
+      {data && data.suggestions.length > 0 && <div className="lab" style={{ marginTop: 4 }}>Each on its own</div>}
       {data?.suggestions.map((s) => (
         <div key={s.bill_id} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", borderTop: "1px solid var(--surface-2)", paddingTop: 8, fontSize: 13 }}>
           <div style={{ flex: "1 1 240px" }}>

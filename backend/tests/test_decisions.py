@@ -79,6 +79,24 @@ def test_billing_date_suggestions_never_worsen_the_low_point():
             session.add(bill)
             session.commit()
         assert out["suggestions"] == sorted(out["suggestions"], key=lambda s: (-s["improvement"], s["name"]))
+        # Together: each step lifts the low point by at least a dollar, and the plan's low is what applying every move yields.
+        lows = [out["baseline"]["low"], *(p["low_after"] for p in out["plan"])]
+        assert all(b - a >= 1.0 for a, b in zip(lows, lows[1:], strict=False))
+        assert out["plan_low"] == lows[-1]
+        if out["plan"]:
+            originals = {}
+            for step in out["plan"]:
+                bill = session.get(Bill, step["bill_id"])
+                originals[bill.id] = bill.due_day
+                bill.due_day = step["to_day"]
+                session.add(bill)
+            session.commit()
+            assert abs(billing_date_suggestions(session, TODAY)["baseline"]["low"] - out["plan_low"]) < 0.01
+            for bill_id, day in originals.items():
+                bill = session.get(Bill, bill_id)
+                bill.due_day = day
+                session.add(bill)
+            session.commit()
         immovable = {b.name for b in session.exec(select(Bill).where(Bill.movable == False)).all()}  # noqa: E712
         assert not immovable & {s["name"] for s in out["suggestions"]}
 

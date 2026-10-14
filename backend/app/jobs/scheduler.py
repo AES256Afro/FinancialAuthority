@@ -96,6 +96,28 @@ def self_check() -> str:
                 known = known.replace(tzinfo=timezone.utc)
             if known is not None and (now - known).days > 2:
                 stale.append(a.name)
+        from ..models import BankLink, MailAccount
+
+        sources = []
+        for m in session.exec(select(MailAccount).where(MailAccount.active == True)).all():  # noqa: E712
+            sources.append({"kind": "mail", "name": m.label, "last_ok": m.last_sync_at.isoformat() if m.last_sync_at and not m.last_error else None, "error": m.last_error})
+        for l in session.exec(select(BankLink).where(BankLink.active == True)).all():  # noqa: E712
+            sources.append({"kind": l.provider, "name": l.institution, "last_ok": l.last_sync_at.isoformat() if l.last_sync_at and not l.last_error else None, "error": l.last_error or ("needs a new sign-in" if l.needs_login else "")})
+        reachable = None
+        if settings.public_url:
+            try:
+                import httpx
+
+                reachable = httpx.get(settings.public_url.rstrip("/") + "/api/health", timeout=8.0).status_code == 200
+            except Exception:  # noqa: BLE001 - unreachable is an answer
+                reachable = False
+        problems = [f"{s['name']}: {s['error']}" for s in sources if s["error"]]
+        if reachable is False:
+            problems.append("the public address does not answer")
+        if stale:
+            problems.append(f"stale balances: {', '.join(stale)}")
+        if usage.free < 2e9:
+            problems.append("under 2 GB free")
         report = {
             "at": utcnow().isoformat(),
             "free_gb": round(usage.free / 1e9, 2),
@@ -103,9 +125,12 @@ def self_check() -> str:
             "last_transaction": last_tx.isoformat() if last_tx else None,
             "stale_accounts": stale,
             "connectors": sorted(CONNECTORS),
+            "sources": sources,
+            "public_url_reachable": reachable,
+            "problems": problems,
         }
         set_setting(session, "selfcheck", report)
-        return f"{report['free_gb']} GB free · db {report['db_mb']} MB · last transaction {report['last_transaction']}"
+        return f"{report['free_gb']} GB free · db {report['db_mb']} MB · last transaction {report['last_transaction']} · {len(problems)} problem(s)" + (": " + "; ".join(problems) if problems else "")
 
 
 def import_watch() -> str:
@@ -198,3 +223,27 @@ def bank_sync() -> str:
 
 
 jobs.register("bank_sync", bank_sync, 4 * 3600, "Read every linked bank for new transactions and balances")
+
+
+def morning_brief() -> str:
+    """The brief to the phone once a day from the chosen hour, when push is configured."""
+    from datetime import datetime, timezone
+
+    from .. import notify
+    from ..api.routes import today
+    from ..engine.snapshot import finance_snapshot
+
+    now = datetime.now(timezone.utc)
+    with session_scope() as session:
+        if not notify.morning_brief_due(session, now):
+            return "not due"
+        snap = finance_snapshot(session, today())
+        critical = any(b["severity"] == "critical" for b in snap["brief"])
+        result = notify.send(session, f"Safe to spend {snap['safe_to_spend']['amount']:,.0f}", notify.brief_text(snap["brief"]), priority="high" if critical else "default", tags=["moneybag"])
+        if result.get("ok"):
+            notify.mark_brief_sent(session, now)
+            return f"sent {len(snap['brief'])} lines"
+        return f"not sent: {result.get('detail') or result.get('reason')}"
+
+
+jobs.register("morning_brief", morning_brief, 600, "Send the brief to the phone once a day, from the chosen hour")
