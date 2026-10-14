@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "build:demo": "tsc -p tsconfig.json --noEmit && node scripts/build-demo.mjs",
     "test": "vitest run",
     "lint": "oxlint",
     "preview": "vite preview"

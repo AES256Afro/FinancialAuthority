@@ -1,5 +1,7 @@
 // One fetch wrapper. Sends the session cookie and the header the server requires on writes.
+// In the static demo build the same calls are answered from the engine's recorded output instead.
 import { useEffect, useState } from "react";
+import { DEMO, demoFetch } from "./demo/shim";
 
 export class ApiError extends Error {
   status: number;
@@ -13,7 +15,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("X-Requested-With", "FinancialAuthority");
   if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  const response = await fetch(path, { ...init, headers, credentials: "same-origin" });
+  const response = DEMO ? await demoFetch(path, init) : await fetch(path, { ...init, headers, credentials: "same-origin" });
   if (!response.ok) {
     let detail = response.statusText;
     try {
