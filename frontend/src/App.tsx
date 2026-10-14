@@ -15,6 +15,7 @@ import { Investments } from "./pages/Investments";
 import { Jobs } from "./pages/Jobs";
 import { Mail } from "./pages/Mail";
 import { Models } from "./pages/Models";
+import { Outlook } from "./pages/Outlook";
 import { Notifications } from "./pages/Notifications";
 import { Paystubs } from "./pages/Paystubs";
 import { Reports } from "./pages/Reports";
@@ -56,6 +57,7 @@ export default function App() {
         <Route path="/debts" element={<Debts />} />
         <Route path="/accounts" element={<Accounts />} />
         <Route path="/investments" element={<Investments />} />
+        <Route path="/outlook" element={<Outlook />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/confirm" element={<Confirm onChanged={snapshot.reload} />} />
         <Route path="/settings" element={<SettingsIndex />} />

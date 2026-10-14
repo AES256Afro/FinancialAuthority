@@ -335,6 +335,46 @@ def build_server() -> MCPServer:
             services.audit(session, client=client, client_kind="key", tool="next_steps", rows=len(out["steps"]), redaction=redaction)
             return out
 
+    @server.tool(name="outlook", annotations=READ_ONLY)
+    def outlook_tool() -> dict:
+        """Savings and investments carried forward from today's balances and the contributions on record, at
+        the rates the owner set as assumptions: three scenarios by year, nominal and in today's dollars, the
+        savings balance by month, and the retirement line when the owner named the year. Say which rate each
+        figure assumes; never present a scenario as a promise."""
+        from .engine.projections import outlook
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            out = outlook(session, _today())
+            if redaction != "full":
+                for block in (out["savings"], out["investments"]):
+                    for a in block["accounts"]:
+                        a["name"], a["institution"] = "account", ""
+            services.audit(session, client=client, client_kind="key", tool="outlook", rows=len(out["investments"]["scenarios"]), redaction=redaction)
+            return out
+
+    @server.tool(name="where_to_put", annotations=READ_ONLY)
+    def where_to_put_tool(amount_per_paycheck: float, years: int | None = None, scenario: str = "mid") -> dict:
+        """The same take-home dollars a paycheck sent to each place the owner could send them (a savings
+        account, the 401(k) with its match and tax treatment, a Roth IRA, a brokerage account, an HSA when
+        there is one, or paying down each debt at its APR), carried to the horizon under the owner's
+        assumptions: what each comes to, what is kept after tax, whether it is guaranteed and reachable, and
+        the step that starts it. Ranked by what is kept. Explain the ranking with these figures and name the
+        assumptions; never call it a recommendation.
+
+        Args:
+            amount_per_paycheck: Dollars a paycheck, as take-home money.
+            years: The horizon in years; the retirement year if set, else ten.
+            scenario: low, mid or high return.
+        """
+        from .engine.where_to_put import where_to_put
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            out = where_to_put(session, _today(), max(0.0, min(float(amount_per_paycheck), 100_000.0)), years=years, scenario=scenario if scenario in ("low", "mid", "high") else "mid")
+            services.audit(session, client=client, client_kind="key", tool="where_to_put", args={"amount": amount_per_paycheck}, rows=len(out["options"]), redaction=redaction)
+            return out
+
     @server.tool(name="brief_today", annotations=READ_ONLY)
     def brief_today() -> dict:
         """What needs attention today, as the engine's own sentences: what clears before payday, what is past

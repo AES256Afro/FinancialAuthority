@@ -146,7 +146,7 @@ export function Investments() {
       <p style={{ margin: 0, color: "var(--ink-2)", fontSize: 13 }}>
         A 401(k), an IRA, a brokerage account, an HSA: sign in at the vendor and it reads itself, holdings and all, through Plaid's investments product (the vendor's own sign-in page opens; the app holds a read token, never a password). A vendor with no connection is kept by hand and updated from its statements.
         {d && !d.vendors ? null : " "}
-        <Link to="/settings/connectors">Plaid keys are on Connectors.</Link>
+        <Link to="/settings/connectors">Plaid keys are on Connectors.</Link> <Link to="/outlook">The Outlook carries these forward.</Link>
       </p>
       {error && <div style={{ color: "var(--critical)" }}>{error.message}</div>}
       {note && <div className="card" style={{ padding: 10, fontSize: 13 }}>{note}</div>}
