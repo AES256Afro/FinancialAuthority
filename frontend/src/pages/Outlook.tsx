@@ -165,22 +165,24 @@ function WhereToPut({ retireIn }: { retireIn: number | null }) {
       {data && (
         <>
           <div style={{ fontSize: 13, color: "var(--ink-2)" }}>{data.summary}</div>
+          <style>{`.where-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 10px; align-items: start; } @media (max-width: 640px) { .where-row { grid-template-columns: 28px minmax(0, 1fr); } .where-row > a { grid-column: 2; justify-self: start; } }`}</style>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {data.options.map((o) => (
-              <div key={o.id} style={{ display: "grid", gridTemplateColumns: "28px minmax(140px, 1fr) minmax(120px, 2fr) auto", gap: 10, alignItems: "center", borderTop: "1px solid var(--surface-2)", paddingTop: 8 }}>
-                <div className="num" style={{ fontWeight: 800, color: o.rank === 1 ? "var(--safe)" : "var(--muted)" }}>{o.rank}</div>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>{o.name}</div>
-                  <div style={{ fontSize: 11, color: "var(--ink-2)" }}>
-                    {money(o.in_per_paycheck)} in{o.match_per_paycheck > 0 ? ` + ${money(o.match_per_paycheck)} match` : ""} · {(o.rate * 100).toFixed(1)}% · <span style={{ color: o.guaranteed ? "var(--safe-ink)" : "var(--bill-ink)", fontWeight: 700 }}>{o.guaranteed ? "guaranteed" : "not guaranteed"}</span>
+              <div key={o.id} className="where-row" style={{ borderTop: "1px solid var(--surface-2)", paddingTop: 8 }}>
+                <div className="num" style={{ fontWeight: 800, fontSize: 16, color: o.rank === 1 ? "var(--safe)" : "var(--muted)" }}>{o.rank}</div>
+                <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+                    <strong style={{ fontSize: 14 }}>{o.name}</strong>
+                    <span style={{ fontSize: 11, color: "var(--ink-2)" }}>
+                      {money(o.in_per_paycheck)} in{o.match_per_paycheck > 0 ? ` + ${money(o.match_per_paycheck)} match` : ""} · {(o.rate * 100).toFixed(1)}% · <span style={{ color: o.guaranteed ? "var(--safe-ink)" : "var(--bill-ink)", fontWeight: 700 }}>{o.guaranteed ? "guaranteed" : "not guaranteed"}</span>
+                    </span>
+                    <span className="num" style={{ marginLeft: "auto", fontWeight: 800, fontSize: 15 }}>{money(o.after_tax)}</span>
                   </div>
-                </div>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ position: "relative", height: 16, background: "var(--surface-2)", borderRadius: 4, overflow: "hidden" }} title={`${money(o.after_tax)} kept of ${money(o.value)}; ${money(o.contributed)} put in`}>
+                  <div style={{ position: "relative", height: 14, background: "var(--surface-2)", borderRadius: 4, overflow: "hidden" }} title={`${money(o.after_tax)} kept of ${money(o.value)}; ${money(o.contributed)} put in`}>
                     <div style={{ width: `${Math.max(2, (o.after_tax / best) * 100)}%`, height: "100%", background: o.guaranteed ? "var(--safe)" : "var(--paycheck)" }} />
                   </div>
-                  <div style={{ fontSize: 11, color: "var(--ink-2)", marginTop: 3 }}>
-                    <strong className="num" style={{ color: "var(--ink)" }}>{money(o.after_tax)}</strong> kept after tax of {money(o.value)} · reachable {o.reachable} · {o.tax}{o.note ? ` · ${o.note}` : ""}
+                  <div style={{ fontSize: 11, color: "var(--ink-2)", lineHeight: 1.4 }}>
+                    kept after tax, of {money(o.value)} · reachable {o.reachable} · {o.tax}{o.note ? ` · ${o.note}` : ""}
                   </div>
                 </div>
                 <Link to={o.link} className="btn" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", minHeight: 34, padding: "4px 10px", fontSize: 12, whiteSpace: "nowrap" }}>{o.action} →</Link>
