@@ -15,6 +15,7 @@ from hashlib import sha256
 
 from sqlmodel import Session, select
 
+from ..engine.rules import apply_rules, rules_for
 from ..models import Account, Transaction, utcnow
 from .base import Connector, SyncResult
 
@@ -122,6 +123,7 @@ def import_rows(session: Session, rows: list[dict], source_file: str = "upload.c
     """Insert what is new. A key repeated within one file is a real repeat purchase; the same key already in
     the ledger is overlap between exports and is skipped."""
     existing = set(session.exec(select(Transaction.row_hash)).all())
+    rules = rules_for(session)
     cache: dict[tuple, Account] = {}
     seen_in_file: dict[tuple, int] = {}
     inserted = duplicates = 0
@@ -135,12 +137,14 @@ def import_rows(session: Session, rows: list[dict], source_file: str = "upload.c
             duplicates += 1
             continue
         account = _account_for(session, r, cache)
-        session.add(Transaction(
+        row = Transaction(
             account_id=account.id, date=r["date"], posted_date=r["original_date"], merchant=r["merchant"], raw_name=r["name"], description=r["description"],
             amount=r["amount"], category=r["category"], note=r["note"],
             is_transfer=r["category"] in TRANSFER_CATEGORIES, is_card_payment=r["category"] == "Credit Card Payment",
             is_income=r["category"] == "Income", is_ignored=bool(r["ignored_from"]), source="rocketmoney", source_ref=source_file, row_hash=h,
-        ))
+        )
+        apply_rules(rules, row)
+        session.add(row)
         existing.add(h)
         inserted += 1
     session.commit()

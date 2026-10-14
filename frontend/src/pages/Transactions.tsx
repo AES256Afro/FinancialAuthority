@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useApi } from "../api";
+import { LedgerRules } from "../components/LedgerRules";
 import { money, shortDate } from "../format";
 import type { TransactionRow } from "../types";
 
@@ -8,7 +9,7 @@ export function Transactions() {
   const [query, setQuery] = useState("");
   const params = new URLSearchParams({ limit: "100" });
   if (query) params.set("text", query);
-  const { data, loading, error } = useApi<{ returned: number; total_amount: number; transactions: TransactionRow[] }>(`/api/v1/transactions/search?${params}`);
+  const { data, loading, error, reload } = useApi<{ returned: number; total_amount: number; transactions: TransactionRow[] }>(`/api/v1/transactions/search?${params}`);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <form
@@ -22,6 +23,7 @@ export function Transactions() {
         <input id="q" className="input" value={text} onChange={(e) => setText(e.target.value)} placeholder="merchant, description, note" style={{ flex: "1 1 240px" }} />
         <button className="btn dark" type="submit">Find</button>
       </form>
+      <LedgerRules onChanged={reload} />
       <div className="card" style={{ padding: "12px 16px", overflowX: "auto" }}>
         {loading && <div style={{ color: "var(--muted)" }}>Loading…</div>}
         {error && <div style={{ color: "var(--critical)" }}>{error.message}</div>}
