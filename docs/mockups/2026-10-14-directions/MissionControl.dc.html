@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mission control: home, dark</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#121417;color:#f2f2ee;font-family:Manrope,system-ui,sans-serif;font-size:14px;line-height:1.4}
+a{color:#8fbcf2}a:hover{color:#b9d4f7}
+.rail a{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;border-radius:10px;color:#b9bcc6;text-decoration:none;font-size:10px;font-weight:600;letter-spacing:.02em}
+.rail a:hover{background:#23262d;color:#f2f2ee}
+.rail a.on{background:#f2f2ee;color:#121417}
+.tile{background:#1b1e24;border:1px solid #2a2e36;border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:6px;box-sizing:border-box}
+.tile .l{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#80848f}
+.tile .v{font-size:28px;font-weight:800;letter-spacing:-.02em}
+.tile .s{font-size:12px;color:#b9bcc6}
+.num{font-variant-numeric:tabular-nums}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:6px}
+.r{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-top:1px solid #2a2e36;font-size:13px}
+.ok{color:#5fcf5f;font-weight:800;font-size:12px}
+.wn{color:#fab219;font-weight:800;font-size:12px}
+.btn{font:inherit;font-weight:700;font-size:12px;border-radius:8px;padding:6px 12px;border:1px solid #3a3f49;background:#23262d;color:#f2f2ee;cursor:pointer}
+.btn.hi{background:#f2f2ee;color:#121417;border-color:#f2f2ee}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; background: #121417;">
+  <nav class="rail" aria-label="Sections" style="flex: 0 0 76px; display: flex; flex-direction: column; gap: 2px; padding: 14px 8px; box-sizing: border-box; border-right: 1px solid #2a2e36; background: #121417;">
+    <div style="display: flex; align-items: center; justify-content: center; height: 36px; margin-bottom: 10px;">
+      <svg width="28" height="28" viewBox="0 0 28 28" role="img" aria-label="FinancialAuthority"><rect x="2" y="2" width="24" height="24" rx="7" fill="#f2f2ee"></rect><path d="M8 18 L12 11 L16 15 L20 9" fill="none" stroke="#199e70" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+    </div>
+    <a href="#today" class="on"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="7"></circle><path d="M10 6v4l3 2"></path></svg>Today</a>
+    <a href="#river"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2 14c3 0 3-4 6-4s3 4 6 4 3-4 4-4"></path><path d="M2 8c3 0 3-3 6-3s3 3 6 3 3-3 4-3"></path></svg>River</a>
+    <a href="#bills"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="3" width="12" height="14" rx="2"></rect><path d="M7 8h6M7 12h4"></path></svg>Bills</a>
+    <a href="#debts"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 16l4-8 4 5 3-7 3 10"></path></svg>Debts</a>
+    <a href="#paystubs"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="2"></rect><circle cx="10" cy="10" r="2.2"></circle></svg>Paystubs</a>
+    <a href="#mail"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="2"></rect><path d="M3 7l7 5 7-5"></path></svg>Mail</a>
+    <a href="#chat"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 5h12v8H9l-4 3v-3H4z"></path></svg>Chat</a>
+    <a href="#settings" style="margin-top: auto;"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="2.5"></circle><path d="M10 2v3M10 15v3M2 10h3M15 10h3M4.3 4.3l2.1 2.1M13.6 13.6l2.1 2.1M4.3 15.7l2.1-2.1M13.6 6.4l2.1-2.1"></path></svg>Settings</a>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 12px; padding: 14px 24px 24px; box-sizing: border-box;">
+    <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-height: 40px;">
+      <h1 style="margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.01em;">Mission control</h1>
+      <div style="font-size: 12px; color: #b9bcc6;">Wed Oct 14 · 07:02 · everything the app did overnight, and what it wants from you</div>
+      <div style="flex-grow: 1;"></div>
+      <div style="display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 800; padding: 5px 12px; border-radius: 999px; background: #1b2a40; color: #8fbcf2;"><span class="sw" style="background: #3987e5; margin: 0;"></span>T minus 2 days to payday</div>
+    </header>
+
+    <section style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px;">
+      <div class="tile" style="border-color: #199e70;"><div class="l">Safe to spend</div><div class="v num">$362</div><div class="s">through Thu Oct 29 · buffer $200 kept</div></div>
+      <div class="tile"><div class="l">Due in 72 hours</div><div class="v num">$57</div><div class="s">streaming, tolls · funded</div></div>
+      <div class="tile"><div class="l">Past due</div><div class="v num">0</div><div class="s">last: August</div></div>
+      <div class="tile" style="border-color: #fab219;"><div class="l">Waiting for you</div><div class="v num">3</div><div class="s">2 confirmations · 1 approval</div></div>
+    </section>
+
+    <section style="display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 12px;">
+      <div class="tile">
+        <div class="l">Available, next 30 days</div>
+        <svg viewBox="0 0 520 150" width="100%" style="display: block; height: auto;" role="img" aria-label="Projected available balance for the next thirty days">
+          <line x1="0" y1="130" x2="520" y2="130" stroke="#3a3f49" stroke-width="1"></line>
+          <path d="M0,118 L26,122 L43,126 L60,126 L60,34 L111,35 L128,45 L145,50 L162,57 L196,63 L213,66 L247,69 L264,100 L298,100 L298,10 L332,14 L400,32 L451,48 L502,80 L520,84 L520,130 L0,130 Z" fill="#199e70" fill-opacity="0.16"></path>
+          <path d="M0,118 L26,122 L43,126 L60,126 L60,34 L111,35 L128,45 L145,50 L162,57 L196,63 L213,66 L247,69 L264,100 L298,100 L298,10 L332,14 L400,32 L451,48 L502,80 L520,84" fill="none" stroke="#199e70" stroke-width="2"></path>
+          <line x1="60" y1="130" x2="60" y2="34" stroke="#3987e5" stroke-width="2"></line>
+          <line x1="298" y1="130" x2="298" y2="10" stroke="#3987e5" stroke-width="2"></line>
+          <line x1="34" y1="6" x2="34" y2="130" stroke="#f2f2ee" stroke-width="1.5"></line>
+          <g fill="#d95926" stroke="#1b1e24" stroke-width="2"><circle cx="43" cy="126" r="4"></circle><circle cx="128" cy="45" r="4"></circle><circle cx="162" cy="57" r="4"></circle><circle cx="213" cy="66" r="4"></circle><circle cx="264" cy="100" r="4"></circle><circle cx="400" cy="32" r="4"></circle><circle cx="451" cy="48" r="4"></circle></g>
+          <g font-family="Manrope, system-ui, sans-serif" font-size="11" font-weight="700" fill="#b9bcc6"><text x="38" y="14">today</text><text x="66" y="28">payday</text><text x="268" y="118">low $362</text><text x="304" y="22">payday</text></g>
+        </svg>
+        <div style="display: flex; gap: 14px; font-size: 11px; color: #b9bcc6; font-weight: 600;"><span><span class="sw" style="background: #3987e5;"></span>Paycheck</span><span><span class="sw" style="background: #d95926;"></span>Bill</span><span><span class="sw" style="background: #199e70; opacity: .6;"></span>Available</span></div>
+      </div>
+      <div class="tile">
+        <div class="l">Connectors</div>
+        <div class="r" style="border-top: 0;"><span>Bank, checking and cards</span><span class="ok">6 min ago</span></div>
+        <div class="r"><span>Credit union, auto loan</span><span class="ok">2 h ago</span></div>
+        <div class="r"><span>Proton Mail</span><span class="ok">3 min ago</span></div>
+        <div class="r"><span>Gmail</span><span class="ok">3 min ago</span></div>
+        <div class="r"><span>Rocket Money export</span><span class="wn">12 days old</span></div>
+        <div class="r"><span>Paystub inbox</span><span class="ok">Oct 2</span></div>
+      </div>
+      <div class="tile">
+        <div class="l">Jobs overnight</div>
+        <div class="r" style="border-top: 0;"><span>Mail sync × 96</span><span class="ok">all ok</span></div>
+        <div class="r"><span>Bank sync 05:30</span><span class="ok">+9 transactions</span></div>
+        <div class="r"><span>Payment matching</span><span class="ok">2 bills marked paid</span></div>
+        <div class="r"><span>Facts extracted</span><span class="ok">3, 1 auto-confirmed</span></div>
+        <div class="r"><span>Self-check 06:00</span><span class="ok">tunnel up · 2.1 GB free</span></div>
+        <div class="r"><span>Brief 07:00</span><span class="ok">sent to phone</span></div>
+      </div>
+    </section>
+
+    <section style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+      <div class="tile">
+        <div class="l">Waiting for you</div>
+        <div class="r" style="border-top: 0; align-items: center;"><span>Electricity $142.17 due Oct 20 <span style="color: #80848f;">· mail</span></span><button class="btn" type="button">Confirm</button></div>
+        <div class="r" style="align-items: center;"><span>New plan $38 × 2 <span style="color: #80848f;">· transactions</span></span><button class="btn" type="button">Confirm</button></div>
+        <div class="r" style="align-items: center;"><span>Send car-loan date request <span style="color: #80848f;">· draft</span></span><button class="btn hi" type="button">Approve</button></div>
+      </div>
+      <div class="tile">
+        <div class="l">The brief, 07:00</div>
+        <div style="font-size: 13px; color: #d7d9df; line-height: 1.5;">Two days to payday and $57 clears first. Everything through Oct 29 is funded; $362 is yours. The car loan on the 28th is the thinnest point, and a draft asking the credit union to move it to the 17th is ready. The paystub for Friday should land by 06:00; last one matched to the cent.</div>
+      </div>
+      <div class="tile">
+        <div class="l">Don't buy</div>
+        <div class="r" style="border-top: 0;"><span>A fourth installment plan</span><span style="color: #80848f;">3 running</span></div>
+        <div class="r"><span>A second music service</span><span style="color: #80848f;">pick one</span></div>
+        <div class="r"><span>Streaming at the new price</span><span style="color: #80848f;">+$2 Oct 1</span></div>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

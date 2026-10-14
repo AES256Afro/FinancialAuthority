@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Paystub anatomy</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f6f4ef;color:#141518;font-family:Manrope,system-ui,sans-serif;font-size:14px;line-height:1.4}
+a{color:#1c5cab}a:hover{color:#104281}
+.rail a{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;border-radius:10px;color:#4e5058;text-decoration:none;font-size:10px;font-weight:600;letter-spacing:.02em}
+.rail a:hover{background:#ece9e1;color:#141518}
+.rail a.on{background:#141518;color:#ffffff}
+.card{background:#ffffff;border:1px solid #e4e1da;border-radius:14px}
+.num{font-variant-numeric:tabular-nums}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:6px}
+.lab{font-size:11px;font-weight:800;color:#85878f;text-transform:uppercase;letter-spacing:.06em}
+td,th{padding:6px 0;border-top:1px solid #efece5;font-size:13px;text-align:left}
+th{border-top:0;font-size:11px;font-weight:800;color:#85878f;text-transform:uppercase;letter-spacing:.06em}
+.r{text-align:right}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; background: #f6f4ef;">
+  <nav class="rail" aria-label="Sections" style="flex: 0 0 76px; display: flex; flex-direction: column; gap: 2px; padding: 14px 8px; box-sizing: border-box; border-right: 1px solid #e4e1da; background: #f6f4ef;">
+    <div style="display: flex; align-items: center; justify-content: center; height: 36px; margin-bottom: 10px;">
+      <svg width="28" height="28" viewBox="0 0 28 28" role="img" aria-label="FinancialAuthority"><rect x="2" y="2" width="24" height="24" rx="7" fill="#141518"></rect><path d="M8 18 L12 11 L16 15 L20 9" fill="none" stroke="#1baf7a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+    </div>
+    <a href="#today"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="7"></circle><path d="M10 6v4l3 2"></path></svg>Today</a>
+    <a href="#river"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2 14c3 0 3-4 6-4s3 4 6 4 3-4 4-4"></path><path d="M2 8c3 0 3-3 6-3s3 3 6 3 3-3 4-3"></path></svg>River</a>
+    <a href="#bills"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="3" width="12" height="14" rx="2"></rect><path d="M7 8h6M7 12h4"></path></svg>Bills</a>
+    <a href="#debts"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 16l4-8 4 5 3-7 3 10"></path></svg>Debts</a>
+    <a href="#paystubs" class="on"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="2"></rect><circle cx="10" cy="10" r="2.2"></circle></svg>Paystubs</a>
+    <a href="#mail"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="2"></rect><path d="M3 7l7 5 7-5"></path></svg>Mail</a>
+    <a href="#chat"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 5h12v8H9l-4 3v-3H4z"></path></svg>Chat</a>
+    <a href="#settings" style="margin-top: auto;"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="2.5"></circle><path d="M10 2v3M10 15v3M2 10h3M15 10h3M4.3 4.3l2.1 2.1M13.6 13.6l2.1 2.1M4.3 15.7l2.1-2.1M13.6 6.4l2.1-2.1"></path></svg>Settings</a>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px; padding: 14px 24px 24px; box-sizing: border-box;">
+    <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-height: 40px;">
+      <h1 style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.01em;">Paystub · Fri Oct 2</h1>
+      <div style="font-size: 13px; color: #4e5058;">Period Sep 14 to 27 · PDF from mail, read Oct 2 06:02 · matched to the deposit to the cent</div>
+      <div style="flex-grow: 1;"></div>
+      <div style="display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; padding: 6px 12px; border-radius: 999px; background: #d8f3e8; color: #0b5c3f;"><svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M4 11l4 4 8-9"></path></svg>Net matches expected</div>
+    </header>
+
+    <section class="card" style="padding: 16px 20px; display: flex; flex-direction: column; gap: 10px;">
+      <div style="display: flex; align-items: baseline; gap: 12px;"><strong>Gross to net, as one bar</strong><span style="font-size: 12px; color: #85878f;">every segment is a line on the stub</span></div>
+      <svg viewBox="0 0 1100 150" width="100%" style="display: block; height: auto;" role="img" aria-label="Gross pay of 2,980.77 split into taxes, benefits and net pay of 2,240.00">
+        <rect x="20" y="40" width="107" height="36" rx="0" fill="#eb6834"></rect>
+        <rect x="129" y="40" width="66" height="36" fill="#eb6834"></rect>
+        <rect x="197" y="40" width="16" height="36" fill="#eb6834"></rect>
+        <rect x="215" y="40" width="41" height="36" fill="#4a3aa7"></rect>
+        <rect x="258" y="40" width="33" height="36" fill="#4a3aa7"></rect>
+        <rect x="293" y="40" width="6" height="36" fill="#4a3aa7"></rect>
+        <rect x="301" y="40" width="779" height="36" rx="0 6 6 0" fill="#1baf7a"></rect>
+        <g font-family="Manrope, system-ui, sans-serif" font-size="12" font-weight="800" fill="#ffffff">
+          <text x="30" y="63">Federal $298</text>
+          <text x="136" y="63">SS $185</text>
+          <text x="312" y="63" font-size="14">Net $2,240.00 · 75.1% of gross</text>
+        </g>
+        <g font-family="Manrope, system-ui, sans-serif" font-size="11" font-weight="700" fill="#4e5058">
+          <text x="20" y="28">Gross $2,980.77</text>
+          <text x="205" y="100">Medicare $43</text><line x1="205" y1="78" x2="205" y2="88" stroke="#c3c2b7"></line>
+          <text x="225" y="120">Health $113 · 401k $89 · Dental $13</text><line x1="235" y1="78" x2="235" y2="108" stroke="#c3c2b7"></line>
+        </g>
+        <g font-family="Manrope, system-ui, sans-serif" font-size="11" font-weight="700" fill="#4e5058">
+          <rect x="820" y="104" width="10" height="10" rx="3" fill="#eb6834"></rect><text x="836" y="113">Taxes $526</text>
+          <rect x="912" y="104" width="10" height="10" rx="3" fill="#4a3aa7"></rect><text x="928" y="113">Benefits $215</text>
+          <rect x="1020" y="104" width="10" height="10" rx="3" fill="#1baf7a"></rect><text x="1036" y="113">Net</text>
+        </g>
+      </svg>
+      <div style="display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; background: #e3eefb;">
+        <span class="sw" style="background: #2a78d6;"></span><strong>Deposit · Fri Oct 2 · Checking · $2,240.00</strong><span style="font-size: 12px; color: #184f95;">matched 06:14, the morning it landed · advances took $180 of it four minutes later</span>
+      </div>
+    </section>
+
+    <section style="display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 16px; align-items: start;">
+      <div class="card" style="padding: 16px 20px;">
+        <div style="display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px;"><strong>Last six paychecks, net</strong><span style="font-size: 12px; color: #85878f;">expected $2,240 from the last four stubs</span></div>
+        <svg viewBox="0 0 640 170" width="100%" style="display: block; height: auto;" role="img" aria-label="Net pay for the last six paychecks with one short paycheck flagged">
+          <line x1="40" y1="140" x2="620" y2="140" stroke="#c3c2b7" stroke-width="1.5"></line>
+          <line x1="40" y1="28" x2="620" y2="28" stroke="#e4e1da" stroke-width="1"></line>
+          <text x="36" y="32" text-anchor="end" font-family="Manrope, system-ui, sans-serif" font-size="11" fill="#85878f">$2,240</text>
+          <g fill="#2a78d6">
+            <rect x="60" y="28" width="24" height="112" rx="4 4 0 0"></rect>
+            <rect x="156" y="28" width="24" height="112" rx="4 4 0 0"></rect>
+            <rect x="252" y="37" width="24" height="103" rx="4 4 0 0" fill="#eb6834"></rect>
+            <rect x="348" y="28" width="24" height="112" rx="4 4 0 0"></rect>
+            <rect x="444" y="28" width="24" height="112" rx="4 4 0 0"></rect>
+            <rect x="540" y="28" width="24" height="112" rx="4 4 0 0"></rect>
+          </g>
+          <g font-family="Manrope, system-ui, sans-serif" font-size="11" fill="#4e5058" text-anchor="middle" font-weight="700">
+            <text x="72" y="158">Jul 24</text><text x="168" y="158">Aug 7</text><text x="264" y="158">Aug 21</text><text x="360" y="158">Sep 4</text><text x="456" y="158">Sep 18</text><text x="552" y="158">Oct 2</text>
+          </g>
+          <text x="264" y="22" text-anchor="middle" font-family="Manrope, system-ui, sans-serif" font-size="11" font-weight="800" fill="#141518">$2,061 · $179 short</text>
+        </svg>
+        <div style="margin-top: 8px; padding: 12px 14px; border-radius: 10px; background: #fdebd3; display: flex; gap: 12px; align-items: flex-start;">
+          <svg width="22" height="22" viewBox="0 0 26 26" role="img" aria-label="Warning"><path d="M13 3 L24 22 H2 Z" fill="#fab219"></path><path d="M13 10v6M13 18.5v1" stroke="#141518" stroke-width="2" stroke-linecap="round"></path></svg>
+          <div style="font-size: 13px;"><strong>Aug 21 was $179 under the usual.</strong> Hours were 72 instead of 80 and the overtime line was missing. The app flagged it at 06:05 that morning; the Sep 4 stub carried the $179 as a correction. Nothing is open now.</div>
+        </div>
+      </div>
+
+      <div class="card" style="padding: 16px 20px;">
+        <div class="lab" style="margin-bottom: 6px;">Every line, with year to date</div>
+        <table style="width: 100%; border-collapse: collapse;">
+          <thead><tr><th>Line</th><th class="r">This stub</th><th class="r">YTD</th></tr></thead>
+          <tbody>
+            <tr><td>Regular, 80 h</td><td class="r num">2,980.77</td><td class="r num">59,615.40</td></tr>
+            <tr><td><span class="sw" style="background: #eb6834;"></span>Federal income tax</td><td class="r num">−298.08</td><td class="r num">−5,961.60</td></tr>
+            <tr><td><span class="sw" style="background: #eb6834;"></span>Social Security</td><td class="r num">−184.81</td><td class="r num">−3,696.20</td></tr>
+            <tr><td><span class="sw" style="background: #eb6834;"></span>Medicare</td><td class="r num">−43.22</td><td class="r num">−864.40</td></tr>
+            <tr><td><span class="sw" style="background: #4a3aa7;"></span>Health insurance</td><td class="r num">−112.50</td><td class="r num">−2,250.00</td></tr>
+            <tr><td><span class="sw" style="background: #4a3aa7;"></span>401(k), 3%</td><td class="r num">−89.42</td><td class="r num">−1,788.40</td></tr>
+            <tr><td><span class="sw" style="background: #4a3aa7;"></span>Dental</td><td class="r num">−12.74</td><td class="r num">−254.80</td></tr>
+            <tr><td><strong><span class="sw" style="background: #1baf7a;"></span>Net pay</strong></td><td class="r num"><strong>2,240.00</strong></td><td class="r num"><strong>44,800.00</strong></td></tr>
+          </tbody>
+        </table>
+        <div style="margin-top: 10px; font-size: 12px; color: #4e5058;">Parsed by the payroll-format reader; two fields were read by a model and confirmed by you on Jul 24. Source PDF kept encrypted. <a href="#pdf">Open the PDF</a></div>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

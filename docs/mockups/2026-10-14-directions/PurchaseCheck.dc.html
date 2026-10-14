@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Purchase check</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f6f4ef;color:#141518;font-family:Manrope,system-ui,sans-serif;font-size:14px;line-height:1.4}
+a{color:#1c5cab}a:hover{color:#104281}
+.rail a{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;border-radius:10px;color:#4e5058;text-decoration:none;font-size:10px;font-weight:600;letter-spacing:.02em}
+.rail a:hover{background:#ece9e1;color:#141518}
+.rail a.on{background:#141518;color:#ffffff}
+.card{background:#ffffff;border:1px solid #e4e1da;border-radius:14px}
+.num{font-variant-numeric:tabular-nums}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:6px}
+.lab{font-size:11px;font-weight:800;color:#85878f;text-transform:uppercase;letter-spacing:.06em}
+.in{font:inherit;font-size:16px;font-weight:700;padding:10px 12px;border-radius:10px;border:1px solid #d9d6ce;background:#ffffff;min-height:44px;box-sizing:border-box;width:100%}
+.pick{font:inherit;font-weight:800;font-size:13px;border-radius:10px;padding:10px 14px;border:1px solid #d9d6ce;background:#ffffff;color:#141518;cursor:pointer;min-height:44px}
+input[type=range]{width:100%;accent-color:#141518;height:44px}
+.f{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:6px 0;border-top:1px solid #efece5}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; background: #f6f4ef;">
+  <nav class="rail" aria-label="Sections" style="flex: 0 0 76px; display: flex; flex-direction: column; gap: 2px; padding: 14px 8px; box-sizing: border-box; border-right: 1px solid #e4e1da; background: #f6f4ef;">
+    <div style="display: flex; align-items: center; justify-content: center; height: 36px; margin-bottom: 10px;">
+      <svg width="28" height="28" viewBox="0 0 28 28" role="img" aria-label="FinancialAuthority"><rect x="2" y="2" width="24" height="24" rx="7" fill="#141518"></rect><path d="M8 18 L12 11 L16 15 L20 9" fill="none" stroke="#1baf7a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+    </div>
+    <a href="#today"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="7"></circle><path d="M10 6v4l3 2"></path></svg>Today</a>
+    <a href="#river"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2 14c3 0 3-4 6-4s3 4 6 4 3-4 4-4"></path><path d="M2 8c3 0 3-3 6-3s3 3 6 3 3-3 4-3"></path></svg>River</a>
+    <a href="#check" class="on"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 11l4 4 8-9"></path></svg>Check</a>
+    <a href="#bills"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="3" width="12" height="14" rx="2"></rect><path d="M7 8h6M7 12h4"></path></svg>Bills</a>
+    <a href="#debts"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 16l4-8 4 5 3-7 3 10"></path></svg>Debts</a>
+    <a href="#mail"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="2"></rect><path d="M3 7l7 5 7-5"></path></svg>Mail</a>
+    <a href="#chat"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 5h12v8H9l-4 3v-3H4z"></path></svg>Chat</a>
+    <a href="#settings" style="margin-top: auto;"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="2.5"></circle><path d="M10 2v3M10 15v3M2 10h3M15 10h3M4.3 4.3l2.1 2.1M13.6 13.6l2.1 2.1M4.3 15.7l2.1-2.1M13.6 6.4l2.1-2.1"></path></svg>Settings</a>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px; padding: 14px 24px 24px; box-sizing: border-box;">
+    <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-height: 40px;">
+      <h1 style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.01em;">Can I buy this?</h1>
+      <div style="font-size: 13px; color: #4e5058;">Move the price. The river redraws and the verdict changes. The numbers come from the engine, not from a model.</div>
+    </header>
+
+    <section style="display: grid; grid-template-columns: 380px minmax(0, 1fr); gap: 16px; align-items: start;">
+      <div class="card" style="padding: 16px 18px; display: flex; flex-direction: column; gap: 14px;">
+        <div><label for="what" class="lab">What</label><input id="what" class="in" type="text" value="Headphones"></div>
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: baseline;"><label for="price" class="lab">Price</label><strong class="num" style="font-size: 24px;">{{priceLabel}}</strong></div>
+          <input id="price" type="range" min="0" max="600" step="1" value="{{price}}" onChange="{{setPrice}}" onInput="{{setPrice}}" aria-label="Price">
+          <div style="display: flex; justify-content: space-between; font-size: 11px; color: #85878f;"><span>$0</span><span>$600</span></div>
+        </div>
+        <div>
+          <div class="lab" style="margin-bottom: 6px;">When</div>
+          <div style="display: flex; gap: 8px;">
+            <button class="pick" type="button" style="{{todayStyle}}" onClick="{{pickToday}}">Today, Oct 14</button>
+            <button class="pick" type="button" style="{{fridayStyle}}" onClick="{{pickFriday}}">Payday, Fri Oct 16</button>
+          </div>
+        </div>
+        <label style="display: flex; align-items: center; gap: 10px; min-height: 44px; font-weight: 700;"><input type="checkbox" checked="{{bnpl}}" onChange="{{toggleBnpl}}" style="width: 20px; height: 20px;">Pay in 4 instead <span style="font-weight: 600; color: #85878f;">({{instLabel}} every two weeks)</span></label>
+        <div class="f" style="border-top: 1px solid #efece5;"><span style="color: #4e5058;">In the bank today</span><strong class="num">$312</strong></div>
+        <div class="f"><span style="color: #4e5058;">Clears before payday</span><strong class="num">$57</strong></div>
+        <div class="f"><span style="color: #4e5058;">Safe to spend from Friday</span><strong class="num">$362</strong></div>
+        <div class="f"><span style="color: #4e5058;">Buffer kept</span><strong class="num">$200</strong></div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 16px;">
+        <div class="card" style="padding: 18px 20px; display: flex; flex-direction: column; gap: 8px; border: 2px solid {{verdictBorder}}; background: {{verdictBg}};">
+          <div style="font-size: 30px; font-weight: 800; letter-spacing: -0.02em;">{{verdictTitle}}</div>
+          <div style="font-size: 14px; color: #141518;">{{verdictBody}}</div>
+        </div>
+        <div class="card" style="padding: 14px 18px 10px; display: flex; flex-direction: column; gap: 6px;">
+          <div style="display: flex; align-items: baseline; gap: 12px;"><strong>The river, with this purchase in it</strong><span style="font-size: 12px; color: #85878f;">Oct 12 to Nov 11 · the floor is the $200 buffer</span></div>
+          <svg viewBox="0 0 760 230" width="100%" style="display: block; height: auto;" role="img" aria-label="Projected available money for thirty days with the purchase included">
+            <line x1="40" y1="190" x2="740" y2="190" stroke="#c3c2b7" stroke-width="1.5"></line>
+            <line x1="40" y1="96" x2="740" y2="96" stroke="#e4e1da" stroke-width="1"></line>
+            <text x="34" y="100" text-anchor="end" font-family="Manrope, system-ui, sans-serif" font-size="11" fill="#85878f">$1,000</text>
+            <text x="34" y="194" text-anchor="end" font-family="Manrope, system-ui, sans-serif" font-size="11" fill="#85878f">buffer</text>
+            <path d="{{areaPath}}" fill="#1baf7a" fill-opacity="0.12"></path>
+            <path d="{{linePath}}" fill="none" stroke="#1baf7a" stroke-width="2" stroke-linejoin="round"></path>
+            <line x1="133" y1="190" x2="133" y2="72" stroke="#2a78d6" stroke-width="2"></line>
+            <line x1="460" y1="190" x2="460" y2="30" stroke="#2a78d6" stroke-width="2"></line>
+            <line x1="87" y1="10" x2="87" y2="190" stroke="#141518" stroke-width="1.5"></line>
+            <rect x="{{buyX}}" y="{{buyY}}" width="12" height="12" rx="3" fill="#eb6834" stroke="#ffffff" stroke-width="2"></rect>
+            <circle cx="{{lowX}}" cy="{{lowY}}" r="5" fill="#ffffff" stroke="#141518" stroke-width="2"></circle>
+            <g font-family="Manrope, system-ui, sans-serif" font-size="11" font-weight="700" fill="#4e5058">
+              <text x="90" y="18">today</text>
+              <text x="137" y="66">payday Oct 16</text>
+              <text x="464" y="24">payday Oct 30</text>
+              <text x="{{lowLabelX}}" y="{{lowLabelY}}" fill="#141518">{{lowLabel}}</text>
+              <text x="{{buyLabelX}}" y="{{buyLabelY}}">{{buyLabel}}</text>
+            </g>
+            <g font-family="Manrope, system-ui, sans-serif" font-size="11" fill="#85878f" text-anchor="middle">
+              <text x="40" y="214">Oct 12</text><text x="203" y="214">Oct 19</text><text x="367" y="214">Oct 26</text><text x="530" y="214">Nov 2</text><text x="693" y="214">Nov 9</text>
+            </g>
+          </svg>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { price: 189, when: 'today', bnpl: false };
+  }
+  renderVals() {
+    const s = this.state;
+    const fmt = (v) => (v < 0 ? '−$' : '$') + Math.abs(Math.round(v)).toLocaleString('en-US');
+    const price = s.price;
+    const inst = Math.round(price / 4);
+    const base = [180,150,112,55,1253,1250,1246,1242,1100,1038,942,900,857,812,800,774,362,362,1702,1690,1650,1600,1550,1500,1420,1300,1230,1100,900,820,760];
+    const whenDay = s.when === 'today' ? 2 : 4;
+    const series = base.map((v, i) => {
+      if (s.bnpl) return v - (i >= whenDay ? inst : 0) - (i >= 18 ? inst : 0);
+      return v - (i >= whenDay ? price : 0);
+    });
+    const x = (i) => 40 + i * (700 / 30);
+    const y = (v) => 190 - v * 0.0944;
+    const pts = [];
+    series.forEach((v, i) => {
+      if (i === 4 || i === 18) pts.push([x(i), y(series[i - 1])]);
+      pts.push([x(i), y(v)]);
+    });
+    const linePath = 'M' + pts.map((p) => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' L');
+    const areaPath = linePath + ' L' + x(30).toFixed(1) + ',190 L40,190 Z';
+    let lowIdx = whenDay;
+    for (let i = whenDay; i <= 17; i++) if (series[i] < series[lowIdx]) lowIdx = i;
+    const lowVal = series[lowIdx];
+    const cost = s.bnpl ? inst : price;
+    const fridayLeft = 362 - cost;
+    const next1 = 470 - (s.bnpl ? inst : (s.when === 'friday' || price <= 362 ? 0 : price));
+    let title, body, bg, border;
+    const yes = () => { bg = '#d8f3e8'; border = '#1baf7a'; };
+    const wait = () => { bg = '#fdebd3'; border = '#f0b36b'; };
+    const no = () => { bg = '#f8dada'; border = '#d03b3b'; };
+    if (price === 0) { title = 'Pick a price'; body = 'Slide to the price and the river shows what it does to the next two paychecks.'; bg = '#ffffff'; border = '#e4e1da'; }
+    else if (s.bnpl) {
+      if (fridayLeft >= 0 && 470 - inst >= 0 && 540 - inst >= 0) { title = 'It fits, in 4'; body = fmt(inst) + ' from each of the next 4 paychecks. Thinnest point ' + fmt(fridayLeft) + ' on Oct 28. It would be plan number four, and you set three as the ceiling.'; wait(); }
+      else { title = 'No, not even in 4'; body = 'An installment of ' + fmt(inst) + ' pushes a paycheck under the buffer. Save first, or pick a cheaper one.'; no(); }
+    } else if (s.when === 'today') {
+      const todayLow = 55 - price;
+      if (todayLow >= 0) { title = 'Yes'; body = 'Leaves ' + fmt(todayLow) + ' before payday and ' + fmt(362 - price) + ' at the thinnest point, Oct 28.'; yes(); }
+      else if (362 - price >= 0) { title = 'Wait until Friday'; body = 'Today the low point would be ' + fmt(todayLow) + ', under the buffer. On Friday it fits inside the $362 that is safe, leaving ' + fmt(362 - price) + '.'; wait(); }
+      else if (470 - price >= 0) { title = 'Wait until Oct 30'; body = 'This window cannot carry it. The Oct 30 window has $470 safe; it would leave ' + fmt(470 - price) + '.'; wait(); }
+      else { title = 'Not this month'; body = 'Even the Oct 30 window leaves ' + fmt(470 - price) + '. Save ' + fmt(price - 470) + ' first, or pick a cheaper one.'; no(); }
+    } else {
+      if (362 - price >= 0) { title = 'Yes, on Friday'; body = 'Leaves ' + fmt(362 - price) + ' at the thinnest point, Oct 28.'; yes(); }
+      else if (470 - price >= 0) { title = 'Wait until Oct 30'; body = 'This window leaves ' + fmt(362 - price) + '. The Oct 30 window has $470 safe; it would leave ' + fmt(470 - price) + '.'; wait(); }
+      else { title = 'Not this month'; body = 'Even the Oct 30 window leaves ' + fmt(470 - price) + '. Save ' + fmt(price - 470) + ' first.'; no(); }
+    }
+    const sel = 'background:#141518;color:#ffffff;border-color:#141518;';
+    const unsel = 'background:#ffffff;color:#141518;border-color:#d9d6ce;';
+    const buyX = x(whenDay) - 6;
+    const buyY = y(series[whenDay]) - 6;
+    const lowX = x(lowIdx);
+    const lowY = y(lowVal);
+    return {
+      price,
+      priceLabel: fmt(price),
+      instLabel: fmt(inst),
+      bnpl: s.bnpl,
+      setPrice: (e) => this.setState({ price: Number(e.target.value) }),
+      pickToday: () => this.setState({ when: 'today' }),
+      pickFriday: () => this.setState({ when: 'friday' }),
+      toggleBnpl: (e) => this.setState({ bnpl: e.target.checked }),
+      todayStyle: s.when === 'today' ? sel : unsel,
+      fridayStyle: s.when === 'friday' ? sel : unsel,
+      verdictTitle: title, verdictBody: body, verdictBg: bg, verdictBorder: border,
+      linePath, areaPath,
+      buyX: buyX.toFixed(1), buyY: buyY.toFixed(1),
+      buyLabel: s.bnpl ? 'first of 4, ' + fmt(inst) : 'buy ' + fmt(price),
+      buyLabelX: (buyX + 16).toFixed(1), buyLabelY: (buyY + 10).toFixed(1),
+      lowX: lowX.toFixed(1), lowY: lowY.toFixed(1),
+      lowLabel: 'low ' + fmt(lowVal) + (lowVal < 0 ? ' · under the buffer' : ''),
+      lowLabelX: (lowX + 10).toFixed(1), lowLabelY: (lowY + 18).toFixed(1)
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,41 @@
+{
+  "v": 3,
+  "createdOnFiles": {"v": 1, "at": "2026-10-14T12:30:00Z"},
+  "title": "FinancialAuthority mock-ups",
+  "launch": {"view": "canvas"},
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {"x": 0, "y": 0, "w": 1280, "h": 900, "title": "1 · The River (recommended home)", "expand": "fill"},
+    "Windows.dc.html": {"x": 1360, "y": 0, "w": 1280, "h": 900, "title": "2 · Paycheck windows", "expand": "fill"},
+    "MonthGrid.dc.html": {"x": 2720, "y": 0, "w": 1280, "h": 900, "title": "3 · Month grid", "expand": "fill"},
+    "WhereItGoes.dc.html": {"x": 4080, "y": 0, "w": 1280, "h": 900, "title": "4 · Where it goes", "expand": "fill"},
+    "Envelopes.dc.html": {"x": 0, "y": 1260, "w": 1280, "h": 900, "title": "5 · Envelopes", "expand": "fill"},
+    "BillBoard.dc.html": {"x": 1360, "y": 1260, "w": 1280, "h": 900, "title": "6 · Bill board", "expand": "fill"},
+    "TransitMap.dc.html": {"x": 2720, "y": 1260, "w": 1280, "h": 900, "title": "7 · Transit map", "expand": "fill"},
+    "MissionControl.dc.html": {"x": 4080, "y": 1260, "w": 1280, "h": 900, "title": "8 · Mission control (dark)", "expand": "fill"},
+    "PhoneToday.dc.html": {"x": 0, "y": 2520, "w": 390, "h": 844, "title": "9 · Today"},
+    "PhoneRunway.dc.html": {"x": 470, "y": 2520, "w": 390, "h": 844, "title": "10 · Runway"},
+    "PhoneConfirm.dc.html": {"x": 940, "y": 2520, "w": 390, "h": 844, "title": "11 · Confirm and approve"},
+    "PhoneCheck.dc.html": {"x": 1410, "y": 2520, "w": 390, "h": 844, "title": "12 · Can I buy this?"},
+    "PurchaseCheck.dc.html": {"x": 0, "y": 3724, "w": 1280, "h": 900, "title": "13 · Purchase check (try the slider)", "expand": "fill", "is_interactive": true},
+    "DateMover.dc.html": {"x": 1360, "y": 3724, "w": 1280, "h": 900, "title": "14 · Billing-date mover (pick a day)", "expand": "fill", "is_interactive": true},
+    "Paystub.dc.html": {"x": 2720, "y": 3724, "w": 1280, "h": 900, "title": "15 · Paystub anatomy", "expand": "fill"},
+    "DebtMountain.dc.html": {"x": 4080, "y": 3724, "w": 1280, "h": 900, "title": "16 · Debt mountain", "expand": "fill"},
+    "MailLens.dc.html": {"x": 5440, "y": 3724, "w": 1280, "h": 900, "title": "17 · Mail lens", "expand": "fill"},
+    "ChatTable.dc.html": {"x": 6800, "y": 3724, "w": 1280, "h": 900, "title": "18 · Chat beside the table", "expand": "fill"}
+  },
+  "order": [
+    "Main.dc.html", "Windows.dc.html", "MonthGrid.dc.html", "WhereItGoes.dc.html",
+    "Envelopes.dc.html", "BillBoard.dc.html", "TransitMap.dc.html", "MissionControl.dc.html",
+    "PhoneToday.dc.html", "PhoneRunway.dc.html", "PhoneConfirm.dc.html", "PhoneCheck.dc.html",
+    "PurchaseCheck.dc.html", "DateMover.dc.html", "Paystub.dc.html", "DebtMountain.dc.html", "MailLens.dc.html", "ChatTable.dc.html"
+  ],
+  "notes": {
+    "row1": {"x": 0, "y": -260, "text": "Home screen: four ways to see the same money", "kind": "title1", "maxW": 5360},
+    "row2": {"x": 0, "y": 1010, "text": "Home screen: four more directions", "kind": "title1", "maxW": 5360},
+    "row3": {"x": 0, "y": 2270, "text": "Phone: the payday routine", "kind": "title1", "maxW": 1800},
+    "row4": {"x": 0, "y": 3474, "text": "Feature screens, drawn in the recommended look", "kind": "title1", "maxW": 8080},
+    "rec": {"x": 5440, "y": 0, "w": 440, "text": "Decided Oct 14: keep every direction. Each home (1 to 8) becomes a view you switch in Settings › Appearance, with light, dark and console looks. The River is the default home; Today (9) is the phone home. One time line, Today fixed, paydays always blue, bills always orange, debt always violet, what is safe to spend always the aqua band. Same numbers on every board so the shapes compare, not the data.", "fill": "teal"}
+  },
+  "designSystems": []
+}

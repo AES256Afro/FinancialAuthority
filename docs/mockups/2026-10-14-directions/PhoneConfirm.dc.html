@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Confirm and approve, on the phone</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f6f4ef;color:#141518;font-family:Manrope,system-ui,sans-serif;font-size:15px;line-height:1.4}
+a{color:#1c5cab}a:hover{color:#104281}
+.card{background:#ffffff;border:1px solid #e4e1da;border-radius:16px}
+.num{font-variant-numeric:tabular-nums}
+.btn{font:inherit;font-weight:800;font-size:14px;border-radius:12px;padding:11px 14px;border:1px solid #d9d6ce;background:#ffffff;color:#141518;cursor:pointer;min-height:44px;flex:1 1 auto}
+.btn.dark{background:#141518;color:#ffffff;border-color:#141518}
+.q{background:#f3f1ec;border-left:0;border-radius:10px;padding:10px 12px;font-size:12px;color:#4e5058;line-height:1.45}
+.tag{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#85878f}
+.f{display:flex;justify-content:space-between;gap:10px;font-size:14px;padding:5px 0;border-top:1px solid #efece5}
+.tabs{position:absolute;left:0;right:0;bottom:0;height:78px;background:#ffffff;border-top:1px solid #e4e1da;display:flex;justify-content:space-around;align-items:flex-start;padding-top:8px}
+.tabs a{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;font-weight:700;color:#85878f;text-decoration:none;min-width:56px;min-height:44px}
+.tabs a.on{color:#141518}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; background: #f6f4ef; box-sizing: border-box;">
+  <div style="padding: 18px 18px 90px; display: flex; flex-direction: column; gap: 12px; height: 100%; box-sizing: border-box; overflow: hidden;">
+    <header style="display: flex; align-items: center; gap: 10px;">
+      <a href="PhoneToday.dc.html" aria-label="Back to Today" style="display: inline-flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; background: #ffffff; border: 1px solid #e4e1da; color: #141518;"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 4l-6 6 6 6"></path></svg></a>
+      <h1 style="margin: 0; font-size: 20px; font-weight: 800;">Needs you · 3</h1>
+    </header>
+
+    <section class="card" style="padding: 14px 16px; display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline;"><strong>Electricity bill</strong><span class="tag">from mail · 96% sure</span></div>
+      <div class="q"><span class="tag" style="display: block; margin-bottom: 4px;">Quoted from the message, treated as data</span>"Your statement is ready. Amount due: $142.17. Due date: October 20, 2026. Pay online or set up AutoPay."</div>
+      <div class="f" style="border-top: 0;"><span style="color: #4e5058;">Amount</span><strong class="num">$142.17</strong></div>
+      <div class="f"><span style="color: #4e5058;">Due</span><strong>Tue Oct 20</strong></div>
+      <div class="f"><span style="color: #4e5058;">Last month</span><span class="num">$128.40</span></div>
+      <div style="display: flex; gap: 8px; margin-top: 4px;"><button class="btn dark" type="button">Confirm</button><button class="btn" type="button">Not this</button></div>
+      <div style="font-size: 12px; color: #85878f;">One more confirmation from this sender and it confirms itself.</div>
+    </section>
+
+    <section class="card" style="padding: 14px 16px; display: flex; flex-direction: column; gap: 8px;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline;"><strong>New installment plan?</strong><span class="tag">from transactions</span></div>
+      <div style="font-size: 13px; color: #4e5058;">Two charges of $38.00 from the same lender, 14 days apart (Sep 29, Oct 13). Looks like a 6-part plan with 4 left.</div>
+      <div style="display: flex; gap: 8px; margin-top: 4px;"><button class="btn dark" type="button">Yes, 4 left</button><button class="btn" type="button">Edit</button><button class="btn" type="button">No</button></div>
+    </section>
+
+    <section class="card" style="padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; border: 2px solid #141518;">
+      <div style="display: flex; justify-content: space-between; align-items: baseline;"><strong>Approve a send</strong><span class="tag">draft · to the credit union</span></div>
+      <div class="q" style="background: #ffffff; border: 1px solid #e4e1da;"><strong style="color: #141518;">Subject: Request to move my auto loan due date to the 17th</strong><br>Hello, I would like to move the monthly due date on my auto loan from the 28th to the 17th, starting with the November payment. Please let me know if anything is needed from me. Thank you.</div>
+      <div style="display: flex; gap: 8px; margin-top: 4px;"><button class="btn dark" type="button">Approve and send</button><button class="btn" type="button">Edit</button></div>
+      <label style="display: flex; align-items: center; gap: 10px; font-size: 13px; color: #4e5058; min-height: 44px;"><input type="checkbox" style="width: 20px; height: 20px;">Always allow sends to this recipient</label>
+    </section>
+  </div>
+  <nav class="tabs" aria-label="Tabs">
+    <a href="#today" class="on"><svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="7"></circle><path d="M10 6v4l3 2"></path></svg>Today</a>
+    <a href="#river"><svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2 14c3 0 3-4 6-4s3 4 6 4 3-4 4-4"></path><path d="M2 8c3 0 3-3 6-3s3 3 6 3 3-3 4-3"></path></svg>River</a>
+    <a href="#bills"><svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="3" width="12" height="14" rx="2"></rect><path d="M7 8h6M7 12h4"></path></svg>Bills</a>
+    <a href="#mail"><svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="2"></rect><path d="M3 7l7 5 7-5"></path></svg>Mail</a>
+    <a href="#chat"><svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 5h12v8H9l-4 3v-3H4z"></path></svg>Chat</a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

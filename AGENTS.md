@@ -20,6 +20,10 @@ The owner asked that the coding agent do everything it can reach and ask only fo
 - **No personal data in committed files.** No real account numbers, balances, merchants, billers, email addresses, hostnames, tailnet addresses or exports. Tests use the synthetic household in `backend/tests/fixtures/household/`. Specifics go in `docs/*.local.md`, which is gitignored.
 - **Secrets never reach logs or the frontend bundle.** Anything secret is in an `FA_*` environment variable or encrypted in the database with `FA_DATA_KEY`.
 - **The public surface is fixed.** Only the web sign-in, `/mcp`, `/api`, `/oauth/*` and `/api/health` are reachable without a session. A new unauthenticated route needs a line in `docs/PLAN.md` section 12 first.
+- **Free to run.** No connector may depend on a paid plan. Free developer tiers, the owner's existing free accounts, exports and the mail banks already send are the sources. A frontier model by API is optional, never required.
+- **Views show, the engine computes.** A home view or a page renders `finance.snapshot`, `paycheck.plan`, `cashflow.forecast` and the registers. It never derives a figure of its own; if a view needs a number the engine does not return, the engine grows.
+- **The reviewer sees the plan, not the mail.** The reviewer model receives the engine's results, the rules, the goals and alert summaries; never message bodies, attachments or account numbers. Its notes carry actions; it cannot apply them.
+- **Picture first.** Every screen leads with the visual that carries the answer. Chart colours come from the validated palette in `frontend/src/looks/`; status colours ship with an icon and a word.
 
 ## How to add things
 
@@ -29,6 +33,9 @@ The owner asked that the coding agent do everything it can reach and ask only fo
 - **A job**: one function in `backend/app/jobs/`, idempotent, with its schedule, shown on the Jobs page, never silent on failure.
 - **A recommendation kind**: a pure function in the engine that returns a structured result with sources, a golden-output test on the fixture, and a property test for the invariant it must keep.
 - **A screen**: one route in `frontend/src/pages/`; data from the same REST the tools use; nothing a model can say that the screen cannot show.
+- **A view** (a home layout): one component in `frontend/src/views/` registered with a name, a one-line description and a thumbnail, rendering only the engine's results; it appears in Settings › Appearance by registration alone.
+- **A look** (a theme): one token set in `frontend/src/looks/` with light and dark surfaces, ink, the four series colours and the status colours; its chart palette passes the data-viz validator in both modes before it is registered.
+- **A model role**: advisor and reviewer are the two; a provider is added in `backend/app/models/providers/` with a test call, a redaction level and a cost estimate per call.
 
 ## Conventions
 

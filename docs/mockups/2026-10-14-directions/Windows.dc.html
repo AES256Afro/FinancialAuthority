@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Paycheck windows: home</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f6f4ef;color:#141518;font-family:Manrope,system-ui,sans-serif;font-size:14px;line-height:1.4}
+a{color:#1c5cab}a:hover{color:#104281}
+.rail a{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;border-radius:10px;color:#4e5058;text-decoration:none;font-size:10px;font-weight:600;letter-spacing:.02em}
+.rail a:hover{background:#ece9e1;color:#141518}
+.rail a.on{background:#141518;color:#ffffff}
+.card{background:#ffffff;border:1px solid #e4e1da;border-radius:14px}
+.num{font-variant-numeric:tabular-nums}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:6px}
+.btn{font:inherit;font-weight:700;font-size:13px;border-radius:9px;padding:8px 14px;border:1px solid #d9d6ce;background:#ffffff;color:#141518;cursor:pointer}
+.btn.dark{background:#141518;color:#ffffff;border-color:#141518}
+.blk{border-radius:4px;display:flex;align-items:center;padding:0 8px;font-size:11px;font-weight:700;color:#ffffff;box-sizing:border-box;overflow:visible;white-space:nowrap}
+.win{display:flex;flex-direction:column;gap:2px;height:420px;justify-content:flex-end}
+.th{font-size:11px;color:#85878f;font-weight:700;text-transform:uppercase;letter-spacing:.06em;text-align:left;padding:0 0 6px}
+td{padding:7px 0;border-top:1px solid #efece5}
+.chip{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; background: #f6f4ef;">
+  <nav class="rail" aria-label="Sections" style="flex: 0 0 76px; display: flex; flex-direction: column; gap: 2px; padding: 14px 8px; box-sizing: border-box; border-right: 1px solid #e4e1da; background: #f6f4ef;">
+    <div style="display: flex; align-items: center; justify-content: center; height: 36px; margin-bottom: 10px;">
+      <svg width="28" height="28" viewBox="0 0 28 28" role="img" aria-label="FinancialAuthority"><rect x="2" y="2" width="24" height="24" rx="7" fill="#141518"></rect><path d="M8 18 L12 11 L16 15 L20 9" fill="none" stroke="#1baf7a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+    </div>
+    <a href="#today"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="7"></circle><path d="M10 6v4l3 2"></path></svg>Today</a>
+    <a href="#windows" class="on"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="4" height="12" rx="1"></rect><rect x="8" y="4" width="4" height="12" rx="1"></rect><rect x="13" y="4" width="4" height="12" rx="1"></rect></svg>Windows</a>
+    <a href="#bills"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="3" width="12" height="14" rx="2"></rect><path d="M7 8h6M7 12h4"></path></svg>Bills</a>
+    <a href="#debts"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 16l4-8 4 5 3-7 3 10"></path></svg>Debts</a>
+    <a href="#paystubs"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="2"></rect><circle cx="10" cy="10" r="2.2"></circle></svg>Paystubs</a>
+    <a href="#mail"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="2"></rect><path d="M3 7l7 5 7-5"></path></svg>Mail</a>
+    <a href="#chat"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 5h12v8H9l-4 3v-3H4z"></path></svg>Chat</a>
+    <a href="#settings" style="margin-top: auto;"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="2.5"></circle><path d="M10 2v3M10 15v3M2 10h3M15 10h3M4.3 4.3l2.1 2.1M13.6 13.6l2.1 2.1M4.3 15.7l2.1-2.1M13.6 6.4l2.1-2.1"></path></svg>Settings</a>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px; padding: 14px 24px 24px; box-sizing: border-box;">
+    <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-height: 40px;">
+      <div style="font-size: 13px; color: #4e5058; font-weight: 600;">Wednesday, October 14</div>
+      <div style="display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; padding: 6px 12px; border-radius: 999px; background: #e3eefb; color: #184f95;"><span class="sw" style="background: #2a78d6; margin: 0;"></span>Payday in 2 days · Fri Oct 16</div>
+      <div style="flex-grow: 1;"></div>
+      <h1 style="margin: 0; font-size: 16px; font-weight: 800;">Each paycheck is a window. Fill it, and what is left is yours.</h1>
+    </header>
+
+    <section style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px;">
+      <div class="card" style="padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; border: 2px solid #141518;">
+        <div style="display: flex; justify-content: space-between; align-items: baseline;"><strong>Fri Oct 16 to Thu Oct 29</strong><span style="font-size: 11px; font-weight: 800; color: #184f95; background: #e3eefb; padding: 2px 8px; border-radius: 999px;">next</span></div>
+        <div style="font-size: 22px; font-weight: 800; letter-spacing: -0.01em;" class="num">+$2,240</div>
+        <div class="win">
+          <div class="blk" style="height: 60px; background: #1baf7a; color: #ffffff;">Safe to spend $362</div>
+          <div class="blk" style="height: 33px; background: #c3c2b7; color: #141518;">Buffer $200</div>
+          <div class="blk" style="height: 134px; background: #ffffff; border: 2px solid #eb6834; color: #141518;">Set aside for Nov 1 to 5 · $811</div>
+          <div class="blk" style="height: 68px; background: #eb6834;">Car loan $412 · Oct 28</div>
+          <div class="blk" style="height: 7px; background: #eb6834;"></div>
+          <div class="blk" style="height: 8px; background: #eb6834;"></div>
+          <div class="blk" style="height: 14px; background: #eb6834;"></div>
+          <div class="blk" style="height: 16px; background: #eb6834;">Phone $96</div>
+          <div class="blk" style="height: 10px; background: #eb6834;"></div>
+          <div class="blk" style="height: 24px; background: #eb6834;">Electricity $142</div>
+          <div class="blk" style="height: 8px; background: #eb6834;"></div>
+          <div class="blk" style="height: 38px; background: #4a3aa7;">Advances repay $231</div>
+        </div>
+        <div style="font-size: 12px; color: #4e5058;">8 bills · 2 advances · 4 set-asides</div>
+      </div>
+
+      <div class="card" style="padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;">
+        <div><strong>Fri Oct 30 to Thu Nov 12</strong></div>
+        <div style="font-size: 22px; font-weight: 800; letter-spacing: -0.01em;" class="num">+$2,240</div>
+        <div class="win">
+          <div class="blk" style="height: 84px; background: #1baf7a;">Safe to spend $470</div>
+          <div class="blk" style="height: 33px; background: #c3c2b7; color: #141518;">Buffer $200</div>
+          <div class="blk" style="height: 118px; background: #ffffff; border: 2px solid #eb6834; color: #141518;">Set aside · $709</div>
+          <div class="blk" style="height: 108px; background: #eb6834;">Rent $1,295 from set-aside, + 7 bills</div>
+          <div class="blk" style="height: 77px; background: #eb6834;"></div>
+        </div>
+        <div style="font-size: 12px; color: #4e5058;">No advances. Rent paid from what Oct 16 set aside.</div>
+      </div>
+
+      <div class="card" style="padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;">
+        <div><strong>Fri Nov 13 to Thu Nov 26</strong></div>
+        <div style="font-size: 22px; font-weight: 800; letter-spacing: -0.01em;" class="num">+$2,240</div>
+        <div class="win">
+          <div class="blk" style="height: 96px; background: #1baf7a;">Safe to spend $540</div>
+          <div class="blk" style="height: 33px; background: #c3c2b7; color: #141518;">Buffer $200</div>
+          <div class="blk" style="height: 130px; background: #ffffff; border: 2px solid #eb6834; color: #141518;">Set aside · $781</div>
+          <div class="blk" style="height: 161px; background: #eb6834;">9 bills $898</div>
+        </div>
+        <div style="font-size: 12px; color: #4e5058;">Last installment of the couch plan on Nov 21.</div>
+      </div>
+
+      <div class="card" style="padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;">
+        <div><strong>Fri Nov 27 to Thu Dec 10</strong></div>
+        <div style="font-size: 22px; font-weight: 800; letter-spacing: -0.01em;" class="num">+$2,240</div>
+        <div class="win">
+          <div class="blk" style="height: 110px; background: #1baf7a;">Safe to spend $602</div>
+          <div class="blk" style="height: 33px; background: #c3c2b7; color: #141518;">Buffer $200</div>
+          <div class="blk" style="height: 122px; background: #ffffff; border: 2px solid #eb6834; color: #141518;">Set aside · $733</div>
+          <div class="blk" style="height: 155px; background: #eb6834;">8 bills $705</div>
+        </div>
+        <div style="font-size: 12px; color: #4e5058;">Holiday spending goes here, not in October.</div>
+      </div>
+    </section>
+
+    <section class="card" style="padding: 14px 20px;">
+      <div style="display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px;">
+        <h2 style="margin: 0; font-size: 15px; font-weight: 800;">Inside the next window, in order</h2>
+        <span style="font-size: 12px; color: #85878f;">tap a row to see where it came from</span>
+      </div>
+      <div style="overflow-x: auto;">
+      <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+        <thead><tr><th class="th">When</th><th class="th">What</th><th class="th">Paid from</th><th class="th">Known from</th><th class="th" style="text-align: right;">Amount</th><th class="th" style="text-align: right;">Status</th></tr></thead>
+        <tbody>
+          <tr><td>Fri Oct 16</td><td><span class="sw" style="background: #4a3aa7;"></span>Two advances repay</td><td>Checking</td><td>Transactions, confirmed</td><td class="num" style="text-align: right;">$231</td><td style="text-align: right;"><span class="chip" style="background: #ece9e1; color: #4e5058;">automatic</span></td></tr>
+          <tr><td>Mon Oct 19</td><td><span class="sw" style="background: #eb6834;"></span>Music</td><td>Card</td><td>Recurring series</td><td class="num" style="text-align: right;">$11</td><td style="text-align: right;"><span class="chip" style="background: #ece9e1; color: #4e5058;">autopay</span></td></tr>
+          <tr><td>Tue Oct 20</td><td><span class="sw" style="background: #eb6834;"></span>Electricity</td><td>Checking</td><td>Mail, Oct 9</td><td class="num" style="text-align: right;">$142</td><td style="text-align: right;"><span class="chip" style="background: #fdebd3; color: #7a4a00;">pay by Oct 20</span></td></tr>
+          <tr><td>Wed Oct 21</td><td><span class="sw" style="background: #eb6834;"></span>Couch plan, 3 of 4</td><td>Checking</td><td>Mail, schedule</td><td class="num" style="text-align: right;">$62</td><td style="text-align: right;"><span class="chip" style="background: #ece9e1; color: #4e5058;">autopay</span></td></tr>
+          <tr><td>Thu Oct 22</td><td><span class="sw" style="background: #eb6834;"></span>Phone</td><td>Checking</td><td>Recurring series</td><td class="num" style="text-align: right;">$96</td><td style="text-align: right;"><span class="chip" style="background: #ece9e1; color: #4e5058;">autopay</span></td></tr>
+          <tr><td>Sat Oct 24</td><td><span class="sw" style="background: #eb6834;"></span>Internet</td><td>Checking</td><td>Mail, Oct 9</td><td class="num" style="text-align: right;">$85</td><td style="text-align: right;"><span class="chip" style="background: #fdebd3; color: #7a4a00;">pay by Oct 24</span></td></tr>
+          <tr><td>Wed Oct 28</td><td><span class="sw" style="background: #eb6834;"></span>Car loan</td><td>Checking</td><td>Statement</td><td class="num" style="text-align: right;">$412</td><td style="text-align: right;"><span class="chip" style="background: #fdebd3; color: #7a4a00;">pay by Oct 28</span></td></tr>
+        </tbody>
+      </table>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

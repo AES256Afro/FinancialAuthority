@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Runway, on the phone</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f6f4ef;color:#141518;font-family:Manrope,system-ui,sans-serif;font-size:15px;line-height:1.4}
+a{color:#1c5cab}a:hover{color:#104281}
+.card{background:#ffffff;border:1px solid #e4e1da;border-radius:16px}
+.num{font-variant-numeric:tabular-nums}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:6px}
+.tabs{position:absolute;left:0;right:0;bottom:0;height:78px;background:#ffffff;border-top:1px solid #e4e1da;display:flex;justify-content:space-around;align-items:flex-start;padding-top:8px}
+.tabs a{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;font-weight:700;color:#85878f;text-decoration:none;min-width:56px;min-height:44px}
+.tabs a.on{color:#141518}
+.day{width:20px;height:20px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800}
+.row{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid #efece5;font-size:14px}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; background: #f6f4ef; box-sizing: border-box;">
+  <div style="padding: 18px 18px 90px; display: flex; flex-direction: column; gap: 14px; height: 100%; box-sizing: border-box; overflow: hidden;">
+    <header style="display: flex; align-items: center; justify-content: space-between;">
+      <div style="font-size: 13px; color: #4e5058; font-weight: 700;">Wed, Oct 14</div>
+      <div style="font-size: 12px; color: #85878f; font-weight: 700;">window: Oct 16 to 29</div>
+    </header>
+
+    <section class="card" style="padding: 20px 18px 16px; display: flex; flex-direction: column; align-items: center; gap: 10px;">
+      <svg viewBox="0 0 220 220" width="220" height="220" role="img" aria-label="Daily allowance ring: twenty six dollars a day, fourteen days in the window, two until payday">
+        <circle cx="110" cy="110" r="92" fill="none" stroke="#d8f3e8" stroke-width="16"></circle>
+        <circle cx="110" cy="110" r="92" fill="none" stroke="#1baf7a" stroke-width="16" stroke-linecap="round" stroke-dasharray="578" stroke-dashoffset="496" transform="rotate(-90 110 110)"></circle>
+        <text x="110" y="100" text-anchor="middle" font-family="Manrope, system-ui, sans-serif" font-size="46" font-weight="800" fill="#141518" letter-spacing="-1">$26</text>
+        <text x="110" y="124" text-anchor="middle" font-family="Manrope, system-ui, sans-serif" font-size="14" font-weight="700" fill="#4e5058">a day until Oct 29</text>
+        <text x="110" y="146" text-anchor="middle" font-family="Manrope, system-ui, sans-serif" font-size="12" font-weight="700" fill="#85878f">$362 safe · 14 days</text>
+      </svg>
+      <div style="display: flex; gap: 5px; flex-wrap: wrap; justify-content: center;">
+        <div class="day" style="background: #141518; color: #ffffff;">14</div>
+        <div class="day" style="background: #ece9e1; color: #4e5058;">15</div>
+        <div class="day" style="background: #2a78d6; color: #ffffff;">16</div>
+        <div class="day" style="background: #d8f3e8; color: #0b5c3f;">17</div><div class="day" style="background: #d8f3e8; color: #0b5c3f;">18</div><div class="day" style="background: #d8f3e8; color: #0b5c3f;">19</div><div class="day" style="background: #d8f3e8; color: #0b5c3f;">20</div><div class="day" style="background: #d8f3e8; color: #0b5c3f;">21</div><div class="day" style="background: #d8f3e8; color: #0b5c3f;">22</div><div class="day" style="background: #d8f3e8; color: #0b5c3f;">23</div><div class="day" style="background: #d8f3e8; color: #0b5c3f;">24</div><div class="day" style="background: #d8f3e8; color: #0b5c3f;">25</div><div class="day" style="background: #d8f3e8; color: #0b5c3f;">26</div><div class="day" style="background: #d8f3e8; color: #0b5c3f;">27</div><div class="day" style="background: #d8f3e8; color: #0b5c3f;">28</div><div class="day" style="background: #d8f3e8; color: #0b5c3f;">29</div>
+        <div class="day" style="background: #2a78d6; color: #ffffff;">30</div>
+      </div>
+      <div style="font-size: 12px; color: #4e5058; text-align: center;">Before payday, hold: $312 in the bank, $57 clears tomorrow, $200 stays as buffer.</div>
+    </section>
+
+    <section class="card" style="padding: 4px 16px 6px;">
+      <div class="row" style="border-top: 0;"><strong style="flex-grow: 1;">Last window</strong><span style="color: #4e5058;">$31 a day · $62 left over</span></div>
+      <div class="row"><strong style="flex-grow: 1;">Spent today</strong><span class="num" style="color: #4e5058;">$0</span></div>
+      <div class="row"><strong style="flex-grow: 1;">If you skip the second music service</strong><span class="num" style="color: #0b5c3f; font-weight: 800;">+$1 a day</span></div>
+    </section>
+
+    <section class="card" style="padding: 12px 16px; display: flex; flex-direction: column; gap: 4px;">
+      <strong style="font-size: 14px;">Next three stations</strong>
+      <div class="row" style="border-top: 0;"><span class="sw" style="background: #eb6834;"></span><span style="flex-grow: 1;">Streaming + tolls</span><span style="color: #4e5058;">Thu</span><strong class="num">$57</strong></div>
+      <div class="row"><span class="sw" style="background: #2a78d6;"></span><span style="flex-grow: 1;">Payday</span><span style="color: #4e5058;">Fri</span><strong class="num">+$2,240</strong></div>
+      <div class="row"><span class="sw" style="background: #4a3aa7;"></span><span style="flex-grow: 1;">Advances repay</span><span style="color: #4e5058;">Fri</span><strong class="num">−$231</strong></div>
+    </section>
+  </div>
+  <nav class="tabs" aria-label="Tabs">
+    <a href="#today" class="on"><svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="7"></circle><path d="M10 6v4l3 2"></path></svg>Today</a>
+    <a href="#river"><svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2 14c3 0 3-4 6-4s3 4 6 4 3-4 4-4"></path><path d="M2 8c3 0 3-3 6-3s3 3 6 3 3-3 4-3"></path></svg>River</a>
+    <a href="#bills"><svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="3" width="12" height="14" rx="2"></rect><path d="M7 8h6M7 12h4"></path></svg>Bills</a>
+    <a href="#mail"><svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="2"></rect><path d="M3 7l7 5 7-5"></path></svg>Mail</a>
+    <a href="#chat"><svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 5h12v8H9l-4 3v-3H4z"></path></svg>Chat</a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

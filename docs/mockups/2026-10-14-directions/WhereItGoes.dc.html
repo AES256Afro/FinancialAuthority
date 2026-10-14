@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Where it goes: home</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f6f4ef;color:#141518;font-family:Manrope,system-ui,sans-serif;font-size:14px;line-height:1.4}
+a{color:#1c5cab}a:hover{color:#104281}
+.rail a{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;border-radius:10px;color:#4e5058;text-decoration:none;font-size:10px;font-weight:600;letter-spacing:.02em}
+.rail a:hover{background:#ece9e1;color:#141518}
+.rail a.on{background:#141518;color:#ffffff}
+.card{background:#ffffff;border:1px solid #e4e1da;border-radius:14px}
+.num{font-variant-numeric:tabular-nums}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:6px}
+.seg{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-top:1px solid #efece5;font-size:13px}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; background: #f6f4ef;">
+  <nav class="rail" aria-label="Sections" style="flex: 0 0 76px; display: flex; flex-direction: column; gap: 2px; padding: 14px 8px; box-sizing: border-box; border-right: 1px solid #e4e1da; background: #f6f4ef;">
+    <div style="display: flex; align-items: center; justify-content: center; height: 36px; margin-bottom: 10px;">
+      <svg width="28" height="28" viewBox="0 0 28 28" role="img" aria-label="FinancialAuthority"><rect x="2" y="2" width="24" height="24" rx="7" fill="#141518"></rect><path d="M8 18 L12 11 L16 15 L20 9" fill="none" stroke="#1baf7a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+    </div>
+    <a href="#today"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="7"></circle><path d="M10 6v4l3 2"></path></svg>Today</a>
+    <a href="#flow" class="on"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 10h5c3 0 3-4 6-4h3M3 10h5c3 0 3 4 6 4h3"></path></svg>Flow</a>
+    <a href="#bills"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="3" width="12" height="14" rx="2"></rect><path d="M7 8h6M7 12h4"></path></svg>Bills</a>
+    <a href="#debts"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 16l4-8 4 5 3-7 3 10"></path></svg>Debts</a>
+    <a href="#paystubs"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="2"></rect><circle cx="10" cy="10" r="2.2"></circle></svg>Paystubs</a>
+    <a href="#mail"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="2"></rect><path d="M3 7l7 5 7-5"></path></svg>Mail</a>
+    <a href="#chat"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 5h12v8H9l-4 3v-3H4z"></path></svg>Chat</a>
+    <a href="#settings" style="margin-top: auto;"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="2.5"></circle><path d="M10 2v3M10 15v3M2 10h3M15 10h3M4.3 4.3l2.1 2.1M13.6 13.6l2.1 2.1M4.3 15.7l2.1-2.1M13.6 6.4l2.1-2.1"></path></svg>Settings</a>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px; padding: 14px 24px 24px; box-sizing: border-box;">
+    <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-height: 40px;">
+      <h1 style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.01em;">Where Friday's paycheck goes</h1>
+      <div style="display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; padding: 6px 12px; border-radius: 999px; background: #e3eefb; color: #184f95;"><span class="sw" style="background: #2a78d6; margin: 0;"></span>Fri Oct 16 · +$2,240</div>
+      <div style="flex-grow: 1;"></div>
+      <div style="font-size: 12px; color: #85878f;">Read left to right: money enters, is spoken for, and what reaches the right edge is yours.</div>
+    </header>
+
+    <section class="card" style="padding: 16px 20px; display: flex; flex-wrap: wrap; gap: 20px;">
+      <svg viewBox="0 0 1000 500" width="100%" style="display: block; height: auto; max-width: 860px; flex: 1 1 600px;" role="img" aria-label="Flow of the paycheck into advances, bills, set-asides, buffer and safe to spend">
+        <rect x="40" y="20" width="150" height="424" rx="6" fill="#2a78d6"></rect>
+        <text x="115" y="226" text-anchor="middle" fill="#ffffff" font-size="15" font-weight="800" font-family="Manrope, system-ui, sans-serif">Paycheck</text>
+        <text x="115" y="246" text-anchor="middle" fill="#ffffff" font-size="13" font-weight="700" font-family="Manrope, system-ui, sans-serif">$2,240</text>
+
+        <path d="M190,20 C300,20 300,20 420,20 L420,59 C300,59 300,59 190,59 Z" fill="#4a3aa7" fill-opacity="0.32"></path>
+        <path d="M190,59 C300,59 300,67 420,67 L420,218 C300,218 300,210 190,210 Z" fill="#eb6834" fill-opacity="0.30"></path>
+        <path d="M190,210 C300,210 300,226 420,226 L420,364 C300,364 300,348 190,348 Z" fill="#eb6834" fill-opacity="0.14"></path>
+        <path d="M190,348 C300,348 300,372 420,372 L420,406 C300,406 300,382 190,382 Z" fill="#c3c2b7" fill-opacity="0.6"></path>
+        <path d="M190,382 C300,382 300,414 420,414 L420,476 C300,476 300,444 190,444 Z" fill="#1baf7a" fill-opacity="0.32"></path>
+
+        <rect x="420" y="20" width="150" height="39" rx="5" fill="#4a3aa7"></rect>
+        <text x="495" y="44" text-anchor="middle" fill="#ffffff" font-size="12" font-weight="800" font-family="Manrope, system-ui, sans-serif">Advances $231</text>
+        <rect x="420" y="67" width="150" height="151" rx="5" fill="#eb6834"></rect>
+        <text x="495" y="138" text-anchor="middle" fill="#ffffff" font-size="13" font-weight="800" font-family="Manrope, system-ui, sans-serif">Bills $891</text>
+        <text x="495" y="156" text-anchor="middle" fill="#ffffff" font-size="11" font-weight="700" font-family="Manrope, system-ui, sans-serif">Oct 16 to 29</text>
+        <rect x="420" y="226" width="150" height="138" rx="5" fill="#ffffff" stroke="#eb6834" stroke-width="2"></rect>
+        <text x="495" y="290" text-anchor="middle" fill="#141518" font-size="13" font-weight="800" font-family="Manrope, system-ui, sans-serif">Set aside $811</text>
+        <text x="495" y="308" text-anchor="middle" fill="#4e5058" font-size="11" font-weight="700" font-family="Manrope, system-ui, sans-serif">for Nov 1 to 5</text>
+        <rect x="420" y="372" width="150" height="34" rx="5" fill="#c3c2b7"></rect>
+        <text x="495" y="394" text-anchor="middle" fill="#141518" font-size="12" font-weight="800" font-family="Manrope, system-ui, sans-serif">Buffer $200</text>
+        <rect x="420" y="414" width="150" height="62" rx="5" fill="#1baf7a"></rect>
+        <text x="495" y="441" text-anchor="middle" fill="#ffffff" font-size="13" font-weight="800" font-family="Manrope, system-ui, sans-serif">Safe to spend</text>
+        <text x="495" y="460" text-anchor="middle" fill="#ffffff" font-size="15" font-weight="800" font-family="Manrope, system-ui, sans-serif">$362</text>
+
+        <g fill="#eb6834" fill-opacity="0.22">
+          <path d="M570,67 C680,67 680,70 790,70 L790,140 C680,140 680,137 570,137 Z"></path>
+          <path d="M570,137 C680,137 680,146 790,146 L790,170 C680,170 680,161 570,161 Z"></path>
+          <path d="M570,161 C680,161 680,176 790,176 L790,192 C680,192 680,177 570,177 Z"></path>
+          <path d="M570,177 C680,177 680,198 790,198 L790,212 C680,212 680,191 570,191 Z"></path>
+          <path d="M570,191 C680,191 680,218 790,218 L790,229 C680,229 680,202 570,202 Z"></path>
+          <path d="M570,202 C680,202 680,235 790,235 L790,243 C680,243 680,210 570,210 Z"></path>
+          <path d="M570,210 C680,210 680,249 790,249 L790,255 C680,255 680,216 570,216 Z"></path>
+          <path d="M570,216 C680,216 680,261 790,261 L790,267 C680,267 680,218 570,218 Z"></path>
+        </g>
+        <g fill="#eb6834" fill-opacity="0.10">
+          <path d="M570,226 C680,226 680,286 790,286 L790,396 C680,396 680,336 570,336 Z"></path>
+          <path d="M570,336 C680,336 680,402 790,402 L790,414 C680,414 680,348 570,348 Z"></path>
+          <path d="M570,348 C680,348 680,420 790,420 L790,431 C680,431 680,359 570,359 Z"></path>
+          <path d="M570,359 C680,359 680,437 790,437 L790,443 C680,443 680,364 570,364 Z"></path>
+        </g>
+        <g fill="#eb6834">
+          <rect x="790" y="70" width="14" height="70" rx="3"></rect>
+          <rect x="790" y="146" width="14" height="24" rx="3"></rect>
+          <rect x="790" y="176" width="14" height="16" rx="3"></rect>
+          <rect x="790" y="198" width="14" height="14" rx="3"></rect>
+          <rect x="790" y="218" width="14" height="11" rx="3"></rect>
+          <rect x="790" y="235" width="14" height="8" rx="3"></rect>
+          <rect x="790" y="249" width="14" height="6" rx="3"></rect>
+          <rect x="790" y="261" width="14" height="6" rx="3"></rect>
+        </g>
+        <g fill="#ffffff" stroke="#eb6834" stroke-width="2">
+          <rect x="790" y="286" width="14" height="110" rx="3"></rect>
+          <rect x="790" y="402" width="14" height="12" rx="3"></rect>
+          <rect x="790" y="420" width="14" height="11" rx="3"></rect>
+          <rect x="790" y="437" width="14" height="6" rx="3"></rect>
+        </g>
+        <g font-family="Manrope, system-ui, sans-serif" font-size="12" fill="#141518" font-weight="700">
+          <text x="814" y="109">Car loan · $412 · Oct 28</text>
+          <text x="814" y="162">Electricity · $142 · Oct 20</text>
+          <text x="814" y="188">Phone · $96 · Oct 22</text>
+          <text x="814" y="209">Internet · $85 · Oct 24</text>
+          <text x="814" y="228">Couch plan · $62 · Oct 21</text>
+          <text x="814" y="243">Card minimum · $45 · Oct 25</text>
+          <text x="814" y="257">Laptop plan · $38 · Oct 27</text>
+          <text x="814" y="270">Music · $11 · Oct 19</text>
+          <text x="814" y="345">Rent, half · $648 · Nov 1</text>
+          <text x="814" y="412">Insurance, half · $69 · Nov 3</text>
+          <text x="814" y="430">Water and trash · $64 · Nov 2</text>
+          <text x="814" y="445">Gym · $30 · Nov 5</text>
+        </g>
+      </svg>
+      <div style="flex: 1 1 220px; display: flex; flex-direction: column; gap: 10px; min-width: 220px;">
+        <div style="font-size: 13px; color: #4e5058; font-weight: 600;">In the order it leaves</div>
+        <div class="seg" style="border-top: 0;"><span><span class="sw" style="background: #4a3aa7;"></span>Advances repay on payday</span><strong class="num">$231</strong></div>
+        <div class="seg"><span><span class="sw" style="background: #eb6834;"></span>Bills in the window</span><strong class="num">$891</strong></div>
+        <div class="seg"><span><span class="sw" style="background: #ffffff; border: 1.5px solid #eb6834; box-sizing: border-box;"></span>Set aside for next window</span><strong class="num">$811</strong></div>
+        <div class="seg"><span><span class="sw" style="background: #c3c2b7;"></span>Buffer kept</span><strong class="num">$200</strong></div>
+        <div class="seg" style="font-size: 15px;"><span><span class="sw" style="background: #1baf7a;"></span>Yours</span><strong class="num">$362</strong></div>
+        <div style="margin-top: 8px; padding: 12px 14px; border-radius: 10px; background: #f3f1ec; font-size: 12px; color: #4e5058;">The couch plan ends Nov 21 and the laptop plan Dec 11. From December, $100 more reaches the right edge each paycheck.</div>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

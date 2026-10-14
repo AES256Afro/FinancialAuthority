@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Billing-date mover</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f6f4ef;color:#141518;font-family:Manrope,system-ui,sans-serif;font-size:14px;line-height:1.4}
+a{color:#1c5cab}a:hover{color:#104281}
+.rail a{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;border-radius:10px;color:#4e5058;text-decoration:none;font-size:10px;font-weight:600;letter-spacing:.02em}
+.rail a:hover{background:#ece9e1;color:#141518}
+.rail a.on{background:#141518;color:#ffffff}
+.card{background:#ffffff;border:1px solid #e4e1da;border-radius:14px}
+.num{font-variant-numeric:tabular-nums}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:6px}
+.lab{font-size:11px;font-weight:800;color:#85878f;text-transform:uppercase;letter-spacing:.06em}
+.dayb{font:inherit;font-weight:800;font-size:13px;width:44px;height:44px;border-radius:10px;border:1px solid #d9d6ce;cursor:pointer}
+.btn{font:inherit;font-weight:800;font-size:13px;border-radius:10px;padding:10px 14px;border:1px solid #d9d6ce;background:#ffffff;color:#141518;cursor:pointer;min-height:44px}
+.btn.dark{background:#141518;color:#ffffff;border-color:#141518}
+.mrow{display:flex;align-items:center;gap:8px;height:22px}
+.mrow .n{width:30px;font-size:11px;font-weight:800;color:#4e5058}
+.mrow .l{font-size:11px;color:#4e5058;white-space:nowrap}
+.q{background:#f3f1ec;border-radius:10px;padding:10px 12px;font-size:12px;color:#4e5058;line-height:1.5}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; background: #f6f4ef;">
+  <nav class="rail" aria-label="Sections" style="flex: 0 0 76px; display: flex; flex-direction: column; gap: 2px; padding: 14px 8px; box-sizing: border-box; border-right: 1px solid #e4e1da; background: #f6f4ef;">
+    <div style="display: flex; align-items: center; justify-content: center; height: 36px; margin-bottom: 10px;">
+      <svg width="28" height="28" viewBox="0 0 28 28" role="img" aria-label="FinancialAuthority"><rect x="2" y="2" width="24" height="24" rx="7" fill="#141518"></rect><path d="M8 18 L12 11 L16 15 L20 9" fill="none" stroke="#1baf7a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+    </div>
+    <a href="#today"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="7"></circle><path d="M10 6v4l3 2"></path></svg>Today</a>
+    <a href="#river"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2 14c3 0 3-4 6-4s3 4 6 4 3-4 4-4"></path><path d="M2 8c3 0 3-3 6-3s3 3 6 3 3-3 4-3"></path></svg>River</a>
+    <a href="#bills" class="on"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="3" width="12" height="14" rx="2"></rect><path d="M7 8h6M7 12h4"></path></svg>Bills</a>
+    <a href="#debts"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 16l4-8 4 5 3-7 3 10"></path></svg>Debts</a>
+    <a href="#paystubs"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="2"></rect><circle cx="10" cy="10" r="2.2"></circle></svg>Paystubs</a>
+    <a href="#mail"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="2"></rect><path d="M3 7l7 5 7-5"></path></svg>Mail</a>
+    <a href="#chat"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 5h12v8H9l-4 3v-3H4z"></path></svg>Chat</a>
+    <a href="#settings" style="margin-top: auto;"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="2.5"></circle><path d="M10 2v3M10 15v3M2 10h3M15 10h3M4.3 4.3l2.1 2.1M13.6 13.6l2.1 2.1M4.3 15.7l2.1-2.1M13.6 6.4l2.1-2.1"></path></svg>Settings</a>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px; padding: 14px 24px 24px; box-sizing: border-box;">
+    <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-height: 40px;">
+      <h1 style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.01em;">Move a due date</h1>
+      <div style="font-size: 13px; color: #4e5058;">Car loan, $412, due on the 28th. Pick a day; the six-month strip shows how far from a payday each payment would land.</div>
+    </header>
+
+    <section style="display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; align-items: start;">
+      <div style="display: flex; flex-direction: column; gap: 16px;">
+        <div class="card" style="padding: 16px 18px; display: flex; flex-direction: column; gap: 10px;">
+          <div class="lab">Due day of the month</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+            <sc-for list="{{days}}" as="d" hint-placeholder-count="28">
+              <button class="dayb" type="button" style="{{d.style}}" onClick="{{d.pick}}">{{d.n}}</button>
+            </sc-for>
+          </div>
+          <div style="font-size: 12px; color: #85878f;">Paydays are every other Friday. Days the engine likes are outlined; the one it suggests is filled.</div>
+        </div>
+
+        <div class="card" style="padding: 16px 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 18px;">
+          <div>
+            <div class="lab" style="margin-bottom: 8px;">Now · due on the 28th</div>
+            <sc-for list="{{before}}" as="m" hint-placeholder-count="6">
+              <div class="mrow"><span class="n">{{m.name}}</span><div style="height: 10px; border-radius: 0 4px 4px 0; background: #eb6834; width: {{m.w}}px;"></div><span class="l">{{m.label}}</span></div>
+            </sc-for>
+            <div style="margin-top: 8px; font-size: 13px;"><strong>{{beforeSummary}}</strong></div>
+          </div>
+          <div>
+            <div class="lab" style="margin-bottom: 8px;">{{afterTitle}}</div>
+            <sc-for list="{{after}}" as="m" hint-placeholder-count="6">
+              <div class="mrow"><span class="n">{{m.name}}</span><div style="height: 10px; border-radius: 0 4px 4px 0; background: #1baf7a; width: {{m.w}}px;"></div><span class="l">{{m.label}}</span></div>
+            </sc-for>
+            <div style="margin-top: 8px; font-size: 13px;"><strong>{{afterSummary}}</strong></div>
+          </div>
+          <div style="grid-column: 1 / -1; font-size: 12px; color: #4e5058; border-top: 1px solid #efece5; padding-top: 8px;">Bar length is the number of days the $412 has to sit untouched between the payday that funds it and the due date. A warning mark means the due date falls in the three days before the next payday, where a late deposit becomes a late payment.</div>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 16px;">
+        <div class="card" style="padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; border: 2px solid {{verdictBorder}}; background: {{verdictBg}};">
+          <div style="font-size: 22px; font-weight: 800; letter-spacing: -0.01em;">{{verdictTitle}}</div>
+          <div style="font-size: 13px;">{{verdictBody}}</div>
+        </div>
+        <div class="card" style="padding: 16px 18px; display: flex; flex-direction: column; gap: 10px;">
+          <div class="lab">The request, drafted</div>
+          <div class="q"><strong style="color: #141518;">To: the credit union's loan servicing address · Subject: Request to move my auto loan due date to the {{dayOrdinal}}</strong><br>Hello, I would like to move the monthly due date on my auto loan from the 28th to the {{dayOrdinal}}, starting with the November payment. Please let me know if anything is needed from me. Thank you.</div>
+          <div style="font-size: 12px; color: #4e5058;">Most lenders allow one due-date change a year and ask that the current cycle be paid first. The app will remind you to pay the October 28 payment before the change takes effect.</div>
+          <div style="display: flex; gap: 8px;"><button class="btn dark" type="button">Queue for approval</button><button class="btn" type="button">Edit draft</button></div>
+        </div>
+        <div class="card" style="padding: 14px 18px; display: flex; flex-direction: column; gap: 6px;">
+          <div class="lab">Other moves worth asking for</div>
+          <div style="display: flex; justify-content: space-between; font-size: 13px; padding: 6px 0; border-top: 1px solid #efece5;"><span>Internet · 24th to the 2nd</span><span style="color: #4e5058;">held 8 days → 0</span></div>
+          <div style="display: flex; justify-content: space-between; font-size: 13px; padding: 6px 0; border-top: 1px solid #efece5;"><span>Electricity · 20th to the 3rd</span><span style="color: #4e5058;">held 4 days → 1</span></div>
+          <div style="display: flex; justify-content: space-between; font-size: 13px; padding: 6px 0; border-top: 1px solid #efece5;"><span>Tolls · 15th to the 17th</span><span style="color: #4e5058;">stops the Oct 15 dip</span></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { day: 17 };
+  }
+  renderVals() {
+    const DAY = 86400000;
+    const payday0 = Date.UTC(2026, 9, 2);
+    const months = [[2026, 10, 'Nov'], [2026, 11, 'Dec'], [2027, 0, 'Jan'], [2027, 1, 'Feb'], [2027, 2, 'Mar'], [2027, 3, 'Apr']];
+    const stats = (day) => months.map(([y, m, name]) => {
+      const due = Date.UTC(y, m, Math.min(day, 28));
+      const k = Math.floor((due - payday0) / (14 * DAY));
+      const last = payday0 + k * 14 * DAY;
+      const held = Math.round((due - last) / DAY);
+      const gap = Math.round((last + 14 * DAY - due) / DAY);
+      const risk = gap <= 3;
+      return { name, held, risk, w: 8 + held * 14, label: (held === 0 ? 'on payday' : held + (held === 1 ? ' day' : ' days')) + (risk ? ' · ⚠ ' + gap + ' before next' : '') };
+    });
+    const sum = (arr) => ({ avg: Math.round(arr.reduce((a, b) => a + b.held, 0) / arr.length), risks: arr.filter((m) => m.risk).length });
+    const before = stats(28);
+    const after = stats(this.state.day);
+    const b = sum(before), a = sum(after);
+    const ordinal = (n) => n + ([ 'th', 'st', 'nd', 'rd' ][((n % 100) > 10 && (n % 100) < 14) ? 0 : (n % 10 < 4 ? n % 10 : 0)]);
+    const good = new Set([3, 4, 5, 16, 17, 18, 19]);
+    const days = [];
+    for (let n = 1; n <= 28; n++) {
+      const selected = n === this.state.day;
+      const style = selected ? 'background:#141518;color:#ffffff;border-color:#141518;' : (n === 17 ? 'background:#d8f3e8;color:#0b5c3f;border-color:#1baf7a;' : (good.has(n) ? 'background:#ffffff;color:#141518;border-color:#1baf7a;' : (n === 28 ? 'background:#fde3d8;color:#8a3410;border-color:#eb6834;' : 'background:#ffffff;color:#141518;border-color:#d9d6ce;')));
+      days.push({ n, style, pick: () => this.setState({ day: n }) });
+    }
+    let verdictTitle, verdictBody, verdictBg, verdictBorder;
+    if (this.state.day === 28) { verdictTitle = 'This is where it is now'; verdictBody = 'Held ' + b.avg + ' days on average, and in ' + b.risks + ' of the next 6 months it lands in the three days before a payday.'; verdictBg = '#fdebd3'; verdictBorder = '#f0b36b'; }
+    else if (a.risks === 0 && a.avg <= 3) { verdictTitle = 'Good move: the ' + ordinal(this.state.day); verdictBody = 'Held ' + a.avg + (a.avg === 1 ? ' day' : ' days') + ' on average instead of ' + b.avg + ', and never in the three days before a payday. The loan becomes the first thing paid after payday, not the last thing before the next one.'; verdictBg = '#d8f3e8'; verdictBorder = '#1baf7a'; }
+    else if (a.risks < b.risks || a.avg < b.avg) { verdictTitle = 'Better, not best: the ' + ordinal(this.state.day); verdictBody = 'Held ' + a.avg + ' days on average (was ' + b.avg + '); risky in ' + a.risks + ' of 6 months (was ' + b.risks + '). The 17th is the engine\'s pick.'; verdictBg = '#fdebd3'; verdictBorder = '#f0b36b'; }
+    else { verdictTitle = 'Worse than now: the ' + ordinal(this.state.day); verdictBody = 'Held ' + a.avg + ' days on average and risky in ' + a.risks + ' of 6 months. Try the 17th.'; verdictBg = '#f8dada'; verdictBorder = '#d03b3b'; }
+    return {
+      days, before, after,
+      beforeSummary: 'Average ' + b.avg + ' days held · ' + b.risks + ' risky months',
+      afterSummary: 'Average ' + a.avg + ' days held · ' + a.risks + ' risky months',
+      afterTitle: 'If due on the ' + ordinal(this.state.day),
+      dayOrdinal: ordinal(this.state.day),
+      verdictTitle, verdictBody, verdictBg, verdictBorder
+    };
+  }
+}
+</script>
+</body>
+</html>

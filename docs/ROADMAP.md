@@ -2,7 +2,7 @@
 
 *Written 2026-10-14, revised the same day. The thinking behind it is in [PLAN.md](PLAN.md); what the owner grants is in [ACCESS.md](ACCESS.md). Marks: ☐ planned, 🔄 in progress, ✅ done (version). Effort is for one developer working with coding agents. Each milestone is also a GitHub milestone on the repository.*
 
-Order matters more than dates. Real transactions are live by the end of M1. Claude can reach the data from the phone by the end of M3. Both mailboxes are in by the end of M4. The paycheck plan exists at the end of M5. The app runs itself at the end of M6. v1.0 ships at the end of M8, about sixteen weeks in.
+Order matters more than dates. Real transactions are live by the end of M1. Claude can reach the data from the phone by the end of M3. Both mailboxes are in by the end of M4. The paycheck plan exists at the end of M5. The app runs itself at the end of M6. All eight views and three looks are in by the end of M7. v1.0 ships at the end of M8, about eighteen weeks in. The feature inventory from the leading apps is in [FEATURES.md](FEATURES.md); each row there names its milestone below.
 
 ## M0 — Access and foundations (1 week)
 
@@ -18,15 +18,16 @@ Done when: CI publishes the image, it runs on BigBox, and the coding agent did t
 
 ## M1 — The ledger, live (2 weeks)
 
-- ☐ **M1.1 SimpleFIN connector.** Setup token pasted once on the Connectors page; daily and on-demand pulls of accounts, balances and transactions; de-duplication against exports; connector health on the page and in the self-check.
-- ☐ **M1.2 Export backfill.** Rocket Money CSV, ported from `MCPManagement/rocketmoney-mcp` (columns, de-duplication, newest-export-wins, the is-spending rule); generic CSV with column mapping; OFX and QFX. Files by upload or in `/imports`, which is watched.
+- ☐ **M1.1 Live bank connectors, free tiers.** Plaid (Trial plan: the owner's developer keys pasted once; the bank's own login opened inside the app; daily and on-demand pulls; webhooks when available), Teller (developer tier, the same shape), and Era Context (the app as an MCP client with OAuth, for the two logins its free tier allows). De-duplication across connectors and exports; connector health on the page and in the self-check. Capital One and the credit union first.
+- ☐ **M1.2 Rocket Money and exports.** The Rocket Money connector: the export email recognised and its link followed within its seven-day life, a button that opens Rocket Money's export page, drop-folder and upload; the loader ported from `MCPManagement/rocketmoney-mcp` (columns, de-duplication, newest-export-wins, the is-spending rule); Rocket Money's weekly upcoming-bills, income and balance mails read as cross-checks; the ledger exported in the same CSV shape. Generic CSV with column mapping; OFX and QFX.
 - ☐ **M1.3 Accounts and balances.** Accounts from every connector, balances live or entered, snapshots over time, `accounts.list`.
-- ☐ **M1.4 Normalisation.** Merchant cleanup, categories seeded from the export and re-mappable, flags for transfers, card payments, income and ignored rows.
+- ☐ **M1.4 Normalisation and rules.** Merchant cleanup, categories seeded from the export and re-mappable, flags for transfers, card payments, income and ignored rows; a rules engine that matches on merchant, amount, account or text and can categorise, rename, tag, split or hide; every correction the owner makes becomes a rule (merchant memory).
 - ☐ **M1.5 Recurring detection.** Port the cadence detection into `RecurringSeries` with amount tolerance and next expected date.
 - ☐ **M1.6 Paycheck detection.** Recurring income becomes `Income` after the owner confirms employer, cadence, expected net and next date.
 - ☐ **M1.7 Read tools.** `transactions.search`, `spending.summary`, `recurring.list`, `accounts.list`.
+- ☐ **M1.8 Alert mail as signals.** The bank's alert mail (purchase, deposit, overdraft, negative balance, declined, payment received, statement ready) and the budget app's alerts become events the same quarter-hour: an overdraft or a decline reaches the brief at once, a deposit alert confirms a paycheck before the next sync, a statement notice fetches the PDF for reconciliation. Needs the mail connector's first slice, pulled forward from M4.1.
 
-Done when: every bank and card the owner connected at the bridge syncs daily with no hand in it, three years of history are loaded from the export, and the recurring series and paychecks found match what the owner knows.
+Done when: Capital One and the credit union sync daily with no hand in it, an overdraft alert shows in the app within fifteen minutes of the mail, three years of history are loaded from the export, and the recurring series and paychecks found match what the owner knows.
 
 ## M2 — Obligations, payments, paystubs (2 weeks)
 
@@ -38,6 +39,7 @@ Done when: every bank and card the owner connected at the bridge syncs daily wit
 - ☐ **M2.6 Paystubs.** PDFs from `/imports/paystubs`, upload, or forwarded mail; a parser for the owner's payroll format with a model fallback and confirmation; gross, net, taxes, deductions, period, pay date; matched to the deposit; expected-versus-actual net with a discrepancy flag; `paystubs.list`, `paystubs.get`.
 - ☐ **M2.7 Subscriptions.** Price history, last charge, category, duplicate detection.
 - ☐ **M2.8 Calendar and snapshot.** Paydays, due dates and advance repayments on one grid, sixty days ahead; `finance.snapshot`, `bills.upcoming`, `debts.list`, `installments.list`, `advances.list`, `subscriptions.list`.
+- ☐ **M2.9 Accounts and net worth.** Every account with its balance, connector and freshness; net worth as assets minus debts, kept daily; investment balances read-only where a connector offers them; `networth.history`.
 
 Done when: every recurring charge in the fixture and in the real data is classified, last month's bills each show their payment, the owner's last three paystubs are parsed and matched to their deposits, and the calendar shows the next sixty days correctly.
 
@@ -49,6 +51,7 @@ Done when: every recurring charge in the fixture and in the real data is classif
 - ☐ **M3.4 Clients connected.** claude.ai custom connector on the web, the desktop and the phone; Claude Code with `claude mcp add`; Open WebUI on BigBox. Each documented with the exact steps.
 - ☐ **M3.5 Providers and chat.** Ollama (default), any OpenAI-compatible server, Anthropic; a settings page with a test button; built-in streaming chat with tools on and the rows it used.
 - ☐ **M3.6 Redaction and audit.** A redaction level per client and per provider; an audit log of every tool call, with a page.
+- ☐ **M3.7 Advisor and reviewer.** Two model roles in Settings › Models: the advisor (local by default) for chat and explanations; the reviewer (none by default; Claude by API recommended; any OpenAI-compatible model works) that reads the plan, rules, goals and recent alerts and returns notes with one-tap actions, on payday, after confirmed changes and on request, with the cost of each review shown. The citation test runs on both.
 
 Done when: Claude on the phone, away from home, answers "what is due before my next paycheck and is it funded?" correctly from live data, and the audit log shows it.
 
@@ -70,9 +73,9 @@ Done when: thirty days of both real mailboxes yield bills, statements, paystubs 
 - ☐ **M5.1 Cash-flow projection.** Daily balance per account for ninety days from confirmed bills, series, paychecks, advances, minimums and installments, with a what-if layer.
 - ☐ **M5.2 Paycheck plan.** Advances first, then obligations in the window, set-asides, minimums, buffer, goals, safe-to-spend, with every line's source; the "pay this now" list beside it.
 - ☐ **M5.3 Purchase check.** Yes, wait or no; the first thing it breaks; the first date it would pass; the BNPL variant.
-- ☐ **M5.4 The don't-buy list.** Buffer breaches, categories over target, duplicate subscriptions, price increases, too many plans or any active advance, a pay-in-full card carrying a balance.
+- ☐ **M5.4 The don't-buy list and watchlists.** Buffer breaches, categories over target, duplicate subscriptions, price increases, too many plans or any active advance, a pay-in-full card carrying a balance. Watchlists: a soft cap on any category, merchant or tag with a month-end projection; they warn and project, never block.
 - ☐ **M5.5 Billing-date optimiser.** The objective and search from the plan; a ranked change list with before-and-after minimum balances, per-biller instructions, and drafts queued for approval.
-- ☐ **M5.6 Rules and goals.** Buffer, pay-in-full, never-touch accounts, category targets, goal priorities; `notes.remember`.
+- ☐ **M5.6 Rules and goals.** Buffer, pay-in-full, never-touch accounts, category targets, goal priorities; `notes.remember`. Save-up goals (target, date, pace, funded from the aqua band, with on-track, ahead and at-risk states) and pay-down goals (which debt, how much extra, the payoff date it buys), both visible in the paycheck plan and the debt mountain.
 - ☐ **M5.7 Evaluation.** Golden outputs on the fixture; property tests (never below the buffer, totals reconcile, the optimiser never worsens the minimum balance); the citation test.
 - ☐ **M5.8 Tools.** `cashflow.forecast`, `paycheck.plan`, `purchase.check`, `billing_dates.suggest`, `notes.remember`.
 
@@ -81,22 +84,25 @@ Done when: on the fixture the plan matches its golden output, the optimiser find
 ## M6 — It runs itself (1.5 weeks)
 
 - ☐ **M6.1 Schedules.** Mail every fifteen minutes, bank daily and on demand, import watch, re-plan on payday and after confirmed changes, the brief at 07:00, the self-check hourly; all idempotent, all on the Jobs page.
-- ☐ **M6.2 The brief.** Due in three days and unfunded, past due, paystub discrepancies, new plans or advances, price increases, failed connectors, approvals waiting; `brief.today`.
+- ☐ **M6.2 The brief, the recap, the report.** Daily: due in three days and unfunded, past due, paystub discrepancies, new plans or advances, price increases, failed connectors, approvals waiting; `brief.today`. Monday: the week's recap, what was spent against the plan, what changed. Month end: the report, by category, merchant and tag, against last month and the same month last year, with the savings rate. All three readable by any model.
 - ☐ **M6.3 Push.** Delivery through ntfy or Gotify from BoxPilot's catalog, with an approve action for sends; the Today page on the phone.
 - ☐ **M6.4 Self-check.** Each connector's last success, stale-data warnings, the public address reachable, disk and database size; `jobs.status`.
 - ☐ **M6.5 Export reminder.** The aggregator's export email triggers a reminder; nothing is downloaded automatically.
 
 Done when: a week passes with no hand on the app and the brief is right every morning.
 
-## M7 — The web app, finished (2 weeks)
+## M7 — The web app: views, looks and the registers (3.5 weeks)
 
-- ☐ **M7.1 Today and This paycheck.** The brief, approvals, safe-to-spend, what is due, set-asides, the don't-buy list, one button to re-plan. Phone first.
-- ☐ **M7.2 The registers.** Calendar with the week's low point, Bills, Payments, Paystubs, Debts with payoff order and monthly interest, Subscriptions, Transactions, Mail.
-- ☐ **M7.3 Confirm, Connectors, Clients, Jobs, Audit, Settings.** Finished, not skeletons; send allowances and auto-confirm rules visible and revocable.
-- ☐ **M7.4 Chat.** Model switcher, "ask about this" from every page, the engine's table beside the model's prose.
-- ☐ **M7.5 Installable.** Web app manifest and icons, light and dark.
+- ☐ **M7.1 Today and the River.** The phone home (the brief, approvals, safe-to-spend, what is due) and the default desktop home, the River, drawn from the engine's results with hover detail and a table twin.
+- ☐ **M7.2 The registers.** Calendar with the week's low point, Bills, Payments, Paystubs (the anatomy bar and the six-paycheck strip), Debts (the mountain, the order, the bump), Subscriptions, Transactions, Accounts and net worth, Mail (the lens).
+- ☐ **M7.3 Confirm, Connectors, Clients, Jobs, Audit, Settings.** Finished, not skeletons; send allowances, auto-confirm rules, watchlists and goals visible and editable.
+- ☐ **M7.4 Chat.** The advisor beside the engine's table with citations, the reviewer's notes with their one-tap actions, "ask about this" from every page.
+- ☐ **M7.5 Installable.** Web app manifest, icons, a service worker for the shell, light and dark.
+- ☐ **M7.6 The other seven home views.** Paycheck windows, Month grid, Where it goes, Envelopes, Bill board, Transit map, Mission control, each a layout over the same four engine results, each with a thumbnail in Settings › Appearance, switchable per device.
+- ☐ **M7.7 Looks.** Light, dark and console as token sets; the chart palette of each validated in both modes; Settings › Appearance with a live preview; kept per device.
+- ☐ **M7.8 Reports.** Spending by category, merchant and tag over a chosen period, against the previous period and the same period last year; income, spending, net and savings rate; every chart with a table twin.
 
-Done when: everything the tools can answer is visible without a model, and the payday routine takes under two minutes on a phone.
+Done when: everything the tools can answer is visible without a model, every view renders the fixture correctly, switching views and looks takes one tap, and the payday routine takes under two minutes on a phone.
 
 ## M8 — Ship and harden to v1.0 (1.5 weeks)
 
@@ -118,6 +124,10 @@ Done when: `v1.0.0` is tagged, every item in the security checklist is ticked, a
 - ☐ **L5 BoxPilot agents.** A `finance.*` read tool for BoxPilot's agents. A BoxPilot change.
 - ☐ **L6 Era Context** as a second live source over MCP or REST.
 - ☐ **L7 Automation.** Reminders before due dates; billing-date drafts created on approval; a monthly review the model writes from the engine's numbers.
+- ☐ **L8 Investments and fees.** Holdings, allocation and fee read-outs when an investment connector exists.
+- ☐ **L9 Long-range planner.** A multi-year projection from the same engine: savings rate, debt-free date, a retirement estimate with a few scenarios.
+- ☐ **L10 Receipts.** Photographed receipts matched to transactions and split into lines.
+- ☐ **L11 A read-only client for a helper.** A family member or an adviser, with its own redaction level.
 
 ## Suggested first two weeks
 

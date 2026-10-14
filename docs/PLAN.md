@@ -1,6 +1,6 @@
 # FinancialAuthority: the plan
 
-*Written 2026-10-14, revised the same day for always-on access, payments, paystubs and both mailboxes. The milestones are in [ROADMAP.md](ROADMAP.md). What the owner grants and what Claude already reaches is in [ACCESS.md](ACCESS.md). Rules for working in this repository are in [AGENTS.md](../AGENTS.md).*
+*Written 2026-10-14, revised the same day for always-on access, payments, paystubs and both mailboxes, and again for free-only data access, the switchable views and looks, and the advisor and reviewer models. The milestones are in [ROADMAP.md](ROADMAP.md). What the owner grants and what Claude already reaches is in [ACCESS.md](ACCESS.md). What the leading apps do and what we take from them is in [FEATURES.md](FEATURES.md). The mock-ups are in [mockups/](mockups/) and on the design canvas. Rules for working in this repository are in [AGENTS.md](../AGENTS.md).*
 
 ## 1. What it is
 
@@ -23,7 +23,9 @@ It gives back three things:
 2. **The purchase check.** "Can I buy X for $Y?" answered yes, wait, or no, naming the bill or buffer it would break, and when it would be fine.
 3. **Billing-date changes.** Which due dates to move and to which day so that bills land after paydays rather than before them, with the request to each biller drafted, and sent once approved.
 
-Any model can do the talking: Claude on the phone, on the desktop or in Claude Code through a custom connector; a small model on BigBox through Ollama; Open WebUI; anything that speaks the OpenAI tool format. FinancialAuthority exposes the same tools to all of them over MCP and a REST API, and has its own chat.
+Any model can do the talking: Claude on the phone, on the desktop or in Claude Code through a custom connector; a small model on BigBox through Ollama; Open WebUI; anything that speaks the OpenAI tool format. FinancialAuthority exposes the same tools to all of them over MCP and a REST API, and has its own chat. Inside the app, a local **advisor** answers everyday questions at no cost, and a **reviewer** the owner chooses, Claude by API or any OpenAI-compatible model, reads the plan and the rules and says where it would push back.
+
+It is a visual planner first. The owner learns by seeing the shape of a thing before reading into it, so every screen leads with a picture that carries the answer, and the numbers sit under it for the dig-down. Eight home views and three looks are switchable in Settings; the data and the engine behind them never change.
 
 It never moves money. It reads, plans, drafts and, with an approval, sends. The person pays.
 
@@ -46,21 +48,24 @@ The owner asked for two things of the people and agents working on this: do ever
 - **Local first, minimum out.** Data lives on BigBox in SQLite under `/data`. Cloud models get only what the question needs, at a redaction level set per client: full, merchants only, or aggregates only. Account numbers never leave the box.
 - **Show the work.** Every plan, verdict and suggested change shows its arithmetic and the source rows. The audit log shows which client and which model read what, and every approval and send.
 - **It is not advice.** The app says so on every recommendation. It is a calculator with good manners.
+- **Free to run.** No paid aggregator, no paid subscription, no service that charges to connect a bank. Bank data comes from free developer tiers, from the free tier the owner already has, from exports, and from the alert and statement mail banks already send. A frontier model by API is optional and costs cents per review; a local model does the whole job for nothing.
 
 ## 4. Where the data comes from
 
 | Source | How it gets in | What it yields | When |
 | --- | --- | --- | --- |
-| SimpleFIN Bridge | A read-only aggregator: the owner connects each institution once at the bridge and pastes one setup token into the app. Cheap, no developer programme, used by Actual Budget. | Daily transactions and balances for every connected bank and card. The always-on source. | M1 |
-| Rocket Money export | CSV dropped in `/imports` or uploaded. Rocket Money has no API; its export link arrives by email, and the app reminds. | Years of history for backfill, categories, ignored flags. | M1 |
-| Any bank or card | CSV with column mapping, OFX/QFX. | Transactions, sometimes balances. For institutions the aggregator does not cover. | M1 |
+| Plaid, Trial plan | Free for up to ten connected logins on a new developer account; the owner signs up once and pastes the keys into the app; each bank is connected through the bank's own login page inside the app. Capital One and most credit unions are there. | Daily transactions and balances. The first live source. | M1 |
+| Teller, developer tier | Free for up to a hundred connected logins, rate-limited; the owner signs up once. Strong on the big banks. | The same; the second live source, for whatever Plaid's trial does not cover. | M1 |
+| Era Context, free tier | Already connected to one of the owner's banks over MCP with OAuth; two connections, a three-week history window, a daily sync. The app connects as an MCP client. | A third live source for the two institutions it allows. | M1 |
+| Bank alert mail | Banks already email alerts: a purchase, a deposit, an overdraft, a declined charge, a payment received, a statement ready. The mail connector turns each into a signal the same quarter-hour. | Same-day awareness between syncs; overdraft and decline alerts straight into the brief. | M1 |
+| Rocket Money | No API. Three ways in, all in the app's Rocket Money connector: the export email is recognised and its download link followed within its seven-day life, so the owner taps Export once and the app does the rest; a button opens Rocket Money's export page; a file can still be dropped or uploaded. Rocket Money's own weekly upcoming-bills, income and balance alerts are read as cross-checks. The app exports its own ledger in the same CSV shape. | Years of history for backfill, categories, ignored flags, and a second opinion on upcoming charges. | M1 |
+| Any bank or card | CSV with column mapping, OFX/QFX, downloaded from the bank's site. | Transactions, sometimes balances. For anything no connector covers. | M1 |
 | Paystubs | PDFs: dropped in `/imports/paystubs`, uploaded, or taken from mail attachments, including ones the owner forwards to themselves. A parser per payroll format, a model second, confirmation for anything new. | Gross, net, taxes, deductions, pay period, pay date, employer. Matched to the deposit. | M2 |
 | Proton Mail | Through Proton Mail Bridge running beside the app on BigBox, over IMAP. The reader exists in `MCPManagement/protonmail-mcp`; port it. | Bills, statements, paystubs, installment schedules, payment confirmations, past-due and payday notices. The owner's Proton mailbox also carries their Gmail, so one connector covers most of both. | M4 |
 | Gmail | IMAP with an app password. OAuth stays off until it works without weekly re-authorisation. | The same, directly, for anything Proton does not carry. | M4 |
 | Any mailbox | Generic IMAP. | The same. | M4 |
 | Third-party debt and advance apps | No public APIs. Derived from transactions (equal amounts, same merchant, two-week spacing; advance repayments on payday), from emails (confirmations carry the schedule), and from a thirty-second manual form. | Installment plans with schedules; advances with repayment dates; card and loan balances, APRs, minimums. | M2 |
-| Era Context | An MCP and REST aggregator already connected to one of the owner's banks on a free tier with a short history window and few connections. | A second live source for the accounts it covers. Optional. | L6 |
-| Plaid or Teller | Developer account, production approval. | More institutions, if SimpleFIN misses any. | L1 |
+| Paid aggregators | SimpleFIN, Plaid production, MX, Finicity. | Not used. The owner pays nobody to see their own money. | never |
 | Credit reports | Credit Karma's connector is reachable only from a Claude session; statement import otherwise. | Utilisation, balances, inquiries. | L2 |
 
 ## 5. The model of the money
@@ -113,6 +118,11 @@ The tools:
 
 Built-in chat uses the same tools through a provider layer: Ollama on BigBox by default (reached at `host.docker.internal:11434`, as LLMCoach does), any OpenAI-compatible server, and Anthropic. Each client and provider has a redaction level. A 3 to 8 B local model can give a correct paycheck plan because the plan is computed before the model speaks.
 
+Two model roles sit on top of the providers:
+
+- **The advisor** answers questions and explains plans. Default: the local model, free, always on. The owner can point it at any provider.
+- **The reviewer** is a second opinion. On payday, after any confirmed change, and on request, it receives the engine's plan, the owner's rules and goals, and a short history of alerts, never raw mail, attachments or account numbers, and returns notes: where it disagrees, what it would tighten, what it would ask the owner. Each note carries an action the owner can apply with one tap; the reviewer cannot change a number itself. Default: none; recommended: Claude by API, which costs cents a review and the app shows the cost. A local model can review too, and the citation test applies to both roles.
+
 BoxPilot's own agents cannot call an app's API today. FinancialAuthority uses BoxPilot's Ollama from day one; a `finance.*` read tool in BoxPilot's agent catalog is L5.
 
 ## 7. The guidance engine
@@ -149,16 +159,33 @@ Jobs, each idempotent, logged, visible on the Jobs page and through `jobs.status
 | Export reminder | When the aggregator's export email arrives | Reminds the owner to drop the file. |
 | Self-check | Hourly | Each connector's last success; stale data warnings; the tunnel reachable; disk and database size. |
 
-## 9. The web app
+## 9. The web app: views and looks
 
-Phone first. Pages: **Today** (the brief and approvals), **This paycheck**, **Calendar**, **Bills**, **Payments**, **Paystubs**, **Debts** (payoff order and monthly interest), **Subscriptions**, **Transactions**, **Confirm** (pending facts with their excerpts), **Mail** (search both mailboxes; open a message boxed), **Chat** (model switcher, "ask about this" on every page), **Connectors**, **Clients** (OAuth clients and API keys), **Jobs**, **Audit**, **Settings** (rules, goals, providers, redaction, time zone, send allowances). Installable to a phone's home screen. Light and dark.
+A web app, installable on the phone and the desktop, served by the same container as the engine. Not Electron: a server-hosted app gains nothing from a wrapper, and a native shell can be added later in an afternoon if a window of its own is ever wanted. Phone first, because the payday routine happens on payday morning.
+
+**Views** are home layouts. All eight from the mock-ups ship and the owner switches between them in Settings › Appearance; the River is the default. Every view renders the same engine results (`finance.snapshot`, `paycheck.plan`, `cashflow.forecast`) and never computes a number of its own:
+
+1. **The River**: the sixty-day band of what is free to spend, with Today fixed, paydays, bills and the buffer floor.
+2. **Paycheck windows**: one column per paycheck, filled bottom-up with what leaves it.
+3. **Month grid**: the calendar with paydays, due dates and each week's low point.
+4. **Where it goes**: the Sankey of one paycheck.
+5. **Envelopes**: every obligation as an envelope with its fill level.
+6. **Bill board**: cards that move right as they are paid.
+7. **Transit map**: bills as stations on lines, paydays as interchanges.
+8. **Mission control**: the dark console of tiles, jobs and connectors.
+
+**Looks** are themes: light, dark and console (the dark tiles look), each a validated palette for the chart colours and the status colours, kept per device as BoxPilot does, so the phone and the wall screen can differ.
+
+**Pages** beyond the home: **Today** (the brief and approvals; the phone home), **Calendar**, **Bills**, **Payments**, **Paystubs**, **Debts** (the mountain), **Subscriptions**, **Transactions**, **Accounts** (balances and net worth), **Reports** (spending by category, merchant and tag over time, comparisons, savings rate), **Confirm** (pending facts with their excerpts), **Mail** (search both mailboxes; open a message boxed), **Chat** (the advisor beside the engine's table, the reviewer's notes), **Connectors**, **Clients** (OAuth clients and API keys), **Jobs**, **Audit**, **Settings** (appearance, rules, goals, watchlists, models, redaction, time zone, send allowances).
+
+**Visual rules.** One horizontal time line everywhere, Today fixed at the same place. Paydays are always blue, bills always orange, debt and advances always violet, what is safe to spend always the aqua band, the buffer always the grey floor; late and past due use the status colours with an icon and a word, never colour alone. One idea per screen, the picture first, the table under it. The chart palette is validated for colour-blindness in both modes with the data-viz validator before it ships.
 
 ## 10. Architecture and stack
 
 The same shape as LLMCoach, which already ships to BigBox this way:
 
 - **Backend**: Python 3.12, FastAPI, SQLModel over SQLite at `/data/financialauthority.db`, versioned migrations, the official `mcp` SDK mounted at `/mcp` with its OAuth authorization server, APScheduler for jobs, `httpx` for providers and SimpleFIN, `imaplib` for mail, `pypdf` with OCR fallback for paystubs and statements. Field-level AES-GCM for tokens, passwords and account numbers with a key from `FA_DATA_KEY`.
-- **Frontend**: React 19, Vite, TypeScript, Tailwind 4, built into the image and served by the backend.
+- **Frontend**: React 19, Vite, TypeScript, Tailwind 4, built into the image and served by the backend; a web app manifest and a service worker for the installed app; views in `frontend/src/views/` and looks in `frontend/src/looks/`, both registries the Settings page reads; charts as inline SVG drawn from the engine's results.
 - **One image**: `ghcr.io/aes256afro/financialauthority`, public (it holds no data), port 8000 inside, `/data` for everything that must survive, `/imports` as a drop folder. A `HEALTHCHECK` on `/api/health`. A Proton Mail Bridge sidecar in the same compose project.
 - **Tests**: pytest for the engine, parsers and connectors with injected clocks; vitest for the UI; a synthetic household fixture used by every test and by demo mode; a red-team mailbox fixture.
 - **Versioning**: one version string in `backend/app/version.py`. Tags `vX.Y.Z` publish `:X.Y.Z` and `:latest`.
@@ -201,7 +228,7 @@ What we protect: the ledger, two mailboxes, paystubs, the aggregator token, the 
 - **D2 Engine first, model second.** The engine must produce a correct plan with no model at all. This is what makes "any model" true.
 - **D3 Proton Mail Bridge is a sidecar of the app on BigBox.** The Bridge on the owner's PC only listens on that PC and only while it runs. The sidecar's state volume is backed up so a restore needs no new sign-in. The one interactive sign-in at first start is the owner's (see ACCESS.md). Fallback if the community image proves fragile: a separate catalog app, then a relay from the PC.
 - **D4 Gmail by IMAP app password.** OAuth in "testing" status expires refresh tokens weekly.
-- **D5 SimpleFIN is the live source, in M1.** The free aggregator the owner already has covers one bank with a short window; exports are manual and partial. SimpleFIN covers every bank and card for a small monthly fee with no developer programme. Plaid stays L1.
+- **D5 Live bank data from free tiers only, in M1.** Plaid's Trial plan and Teller's developer tier each cost nothing for a household's handful of logins; Era Context's free tier already holds one bank and has room for the credit union; the banks' own alert mail fills the gaps the same quarter-hour. Capital One and the credit union are the two that matter first. No SimpleFIN, no paid plan, ever.
 - **D6 Field-level encryption, not SQLCipher.**
 - **D7 One owner in v1.** Household views are L4.
 - **D8 Env names are prefixed `FA_`**, data at `/data`, imports at `/imports`, web port 8000 inside, BoxPilot host port 8430.
@@ -209,11 +236,18 @@ What we protect: the ledger, two mailboxes, paystubs, the aggregator token, the 
 - **D10 Public image, private repository.** BoxPilot's catalog cannot pull from a private registry. The image holds no data.
 - **D11 Sends need an approval or a standing allowance; money never moves.** Section 2.
 - **D12 Auto-confirm is earned per sender**, two confirmations by the owner, revocable.
+- **D13 Every mock-up direction ships as a switchable view.** The owner asked to keep them all and choose in Settings. One engine, eight renderings, three looks.
+- **D14 A web app, not Electron.** Installable on phone and desktop from the same container; a native shell only if a reason appears.
+- **D15 Picture first.** Every screen leads with the visual that carries the answer; the numbers sit under it. The chart palette is validated, both modes.
+- **D16 Two model roles: advisor and reviewer.** The advisor is local and free by default; the reviewer is the owner's choice, Claude by API recommended, and sees the plan and rules, never the mail. Neither can change a number.
+- **D17 Rocket Money in, three ways, and out.** Export captured from mail, a button to the export page, a file drop; and the ledger exported in the same shape.
 
 ## 14. Risks and open questions
 
 - **Publishing the app.** A public address is the price of "from anywhere, at all times". The mitigations in section 12 are not optional, and M3 does not ship without them.
-- **Aggregator coverage.** Fintech accounts (payment apps, advance apps, some cards) often are not connectable. Those come from email and the manual form; the plan treats them as first-class.
+- **Free tiers have edges.** Plaid's trial caps logins at ten and does not free a slot when one is removed; Teller's developer tier is rate-limited and its coverage of small credit unions is uneven; Era's free tier sees three weeks back and allows two logins. The app stacks all three and the alert mail, so no single edge is fatal, and the ledger keeps everything it has ever seen.
+- **Fintech accounts** (payment apps, advance apps, some cards) often are not connectable anywhere. Those come from email and the manual form; the plan treats them as first-class.
+- **Eight views is a lot of UI.** They share one component library and one data contract; a view is a layout over the same four engine results. M7 budgets the time, and the River ships first.
 - **Paystub formats.** One parser per payroll provider, and the owner's provider is the first. The owner forwards PDFs today; that keeps working.
 - **Email parsing varies by biller.** Rules per sender first, model extraction second, confirmation until earned.
 - **A model that invents numbers.** Mitigated by D2 and the citation test.

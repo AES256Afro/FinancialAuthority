@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Transit map: home</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f6f4ef;color:#141518;font-family:Manrope,system-ui,sans-serif;font-size:14px;line-height:1.4}
+a{color:#1c5cab}a:hover{color:#104281}
+.rail a{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;border-radius:10px;color:#4e5058;text-decoration:none;font-size:10px;font-weight:600;letter-spacing:.02em}
+.rail a:hover{background:#ece9e1;color:#141518}
+.rail a.on{background:#141518;color:#ffffff}
+.card{background:#ffffff;border:1px solid #e4e1da;border-radius:14px}
+.num{font-variant-numeric:tabular-nums}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:6px}
+.line{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:700}
+.line .bar{width:28px;height:6px;border-radius:3px}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; background: #f6f4ef;">
+  <nav class="rail" aria-label="Sections" style="flex: 0 0 76px; display: flex; flex-direction: column; gap: 2px; padding: 14px 8px; box-sizing: border-box; border-right: 1px solid #e4e1da; background: #f6f4ef;">
+    <div style="display: flex; align-items: center; justify-content: center; height: 36px; margin-bottom: 10px;">
+      <svg width="28" height="28" viewBox="0 0 28 28" role="img" aria-label="FinancialAuthority"><rect x="2" y="2" width="24" height="24" rx="7" fill="#141518"></rect><path d="M8 18 L12 11 L16 15 L20 9" fill="none" stroke="#1baf7a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+    </div>
+    <a href="#today"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="7"></circle><path d="M10 6v4l3 2"></path></svg>Today</a>
+    <a href="#map" class="on"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 6h14M3 14h14"></path><circle cx="8" cy="6" r="2" fill="#f6f4ef"></circle><circle cx="13" cy="14" r="2" fill="#f6f4ef"></circle></svg>Map</a>
+    <a href="#bills"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="3" width="12" height="14" rx="2"></rect><path d="M7 8h6M7 12h4"></path></svg>Bills</a>
+    <a href="#debts"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 16l4-8 4 5 3-7 3 10"></path></svg>Debts</a>
+    <a href="#paystubs"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="2"></rect><circle cx="10" cy="10" r="2.2"></circle></svg>Paystubs</a>
+    <a href="#mail"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="2"></rect><path d="M3 7l7 5 7-5"></path></svg>Mail</a>
+    <a href="#chat"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 5h12v8H9l-4 3v-3H4z"></path></svg>Chat</a>
+    <a href="#settings" style="margin-top: auto;"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="2.5"></circle><path d="M10 2v3M10 15v3M2 10h3M15 10h3M4.3 4.3l2.1 2.1M13.6 13.6l2.1 2.1M4.3 15.7l2.1-2.1M13.6 6.4l2.1-2.1"></path></svg>Settings</a>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 14px; padding: 14px 24px 24px; box-sizing: border-box;">
+    <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-height: 40px;">
+      <h1 style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.01em;">The next four weeks, as a map</h1>
+      <div style="font-size: 13px; color: #4e5058;">Each bill is a station on its line. Paydays are the interchanges where every line gets money.</div>
+      <div style="flex-grow: 1;"></div>
+      <div style="display: flex; gap: 16px;">
+        <span class="line"><span class="bar" style="background: #2a78d6;"></span>Payday</span>
+        <span class="line"><span class="bar" style="background: #4e5058;"></span>Utilities</span>
+        <span class="line"><span class="bar" style="background: #eb6834;"></span>Housing</span>
+        <span class="line"><span class="bar" style="background: #4a3aa7;"></span>Debt</span>
+      </div>
+    </header>
+
+    <section class="card" style="padding: 12px 16px 6px;">
+      <svg viewBox="0 0 1120 440" width="100%" style="display: block; height: auto;" role="img" aria-label="Bills as stations on three lines across four weeks, with paydays as interchanges">
+        <g fill="#85878f" font-size="11" font-weight="700" text-anchor="middle" font-family="Manrope, system-ui, sans-serif">
+          <text x="60" y="420">Oct 12</text><text x="319" y="420">Oct 19</text><text x="578" y="420">Oct 26</text><text x="837" y="420">Nov 2</text><text x="1059" y="420">Nov 8</text>
+        </g>
+        <g stroke="#ece9e1" stroke-width="1"><line x1="319" y1="40" x2="319" y2="400"></line><line x1="578" y1="40" x2="578" y2="400"></line><line x1="837" y1="40" x2="837" y2="400"></line></g>
+
+        <line x1="134" y1="30" x2="134" y2="400" stroke="#141518" stroke-width="2"></line>
+        <text x="134" y="22" text-anchor="middle" font-size="12" font-weight="800" fill="#141518" font-family="Manrope, system-ui, sans-serif">You are here · Wed Oct 14</text>
+
+        <rect x="196" y="80" width="24" height="240" rx="12" fill="#2a78d6"></rect>
+        <rect x="714" y="80" width="24" height="240" rx="12" fill="#2a78d6"></rect>
+        <g font-family="Manrope, system-ui, sans-serif" font-size="12" font-weight="800" fill="#184f95" text-anchor="middle">
+          <text x="208" y="66">PAYDAY Fri Oct 16</text><text x="208" y="346">+$2,240</text>
+          <text x="726" y="66">PAYDAY Fri Oct 30</text><text x="726" y="346">+$2,240</text>
+        </g>
+
+        <line x1="60" y1="140" x2="1060" y2="140" stroke="#4e5058" stroke-width="8" stroke-linecap="round"></line>
+        <line x1="60" y1="220" x2="1060" y2="220" stroke="#eb6834" stroke-width="8" stroke-linecap="round"></line>
+        <line x1="60" y1="300" x2="1060" y2="300" stroke="#4a3aa7" stroke-width="8" stroke-linecap="round"></line>
+        <g font-family="Manrope, system-ui, sans-serif" font-size="11" font-weight="800" fill="#4e5058">
+          <text x="60" y="126">UTILITIES</text><text x="60" y="206" fill="#8a3410">HOUSING</text><text x="60" y="286" fill="#2f2470">DEBT</text>
+        </g>
+
+        <g fill="#ffffff" stroke="#2a78d6" stroke-width="4">
+          <circle cx="208" cy="140" r="9"></circle><circle cx="208" cy="220" r="9"></circle><circle cx="208" cy="300" r="9"></circle>
+          <circle cx="726" cy="140" r="9"></circle><circle cx="726" cy="220" r="9"></circle><circle cx="726" cy="300" r="9"></circle>
+        </g>
+
+        <g fill="#ffffff" stroke="#4e5058" stroke-width="3.5">
+          <circle cx="171" cy="140" r="7"></circle><circle cx="319" cy="140" r="7"></circle><circle cx="356" cy="140" r="7"></circle><circle cx="430" cy="140" r="7"></circle><circle cx="504" cy="140" r="7"></circle><circle cx="911" cy="140" r="7"></circle>
+        </g>
+        <g font-family="Manrope, system-ui, sans-serif" font-size="11" font-weight="700" fill="#141518" text-anchor="middle">
+          <text x="171" y="110">Streaming $17</text><text x="171" y="122" fill="#4e5058">+ tolls $40 · Oct 15</text>
+          <text x="319" y="168">Music $11</text>
+          <text x="356" y="116">Electricity $142</text>
+          <text x="430" y="168">Phone $96</text>
+          <text x="504" y="116">Internet $85</text>
+          <text x="911" y="116">Tolls $40 · Nov 4</text>
+        </g>
+
+        <g fill="#ffffff" stroke="#eb6834" stroke-width="3.5">
+          <circle cx="800" cy="220" r="10"></circle><circle cx="837" cy="220" r="7"></circle><circle cx="874" cy="220" r="7"></circle><circle cx="948" cy="220" r="7"></circle>
+        </g>
+        <g font-family="Manrope, system-ui, sans-serif" font-size="11" font-weight="700" fill="#141518" text-anchor="middle">
+          <text x="800" y="196" font-size="12" font-weight="800">Rent $1,295 · Nov 1</text>
+          <text x="837" y="248">Water $64</text>
+          <text x="874" y="196">Insurance $138</text>
+          <text x="948" y="248">Gym $30</text>
+          <text x="440" y="248" fill="#85878f" font-weight="600">nothing on this line until November · half of rent is already set aside</text>
+        </g>
+
+        <rect x="200" y="292" width="16" height="16" rx="3" transform="rotate(45 208 300)" fill="#ffffff" stroke="#4a3aa7" stroke-width="3.5"></rect>
+        <g fill="#ffffff" stroke="#4a3aa7" stroke-width="3.5">
+          <circle cx="393" cy="300" r="7"></circle><circle cx="541" cy="300" r="7"></circle><circle cx="615" cy="300" r="7"></circle><circle cx="652" cy="300" r="10"></circle>
+        </g>
+        <g font-family="Manrope, system-ui, sans-serif" font-size="11" font-weight="700" fill="#141518" text-anchor="middle">
+          <text x="230" y="328" text-anchor="start">Advances repay $231</text>
+          <text x="393" y="328">Couch plan $62</text>
+          <text x="541" y="276">Card min $45</text>
+          <text x="615" y="328">Laptop plan $38</text>
+          <text x="652" y="276" font-size="12" font-weight="800">Car loan $412 · Oct 28</text>
+        </g>
+
+        <g>
+          <rect x="880" y="40" width="200" height="54" rx="10" fill="#141518"></rect>
+          <text x="896" y="62" font-size="11" font-weight="800" fill="#c3c2b7" font-family="Manrope, system-ui, sans-serif">SAFE TO SPEND UNTIL OCT 30</text>
+          <text x="896" y="84" font-size="20" font-weight="800" fill="#ffffff" font-family="Manrope, system-ui, sans-serif">$362</text>
+        </g>
+      </svg>
+    </section>
+
+    <section style="display: flex; flex-wrap: wrap; gap: 14px;">
+      <div class="card" style="flex: 1 1 300px; padding: 12px 16px; display: flex; gap: 12px; align-items: center;">
+        <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="14" fill="#ffffff" stroke="#4e5058" stroke-width="4"></circle></svg>
+        <div><div style="font-size: 11px; font-weight: 800; color: #85878f; letter-spacing: .06em;">NEXT STOP</div><strong>Streaming $17 and tolls $40 · tomorrow</strong><div style="font-size: 12px; color: #4e5058;">Funded from today's $312. Tolls needs a tap; streaming is autopay.</div></div>
+      </div>
+      <div class="card" style="flex: 1 1 300px; padding: 12px 16px; display: flex; gap: 12px; align-items: center;">
+        <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="14" fill="#ffffff" stroke="#4a3aa7" stroke-width="4"></circle></svg>
+        <div><div style="font-size: 11px; font-weight: 800; color: #85878f; letter-spacing: .06em;">BIGGEST STATION</div><strong>Car loan $412 · Wed Oct 28</strong><div style="font-size: 12px; color: #4e5058;">Two days before payday. Moving it to the 17th makes it the first thing paid after payday instead of the last thing before the next one.</div></div>
+      </div>
+      <div class="card" style="flex: 1 1 300px; padding: 12px 16px; display: flex; gap: 12px; align-items: center;">
+        <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="14" fill="#ffffff" stroke="#2a78d6" stroke-width="4"></circle></svg>
+        <div><div style="font-size: 11px; font-weight: 800; color: #85878f; letter-spacing: .06em;">INTERCHANGE</div><strong>Fri Oct 16 · +$2,240</strong><div style="font-size: 12px; color: #4e5058;">Advances take $231 as it lands. The paystub arrives the same morning and is checked against it.</div></div>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Envelopes: home</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f6f4ef;color:#141518;font-family:Manrope,system-ui,sans-serif;font-size:14px;line-height:1.4}
+a{color:#1c5cab}a:hover{color:#104281}
+.rail a{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;border-radius:10px;color:#4e5058;text-decoration:none;font-size:10px;font-weight:600;letter-spacing:.02em}
+.rail a:hover{background:#ece9e1;color:#141518}
+.rail a.on{background:#141518;color:#ffffff}
+.card{background:#ffffff;border:1px solid #e4e1da;border-radius:14px}
+.num{font-variant-numeric:tabular-nums}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:6px}
+.env{background:#ffffff;border:1px solid #e4e1da;border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;min-height:168px;box-sizing:border-box}
+.env .n{font-weight:800;font-size:14px}
+.env .d{font-size:11px;color:#85878f;font-weight:600}
+.meter{flex-grow:1;border-radius:8px;position:relative;overflow:hidden;min-height:64px}
+.meter .fill{position:absolute;left:0;right:0;bottom:0;border-radius:0}
+.env .a{display:flex;justify-content:space-between;align-items:baseline;font-size:13px}
+.tag{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:999px}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; background: #f6f4ef;">
+  <nav class="rail" aria-label="Sections" style="flex: 0 0 76px; display: flex; flex-direction: column; gap: 2px; padding: 14px 8px; box-sizing: border-box; border-right: 1px solid #e4e1da; background: #f6f4ef;">
+    <div style="display: flex; align-items: center; justify-content: center; height: 36px; margin-bottom: 10px;">
+      <svg width="28" height="28" viewBox="0 0 28 28" role="img" aria-label="FinancialAuthority"><rect x="2" y="2" width="24" height="24" rx="7" fill="#141518"></rect><path d="M8 18 L12 11 L16 15 L20 9" fill="none" stroke="#1baf7a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+    </div>
+    <a href="#today"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="7"></circle><path d="M10 6v4l3 2"></path></svg>Today</a>
+    <a href="#envelopes" class="on"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="14" height="11" rx="2"></rect><path d="M3 8l7 4 7-4"></path></svg>Envelopes</a>
+    <a href="#bills"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="3" width="12" height="14" rx="2"></rect><path d="M7 8h6M7 12h4"></path></svg>Bills</a>
+    <a href="#debts"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 16l4-8 4 5 3-7 3 10"></path></svg>Debts</a>
+    <a href="#paystubs"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="2"></rect><circle cx="10" cy="10" r="2.2"></circle></svg>Paystubs</a>
+    <a href="#mail"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="2"></rect><path d="M3 7l7 5 7-5"></path></svg>Mail</a>
+    <a href="#chat"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 5h12v8H9l-4 3v-3H4z"></path></svg>Chat</a>
+    <a href="#settings" style="margin-top: auto;"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="2.5"></circle><path d="M10 2v3M10 15v3M2 10h3M15 10h3M4.3 4.3l2.1 2.1M13.6 13.6l2.1 2.1M4.3 15.7l2.1-2.1M13.6 6.4l2.1-2.1"></path></svg>Settings</a>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px; padding: 14px 24px 24px; box-sizing: border-box;">
+    <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-height: 40px;">
+      <h1 style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.01em;">Envelopes</h1>
+      <div style="font-size: 13px; color: #4e5058;">Every dollar from Friday's paycheck already has an envelope. Fill level is how funded each one is.</div>
+      <div style="flex-grow: 1;"></div>
+      <div style="display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; padding: 6px 12px; border-radius: 999px; background: #e3eefb; color: #184f95;"><span class="sw" style="background: #2a78d6; margin: 0;"></span>Payday in 2 days</div>
+    </header>
+
+    <section class="card" style="padding: 12px 18px; display: flex; flex-wrap: wrap; gap: 24px; align-items: center;">
+      <div><span style="font-size: 12px; color: #4e5058; font-weight: 600;">Spend envelope</span><div style="font-size: 32px; font-weight: 800; letter-spacing: -0.02em;" class="num">$362</div></div>
+      <div style="font-size: 13px; color: #4e5058; max-width: 520px;">Everything due through Oct 29 is funded. The Nov 1 to 5 envelopes are half full; the Oct 30 paycheck fills them. Drag money between envelopes to change the plan; the river redraws.</div>
+      <div style="flex-grow: 1;"></div>
+      <div style="display: flex; gap: 16px; font-size: 12px; color: #4e5058; font-weight: 600;">
+        <span><span class="sw" style="background: #eb6834;"></span>Bill</span>
+        <span><span class="sw" style="background: #4a3aa7;"></span>Debt or advance</span>
+        <span><span class="sw" style="background: #c3c2b7;"></span>Buffer</span>
+        <span><span class="sw" style="background: #1baf7a;"></span>Yours</span>
+      </div>
+    </section>
+
+    <section style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px;">
+      <div class="env" style="border: 2px solid #1baf7a;">
+        <div class="n">Spend</div><div class="d">Oct 16 to 29 · yours</div>
+        <div class="meter" style="background: #d8f3e8;"><div class="fill" style="height: 100%; background: #1baf7a;"></div></div>
+        <div class="a"><strong class="num">$362</strong><span class="tag" style="background: #d8f3e8; color: #0b5c3f;">free</span></div>
+      </div>
+      <div class="env">
+        <div class="n">Buffer</div><div class="d">always kept</div>
+        <div class="meter" style="background: #ece9e1;"><div class="fill" style="height: 100%; background: #c3c2b7;"></div></div>
+        <div class="a"><strong class="num">$200 <span style="font-weight: 600; color: #85878f;">of $200</span></strong><span class="tag" style="background: #ece9e1; color: #4e5058;">full</span></div>
+      </div>
+      <div class="env">
+        <div class="n">Advances</div><div class="d">repay Fri Oct 16</div>
+        <div class="meter" style="background: #e6e2f3;"><div class="fill" style="height: 100%; background: #4a3aa7;"></div></div>
+        <div class="a"><strong class="num">$231</strong><span class="tag" style="background: #e6e2f3; color: #2f2470;">2 apps</span></div>
+      </div>
+      <div class="env">
+        <div class="n">Car loan</div><div class="d">due Wed Oct 28</div>
+        <div class="meter" style="background: #fde3d8;"><div class="fill" style="height: 100%; background: #eb6834;"></div></div>
+        <div class="a"><strong class="num">$412</strong><span class="tag" style="background: #fde3d8; color: #8a3410;">funded</span></div>
+      </div>
+      <div class="env">
+        <div class="n">Electricity</div><div class="d">due Tue Oct 20 · from mail</div>
+        <div class="meter" style="background: #fde3d8;"><div class="fill" style="height: 100%; background: #eb6834;"></div></div>
+        <div class="a"><strong class="num">$142</strong><span class="tag" style="background: #fde3d8; color: #8a3410;">funded</span></div>
+      </div>
+
+      <div class="env">
+        <div class="n">Phone</div><div class="d">autopay Thu Oct 22</div>
+        <div class="meter" style="background: #fde3d8;"><div class="fill" style="height: 100%; background: #eb6834;"></div></div>
+        <div class="a"><strong class="num">$96</strong><span class="tag" style="background: #fde3d8; color: #8a3410;">funded</span></div>
+      </div>
+      <div class="env">
+        <div class="n">Internet</div><div class="d">due Sat Oct 24</div>
+        <div class="meter" style="background: #fde3d8;"><div class="fill" style="height: 100%; background: #eb6834;"></div></div>
+        <div class="a"><strong class="num">$85</strong><span class="tag" style="background: #fde3d8; color: #8a3410;">funded</span></div>
+      </div>
+      <div class="env">
+        <div class="n">Installment plans</div><div class="d">couch Oct 21 · laptop Oct 27</div>
+        <div class="meter" style="background: #e6e2f3;"><div class="fill" style="height: 100%; background: #4a3aa7;"></div></div>
+        <div class="a"><strong class="num">$100</strong><span class="tag" style="background: #e6e2f3; color: #2f2470;">funded</span></div>
+      </div>
+      <div class="env">
+        <div class="n">Card minimum</div><div class="d">due Sun Oct 25</div>
+        <div class="meter" style="background: #e6e2f3;"><div class="fill" style="height: 100%; background: #4a3aa7;"></div></div>
+        <div class="a"><strong class="num">$45</strong><span class="tag" style="background: #e6e2f3; color: #2f2470;">funded</span></div>
+      </div>
+      <div class="env">
+        <div class="n">Small stuff</div><div class="d">streaming, tolls, music</div>
+        <div class="meter" style="background: #fde3d8;"><div class="fill" style="height: 100%; background: #eb6834;"></div></div>
+        <div class="a"><strong class="num">$68</strong><span class="tag" style="background: #fde3d8; color: #8a3410;">funded</span></div>
+      </div>
+
+      <div class="env">
+        <div class="n">Rent</div><div class="d">due Sun Nov 1</div>
+        <div class="meter" style="background: #fde3d8;"><div class="fill" style="height: 50%; background: #eb6834;"></div></div>
+        <div class="a"><strong class="num">$648 <span style="font-weight: 600; color: #85878f;">of $1,295</span></strong><span class="tag" style="background: #fdebd3; color: #7a4a00;">half</span></div>
+      </div>
+      <div class="env">
+        <div class="n">Insurance</div><div class="d">due Tue Nov 3</div>
+        <div class="meter" style="background: #fde3d8;"><div class="fill" style="height: 50%; background: #eb6834;"></div></div>
+        <div class="a"><strong class="num">$69 <span style="font-weight: 600; color: #85878f;">of $138</span></strong><span class="tag" style="background: #fdebd3; color: #7a4a00;">half</span></div>
+      </div>
+      <div class="env">
+        <div class="n">Water and trash</div><div class="d">due Mon Nov 2</div>
+        <div class="meter" style="background: #fde3d8;"><div class="fill" style="height: 100%; background: #eb6834;"></div></div>
+        <div class="a"><strong class="num">$64</strong><span class="tag" style="background: #fde3d8; color: #8a3410;">funded</span></div>
+      </div>
+      <div class="env">
+        <div class="n">Gym</div><div class="d">due Thu Nov 5</div>
+        <div class="meter" style="background: #fde3d8;"><div class="fill" style="height: 100%; background: #eb6834;"></div></div>
+        <div class="a"><strong class="num">$30</strong><span class="tag" style="background: #fde3d8; color: #8a3410;">funded</span></div>
+      </div>
+      <div class="env" style="border-style: dashed;">
+        <div class="n">Emergency fund</div><div class="d">goal $1,000 · after the plans end</div>
+        <div class="meter" style="background: #d8f3e8;"><div class="fill" style="height: 12%; background: #1baf7a;"></div></div>
+        <div class="a"><strong class="num">$120 <span style="font-weight: 600; color: #85878f;">of $1,000</span></strong><span class="tag" style="background: #d8f3e8; color: #0b5c3f;">paused</span></div>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
