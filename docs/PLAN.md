@@ -1,187 +1,221 @@
 # FinancialAuthority: the plan
 
-*Written 2026-10-14. The milestones are in [ROADMAP.md](ROADMAP.md). Rules for working in this repository are in [AGENTS.md](../AGENTS.md).*
+*Written 2026-10-14, revised the same day for always-on access, payments, paystubs and both mailboxes. The milestones are in [ROADMAP.md](ROADMAP.md). What the owner grants and what Claude already reaches is in [ACCESS.md](ACCESS.md). Rules for working in this repository are in [AGENTS.md](../AGENTS.md).*
 
 ## 1. What it is
 
-FinancialAuthority is a self-hosted financial context engine. It reads everything about a household's money and hands one clean picture of it to any language model.
+FinancialAuthority is a self-hosted financial context engine that runs itself. It reads everything about a household's money, keeps it current without being asked, and hands one clean picture of it to any language model, from anywhere, at any time.
 
 It reads:
 
-- bank, card and loan **transactions and balances**;
-- **paychecks**: who pays, how much, how often, when the next one lands;
-- **bills** and their due dates, including which can be moved;
-- **debts**, including the ones that live in third-party apps: Affirm, Klarna, Afterpay, PayPal Pay in 4, store cards, medical payment plans;
+- bank, card and loan **transactions and balances**, live, from a read-only aggregator, with years of history backfilled from exports;
+- **paystubs**: gross, net, taxes, deductions, pay period and pay date, matched to the deposit that landed;
+- **paychecks** as a schedule: who pays, how much, how often, when the next one lands;
+- **monthly bills** and their due dates, which account pays them, whether they are on autopay, and which can be moved;
+- **payments**: which bill each payment settled, what is scheduled, what is late, what is past due;
+- **debts**, including the ones that live in third-party apps: Affirm, Klarna, Afterpay, PayPal Pay in 4, store cards, medical plans, and earned-wage advance apps whose repayment comes straight out of the next paycheck;
 - **subscriptions**, with price history;
-- the **emails** that carry bills, statements, installment schedules and payment reminders.
+- **both mailboxes**, Proton Mail and Gmail, in full: the emails that carry bills, statements, paystubs, installment schedules, payment confirmations, past-due notices and payday notices.
 
 It gives back three things:
 
-1. **The paycheck plan.** For the paycheck that just landed, or the next one: what must be paid before the one after it, what to set aside for bigger bills further out, and what is safe to spend.
+1. **The paycheck plan.** For the paycheck that just landed, or the next one: what must be paid before the one after it, what the advance apps will take on payday, what to set aside for bigger bills further out, and what is safe to spend.
 2. **The purchase check.** "Can I buy X for $Y?" answered yes, wait, or no, naming the bill or buffer it would break, and when it would be fine.
-3. **Billing-date changes.** Which due dates to move and to which day so that bills land after paydays rather than before them, with the request to each biller drafted and ready to send.
+3. **Billing-date changes.** Which due dates to move and to which day so that bills land after paydays rather than before them, with the request to each biller drafted, and sent once approved.
 
-Any model can do the talking: a small model on BigBox through Ollama, Claude through Claude Desktop or Claude Code, Open WebUI, or anything that speaks the OpenAI tool format. FinancialAuthority exposes the same tools to all of them over MCP and a REST API, and has its own chat.
+Any model can do the talking: Claude on the phone, on the desktop or in Claude Code through a custom connector; a small model on BigBox through Ollama; Open WebUI; anything that speaks the OpenAI tool format. FinancialAuthority exposes the same tools to all of them over MCP and a REST API, and has its own chat.
 
-It never moves money. It reads, plans and drafts. The person pays.
+It never moves money. It reads, plans, drafts and, with an approval, sends. The person pays.
 
-## 2. Rules the design does not bend
+## 2. How it operates: autonomy and approvals
 
-- **Read-only, everywhere.** No bank logins are stored in the app. Transactions come from exports or a read-only aggregator token. Email is read over IMAP in read-only mode and never marked, moved or deleted. Drafts are written; nothing is sent.
+The owner asked for two things of the people and agents working on this: do everything yourselves, and ask only for what you cannot get. The app works the same way.
+
+- **It keeps itself current.** Mail is read every fifteen minutes. Bank data syncs daily and on demand. Paystubs and statements are picked up the moment they arrive as attachments or files. Bills are marked paid when the matching transaction clears. The plan is recomputed the morning a paycheck lands.
+- **It confirms what it can.** A fact from a sender whose previous facts the owner confirmed twice is confirmed automatically, with a note. Only a new sender, a new kind of fact, or an amount outside its usual range waits for the owner.
+- **It says what needs a human.** A morning brief on the phone and a `brief.today` tool for any model: what is due in three days and not yet funded, what is past due, a paystub that does not match the expected net, a new installment plan or advance, a price increase, a connector that stopped working.
+- **Outward actions go through approvals.** Sending an email is an action: the app drafts it, asks once, sends on approval and records it. The owner can grant a standing allowance for a recipient (a landlord's office, a lender's billing address), after which that recipient needs no further approvals. Nothing is ever sent to a recipient without one or the other.
+- **Money never moves.** No tool, job or button initiates a payment or transfer, with or without an approval. The app says what to pay and where; the owner pays.
+
+## 3. Rules the design does not bend
+
+- **Read-only against every source.** No bank logins are stored in the app. Transactions come from a read-only aggregator token and from exports. Email is read over IMAP in read-only mode and never marked, moved or deleted.
+- **Nothing is sent without an approval**, as section 2 describes, and nothing moves money.
 - **Numbers come from the engine; words come from the model.** Every figure in a recommendation is computed by deterministic code with the rows it came from attached. The model explains, converses and asks follow-ups. A model that invents a number fails a test.
-- **Email is untrusted input.** Messages are parsed into facts with a confidence score. A fact extracted by a model is *pending* until the owner confirms it, and only confirmed facts shape a plan. Message text is boxed as data before any model sees it, and nothing an email says can become a tool call.
-- **Local first, minimum out.** Data lives on BigBox in SQLite under `/data`. Cloud models get only what the question needs, at a redaction level set per provider: full, merchants only, or aggregates only. Account numbers never leave the box.
-- **Show the work.** Every plan, verdict and suggested change shows its arithmetic and the source rows. The audit log shows which key and which model read what.
+- **Email is untrusted input.** Messages are parsed into facts with a confidence score. A fact is *pending* until the owner, or an auto-confirm rule the owner earned, confirms it. Message text is boxed as data before any model sees it, and nothing an email says can become a tool call or an approval.
+- **Local first, minimum out.** Data lives on BigBox in SQLite under `/data`. Cloud models get only what the question needs, at a redaction level set per client: full, merchants only, or aggregates only. Account numbers never leave the box.
+- **Show the work.** Every plan, verdict and suggested change shows its arithmetic and the source rows. The audit log shows which client and which model read what, and every approval and send.
 - **It is not advice.** The app says so on every recommendation. It is a calculator with good manners.
 
-## 3. Where the data comes from
+## 4. Where the data comes from
 
-| Source | How it gets in | What it yields | Status today |
+| Source | How it gets in | What it yields | When |
 | --- | --- | --- | --- |
-| Rocket Money | CSV export dropped in `/imports` or uploaded. Rocket Money has no API; the export link arrives by email. | Transactions across every account Rocket Money sees, categories, account names, ignored flags. | A loader exists in `MCPManagement/rocketmoney-mcp`. Port it. |
-| Any bank or card | CSV with column mapping, OFX/QFX. | Transactions, sometimes balances. | New. |
-| SimpleFIN Bridge | Read-only aggregator token, cheap, no developer programme. Used by Actual Budget. | Daily transactions and balances. | Later (L1). |
-| Plaid or Teller | Developer account, production approval. | Same, more institutions. | Later (L1). |
-| Proton Mail | Through Proton Mail Bridge over IMAP. | Bills, statements, installment schedules, renewals, payday notices. | A reader exists in `MCPManagement/protonmail-mcp`. Port it. Bridge must run on BigBox for the server to reach it (decision D3). |
-| Gmail | IMAP with an app password first. OAuth later. | Same. | New. OAuth in "testing" status expires refresh tokens after seven days, which is wrong for a self-hosted app, so app passwords come first. |
-| Any mailbox | Generic IMAP. | Same. | New. |
-| Third-party debt apps | No public APIs. Derived from transactions (equal amounts, same merchant, two-week spacing), from emails (purchase confirmations carry the schedule), and from a thirty-second manual form. | BNPL plans with installment schedules; card and loan balances, APRs, minimums. | New. |
-| Credit reports | Credit Karma's connector is reachable only from a Claude session; statement import otherwise. | Utilisation, balances, inquiries. | Later (L2). |
-| Era Context | MCP and REST aggregator with bank connections. | Transactions and balances as an upstream. | Later (L6). |
+| SimpleFIN Bridge | A read-only aggregator: the owner connects each institution once at the bridge and pastes one setup token into the app. Cheap, no developer programme, used by Actual Budget. | Daily transactions and balances for every connected bank and card. The always-on source. | M1 |
+| Rocket Money export | CSV dropped in `/imports` or uploaded. Rocket Money has no API; its export link arrives by email, and the app reminds. | Years of history for backfill, categories, ignored flags. | M1 |
+| Any bank or card | CSV with column mapping, OFX/QFX. | Transactions, sometimes balances. For institutions the aggregator does not cover. | M1 |
+| Paystubs | PDFs: dropped in `/imports/paystubs`, uploaded, or taken from mail attachments, including ones the owner forwards to themselves. A parser per payroll format, a model second, confirmation for anything new. | Gross, net, taxes, deductions, pay period, pay date, employer. Matched to the deposit. | M2 |
+| Proton Mail | Through Proton Mail Bridge running beside the app on BigBox, over IMAP. The reader exists in `MCPManagement/protonmail-mcp`; port it. | Bills, statements, paystubs, installment schedules, payment confirmations, past-due and payday notices. The owner's Proton mailbox also carries their Gmail, so one connector covers most of both. | M4 |
+| Gmail | IMAP with an app password. OAuth stays off until it works without weekly re-authorisation. | The same, directly, for anything Proton does not carry. | M4 |
+| Any mailbox | Generic IMAP. | The same. | M4 |
+| Third-party debt and advance apps | No public APIs. Derived from transactions (equal amounts, same merchant, two-week spacing; advance repayments on payday), from emails (confirmations carry the schedule), and from a thirty-second manual form. | Installment plans with schedules; advances with repayment dates; card and loan balances, APRs, minimums. | M2 |
+| Era Context | An MCP and REST aggregator already connected to one of the owner's banks on a free tier with a short history window and few connections. | A second live source for the accounts it covers. Optional. | L6 |
+| Plaid or Teller | Developer account, production approval. | More institutions, if SimpleFIN misses any. | L1 |
+| Credit reports | Credit Karma's connector is reachable only from a Claude session; statement import otherwise. | Utilisation, balances, inquiries. | L2 |
 
-## 4. The model of the money
+## 5. The model of the money
 
-The entities, in the order the engine needs them:
-
-- **Account**: bank, card, loan, BNPL app, cash. Type, institution, last four (encrypted), current balance and when it was last known.
-- **Transaction**: date, account, merchant (cleaned), raw description, amount (positive is money out), category, flags: transfer, card payment, income, ignored. Source file and row hash for de-duplication.
-- **RecurringSeries**: merchant, cadence (weekly, biweekly, monthly, quarterly, yearly), typical amount and tolerance, next expected date. The seed for bills, subscriptions and paychecks.
-- **Income**: employer or payer, cadence, net amount, next date, account it lands in. Confirmed from a series or entered.
-- **Bill**: biller, amount (fixed or estimated from history), due day, autopay and the account it draws from, grace days, whether the due date can be moved and within what window. Linked to the series and to confirmed email facts.
+- **Account**: bank, card, loan, BNPL app, advance app, cash. Type, institution, last four (encrypted), current balance and when it was last known, which connector feeds it.
+- **Transaction**: date, account, merchant (cleaned), raw description, amount (positive is money out), category, flags: transfer, card payment, income, ignored. Source and row hash for de-duplication across connectors and exports.
+- **RecurringSeries**: merchant, cadence (weekly, biweekly, monthly, quarterly, yearly), typical amount and tolerance, next expected date. The seed for bills, subscriptions, paychecks and advances.
+- **Income**: employer or payer, cadence, expected net, next date, account it lands in. Confirmed from a series or from paystubs.
+- **Paystub**: employer, payroll provider, pay period, pay date, gross, net, each tax and deduction line, the source document, the matched deposit, and the difference between expected and actual net.
+- **Bill**: biller, amount (fixed or estimated from history), due day, autopay and the account it draws from, grace days, late fee, whether the due date can be moved and within what window. Linked to the series, to confirmed email facts, and to its payments.
+- **Payment**: a bill period settled or not: scheduled, paid (with the transaction and any confirmation email), late, past due, missed. The register that answers "did rent go out?"
 - **Debt**: card, loan, medical plan: balance, APR, minimum payment, statement day, due day. Linked to an account where one exists.
-- **InstallmentPlan**: a BNPL purchase: provider, merchant, total, schedule of installments with dates and amounts, what is paid. A plan is a Debt with a schedule.
+- **InstallmentPlan**: a BNPL purchase: provider, merchant, total, schedule of installments with dates and amounts, what is paid. A Debt with a schedule.
+- **Advance**: an earned-wage or cash advance: provider, amount, fee, repayment date (usually the next payday), repaid or not. A Debt the paycheck plan subtracts first.
 - **Subscription**: a bill that is a service: price history, last charge, category, the duplicate it may be of.
-- **MessageRef**: a mailbox message by folder, UID and hash: sender, subject, date. The body is not stored by default; a redacted excerpt is kept with each fact.
-- **ExtractedFact**: kind (bill due, statement, installment schedule, renewal, price change, payday, late notice), fields, confidence, status (pending, confirmed, rejected), the message and excerpt it came from, and which rule or model produced it.
-- **Rule**: an owner preference the engine obeys: minimum buffer, pay the card in full, never touch this account, category targets, goal priority.
+- **MessageRef**: a mailbox message by account, folder, UID and hash: sender, subject, date, attachments. Bodies are kept only when the owner turns that on; a redacted excerpt stays with each fact.
+- **ExtractedFact**: kind (bill due, statement, paystub, installment schedule, advance, renewal, price change, payday, payment confirmation, past due), fields, confidence, status (pending, confirmed, auto-confirmed, rejected), the message or document it came from, and which rule or model produced it.
+- **Rule**: an owner preference the engine obeys: minimum buffer, pay the card in full, never touch this account, category targets, goal priority, sender auto-confirm, standing send allowance.
 - **Goal**: emergency fund, payoff, saving for a thing: target, priority, pace.
-- **Recommendation**: kind (paycheck plan, purchase check, billing-date change), inputs, outputs, explanation, which key and model asked, and the owner's feedback.
-- **AuditEntry**: every tool call: key, model, tool, argument hash, rows touched, redaction level.
+- **Approval**: an outward action (today: a send), who or what asked, the draft, status, who approved, when it ran.
+- **Recommendation**: kind (paycheck plan, purchase check, billing-date change), inputs, outputs, explanation, which client and model asked, the owner's feedback.
+- **Job**: every scheduled or on-demand run: connector syncs, parsers, re-plans, briefs, with timing and outcome.
+- **AuditEntry**: every tool call: client, model, tool, argument hash, rows touched, redaction level.
 
-## 5. How a model gets in
+## 6. How a model gets in, from anywhere
 
-One access layer, three doors, the same tools behind each:
+One access layer, three doors, the same tools behind each, reachable at all times:
 
-- **MCP** at `/mcp` (streamable HTTP) with a stdio launcher for local clients. Bearer API keys. Tool annotations mark every read as read-only. This is how Claude Desktop, Claude Code and any MCP client connect, over Tailscale from anywhere.
-- **REST** under `/api/v1` mirroring the tools, for scripts and for chat apps without MCP.
-- **Tool schemas** at `/api/tools/openai.json` and `/api/tools/anthropic.json`, plus a prompt pack (a system prompt that explains the tools and the rules) for Open WebUI, LibreChat and home-grown agents.
+- **MCP** at `/mcp` (streamable HTTP) with the MCP authorization flow built in: OAuth 2.1 with PKCE, dynamic client registration and protected-resource metadata, served by the app itself for its one owner. This is what lets claude.ai add FinancialAuthority as a custom connector on the web, the desktop and the phone, and lets Claude Code add it with one command. Tokens are long-lived with refresh, revocable per client on the API keys page. A stdio launcher exists for local clients that want one.
+- **REST** under `/api/v1` mirroring the tools, with bearer API keys, for scripts and for chat apps without MCP.
+- **Tool schemas** at `/api/tools/openai.json` and `/api/tools/anthropic.json`, plus a prompt pack for Open WebUI, LibreChat and home-grown agents.
 
-The tools, by milestone:
+**Reach.** The app is published through BoxPilot's Cloudflare Tunnel at `https://<name>.<domain>`, so nothing is opened on the router and the address works from any network. The web interface has its own sign-in; `/mcp` and `/api` are guarded by the app's OAuth and keys; Cloudflare's edge rate-limits and shields the rest. Inside the tailnet the same app answers at BigBox's tailnet address, which is the fallback if the tunnel is down.
+
+The tools:
 
 | Tool | Returns | From |
 | --- | --- | --- |
-| `transactions.search` | Rows by date, merchant, category, amount, account. | M1 |
-| `spending.summary` | Totals by category and merchant for a period, period over period. | M1 |
-| `recurring.list` | Series with cadence and next expected date. | M1 |
-| `finance.snapshot` | Balances, next paycheck, bills due before it, debts, pending facts: one call that answers most questions. | M2 |
-| `bills.upcoming`, `debts.list`, `subscriptions.list`, `installments.list` | The obligation registers. | M2 |
+| `transactions.search`, `spending.summary`, `recurring.list` | The ledger. | M1 |
+| `accounts.list` | Accounts, balances, when each was last synced. | M1 |
+| `finance.snapshot` | Balances, next paycheck, advances due on it, bills due before it, debts, pending facts: one call that answers most questions. | M2 |
+| `bills.upcoming`, `payments.list`, `debts.list`, `installments.list`, `advances.list`, `subscriptions.list` | The registers. | M2 |
+| `paystubs.list`, `paystubs.get` | Paystubs with every line and the matched deposit. | M2 |
+| `mail.folders`, `mail.search`, `mail.read`, `mail.attachment` | Both mailboxes, read-only, boxed as untrusted data. | M4 |
+| `mail.draft`, `mail.send` | A draft in the owner's Drafts folder; a send that waits for approval or matches a standing allowance. | M4 |
 | `facts.pending`, `facts.confirm` | What needs a human; confirming needs the `confirm` scope. | M4 |
-| `cashflow.forecast` | Daily projected balance per account for N days, with the events that move it. | M5 |
-| `paycheck.plan` | The plan for a paycheck with every line's source. | M5 |
-| `purchase.check` | Verdict, what it breaks, when it would be fine, the BNPL variant. | M5 |
-| `billing_dates.suggest` | The ranked change list with before-and-after minimum balances. | M5 |
+| `cashflow.forecast`, `paycheck.plan`, `purchase.check`, `billing_dates.suggest` | The engine. | M5 |
 | `notes.remember` | A preference the owner stated in chat, stored as a pending rule. | M5 |
+| `brief.today`, `approvals.list`, `jobs.status` | What needs attention, what is waiting for approval, whether the app is healthy. | M6 |
 
-Built-in chat uses the same tools through a provider layer: Ollama on BigBox by default (reached at `host.docker.internal:11434`, as LLMCoach does), any OpenAI-compatible server (llama.cpp, vLLM, LocalAI, OpenAI), and Anthropic. Each provider has a redaction level. A 3 to 8 B local model can give a correct paycheck plan because the plan is computed before the model speaks; the model's job is to read it out and answer "why".
+Built-in chat uses the same tools through a provider layer: Ollama on BigBox by default (reached at `host.docker.internal:11434`, as LLMCoach does), any OpenAI-compatible server, and Anthropic. Each client and provider has a redaction level. A 3 to 8 B local model can give a correct paycheck plan because the plan is computed before the model speaks.
 
-BoxPilot's own agents cannot call an app's API today (their tools are a fixed catalog and their connectors are uploads, folders, Notion, Slack and SearXNG). Two paths: FinancialAuthority uses BoxPilot's Ollama, which works on day one; and later a `finance.*` read tool in BoxPilot behind a stored credential (L5), which is a BoxPilot change.
+BoxPilot's own agents cannot call an app's API today. FinancialAuthority uses BoxPilot's Ollama from day one; a `finance.*` read tool in BoxPilot's agent catalog is L5.
 
-## 6. The guidance engine
+## 7. The guidance engine
 
 All deterministic, all tested against a synthetic household and golden outputs.
 
-**Cash-flow projection.** For each account, a daily balance for the next 90 days from the current balance, confirmed bills, recurring series, paychecks, minimum payments and installments. A what-if layer adds hypothetical events without saving them. Everything below is a question asked of this projection.
+**Cash-flow projection.** For each account, a daily balance for the next 90 days from the current balance, confirmed bills, recurring series, paychecks, advance repayments, minimum payments and installments. A what-if layer adds hypothetical events without saving them.
 
-**Paycheck plan.** The window is from this paycheck to the next. Inside it: bills and installments due, minimums due, autopay already committed. Beyond it: set-asides for bills larger than one paycheck comfortably carries, spread over the paychecks until they are due. Then the buffer rule, then goals in priority order, then safe-to-spend is what is left. Every line names its bill, series or rule. A "don't buy" list sits under it (below).
+**Payment matching.** Each bill period looks for its payment: a transaction to the biller within the window and near the amount, or a confirmation email. Matched is paid; past the due day with no match is late; past the grace period is past due. A past-due notice in mail marks the bill past due even without a match. This is the register the "pay this now" list reads.
 
-**Purchase check.** Add the purchase to the projection on its date. It passes when the projected balance stays above the buffer through the next paycheck and one more, and no bill becomes unfunded. If it fails, the answer names the first thing it breaks and the first date it would pass. The BNPL variant adds the installments instead of the whole price and checks again, and says what the plan adds to the next three paychecks.
+**Paystub reconciliation.** Each paystub is matched to its deposit. The expected net (from the last few paystubs) is compared with the actual; a difference beyond a tolerance is flagged with the lines that moved, so a discrepancy is noticed on payday, not at tax time.
 
-**"Don't buy" list.** Standing flags from rules and the registers: anything that would breach the buffer before the next paycheck, categories over their target this period, a second subscription in a category that already has one, a price increase detected from email, more than N active installment plans, and a card the owner has said to pay in full that is carrying a balance.
+**Paycheck plan.** The window is from this paycheck to the next. First the advances that repay themselves on payday, then bills, installments and minimums due inside the window, autopay already committed, then set-asides for bills larger than one paycheck comfortably carries, then the buffer rule, then goals, then safe-to-spend. Every line names its bill, series, advance or rule. The "pay this now" list sits beside it: unpaid bills due within three days with amounts and where to pay.
 
-**Billing-date optimiser.** Inputs: paychecks, bills with a movable flag and allowed window, the buffer. Score for a schedule: the sum of shortfalls below the buffer over the projection, plus a penalty for each bill due in the three days before a payday, plus a penalty when more than a set share of one paycheck is due in any three-day window. Movable bills are few and candidate days are at most 28, so coordinate descent over the bills with a few sweeps is enough and is deterministic. Output: changes ranked by benefit, each with the before-and-after minimum balance, the instruction for that biller (where the setting lives, whether the current cycle must be paid first), and a draft message when the biller takes one. Drafts go to Proton's Drafts folder or Gmail's drafts; they are never sent.
+**Purchase check.** Add the purchase to the projection on its date. It passes when the projected balance stays above the buffer through the next paycheck and one more, and no bill becomes unfunded. If it fails, the answer names the first thing it breaks and the first date it would pass. The BNPL variant adds the installments instead of the price and says what the plan adds to the next three paychecks.
 
-**Explanations.** The engine returns structured results with sources. The model gets those, not the raw ledger, when it is asked to explain. A citation test checks that every number in an explanation appears in the result it was given.
+**"Don't buy" list.** Anything that would breach the buffer before the next paycheck, categories over their target this period, a second subscription in a category that already has one, a price increase detected from email, more than N active installment plans or any active advance, and a card the owner has said to pay in full that is carrying a balance.
 
-## 7. The web app
+**Billing-date optimiser.** Inputs: paychecks, bills with a movable flag and allowed window, the buffer. Score for a schedule: the sum of shortfalls below the buffer over the projection, plus a penalty for each bill due in the three days before a payday, plus a penalty when more than a set share of one paycheck is due in any three-day window. Coordinate descent over the movable bills, deterministic. Output: changes ranked by benefit, each with the before-and-after minimum balance, the instruction for that biller, and a draft message when the biller takes one, queued for approval.
 
-Phone first, because the paycheck routine happens on payday morning. Pages:
+**Explanations.** The engine returns structured results with sources. The model gets those, not the raw ledger. A citation test checks that every number in an explanation appears in the result it was given.
 
-- **This paycheck**: safe-to-spend, what is due, set-asides, the don't-buy list, one button to re-plan.
-- **Calendar**: paydays and due dates on one grid, 60 days ahead, with the projected low point of each week.
-- **Bills**, **Debts** (payoff order and the interest each month costs), **Subscriptions**, **Transactions**.
-- **Confirm**: the inbox of pending facts from email and detection, with the excerpt that produced each.
-- **Chat**: the built-in chat with a model switcher; every page has "ask about this".
-- **Connectors**, **API keys**, **Audit**, **Settings** (rules, goals, providers, redaction, time zone).
+## 8. It runs itself
 
-Installable to a phone's home screen. Light and dark.
+Jobs, each idempotent, logged, visible on the Jobs page and through `jobs.status`:
 
-## 8. Architecture and stack
+| Job | When | What it does |
+| --- | --- | --- |
+| Mail sync | Every 15 minutes | New messages by UID from each mailbox; classify; extract; capture paystub and statement attachments; auto-confirm where earned. |
+| Bank sync | Daily at 05:30 and on demand | SimpleFIN pull; de-duplicate against exports; recurring detection; payment matching. |
+| Import watch | On file arrival | CSV, OFX, paystub PDFs from `/imports`. |
+| Re-plan | 06:00 on a payday, and after any confirmed change | Recompute the projection and the paycheck plan. |
+| Brief | 07:00 daily | What is due and unfunded in three days, past due, discrepancies, new plans or advances, price increases, connectors that failed, approvals waiting. Delivered as a push (ntfy or Gotify from BoxPilot's catalog), shown in the app, served by `brief.today`. |
+| Export reminder | When the aggregator's export email arrives | Reminds the owner to drop the file. |
+| Self-check | Hourly | Each connector's last success; stale data warnings; the tunnel reachable; disk and database size. |
+
+## 9. The web app
+
+Phone first. Pages: **Today** (the brief and approvals), **This paycheck**, **Calendar**, **Bills**, **Payments**, **Paystubs**, **Debts** (payoff order and monthly interest), **Subscriptions**, **Transactions**, **Confirm** (pending facts with their excerpts), **Mail** (search both mailboxes; open a message boxed), **Chat** (model switcher, "ask about this" on every page), **Connectors**, **Clients** (OAuth clients and API keys), **Jobs**, **Audit**, **Settings** (rules, goals, providers, redaction, time zone, send allowances). Installable to a phone's home screen. Light and dark.
+
+## 10. Architecture and stack
 
 The same shape as LLMCoach, which already ships to BigBox this way:
 
-- **Backend**: Python 3.12, FastAPI, SQLModel over SQLite at `/data/financialauthority.db`, versioned migrations, the official `mcp` SDK mounted at `/mcp`, `httpx` for model providers, `imaplib` for mail. Field-level AES-GCM for tokens, passwords and account numbers with a key from `FA_DATA_KEY`.
+- **Backend**: Python 3.12, FastAPI, SQLModel over SQLite at `/data/financialauthority.db`, versioned migrations, the official `mcp` SDK mounted at `/mcp` with its OAuth authorization server, APScheduler for jobs, `httpx` for providers and SimpleFIN, `imaplib` for mail, `pypdf` with OCR fallback for paystubs and statements. Field-level AES-GCM for tokens, passwords and account numbers with a key from `FA_DATA_KEY`.
 - **Frontend**: React 19, Vite, TypeScript, Tailwind 4, built into the image and served by the backend.
-- **One image**: `ghcr.io/aes256afro/financialauthority`, port 8000 inside, `/data` for everything that must survive, `/imports` as a drop folder for exports. A `HEALTHCHECK` on `/api/health`.
-- **Tests**: pytest for the engine and connectors with injected clocks; vitest for the UI; a synthetic household fixture used by every test and by demo mode.
-- **Versioning**: one version string in `backend/app/version.py`, read by the image build and shown in the UI. Tags `vX.Y.Z` publish `:X.Y.Z` and `:latest`.
+- **One image**: `ghcr.io/aes256afro/financialauthority`, public (it holds no data), port 8000 inside, `/data` for everything that must survive, `/imports` as a drop folder. A `HEALTHCHECK` on `/api/health`. A Proton Mail Bridge sidecar in the same compose project.
+- **Tests**: pytest for the engine, parsers and connectors with injected clocks; vitest for the UI; a synthetic household fixture used by every test and by demo mode; a red-team mailbox fixture.
+- **Versioning**: one version string in `backend/app/version.py`. Tags `vX.Y.Z` publish `:X.Y.Z` and `:latest`.
 
 ```
 financialauthority/
-  backend/app/        FastAPI app: api/, mcp/, engine/, connectors/, models/, migrations/
-  backend/tests/      pytest, with fixtures/household/
+  backend/app/        FastAPI app: api/, mcp/ (tools + oauth), engine/, connectors/, parsers/, jobs/, models/, migrations/
+  backend/tests/      pytest, with fixtures/household/ and fixtures/mail/
   frontend/           Vite + React
   docker/Dockerfile   one image, frontend built in a first stage
-  deploy/boxpilot/    the catalog manifest
+  deploy/boxpilot/    the catalog manifest (app + Bridge sidecar)
   deploy/compose/     docker-compose.yml and .env.example for standalone installs
-  docs/               this plan, the roadmap, connector and tool references
+  docs/               plan, roadmap, access, connector and tool references
 ```
 
-## 9. Deployment
+## 11. Deployment and always-on
 
-**BoxPilot on BigBox** is the primary target. The app is a catalog entry: a manifest in `deploy/boxpilot/financialauthority.yaml` (a draft is already there) pointing at the published image, with `/data` backed up by BoxPilot, secrets generated by BoxPilot at install, a `signIn` block so the card shows the way in, and a connection to the Ollama app. Reach is LAN or tailnet, never public. Install, update, back up and restore then work the way they do for every other app.
+**BoxPilot on BigBox** is the primary target. The app is a catalog entry: [deploy/boxpilot/financialauthority.yaml](../deploy/boxpilot/financialauthority.yaml) points at the published image, keeps `/data` backed up by BoxPilot, has secrets generated by BoxPilot at install, a `signIn` block, a connection to the Ollama app, and the Proton Mail Bridge as a sidecar whose state is backed up so a restore needs no new sign-in. BoxPilot restarts it, updates it, and rolls back an update that does not come up healthy.
 
-**Independent** means the same image anywhere Docker runs: `deploy/compose/docker-compose.yml` with a `.env`. For reach from outside the LAN the recipes are Tailscale (nothing to open) or a Cloudflare Tunnel with Access in front of it. There is no reason to run this on a serverless platform: it holds a mailbox connection, a SQLite file and an encrypted store, and it wants to sit next to a local model.
+**Published** through BoxPilot's Cloudflare Tunnel (its Tunnel tab: connect with an API token once, then Publish the app under a name on one of the owner's domains). The app's `FA_PUBLIC_URL` is set to that address and becomes the OAuth issuer. Inside the tailnet the same app answers directly.
 
-## 10. Security and threat model
+**Independent** means the same image anywhere Docker runs: `deploy/compose/docker-compose.yml` with a `.env`, plus a `cloudflared` or Tailscale recipe for reach.
 
-What we protect: the ledger, the mailbox connection, the aggregator tokens, the owner's preferences. From whom: anyone on the LAN who is not the owner, a cloud model provider, an attacker who can send the owner an email, and a careless future commit.
+**Always-on means**: the host stays up (BoxPilot already watches it and the battery backup), the app restarts itself, the self-check job notices a connector or the tunnel failing and says so in the brief, and the Bridge sidecar keeps its session across restarts. The sources that are not always-on are the exports; the aggregator replaces them for live data, and the export is only for history.
 
-- **Secrets**: `FA_PASSWORD`, `FA_SESSION_SECRET` and `FA_DATA_KEY` are generated by BoxPilot at install and live only in the container's environment. Connector credentials are entered in the UI and stored encrypted with `FA_DATA_KEY`. Nothing secret is logged.
-- **Sign-in**: one owner, password, session cookie with CSRF protection, lockout after repeated failures. Passkeys later.
-- **API keys**: hashed at rest, scoped (`read`, `confirm`, `admin`), each with a redaction level, revocable, listed with last use.
-- **Prompt injection**: mail bodies and statement text are boxed as untrusted data before a model sees them, extraction output is schema-validated and bounds-checked, and a fact is pending until a human confirms it. A red-team suite of malicious emails runs in CI. A model holding a `read` key cannot confirm anything.
-- **Data minimisation**: cloud providers get the redaction level the owner set; account numbers never leave; bodies are not stored unless the owner turns that on, and then for ninety days.
-- **Network**: LAN or tailnet. The compose file binds to the host only. The catalog manifest never exposes the port publicly.
-- **Backups**: BoxPilot backs up `/data` and keeps encrypted copies off the server. Restore is rehearsed by BoxPilot's own restore test.
-- **Exit**: export everything as CSV and JSON; delete everything with one confirmed action; rotate `FA_DATA_KEY` with a re-encrypt job.
+## 12. Security and threat model
 
-## 11. Decisions made now
+What we protect: the ledger, two mailboxes, paystubs, the aggregator token, the owner's preferences, the OAuth and API credentials. From whom: anyone on the internet, now that the app is published; anyone on the LAN who is not the owner; a cloud model provider; an attacker who can send the owner an email; a careless future commit.
 
-- **D1 Stack: Python backend, React frontend, one image.** The two existing data readers are Python on the `mcp` SDK and LLMCoach proved the packaging on BigBox. Node and Express, as BoxPilot uses, would mean rewriting both readers.
-- **D2 Engine first, model second.** The engine must produce a correct plan with no model at all; the model is an interface to it. This is what makes "any model" true, small local ones included.
-- **D3 Proton Mail Bridge runs on BigBox**, in its own container, so the server can reach it; the Bridge on the Windows PC only listens on that PC. The community headless Bridge image needs one interactive sign-in at first start. It becomes its own BoxPilot catalog app with loopback exposure (M7.4). If that proves fragile, the fallback is a small relay on the PC over Tailscale.
-- **D4 Gmail by IMAP app password in v1.** OAuth in "testing" status expires refresh tokens weekly; app verification is for a product, not a home server.
-- **D5 Transactions from exports in v1; live sync later.** Rocket Money's CSV already covers every account the owner has linked there. SimpleFIN is the first live source when the time comes: cheap, read-only, no developer programme.
-- **D6 Field-level encryption, not SQLCipher.** Secrets and account numbers are encrypted in their columns; BoxPilot's backups are encrypted off the server. SQLCipher stays an option if the threat model changes.
-- **D7 One owner in v1.** Household views and a second sign-in are L4.
-- **D8 Env names are prefixed `FA_`**, data is at `/data`, imports at `/imports`, the web port inside is 8000 and BoxPilot's host port is 8430 (free in the catalog today).
+- **Public surface**: only the web sign-in, `/mcp`, `/api`, `/oauth/*` metadata and endpoints, and `/api/health` are reachable. OAuth tokens and API keys are hashed at rest, scoped (`read`, `confirm`, `approve`, `admin`), revocable, listed with last use. Model clients get `read` by default and never `approve`. Sign-in has lockout; every public route is rate-limited; Cloudflare's WAF sits in front; admin pages require a recent re-authentication.
+- **Secrets**: `FA_PASSWORD`, `FA_SESSION_SECRET` and `FA_DATA_KEY` are generated by BoxPilot at install and live only in the container's environment. Connector credentials (the aggregator token, mailbox app passwords, the Bridge's local password) are entered in the UI and stored encrypted with `FA_DATA_KEY`. Nothing secret is logged.
+- **Prompt injection**: mail bodies, attachments and statement text are boxed as untrusted data before a model sees them, extraction output is schema-validated and bounds-checked, a fact is pending until confirmed, and no model can approve a send. A red-team mailbox runs in CI.
+- **Data minimisation**: cloud providers and clients get the redaction level the owner set; account numbers never leave; bodies are not stored unless the owner turns that on, and then for ninety days.
+- **Backups**: BoxPilot backs up `/data` and the Bridge state and keeps encrypted copies off the server. Restore is rehearsed by BoxPilot's own restore test.
+- **Exit**: export everything as CSV and JSON; delete everything with one confirmed action; rotate `FA_DATA_KEY` with a re-encrypt job; revoke every client at once.
 
-## 12. Risks and open questions
+## 13. Decisions made now
 
-- **Email parsing varies by biller.** Rules per sender first, model extraction second, confirmation always. Expect to add a sender rule the first time each biller shows up.
-- **BNPL has no APIs.** Detection from transactions and emails will miss some plans; the manual form must take under a minute.
-- **Rocket Money's export is manual.** The email connector can notice the export email and remind; downloading the file stays a human step. A BoxPilot SMB share on `/imports` makes it a drag and drop.
-- **A model that invents numbers.** Mitigated by D2 and the citation test. The chat shows the engine's table beside the model's prose.
-- **Proton Bridge on a server** is community-supported, not Proton-supported. D3 names the fallback.
-- **Scope.** The temptation is dashboards. The value is the three outputs in section 1; the roadmap orders work so that real data is queryable by any model by the end of M3 and the paycheck plan exists by the end of M5.
-- **Whose money?** One owner in v1. Shared accounts with a partner are L4 and will need per-account visibility rules.
+- **D1 Stack: Python backend, React frontend, one image.** The two existing data readers are Python on the `mcp` SDK, and LLMCoach proved the packaging on BigBox.
+- **D2 Engine first, model second.** The engine must produce a correct plan with no model at all. This is what makes "any model" true.
+- **D3 Proton Mail Bridge is a sidecar of the app on BigBox.** The Bridge on the owner's PC only listens on that PC and only while it runs. The sidecar's state volume is backed up so a restore needs no new sign-in. The one interactive sign-in at first start is the owner's (see ACCESS.md). Fallback if the community image proves fragile: a separate catalog app, then a relay from the PC.
+- **D4 Gmail by IMAP app password.** OAuth in "testing" status expires refresh tokens weekly.
+- **D5 SimpleFIN is the live source, in M1.** The free aggregator the owner already has covers one bank with a short window; exports are manual and partial. SimpleFIN covers every bank and card for a small monthly fee with no developer programme. Plaid stays L1.
+- **D6 Field-level encryption, not SQLCipher.**
+- **D7 One owner in v1.** Household views are L4.
+- **D8 Env names are prefixed `FA_`**, data at `/data`, imports at `/imports`, web port 8000 inside, BoxPilot host port 8430.
+- **D9 The app is its own OAuth 2.1 server.** It is the only way claude.ai's custom connectors, including the phone, can sign in to a self-hosted MCP server, and it keeps the credential on BigBox.
+- **D10 Public image, private repository.** BoxPilot's catalog cannot pull from a private registry. The image holds no data.
+- **D11 Sends need an approval or a standing allowance; money never moves.** Section 2.
+- **D12 Auto-confirm is earned per sender**, two confirmations by the owner, revocable.
+
+## 14. Risks and open questions
+
+- **Publishing the app.** A public address is the price of "from anywhere, at all times". The mitigations in section 12 are not optional, and M3 does not ship without them.
+- **Aggregator coverage.** Fintech accounts (payment apps, advance apps, some cards) often are not connectable. Those come from email and the manual form; the plan treats them as first-class.
+- **Paystub formats.** One parser per payroll provider, and the owner's provider is the first. The owner forwards PDFs today; that keeps working.
+- **Email parsing varies by biller.** Rules per sender first, model extraction second, confirmation until earned.
+- **A model that invents numbers.** Mitigated by D2 and the citation test.
+- **Proton Bridge in a container** is community-supported. D3 names the fallbacks.
+- **Scope.** The value is the three outputs in section 1 and the brief in section 8. The roadmap orders work so real data is reachable by Claude from the phone by the end of M3.
