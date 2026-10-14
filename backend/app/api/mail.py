@@ -292,6 +292,10 @@ def confirm_fact(fact_id: int, body: ConfirmIn, session: Session = Depends(get_s
     session.add(fact)
     session.commit()
     session.refresh(fact)
+    if applied:
+        from ..llm.reviewer import mark_pending
+
+        mark_pending(session, f"{fact.kind} confirmed")
     return fact_out(fact, ref)
 
 

@@ -3,12 +3,14 @@ import { useApi } from "./api";
 import { Shell } from "./components/Shell";
 import { Appearance } from "./pages/Appearance";
 import { Bills } from "./pages/Bills";
+import { Chat } from "./pages/Chat";
 import { Clients } from "./pages/Clients";
 import { Confirm } from "./pages/Confirm";
 import { Connectors } from "./pages/Connectors";
 import { Home } from "./pages/Home";
 import { Jobs } from "./pages/Jobs";
 import { Mail } from "./pages/Mail";
+import { Models } from "./pages/Models";
 import { Paystubs } from "./pages/Paystubs";
 import { SettingsIndex } from "./pages/Settings";
 import { SignIn } from "./pages/SignIn";
@@ -43,11 +45,13 @@ export default function App() {
         <Route path="/transactions" element={<Transactions />} />
         <Route path="/bills" element={<Bills onChanged={snapshot.reload} />} />
         <Route path="/mail" element={<Mail />} />
+        <Route path="/chat" element={body((s) => <Chat snapshot={s} onChanged={snapshot.reload} />)} />
         <Route path="/paystubs" element={<Paystubs />} />
         <Route path="/confirm" element={<Confirm onChanged={snapshot.reload} />} />
         <Route path="/settings" element={<SettingsIndex />} />
         <Route path="/settings/appearance" element={<Appearance />} />
         <Route path="/settings/clients" element={<Clients />} />
+        <Route path="/settings/models" element={<Models />} />
         <Route path="/settings/connectors" element={<Connectors />} />
         <Route path="/settings/jobs" element={<Jobs />} />
         <Route path="*" element={<Navigate to="/" replace />} />

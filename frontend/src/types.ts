@@ -202,3 +202,26 @@ export interface Me {
   scopes: string[];
   auth_enabled: boolean;
 }
+
+export interface ReviewNote {
+  n: number;
+  kind: "disagree" | "tighten" | "ask" | "ok";
+  text: string;
+  action: { type: "rule" | "buffer" | "ask" | "none"; text?: string; value?: number };
+  status: "open" | "applied" | "dismissed";
+  unverified: string[];
+}
+
+export interface ReviewRun {
+  id: number;
+  created_at: string;
+  trigger: "payday" | "change" | "request";
+  provider: string;
+  model: string;
+  ok: boolean;
+  error: string;
+  notes: ReviewNote[];
+  input_tokens: number;
+  output_tokens: number;
+  cost: number | null;
+}

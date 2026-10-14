@@ -7,6 +7,7 @@ sign in by itself. Every call is audited. Tool names use underscores; the docs w
 from __future__ import annotations
 
 import logging
+from contextvars import ContextVar
 from datetime import date
 
 from mcp.server import MCPServer
@@ -35,7 +36,14 @@ except Exception:  # noqa: BLE001
         return None
 
 
+# The built-in chat runs the same tools without a bearer token; it names itself here for the audit log.
+CALLER: ContextVar[tuple[str, str] | None] = ContextVar("fa_caller", default=None)
+
+
 def _caller() -> tuple[str, str]:
+    override = CALLER.get()
+    if override is not None:
+        return override
     token = get_access_token()
     if token is None:
         return "mcp", "full"
