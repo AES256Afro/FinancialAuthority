@@ -1,6 +1,5 @@
-# Draft BoxPilot catalog manifest (schemaVersion 2). Pinned to a release once one exists (M8.1),
-# then sent to BoxPilot as a pull request. Host port 8430 was free in the catalog on 2026-10-14.
-# The Proton Mail Bridge runs as a sidecar; its image tag is a placeholder to pin at M4.2.
+# BoxPilot catalog manifest (schemaVersion 2), pinned to the release it ships. Host port 8430 was free in
+# the catalog on 2026-10-14. The Proton Mail Bridge runs as a sidecar.
 schemaVersion: 2
 id: financialauthority
 name: FinancialAuthority
@@ -67,12 +66,6 @@ env:
   - name: FA_OPENAI_API_KEY
     label: Key for that server (optional)
     type: password
-  - name: FA_PROTON_IMAP_HOST
-    default: bridge
-    fixed: true
-  - name: FA_PROTON_IMAP_PORT
-    default: "1143"
-    fixed: true
   - name: FA_DATA_DIR
     default: /data
     fixed: true
@@ -88,7 +81,7 @@ extraHosts:
   - host.docker.internal:host-gateway
 sidecars:
   - id: bridge
-    image: shenxn/protonmail-bridge:3.21.2
+    image: shenxn/protonmail-bridge:3.19.0-1
     volumes:
       - id: bridge-state
         container: /root
@@ -108,4 +101,4 @@ signIn:
 health:
   kind: healthcheck
   timeoutSeconds: 300
-notes: "It never moves money, and sends mail only after an approval or a standing allowance you granted. Proton Mail runs through the Bridge sidecar: sign in to it once from the server's console (the app's Connectors page shows the command), then enter the local IMAP password it prints. Connect your banks at SimpleFIN and paste the setup token; drop a bank export or paystub PDFs into Imports to backfill. To reach it from anywhere, publish it with the Cloudflare Tunnel app and set the public address. Every recommendation shows the rows it was computed from and says it is not financial advice."
+notes: "It never moves money, and sends mail only after an approval or a standing allowance you granted. Proton Mail runs through the Bridge sidecar: sign in to it once from the server's console (the app's Connectors page shows the command), then enter the local IMAP password it prints. Banks connect through Plaid's free Trial plan or Teller's free developer tier, with your own developer keys pasted on the Connectors page and the bank's own login opened in the vendor's window; a Rocket Money export or paystub PDFs dropped into Imports backfill the rest. To reach it from anywhere, publish it with the Cloudflare Tunnel app and set the public address; claude.ai and Claude Code then sign in through the app's own consent page. Every recommendation shows the rows it was computed from and says it is not financial advice."
