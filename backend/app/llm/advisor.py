@@ -61,6 +61,7 @@ def compact_plan(snap: dict, *, names: bool = True) -> dict:
         "debts": [{"name": d["name"], "kind": d["kind"], "balance": d["balance"], "apr": d["apr"], "minimum": d["minimum"]} for d in snap["debts"]],
         "windows": [{"start": w["start"], "end": w["end"], "paycheck": w["paycheck"], "carried_in": w["carried_in"], "advances": w["advances"]["total"], "bills": w["bills"]["total"], "set_aside": w["set_aside"]["total"], "safe": w["safe"]} for w in snap["windows"]],
         "payments": {"past_due": [{"name": p["name"], "amount": p["amount"], "due": p.get("due")} for p in snap["payments"]["past_due"]], "late": [{"name": p["name"], "amount": p["amount"]} for p in snap["payments"]["late"]]},
+        "goals": {"per_paycheck": snap.get("goals", {}).get("per_paycheck", 0.0), "items": [{"name": g["name"], "target": g["target"], "funded": g["funded"], "per_paycheck": g["per_paycheck"], "on_track": g["on_track"], "target_date": g["target_date"]} for g in snap.get("goals", {}).get("items", [])]},
         "brief": [b["text"] for b in snap["brief"]],
         "pending": snap["pending"],
         "engine_rules": {"window_days": 14, "set_aside_whole_under": 500, "set_aside_share_at_or_over": 0.5, "advances_first": True},

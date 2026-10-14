@@ -140,7 +140,8 @@ export interface Snapshot {
   advances: { total: number; items: Event[] };
   window: { start: string; end: string; total: number; items: Event[] };
   set_aside: { total: number; items: Event[] };
-  safe_to_spend: { amount: number; through: string; version: string };
+  safe_to_spend: { amount: number; after_goals: number; through: string; version: string };
+  goals: { per_paycheck: number; items: { id: number; name: string; kind: string; target: number; funded: number; remaining: number; target_date: string | null; per_paycheck: number; on_track: boolean }[] };
   usual_pace: { per_day: number; per_window: number; basis_days: number; transactions: number };
   debts: { id: number; name: string; kind: string; balance: number; apr: number; minimum: number; due_day: number | null }[];
   pending: { confirmations: number; series: number; facts: number; approvals: number; past_due: number };

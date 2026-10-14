@@ -72,6 +72,10 @@ def build_brief(snap: dict) -> list[dict]:
         bills = [f for f in mail_pending if f["kind"] == "bill_due"]
         text = f"{len(bills)} bill{'s' if len(bills) != 1 else ''} found in the mail need a look" if bills else f"{len(mail_pending)} thing{'s' if len(mail_pending) != 1 else ''} from the mail need a look"
         items.append({"severity": "warning", "text": text + ".", "link": "/confirm"})
+    goals = snap.get("goals", {"per_paycheck": 0.0, "items": []})
+    if goals["per_paycheck"] > 0:
+        behind = [g["name"] for g in goals["items"] if not g["on_track"]]
+        items.append({"severity": "warning" if behind else "info", "text": f"Goals take {money(goals['per_paycheck'])} of this paycheck" + (f"; {', '.join(behind)} {'is' if len(behind) == 1 else 'are'} behind." if behind else ", all on track."), "link": "/today"})
     safe = snap["safe_to_spend"]
-    items.append({"severity": "critical" if safe["amount"] < 0 else "info", "text": (f"Short by {money(-safe['amount'])} through {when(safe['through'])} after bills and set-asides." if safe["amount"] < 0 else f"Safe to spend {money(safe['amount'])} through {when(safe['through'])}."), "link": "/"})
+    items.append({"severity": "critical" if safe["amount"] < 0 else "info", "text": (f"Short by {money(-safe['amount'])} through {when(safe['through'])} after bills and set-asides." if safe["amount"] < 0 else f"Safe to spend {money(safe['amount'])} through {when(safe['through'])}." + (f" After goals, {money(safe['after_goals'])}." if goals["per_paycheck"] > 0 else "")), "link": "/"})
     return items
