@@ -116,3 +116,17 @@ def test_api_key_reaches_mcp_and_lists_tools(owner: TestClient, live: TestClient
     assert listed.status_code == 200, listed.text
     assert "finance_snapshot" in listed.text and "brief_today" in listed.text
     assert _initialize(live, {"Authorization": "Bearer fa_nope"}).status_code == 401
+
+
+def test_issuer_takes_https_or_the_loopback_and_never_a_plain_address(monkeypatch):
+    from app import oauth as oauth_module
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "public_url", "https://money.example.test/")
+    assert oauth_module.issuer() == "https://money.example.test"
+    monkeypatch.setattr(settings, "public_url", "http://localhost:8430")
+    assert oauth_module.issuer() == "http://localhost:8430"
+    monkeypatch.setattr(settings, "public_url", "http://10.0.0.5:8430")
+    assert oauth_module.issuer() == f"http://localhost:{settings.port}"  # the app keeps running; OAuth waits for https
+    monkeypatch.setattr(settings, "public_url", "")
+    assert oauth_module.issuer() == f"http://localhost:{settings.port}"

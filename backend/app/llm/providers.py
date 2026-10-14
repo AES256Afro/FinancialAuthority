@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -42,6 +43,11 @@ class ProviderError(RuntimeError):
     pass
 
 
+@asynccontextmanager
+async def _lend(client: httpx.AsyncClient) -> AsyncIterator[httpx.AsyncClient]:
+    yield client
+
+
 def _parse_arguments(raw: str) -> dict:
     if not raw.strip():
         return {}
@@ -61,8 +67,11 @@ class Provider:
         self.model = model
         self._client = client
 
-    def client(self) -> httpx.AsyncClient:
-        return self._client or httpx.AsyncClient(timeout=TIMEOUT)
+    def client(self):  # noqa: ANN201 - an async context manager yielding the HTTP client
+        """A fresh client per call, closed afterwards; an injected client (tests) is lent out and left open."""
+        if self._client is not None:
+            return _lend(self._client)
+        return httpx.AsyncClient(timeout=TIMEOUT)
 
     async def chat(self, messages: list[dict], tools: list[ToolSpec] | None = None, *, max_tokens: int = 1024) -> AsyncIterator[Event]:  # pragma: no cover - interface
         raise NotImplementedError
@@ -169,6 +178,26 @@ class Ollama(OpenAICompatible):
             response = await client.get(f"{self.url}/api/tags")
             response.raise_for_status()
             return sorted(m.get("name", "") for m in response.json().get("models", []) if m.get("name"))
+
+    async def chat(self, messages: list[dict], tools: list[ToolSpec] | None = None, *, max_tokens: int = 1024) -> AsyncIterator[Event]:
+        """As the OpenAI-compatible chat, with one difference: when the chosen model is not on this server,
+        the first model the server does have answers instead, so the chat works before any settings are touched."""
+        first: list[Event] = []
+        retried = False
+        async for event in super().chat(messages, tools, max_tokens=max_tokens):
+            if event.type == "error" and not retried and ("not found" in event.message.lower() or "does not exist" in event.message.lower()):
+                try:
+                    available = await self.list_models()
+                except httpx.HTTPError:
+                    available = []
+                if available and self.model not in available:
+                    self.model = available[0]
+                    retried = True
+                    async for again in super().chat(messages, tools, max_tokens=max_tokens):
+                        yield again
+                    return
+            first.append(event)
+            yield event
 
 
 def _to_anthropic(messages: list[dict]) -> tuple[str, list[dict]]:

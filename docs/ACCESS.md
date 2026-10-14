@@ -7,7 +7,7 @@
 | Thing | How | State on 2026-10-14 |
 | --- | --- | --- |
 | This repository | `gh` CLI signed in as the owner; push to `main` | Works. |
-| BigBox over the tailnet | Tailscale is up on this PC; BigBox is online; Tailscale SSH is in use | Reachable. The tailnet policy already permits SSH as the PC's username, but that account on BigBox has no login shell, so every attempt ends with "This account is currently not available". |
+| BigBox over the tailnet | Tailscale SSH as the `bigbox` user (docker group; sudo needs a password, so nothing here uses sudo) | Works since 2026-10-14. The app runs from `~/financialauthority` on BigBox by hand (compose, built from the shipped source) until the catalog entry lands. |
 | Docker builds | GitHub Actions (there is no Docker on this PC) | Works once the workflow exists (M0.2). |
 | Gmail | The claude.ai Gmail connector: search, read, draft, send | Works. |
 | Proton Mail | The `protonmail` MCP server through Proton Mail Bridge on this PC: list, search, read, draft | Works while this PC and the Bridge are running. Not always-on; the Bridge sidecar on BigBox fixes that (M4.2). |
