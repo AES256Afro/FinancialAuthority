@@ -22,8 +22,10 @@ def test_detection_links_known_bills_and_income():
         assert by_name["Phone"].cadence == "monthly" and by_name["Phone"].typical_amount == 96.0
         payroll = by_name["Example Employer Payroll"]
         assert payroll.kind == "income" and payroll.confirmed and payroll.cadence == "biweekly"
-        unknown = [s for s in series if not s.confirmed]
+        unknown = [s for s in series if not s.confirmed and s.active]
         assert {s.merchant for s in unknown} == {"Example Cloud Storage", "Example Storage Unit"}
+        finished = by_name["Tyres plan installment"]
+        assert not finished.active and not finished.confirmed  # a plan that ended stays out of Needs you
         rent = session.exec(select(Bill).where(Bill.name == "Rent")).one()
         assert rent.series_id == by_name["Rent"].id
         income = session.exec(select(Income)).one()
