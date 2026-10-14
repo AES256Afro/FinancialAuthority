@@ -226,6 +226,38 @@ def build_server() -> MCPServer:
             services.audit(session, client=client, client_kind="key", tool="paystubs_list", rows=len(out["recent"]), redaction=redaction)
             return out
 
+    @server.tool(name="spending_summary", annotations=READ_ONLY)
+    def spending_summary_tool(months: int = 6, by: str = "category") -> dict:
+        """Spending by month with income beside it, the groups (category or merchant) with this month against
+        the average of the full months, the top merchants, and the savings rate over the period.
+
+        Args:
+            months: How many months back, including the current partial one (1 to 24).
+            by: "category" or "merchant".
+        """
+        from .engine.reports import spending_summary
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            out = spending_summary(session, _today(), months=months, by=by if by in ("category", "merchant") else "category", redaction=redaction)
+            services.audit(session, client=client, client_kind="key", tool="spending_summary", args={"months": months, "by": by}, rows=len(out["groups"]), redaction=redaction)
+            return out
+
+    @server.tool(name="debts_list", annotations=READ_ONLY)
+    def debts_list() -> dict:
+        """Every debt with its balance, APR, minimum and share of the whole; the installment plans and advances
+        counted as debt; the minimums due each month; the avalanche and snowball orders."""
+        from .engine.reports import debt_mountain
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            out = debt_mountain(session, _today())
+            if redaction != "full":
+                for item in out["items"]:
+                    item["name"] = item["kind"]
+            services.audit(session, client=client, client_kind="key", tool="debts_list", rows=len(out["items"]), redaction=redaction)
+            return out
+
     @server.tool(name="brief_today", annotations=READ_ONLY)
     def brief_today() -> dict:
         """What needs attention today, as the engine's own sentences: what clears before payday, what is past

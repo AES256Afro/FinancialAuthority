@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import PlainTextResponse
@@ -15,9 +15,10 @@ from ..config import settings
 from ..connectors import CONNECTORS
 from ..connectors.rocketmoney import export_csv
 from ..db import get_session
+from ..engine.reports import debt_mountain, net_worth, spending_summary
 from ..engine.snapshot import finance_snapshot
 from ..jobs.scheduler import jobs
-from ..models import Account, ApiKey, Transaction, utcnow
+from ..models import Account, ApiKey, AuditEntry, Transaction, utcnow
 from ..store import DEFAULTS, get_setting, set_setting
 from ..version import __version__
 
@@ -70,6 +71,52 @@ def search_transactions(
     if principal.kind == "key":
         services.audit(session, client=principal.name, client_kind="key", tool="transactions_search", args={"text": text, "category": category}, rows=result["returned"], redaction=principal.redaction)
     return result
+
+
+@router.get("/reports/spending")
+def report_spending(months: int = 6, by: str = "category", session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
+    if by not in ("category", "merchant"):
+        raise HTTPException(400, "by is category or merchant")
+    out = spending_summary(session, today(), months=months, by=by, redaction=principal.redaction)
+    services.audit(session, client=principal.name, client_kind=principal.kind, tool="spending_summary", args={"months": months, "by": by}, rows=len(out["groups"]), redaction=principal.redaction)
+    return out
+
+
+@router.get("/accounts/overview")
+def accounts_overview(session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
+    out = net_worth(session, today())
+    if principal.redaction != "full":
+        for item in out["assets"]["items"] + out["debts"]["items"]:
+            item["name"] = item["kind"]
+            item["institution"] = ""
+    return out
+
+
+@router.get("/debts")
+def debts_overview(session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
+    out = debt_mountain(session, today())
+    if principal.redaction != "full":
+        for item in out["items"]:
+            item["name"] = item["kind"]
+        out["order"] = {"avalanche": [], "snowball": []}
+    return out
+
+
+@router.get("/audit")
+def audit_log(limit: int = 200, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    limit = max(1, min(int(limit), 1000))
+    rows = session.exec(select(AuditEntry).order_by(AuditEntry.at.desc()).limit(limit)).all()
+    week_ago = utcnow() - timedelta(days=7)
+    recent = session.exec(select(AuditEntry).where(AuditEntry.at >= week_ago)).all()
+    by_tool: dict[str, int] = {}
+    by_client: dict[str, int] = {}
+    for r in recent:
+        by_tool[r.tool] = by_tool.get(r.tool, 0) + 1
+        by_client[r.client] = by_client.get(r.client, 0) + 1
+    return {
+        "entries": [{"id": r.id, "at": r.at.isoformat(), "client": r.client, "client_kind": r.client_kind, "tool": r.tool, "rows": r.rows, "redaction": r.redaction} for r in rows],
+        "week": {"calls": len(recent), "by_tool": by_tool, "by_client": by_client},
+    }
 
 
 @router.get("/snapshot")
