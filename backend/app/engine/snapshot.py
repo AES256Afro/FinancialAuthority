@@ -142,8 +142,11 @@ def finance_snapshot(session: Session, today: date) -> dict:
         week_start += timedelta(days=7)
 
     from .brief import build_brief
+    from .goals import goals_plan
     from .payments import payments_overview
     from .paystubs import paystubs_overview
+
+    goals = goals_plan(session, today, next_payday)
 
     payments = payments_overview(session, today)
     paystubs = paystubs_overview(session)
@@ -165,7 +168,8 @@ def finance_snapshot(session: Session, today: date) -> dict:
         "advances": {"total": _money(advances_total), "items": [{**e, "date": e["date"].isoformat()} for e in advances_due]},
         "window": {"start": next_payday.isoformat(), "end": (following_payday - timedelta(days=1)).isoformat(), "total": _money(window_total), "items": [{**e, "date": e["date"].isoformat()} for e in window]},
         "set_aside": {"total": _money(set_aside), "items": [{**e, "date": e["date"].isoformat()} for e in next_window]},
-        "safe_to_spend": {"amount": _money(safe), "through": (following_payday - timedelta(days=1)).isoformat(), "version": "v0"},
+        "safe_to_spend": {"amount": _money(safe), "after_goals": _money(safe - goals["per_paycheck"]), "through": (following_payday - timedelta(days=1)).isoformat(), "version": "v0"},
+        "goals": goals,
         "usual_pace": pace,
         "debts": [{"id": d.id, "name": d.name, "kind": d.kind, "balance": d.balance, "apr": d.apr, "minimum": d.minimum, "due_day": d.due_day} for d in debts],
         "pending": {"confirmations": unconfirmed + len(facts["pending"]), "series": unconfirmed, "facts": len(facts["pending"]), "approvals": approvals_waiting, "past_due": len(payments["past_due"])},
