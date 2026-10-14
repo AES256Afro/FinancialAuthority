@@ -47,6 +47,22 @@ def _money(v: float) -> float:
     return round(float(v), 2)
 
 
+HOUSING = {"rent", "home", "housing", "insurance", "mortgage", "hoa"}
+DEBT = {"loan payment", "credit card payment", "loans", "debt"}
+
+
+def line_of(category: str, kind: str) -> str:
+    """Which line a bill rides on the transit map: housing, utilities or debt."""
+    if kind in ("installment", "advance"):
+        return "debt"
+    c = (category or "").lower()
+    if c in HOUSING or any(w in c for w in ("rent", "insurance", "mortgage")):
+        return "housing"
+    if c in DEBT or "loan" in c or "credit card" in c:
+        return "debt"
+    return "utilities"
+
+
 def finance_snapshot(session: Session, today: date) -> dict:
     accounts = session.exec(select(Account).where(Account.active == True)).all()  # noqa: E712
     cash = sum((a.balance or 0.0) for a in accounts if a.kind in CASH_KINDS)
@@ -70,15 +86,15 @@ def finance_snapshot(session: Session, today: date) -> dict:
     for b in bills:
         d = next_due(b.due_day, today)
         while d <= horizon:
-            events.append({"date": d, "name": b.name, "amount": _money(b.amount), "kind": b.kind, "autopay": b.autopay, "source": f"bill:{b.id}"})
+            events.append({"date": d, "name": b.name, "amount": _money(b.amount), "kind": b.kind, "autopay": b.autopay, "source": f"bill:{b.id}", "line": line_of(b.category, b.kind), "bill_id": b.id})
             d = next_due(b.due_day, d + timedelta(days=1))
     for p in plans:
         d, left = p.next_date, p.remaining
         while left > 0 and d <= today + timedelta(days=90):
-            events.append({"date": d, "name": f"{p.merchant} {p.count - left + 1} of {p.count}", "amount": _money(p.installment), "kind": "installment", "autopay": True, "source": f"plan:{p.id}"})
+            events.append({"date": d, "name": f"{p.merchant} {p.count - left + 1} of {p.count}", "amount": _money(p.installment), "kind": "installment", "autopay": True, "source": f"plan:{p.id}", "line": "debt"})
             d, left = d + timedelta(days=p.cadence_days), left - 1
     for a in advances:
-        events.append({"date": a.repay_date, "name": f"{a.provider} repays", "amount": _money(a.amount + a.fee), "kind": "advance", "autopay": True, "source": f"advance:{a.id}"})
+        events.append({"date": a.repay_date, "name": f"{a.provider} repays", "amount": _money(a.amount + a.fee), "kind": "advance", "autopay": True, "source": f"advance:{a.id}", "line": "debt"})
     events.sort(key=lambda e: e["date"])
 
     before = [e for e in events if today <= e["date"] < next_payday and e["kind"] != "advance"]
@@ -131,11 +147,19 @@ def finance_snapshot(session: Session, today: date) -> dict:
         bills_total = sum(e["amount"] for e in in_window)
         adv_total = sum(e["amount"] for e in adv)
         left = carried + expected_net - adv_total - bills_total - aside
+        # Funded, in date order: the money runs out on the last bills when a window is short.
+        running = carried + expected_net - adv_total
+        funded_items = []
+        for e in in_window:
+            ok = running >= e["amount"]
+            running -= e["amount"]
+            funded_items.append({**e, "date": e["date"].isoformat(), "funded": ok})
+        aside_items = [{**e, "date": e["date"].isoformat(), "funded": running >= aside, "share": 0.5 if e["amount"] >= 500 else 1.0} for e in following]
         windows.append({
             "start": start.isoformat(), "end": end.isoformat(), "paycheck": _money(expected_net), "carried_in": _money(carried),
-            "advances": {"total": _money(adv_total), "items": [{**e, "date": e["date"].isoformat()} for e in adv]},
-            "bills": {"total": _money(bills_total), "items": [{**e, "date": e["date"].isoformat()} for e in in_window]},
-            "set_aside": {"total": _money(aside), "items": [{**e, "date": e["date"].isoformat()} for e in following]},
+            "advances": {"total": _money(adv_total), "items": [{**e, "date": e["date"].isoformat(), "funded": True} for e in adv]},
+            "bills": {"total": _money(bills_total), "items": funded_items},
+            "set_aside": {"total": _money(aside), "items": aside_items},
             "buffer": _money(buffer) if k == 0 else 0.0,
             "safe": _money(left),
         })
@@ -156,11 +180,16 @@ def finance_snapshot(session: Session, today: date) -> dict:
         weeks.append({"start": week_start.isoformat(), "end": week_end.isoformat(), "low": low["at_pace"] if low else None, "low_date": low["date"] if low else None})
         week_start += timedelta(days=7)
 
-    return {
+    from .brief import build_brief
+    from .payments import payments_overview
+
+    payments = payments_overview(session, today)
+    snap = {
         "version": "snapshot.v0",
         "as_of": today.isoformat(),
         "windows": windows,
         "calendar": {"events": calendar_events, "weeks": weeks},
+        "payments": payments,
         "accounts": [
             {"id": a.id, "name": a.name, "institution": a.institution, "kind": a.kind, "balance": a.balance, "balance_at": a.balance_at.isoformat() if a.balance_at else None, "connector": a.connector}
             for a in accounts
@@ -175,7 +204,9 @@ def finance_snapshot(session: Session, today: date) -> dict:
         "safe_to_spend": {"amount": _money(safe), "through": (following_payday - timedelta(days=1)).isoformat(), "version": "v0"},
         "usual_pace": pace,
         "debts": [{"id": d.id, "name": d.name, "kind": d.kind, "balance": d.balance, "apr": d.apr, "minimum": d.minimum, "due_day": d.due_day} for d in debts],
-        "pending": {"confirmations": unconfirmed, "approvals": 0},
+        "pending": {"confirmations": unconfirmed, "approvals": 0, "past_due": len(payments["past_due"])},
         "projection": projection,
         "not_advice": "Computed by the engine from the registers above. Not financial advice.",
     }
+    snap["brief"] = build_brief(snap)
+    return snap
