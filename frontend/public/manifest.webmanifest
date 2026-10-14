@@ -1,0 +1,13 @@
+{
+  "name": "FinancialAuthority",
+  "short_name": "Authority",
+  "description": "A visual planner for each paycheck, running on your own server.",
+  "start_url": "/today",
+  "display": "standalone",
+  "background_color": "#f6f4ef",
+  "theme_color": "#141518",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

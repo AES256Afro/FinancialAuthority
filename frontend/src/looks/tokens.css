@@ -1,0 +1,107 @@
+@import "tailwindcss";
+
+/* Looks: light (warm paper), dark, console. The series colours are validated for colour-blindness in
+   both modes (docs/PLAN.md section 9). Paychecks are blue, bills orange, safe-to-spend aqua, debt violet. */
+:root {
+  color-scheme: light;
+  --ground: #f6f4ef;
+  --surface: #ffffff;
+  --surface-2: #f3f1ec;
+  --hairline: #e4e1da;
+  --ink: #141518;
+  --ink-2: #4e5058;
+  --muted: #85878f;
+  --inverse: #ffffff;
+  --paycheck: #2a78d6;
+  --paycheck-soft: #e3eefb;
+  --paycheck-ink: #184f95;
+  --bill: #eb6834;
+  --bill-soft: #fde3d8;
+  --bill-ink: #8a3410;
+  --safe: #1baf7a;
+  --safe-soft: #d8f3e8;
+  --safe-ink: #0b5c3f;
+  --debt: #4a3aa7;
+  --debt-soft: #e6e2f3;
+  --debt-ink: #2f2470;
+  --buffer: #c3c2b7;
+  --good: #0ca30c;
+  --warning: #fab219;
+  --warning-soft: #fdebd3;
+  --warning-ink: #7a4a00;
+  --critical: #d03b3b;
+  --critical-soft: #f8dada;
+  --radius: 14px;
+  --font: Manrope, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+:root[data-look="dark"],
+:root[data-look="console"] {
+  color-scheme: dark;
+  --ground: #121417;
+  --surface: #1b1e24;
+  --surface-2: #23262d;
+  --hairline: #2a2e36;
+  --ink: #f2f2ee;
+  --ink-2: #b9bcc6;
+  --muted: #80848f;
+  --inverse: #121417;
+  --paycheck: #3987e5;
+  --paycheck-soft: #1b2a40;
+  --paycheck-ink: #8fbcf2;
+  --bill: #d95926;
+  --bill-soft: #3a2218;
+  --bill-ink: #f0a47f;
+  --safe: #199e70;
+  --safe-soft: #163227;
+  --safe-ink: #7fd9b3;
+  --debt: #9085e9;
+  --debt-soft: #26224a;
+  --debt-ink: #c4bdf5;
+  --buffer: #3a3f49;
+  --warning-soft: #3d2f0f;
+  --warning-ink: #f5cf7a;
+  --critical-soft: #3f1d1d;
+}
+
+:root[data-look="console"] {
+  --ground: #0b0d10;
+  --surface: #14171c;
+  --surface-2: #1c2027;
+  --hairline: #262b33;
+  --radius: 8px;
+  --font: "JetBrains Mono", "Cascadia Mono", Consolas, Manrope, monospace;
+}
+
+html, body, #root { min-height: 100%; }
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--paycheck-ink); }
+.num { font-variant-numeric: tabular-nums; }
+.card { background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius); }
+.btn { font: inherit; font-weight: 800; font-size: 13px; border-radius: 10px; padding: 9px 14px; border: 1px solid var(--hairline); background: var(--surface); color: var(--ink); cursor: pointer; min-height: 40px; }
+.btn:hover { background: var(--surface-2); }
+.btn.dark { background: var(--ink); color: var(--inverse); border-color: var(--ink); }
+.btn.dark:hover { opacity: .9; background: var(--ink); }
+.btn:disabled { opacity: .5; cursor: default; }
+.input { font: inherit; font-size: 14px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--hairline); background: var(--surface); color: var(--ink); min-height: 40px; box-sizing: border-box; }
+.lab { font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; margin-right: 6px; }
+.rail a { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 4px; border-radius: 10px; color: var(--ink-2); text-decoration: none; font-size: 10px; font-weight: 700; letter-spacing: .02em; }
+.rail a:hover { background: var(--surface-2); color: var(--ink); }
+.rail a.on { background: var(--ink); color: var(--inverse); }
+.tabs a { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10px; font-weight: 700; color: var(--muted); text-decoration: none; min-width: 56px; min-height: 44px; }
+.tabs a.on { color: var(--ink); }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) 160px 90px; gap: 12px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--surface-2); }
+.row:last-child { border-bottom: 0; }
+.bar { height: 10px; border-radius: 0 4px 4px 0; }
+table.ledger { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.ledger th { text-align: left; font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; padding: 0 8px 6px 0; }
+table.ledger td { padding: 7px 8px 7px 0; border-top: 1px solid var(--surface-2); }
