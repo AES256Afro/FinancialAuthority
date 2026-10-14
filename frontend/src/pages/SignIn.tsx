@@ -25,7 +25,7 @@ export function SignIn({ onDone }: { onDone: () => void }) {
     <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 16, background: "var(--ground)" }}>
       <form onSubmit={submit} className="card" style={{ padding: 24, width: "min(100%, 380px)", display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <img src="/favicon.svg" width={28} height={28} alt="" />
+          <img src={`${import.meta.env.BASE_URL}favicon.svg`} width={28} height={28} alt="" />
           <strong style={{ fontSize: 18 }}>FinancialAuthority</strong>
         </div>
         <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>

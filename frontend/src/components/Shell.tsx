@@ -1,9 +1,30 @@
 // The app shell: a rail on wide screens, tabs on a phone, and the header with the payday chip.
 import { BarChart3, BellDot, Clock, FileText, Landmark, List, Mail, MessageSquare, Mountain, Receipt, Settings, Waves } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { NavLink } from "react-router-dom";
+import { DEMO } from "../demo/shim";
 import { daysWord, longDate, shortDate } from "../format";
 import type { Snapshot } from "../types";
+
+const ICON = `${import.meta.env.BASE_URL}favicon.svg`;
+
+function DemoBanner() {
+  const [flash, setFlash] = useState<string | null>(null);
+  useEffect(() => {
+    const onFlash = (e: Event) => {
+      setFlash((e as CustomEvent<string>).detail);
+      window.setTimeout(() => setFlash(null), 3200);
+    };
+    window.addEventListener("fa-demo-flash", onFlash);
+    return () => window.removeEventListener("fa-demo-flash", onFlash);
+  }, []);
+  return (
+    <div role="status" style={{ position: "sticky", top: 0, zIndex: 20, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", padding: "6px 16px", fontSize: 12, fontWeight: 700, background: "var(--warning)", color: "#141518" }}>
+      <span>Demo · a synthetic household · nothing here is real · changes are not kept</span>
+      {flash && <span style={{ fontWeight: 500 }}>· {flash}</span>}
+    </div>
+  );
+}
 
 export function Shell({ children, snapshot, title }: { children: ReactNode; snapshot: Snapshot | null; title?: string }) {
   const today = snapshot?.as_of ?? new Date().toISOString().slice(0, 10);
@@ -30,10 +51,12 @@ export function Shell({ children, snapshot, title }: { children: ReactNode; snap
     </NavLink>
   );
   return (
-    <div style={{ minHeight: "100vh", display: "flex", flexWrap: "wrap", background: "var(--ground)" }}>
-      <nav className="rail hidden md:flex" aria-label="Sections" style={{ flex: "0 0 76px", flexDirection: "column", gap: 2, padding: "14px 8px", boxSizing: "border-box", borderRight: "1px solid var(--hairline)", position: "sticky", top: 0, maxHeight: "100vh", overflowY: "auto", alignSelf: "flex-start" }}>
+    <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--ground)" }}>
+    {DEMO && <DemoBanner />}
+    <div style={{ flexGrow: 1, display: "flex", flexWrap: "wrap" }}>
+      <nav className="rail hidden md:flex" aria-label="Sections" style={{ flex: "0 0 76px", flexDirection: "column", gap: 2, padding: "14px 8px", boxSizing: "border-box", borderRight: "1px solid var(--hairline)", position: "sticky", top: DEMO ? 30 : 0, maxHeight: "100vh", overflowY: "auto", alignSelf: "flex-start" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 36, marginBottom: 10 }}>
-          <img src="/favicon.svg" width={28} height={28} alt="FinancialAuthority" />
+          <img src={ICON} width={28} height={28} alt="FinancialAuthority" />
         </div>
         {NAV.map((n) => item(n, 20))}
       </nav>
@@ -55,6 +78,7 @@ export function Shell({ children, snapshot, title }: { children: ReactNode; snap
       <nav className="tabs fixed left-0 right-0 bottom-0 flex justify-around items-start pt-2 md:hidden" aria-label="Tabs" style={{ height: 72, background: "var(--surface)", borderTop: "1px solid var(--hairline)" }}>
         {NAV.filter((n) => n.phone !== false).map((n) => item(n, 22))}
       </nav>
+    </div>
     </div>
   );
 }

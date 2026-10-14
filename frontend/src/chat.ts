@@ -1,4 +1,5 @@
 // The chat stream: one POST, server-sent events back, each handed to the page as it arrives.
+import { DEMO, demoFetch } from "./demo/shim";
 
 export type ChatEvent =
   | { type: "text"; text: string }
@@ -16,13 +17,14 @@ export interface ChatTurn {
 }
 
 export async function streamChat(messages: { role: string; content: string }[], onEvent: (e: ChatEvent) => void, signal?: AbortSignal): Promise<void> {
-  const response = await fetch("/api/v1/chat", {
+  const init: RequestInit = {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Requested-With": "FinancialAuthority" },
     credentials: "same-origin",
     body: JSON.stringify({ messages }),
     signal,
-  });
+  };
+  const response = DEMO ? await demoFetch("/api/v1/chat", init) : await fetch("/api/v1/chat", init);
   if (!response.ok || !response.body) {
     let detail = response.statusText;
     try {
