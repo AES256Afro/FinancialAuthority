@@ -61,6 +61,9 @@ def build_brief(snap: dict) -> list[dict]:
         w = bad_weeks[0]
         items.append({"severity": "warning", "text": f"At your usual pace of {money(snap['usual_pace']['per_day'])} a day, the week of {when(w['start'])} dips {money(-w['low'])} under the buffer.", "link": "/?view=month"})
     pending = snap["pending"]
+    if pending.get("approvals"):
+        n = pending["approvals"]
+        items.append({"severity": "warning", "text": f"{n} send{'s' if n != 1 else ''} wait{'s' if n == 1 else ''} for your approval; nothing goes out until you tap.", "link": "/confirm"})
     series = pending.get("series", pending["confirmations"])
     if series:
         items.append({"severity": "warning", "text": f"{series} recurring charge{'s' if series != 1 else ''} need{'s' if series == 1 else ''} a name.", "link": "/confirm"})

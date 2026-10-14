@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from sqlmodel import Session, select
 
-from ..models import Account, Advance, Bill, Debt, ExtractedFact, Income, InstallmentPlan, MessageRef, RecurringSeries, Transaction
+from ..models import Account, Advance, Approval, Bill, Debt, ExtractedFact, Income, InstallmentPlan, MessageRef, RecurringSeries, Transaction
 from ..store import get_setting
 from .projection import build_events, line_of, next_due, project, set_aside_of, split_windows  # noqa: F401
 
@@ -76,6 +76,7 @@ def finance_snapshot(session: Session, today: date) -> dict:
     debts = session.exec(select(Debt).where(Debt.active == True)).all()  # noqa: E712
     unconfirmed = len(session.exec(select(RecurringSeries.id).where(RecurringSeries.confirmed == False, RecurringSeries.active == True)).all())  # noqa: E712
     facts = _mail_facts(session, today)
+    approvals_waiting = len(session.exec(select(Approval.id).where(Approval.status == "pending")).all())
 
     events = build_events(bills, plans, advances, today)
     windows_split = split_windows(events, today, next_payday, following_payday)
@@ -167,7 +168,7 @@ def finance_snapshot(session: Session, today: date) -> dict:
         "safe_to_spend": {"amount": _money(safe), "through": (following_payday - timedelta(days=1)).isoformat(), "version": "v0"},
         "usual_pace": pace,
         "debts": [{"id": d.id, "name": d.name, "kind": d.kind, "balance": d.balance, "apr": d.apr, "minimum": d.minimum, "due_day": d.due_day} for d in debts],
-        "pending": {"confirmations": unconfirmed + len(facts["pending"]), "series": unconfirmed, "facts": len(facts["pending"]), "approvals": 0, "past_due": len(payments["past_due"])},
+        "pending": {"confirmations": unconfirmed + len(facts["pending"]), "series": unconfirmed, "facts": len(facts["pending"]), "approvals": approvals_waiting, "past_due": len(payments["past_due"])},
         "mail": facts,
         "projection": projection,
         "not_advice": "Computed by the engine from the registers above. Not financial advice.",

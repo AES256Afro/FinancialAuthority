@@ -52,7 +52,7 @@ claude mcp add --transport http financialauthority http://<host>:8430/mcp
 
 Anything without a browser takes an API key from Settings › Clients as a bearer token instead.
 
-The tools: `finance_snapshot`, `brief_today`, `purchase_check`, `billing_dates_suggest`, `spending_summary`, `debts_list`, `accounts_list`, `transactions_search`, `recurring_list`, `bills_list`, `payments_list`, `paystubs_list`, `mail_search`, `mail_read`, `facts_pending`, `facts_confirm`, `jobs_status`. The REST mirror is under `/api/v1`.
+The tools: `finance_snapshot`, `brief_today`, `purchase_check`, `watchlist`, `billing_dates_suggest`, `spending_summary`, `debts_list`, `accounts_list`, `transactions_search`, `recurring_list`, `bills_list`, `payments_list`, `paystubs_list`, `mail_search`, `mail_read`, `facts_pending`, `facts_confirm`, `jobs_status`. The REST mirror is under `/api/v1`.
 
 ## Two models, neither of which calculates
 

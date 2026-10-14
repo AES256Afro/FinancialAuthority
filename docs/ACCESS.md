@@ -76,7 +76,7 @@ Install ntfy or Gotify from BoxPilot's catalog and subscribe the phone to a topi
 
 ### 10. Send policy (M4.5)
 
-Decide the default: approve each send, or grant standing allowances to known recipients as they come up. The app ships with approve-each and lets allowances be granted one tap at a time.
+The app ships with approve-each: a draft, from a model or from the Bills page, waits on Needs you and on the phone until the owner taps Approve and send. Ticking "always allow sends to this address" on an approval grants a standing allowance for that recipient; allowances are listed and removable on the same page. Sending goes through the mailbox's own SMTP (the Bridge, Gmail), so no extra account is needed.
 
 ### 11. A reviewer model (M3.7)
 

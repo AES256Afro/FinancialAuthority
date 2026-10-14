@@ -303,6 +303,11 @@ class MailAccount(SQLModel, table=True):
     last_sync_at: dt.datetime | None = None
     last_error: str = ""
     messages_seen: int = 0
+    # Sending, used only by an approved draft: the Bridge's SMTP, Gmail's, or any server; same credentials.
+    smtp_host: str = ""
+    smtp_port: int = 0
+    smtp_ssl: bool = False
+    smtp_starttls: bool = True
 
 
 class MessageRef(SQLModel, table=True):
@@ -400,3 +405,27 @@ class BankLink(SQLModel, table=True):
     created_at: dt.datetime = Field(default_factory=utcnow)
     last_sync_at: dt.datetime | None = None
     last_error: str = ""
+
+
+class Approval(SQLModel, table=True):
+    """Something that would leave the app (today: an email), waiting for the owner. Nothing is sent until the
+    status is approved, by a tap or by a standing allowance for the recipient; every step is recorded."""
+
+    __tablename__ = "approvals"
+    id: int | None = Field(default=None, primary_key=True)
+    kind: str = "send"
+    status: str = Field(default="pending", index=True)  # pending | approved | denied | sent | failed
+    to: str = ""
+    subject: str = ""
+    body: str = ""
+    reason: str = ""
+    source: str = ""
+    created_by: str = "owner"
+    created_kind: str = "owner"  # owner | key | oauth
+    account_id: int | None = Field(default=None, foreign_key="mail_accounts.id")
+    created_at: dt.datetime = Field(default_factory=utcnow, index=True)
+    decided_by: str = ""
+    decided_at: dt.datetime | None = None
+    sent_at: dt.datetime | None = None
+    message_id: str = ""
+    error: str = ""

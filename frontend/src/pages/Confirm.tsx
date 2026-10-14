@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
+import { Approvals } from "../components/Approvals";
 import { money, shortDate } from "../format";
 import type { FactRow, SeriesRow } from "../types";
 
@@ -136,7 +137,8 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
         <div style={{ flexGrow: 1 }} />
         <button className="btn" type="button" onClick={detect} disabled={detecting}>Look again</button>
       </div>
-      <p style={{ margin: 0, color: "var(--ink-2)", fontSize: 13 }}>Facts from the mail first, then recurring charges from the ledger. Each one, once named, is in every view.</p>
+      <p style={{ margin: 0, color: "var(--ink-2)", fontSize: 13 }}>Sends waiting for your tap first, then facts from the mail, then recurring charges from the ledger. Each one, once named, is in every view.</p>
+      <Approvals onChanged={onChanged} />
       {facts.data && facts.data.facts.length > 0 && (
         <>
           <div className="lab">From the mail · {facts.data.pending}</div>
