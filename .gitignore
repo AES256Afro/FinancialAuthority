@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+frontend/dist/
+*.tsbuildinfo
+
+# Local data and secrets: never commit exports, databases or keys
+/data/
+/imports/
+*.db
+*.sqlite
+*.csv
+*.ofx
+*.qfx
+.env
+.env.*
+!.env.example
+*.local.md
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
