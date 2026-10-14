@@ -1,0 +1,44 @@
+[project]
+name = "financialauthority"
+description = "A self-hosted, visual-first financial planner that runs itself and lets any model in."
+requires-python = ">=3.12"
+license = "MIT"
+dynamic = ["version"]
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "sqlmodel>=0.0.22",
+  "pydantic-settings>=2.6",
+  "httpx>=0.28",
+  "apscheduler>=3.10,<4",
+  "mcp==2.3.0",
+  "cryptography>=43",
+  "itsdangerous>=2.2",
+  "python-multipart>=0.0.18",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "ruff>=0.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "app/version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"

@@ -1,0 +1,26 @@
+# Standalone deployment. On BigBox, install FinancialAuthority from BoxPilot's app catalog instead.
+#
+#   cp .env.example .env   (fill in the three secrets)
+#   docker compose up -d --build
+#
+# Expects an Ollama server on the host at port 11434 for the built-in chat (optional).
+services:
+  financialauthority:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile
+    image: ghcr.io/aes256afro/financialauthority:${FA_IMAGE_TAG:-edge}
+    container_name: financialauthority
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${FA_PORT:-8430}:8000"
+    volumes:
+      - ./data:/data
+      - ./imports:/imports
+    env_file:
+      - path: .env
+        required: false
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    security_opt:
+      - no-new-privileges:true
