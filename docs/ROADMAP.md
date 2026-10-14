@@ -26,7 +26,7 @@ Done when: CI publishes the image, it runs on BigBox, and the coding agent did t
 - ✅ **M1.5 Recurring detection** (2026-10-14). The cadence detection ported into `RecurringSeries` with amount tolerance and next expected date; a six-hourly job and a run after every import; series linked to bills and incomes already known; the rest wait on the Needs-you page, where one tap makes each a bill, a subscription, a paycheck, an installment plan, or ignored.
 - 🔄 **M1.6 Paycheck detection** (2026-10-14). Recurring income is found and linked to a known `Income`, or confirmed from Needs you. *Left: adjusting the expected net from the last stubs (M2.6).*
 - 🔄 **M1.7 Read tools** (2026-10-14). `transactions_search`, `accounts_list`, `recurring_list`, `bills_list`, `finance_snapshot`, `jobs_status` over MCP and REST. *Left: `spending_summary`.*
-- ☐ **M1.8 Alert mail as signals.** The bank's alert mail (purchase, deposit, overdraft, negative balance, declined, payment received, statement ready) and the budget app's alerts become events the same quarter-hour: an overdraft or a decline reaches the brief at once, a deposit alert confirms a paycheck before the next sync, a statement notice fetches the PDF for reconciliation. Needs the mail connector's first slice, pulled forward from M4.1.
+- 🔄 **M1.8 Alert mail as signals** (2026-10-14). Overdraft, negative-balance and declined-charge alerts reach the brief within the quarter hour; deposit, purchase and payment-received alerts are recorded as facts. *Left: a deposit alert confirming the paycheck before the next sync; a statement notice fetching the PDF.*
 
 Done when: Capital One and the credit union sync daily with no hand in it, an overdraft alert shows in the app within fifteen minutes of the mail, three years of history are loaded from the export, and the recurring series and paychecks found match what the owner knows.
 
@@ -58,14 +58,15 @@ Done when: Claude on the phone, away from home, answers "what is due before my n
 
 ## M4 — Mail: both mailboxes, always on (2 weeks)
 
-- ☐ **M4.1 Generic IMAP connector.** Host, port, user, app password, folders to watch; read-only; incremental by UID; references and hashes, not bodies, unless the owner turns bodies on; attachments captured when a parser wants them.
-- ☐ **M4.2 Proton Mail through the Bridge sidecar.** The sidecar in the catalog manifest, its state volume backed up; the owner's one-time sign-in documented; the reader ported from `MCPManagement/protonmail-mcp`, including draft creation.
-- ☐ **M4.3 Gmail.** IMAP with an app password, for what Proton does not carry.
-- ☐ **M4.4 Mail tools.** `mail.folders`, `mail.search`, `mail.read`, `mail.attachment`, `mail.draft` for both mailboxes, every body boxed as untrusted data.
+- ✅ **M4.1 Generic IMAP connector** (2026-10-14). Host, port, user, password, folders to watch; read-only; incremental by UID; references and a short snippet, never bodies; attachments listed; a test before saving; a sync every fifteen minutes and on demand; the password stored encrypted.
+- 🔄 **M4.2 Proton Mail through the Bridge sidecar** (2026-10-14). The sidecar is in the catalog manifest and the connector has the Bridge preset (STARTTLS on the Bridge's port, its self-signed certificate accepted on the loopback). *Left: the owner's one-time sign-in documented and tried on BigBox; draft creation.*
+- ✅ **M4.3 Gmail** (2026-10-14). IMAP with an app password, as a preset.
+- 🔄 **M4.4 Mail tools** (2026-10-14). `mail_search` and `mail_read` (boxed, fetched live, full redaction level only) for both mailboxes. *Left: `mail_attachment`, `mail_draft`.*
 - ☐ **M4.5 Send with approval.** `mail.send` creates an approval; the owner approves in the app or from the push; standing allowances per recipient; every send recorded. No model client can approve.
-- ☐ **M4.6 Classifier and extraction.** Bill due, statement, paystub, installment schedule, advance, renewal or price change, payday, payment confirmation, past due, or none. Sender and subject rules first, a model second; schema and bounds validation; pending facts with excerpts.
-- ☐ **M4.7 Confirm inbox and earned auto-confirm.** The owner confirms or rejects; two confirmations for a sender earn auto-confirm for that sender and kind, shown and revocable; confirmed facts update bills, payments, debts, plans and advances.
-- ☐ **M4.8 Past-due detection.** A past-due notice marks the bill and reaches the brief the same hour.
+- 🔄 **M4.6 Classifier and extraction** (2026-10-14). Sender and subject rules for bill due, statement, paystub, installment, advance, price change, payday, payment confirmation, past due, bank alert and the export; amounts, due dates, account tails and periods extracted; pending facts with the excerpt they came from. *Left: the model second pass with schema and bounds validation.*
+- 🔄 **M4.7 Confirm inbox** (2026-10-14). Facts from the mail sit at the top of Needs you with their excerpt; confirming a bill fact creates or updates the bill; `facts_pending` and `facts_confirm` (confirm scope) for models. *Left: earned auto-confirm per sender; applying statements, paystubs, plans and advances.*
+- 🔄 **M4.8 Past-due and alert detection** (2026-10-14). A past-due notice and an overdraft or declined-charge alert reach the brief within the quarter hour. *Left: marking the bill's payment past due from the notice.*
+- ✅ **M4.9 The export captured** (2026-10-14, from M1.2). A Rocket Money export email has its download link followed within its seven-day life and the file imported, with detection and payment matching run after.
 
 Done when: thirty days of both real mailboxes yield bills, statements, paystubs and payment confirmations for the known senders at ninety percent precision, the owner has approved one send and granted one allowance, and the red-team mailbox shows no email can reach a tool call or an approval.
 

@@ -36,6 +36,51 @@ export interface PaymentRow {
   source: string;
 }
 
+export interface MailAccountRow {
+  id: number;
+  label: string;
+  kind: "proton" | "gmail" | "imap";
+  host: string;
+  port: number;
+  username: string;
+  use_ssl: boolean;
+  starttls: boolean;
+  folders: string;
+  active: boolean;
+  last_sync_at: string | null;
+  last_error: string;
+  messages_seen: number;
+  has_password: boolean;
+}
+
+export interface MessageRow {
+  id: number;
+  account: string;
+  folder: string;
+  uid: number;
+  sender: string;
+  sender_name: string;
+  subject: string;
+  date: string | null;
+  has_attachments: boolean;
+  attachment_names: string;
+  kind: string;
+  snippet: string;
+}
+
+export interface FactRow {
+  id: number;
+  kind: string;
+  fields: Record<string, string | number | undefined>;
+  confidence: number;
+  status: string;
+  excerpt: string;
+  produced_by: string;
+  applied_to: string;
+  created_at: string;
+  message: { id: number; sender: string; sender_name: string; subject: string; date: string | null } | null;
+}
+
 export interface BriefItem {
   severity: "info" | "warning" | "critical";
   text: string;
@@ -79,7 +124,8 @@ export interface Snapshot {
   safe_to_spend: { amount: number; through: string; version: string };
   usual_pace: { per_day: number; per_window: number; basis_days: number; transactions: number };
   debts: { id: number; name: string; kind: string; balance: number; apr: number; minimum: number; due_day: number | null }[];
-  pending: { confirmations: number; approvals: number; past_due: number };
+  pending: { confirmations: number; series: number; facts: number; approvals: number; past_due: number };
+  mail: { pending: { id: number; kind: string; sender_name: string; subject: string; date: string | null }[]; alerts: { id: number; kind: string; fields: Record<string, string | number>; sender_name: string; date: string | null }[] };
   projection: { date: string; available: number; at_pace: number; cash: number }[];
   not_advice: string;
 }
