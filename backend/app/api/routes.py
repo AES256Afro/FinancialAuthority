@@ -18,6 +18,7 @@ from ..db import get_session
 from ..engine.decisions import billing_date_suggestions, purchase_check
 from ..engine.reports import debt_mountain, net_worth, spending_summary
 from ..engine.snapshot import finance_snapshot
+from ..engine.watchlist import watchlist
 from ..jobs.scheduler import jobs
 from ..models import Account, ApiKey, AuditEntry, Transaction, utcnow
 from ..store import DEFAULTS, get_setting, set_setting
@@ -93,6 +94,13 @@ def check_purchase(amount: float, on: str | None = None, installments: int | Non
 def bill_suggestions(session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
     out = billing_date_suggestions(session, today())
     services.audit(session, client=principal.name, client_kind=principal.kind, tool="billing_dates_suggest", rows=len(out["suggestions"]), redaction=principal.redaction)
+    return out
+
+
+@router.get("/watchlist")
+def get_watchlist(session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
+    out = watchlist(session, today())
+    services.audit(session, client=principal.name, client_kind=principal.kind, tool="watchlist", rows=len(out["items"]), redaction=principal.redaction)
     return out
 
 
