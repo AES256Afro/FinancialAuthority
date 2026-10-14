@@ -12,6 +12,13 @@ applyLook(getPrefs().look);
 // The static demo is served from a single page at a fixed address, so its routes live after the hash.
 const Router = DEMO ? HashRouter : BrowserRouter;
 
+// Installable: the shell is kept for offline opening; the server's answers never are.
+if (!DEMO && import.meta.env.PROD && "serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+  });
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <Router>

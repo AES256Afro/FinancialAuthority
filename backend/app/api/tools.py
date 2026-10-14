@@ -20,7 +20,7 @@ REST_MIRROR = {
     "watchlist": "GET /api/v1/watchlist", "billing_dates_suggest": "GET /api/v1/bills/suggestions", "spending_summary": "GET /api/v1/reports/spending?months=&by=",
     "debts_list": "GET /api/v1/debts", "accounts_list": "GET /api/v1/accounts", "transactions_search": "GET /api/v1/transactions/search?text=&category=&limit=",
     "recurring_list": "GET /api/v1/recurring", "bills_list": "GET /api/v1/bills", "payments_list": "GET /api/v1/payments", "paystubs_list": "GET /api/v1/paystubs",
-    "mail_search": "GET /api/v1/mail/messages?text=&sender=&kind=", "mail_read": "GET /api/v1/mail/messages/{id}", "facts_pending": "GET /api/v1/facts?status=pending",
+    "mail_search": "GET /api/v1/mail/messages?text=&sender=&kind=", "mail_read": "GET /api/v1/mail/messages/{id}", "mail_attachment": "GET /api/v1/mail/messages/{id}/attachments/{name}", "facts_pending": "GET /api/v1/facts?status=pending",
     "facts_confirm": "POST /api/v1/facts/{id}/confirm", "mail_send_request": "POST /api/v1/approvals", "jobs_status": "GET /api/v1/jobs",
 }
 
