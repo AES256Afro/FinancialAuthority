@@ -41,6 +41,14 @@ def client() -> TestClient:
     return TestClient(app)
 
 
+@pytest.fixture(scope="session")
+def live():
+    """A client with the app's lifespan running. The MCP session manager lives in the lifespan and may be
+    started only once per process, so every test that posts to /mcp shares this one."""
+    with TestClient(app) as running:
+        yield running
+
+
 @pytest.fixture
 def owner(client: TestClient) -> TestClient:
     response = client.post("/api/auth/login", json={"username": "owner", "password": "correct horse battery"})

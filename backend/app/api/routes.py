@@ -146,6 +146,47 @@ def revoke_key(key_id: int, session: Session = Depends(get_session), _: auth.Pri
     return {"ok": True}
 
 
+@router.get("/oauth/clients")
+def list_oauth_clients(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    from ..models import OAuthClient, OAuthToken
+
+    rows = session.exec(select(OAuthClient).order_by(OAuthClient.created_at.desc())).all()
+    live = {}
+    for t in session.exec(select(OAuthToken).where(OAuthToken.revoked_at == None, OAuthToken.kind == "refresh")).all():  # noqa: E711
+        live[t.client_id] = live.get(t.client_id, 0) + 1
+    return {"clients": [
+        {"id": c.id, "client_id": c.client_id, "name": c.name, "scopes": c.scopes, "redaction": c.redaction, "created_at": c.created_at.isoformat(),
+         "last_used_at": c.last_used_at.isoformat() if c.last_used_at else None, "revoked": c.revoked_at is not None, "sessions": live.get(c.client_id, 0)}
+        for c in rows
+    ]}
+
+
+@router.delete("/oauth/clients/{client_id}")
+def revoke_oauth_client(client_id: str, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    from ..oauth import revoke_client
+
+    return {"ok": True, "tokens_revoked": revoke_client(session, client_id)}
+
+
+class ClientRedactionIn(BaseModel):
+    redaction: str
+
+
+@router.put("/oauth/clients/{client_id}")
+def set_oauth_client_redaction(client_id: str, body: ClientRedactionIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    from ..models import OAuthClient
+
+    if body.redaction not in ("full", "merchants", "aggregates"):
+        raise HTTPException(400, "redaction must be full, merchants or aggregates")
+    row = session.exec(select(OAuthClient).where(OAuthClient.client_id == client_id)).first()
+    if row is None:
+        raise HTTPException(404, "No such client")
+    row.redaction = body.redaction
+    session.add(row)
+    session.commit()
+    return {"ok": True}
+
+
 # ---- jobs ----------------------------------------------------------------------------------
 
 

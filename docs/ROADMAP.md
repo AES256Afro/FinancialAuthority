@@ -46,7 +46,7 @@ Done when: every recurring charge in the fixture and in the real data is classif
 
 ## M3 — Reach: any model, from anywhere, at all times (2 weeks)
 
-- ☐ **M3.1 MCP server with OAuth 2.1.** Streamable HTTP at `/mcp`; authorization code with PKCE, dynamic client registration, protected-resource metadata; the owner signs in once per client; refresh tokens; revocation on the Clients page; read-only annotations on every read tool.
+- ✅ **M3.1 MCP server with OAuth 2.1** (2026-10-14). Streamable HTTP at `/mcp`; authorization code with PKCE, dynamic client registration, authorization-server and protected-resource metadata; a consent page with the owner's sign-in; access tokens for a day and refresh tokens for ninety, rotated; revocation per client with every token it holds, and a redaction level per app, on Settings › Clients; API keys through the same verifier; read-only annotations on every read tool. Tested end to end.
 - ☐ **M3.2 REST and schemas.** `/api/v1` mirrors the tools with bearer keys. `/api/tools/openai.json`, `/api/tools/anthropic.json`, and a prompt pack.
 - ☐ **M3.3 Published address.** The app published through BoxPilot's Cloudflare Tunnel at `https://<name>.<domain>`; `FA_PUBLIC_URL` set; rate limits and lockout verified from outside; the tailnet address as fallback.
 - ☐ **M3.4 Clients connected.** claude.ai custom connector on the web, the desktop and the phone; Claude Code with `claude mcp add`; Open WebUI on BigBox. Each documented with the exact steps.

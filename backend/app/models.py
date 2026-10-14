@@ -235,6 +235,55 @@ class Setting(SQLModel, table=True):
     value: str = ""  # JSON
 
 
+class OAuthClient(SQLModel, table=True):
+    """A client that registered itself (claude.ai, Claude Code, Open WebUI) to sign in through the app."""
+
+    __tablename__ = "oauth_clients"
+    id: int | None = Field(default=None, primary_key=True)
+    client_id: str = Field(index=True, unique=True)
+    client_secret_hash: str = ""
+    name: str = ""
+    redirect_uris: str = "[]"  # JSON list
+    scopes: str = "read"
+    token_endpoint_auth_method: str = "none"
+    registration: str = "{}"  # JSON, as registered (encrypted when a data key is set)
+    redaction: str = "full"
+    created_at: dt.datetime = Field(default_factory=utcnow)
+    last_used_at: dt.datetime | None = None
+    revoked_at: dt.datetime | None = None
+
+
+class OAuthCode(SQLModel, table=True):
+    __tablename__ = "oauth_codes"
+    id: int | None = Field(default=None, primary_key=True)
+    code_hash: str = Field(index=True, unique=True)
+    client_id: str = Field(index=True)
+    redirect_uri: str = ""
+    redirect_uri_explicit: bool = True
+    code_challenge: str = ""
+    scopes: str = "read"
+    resource: str | None = None
+    expires_at: dt.datetime
+    used: bool = False
+    created_at: dt.datetime = Field(default_factory=utcnow)
+
+
+class OAuthToken(SQLModel, table=True):
+    """Access and refresh tokens, hashed. Revoking a client revokes every token it holds."""
+
+    __tablename__ = "oauth_tokens"
+    id: int | None = Field(default=None, primary_key=True)
+    token_hash: str = Field(index=True, unique=True)
+    kind: str = "access"  # access | refresh
+    client_id: str = Field(index=True)
+    scopes: str = "read"
+    resource: str | None = None
+    expires_at: dt.datetime | None = None
+    revoked_at: dt.datetime | None = None
+    created_at: dt.datetime = Field(default_factory=utcnow)
+    last_used_at: dt.datetime | None = None
+
+
 class MailAccount(SQLModel, table=True):
     """A mailbox read over IMAP: Proton through the Bridge, Gmail with an app password, or any other."""
 

@@ -115,10 +115,31 @@ def lookup_key(session: Session, token: str) -> ApiKey | None:
 # ---- principals ----------------------------------------------------------------------------
 
 
+def principal_from_oauth(session: Session, token: str) -> Principal | None:
+    """An OAuth access token issued by the app's own authorization server (oauth.py)."""
+    from datetime import timezone
+
+    from .models import OAuthClient, OAuthToken
+
+    row = session.exec(select(OAuthToken).where(OAuthToken.token_hash == hash_key(token), OAuthToken.kind == "access")).first()
+    if row is None or row.revoked_at is not None or (row.expires_at and row.expires_at.replace(tzinfo=timezone.utc) < utcnow()):
+        return None
+    client = session.exec(select(OAuthClient).where(OAuthClient.client_id == row.client_id)).first()
+    if client is None or client.revoked_at is not None:
+        return None
+    row.last_used_at = utcnow()
+    session.add(row)
+    session.commit()
+    return Principal(kind="key", name=client.name or row.client_id, scopes=set(row.scopes.split()), redaction=client.redaction)
+
+
 def principal_from_request(request: Request, session: Session) -> Principal | None:
     header = request.headers.get("authorization", "")
     if header.lower().startswith("bearer "):
-        key = lookup_key(session, header[7:].strip())
+        token = header[7:].strip()
+        if token.startswith("fa_oa_"):
+            return principal_from_oauth(session, token)
+        key = lookup_key(session, token)
         if key is None:
             return None
         return Principal(kind="key", name=key.name, scopes=key.scope_set, redaction=key.redaction)

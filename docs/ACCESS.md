@@ -62,8 +62,9 @@ In BoxPilot, the Cloudflare Tunnel app's **Tunnel** tab: **Connect** with a Clou
 
 ### 7. Connecting Claude (M3.4)
 
-- claude.ai (web, desktop, phone): Settings, Connectors, Add custom connector, the public address with `/mcp`. The app's own sign-in page appears once per device.
-- Claude Code: one command, documented in M3.4; the browser opens the same sign-in once.
+- claude.ai (web, desktop, phone): Settings, Connectors, Add custom connector, the public address with `/mcp`. The app's own consent page appears once: sign in with the owner's password, tick what the app may do (read; optionally confirm), Allow. Revoke it any time on Settings › Clients.
+- Claude Code: `claude mcp add --transport http financialauthority https://<name>.<domain>/mcp`; the browser opens the same consent page once. Inside the tailnet, the BigBox address with port 8430 works the same way.
+- Anything without a browser: an API key from Settings › Clients, sent as a bearer token.
 
 ### 8. Paystubs (M2.6)
 
