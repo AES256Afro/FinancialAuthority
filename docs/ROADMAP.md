@@ -85,10 +85,10 @@ Done when: on the fixture the plan matches its golden output, the optimiser find
 
 ## M6 — It runs itself (1.5 weeks)
 
-- ☐ **M6.1 Schedules.** Mail every fifteen minutes, bank daily and on demand, import watch, re-plan on payday and after confirmed changes, the brief at 07:00, the self-check hourly; all idempotent, all on the Jobs page.
+- 🔄 **M6.1 Schedules** (2026-10-14). Mail every fifteen minutes, banks every four hours and on demand, import watch every five minutes, detection six-hourly, payment matching daily, the reviewer hourly (payday and after confirmed changes), the brief to the phone once a day from the chosen hour, the self-check hourly; all idempotent, all on the Jobs page with their last runs. *Left: a re-plan hook on payday that refreshes the cached snapshot; webhooks where a vendor offers them.*
 - 🔄 **M6.2 The brief, the recap, the report** (2026-10-14, the brief pulled forward). Daily, written by the engine in its own sentences: what clears before payday, past due and unmatched, the week that dips under the buffer at the usual pace, what waits for the owner, safe to spend; `brief_today`; Today and mission control show it. *Left: paystub discrepancies, new plans or advances, price increases and failed connectors as the registers arrive; the Monday recap; the month report.*
-- ☐ **M6.3 Push.** Delivery through ntfy or Gotify from BoxPilot's catalog, with an approve action for sends; the Today page on the phone.
-- ☐ **M6.4 Self-check.** Each connector's last success, stale-data warnings, the public address reachable, disk and database size; `jobs.status`.
+- 🔄 **M6.3 Push** (2026-10-14). ntfy or Gotify from BoxPilot's catalog (or ntfy.sh with a private topic): the morning brief once a day from the chosen hour, high priority when the brief has a critical line; a test button and a send-now on Settings › Notifications; the token encrypted. *Left: an approve action for sends (with M4.5), alerts the moment a past-due or overdraft notice lands.*
+- ✅ **M6.4 Self-check** (2026-10-14). Hourly: each mailbox's and bank link's last success and error, whether the public address answers, stale balances, disk and database size, summarised as a list of problems; shown in `jobs_status` and on Mission control.
 - ☐ **M6.5 Export reminder.** The aggregator's export email triggers a reminder; nothing is downloaded automatically.
 
 Done when: a week passes with no hand on the app and the brief is right every morning.
@@ -110,7 +110,7 @@ Done when: everything the tools can answer is visible without a model, every vie
 
 - ☐ **M8.1 Catalog.** `deploy/boxpilot/financialauthority.yaml` pinned to the release and sent as a pull request to BoxPilot; install from the catalog; back up `/data` and the Bridge state; restore elsewhere; update to the next release.
 - ☐ **M8.2 Standalone.** `deploy/compose` with `.env.example`; `cloudflared` and Tailscale recipes.
-- ☐ **M8.3 Threat model written down**, public-surface review, secret handling reviewed, dependency audit in CI.
+- 🔄 **M8.3 Threat model written down** (2026-10-14: [SECURITY.md](SECURITY.md) states what the app holds, who can reach what, each risk and its control). *Left: the public-surface review from outside once published, the dependency audit step in CI.*
 - ☐ **M8.4 Red team.** The malicious-mailbox suite grows; tool-misuse tests for every scope; rate limits, lockout and OAuth revocation verified from outside.
 - ☐ **M8.5 Keys and exit.** `FA_DATA_KEY` rotation, revoke-all, export everything, delete everything.
 - ☐ **M8.6 Scale and docs.** Five years of transactions and a hundred thousand messages without the UI noticing; README, connector and tool references, "how the numbers are made".

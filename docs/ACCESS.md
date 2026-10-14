@@ -72,7 +72,7 @@ Keep forwarding paystub PDFs to the Proton mailbox, or drop them into the `/impo
 
 ### 9. Push notifications (M6.3)
 
-Install ntfy or Gotify from BoxPilot's catalog and subscribe the phone to a topic; tell the coding agent the topic. Approvals for sends arrive there with an approve action.
+Install ntfy or Gotify from BoxPilot's catalog and subscribe the phone to a topic, or use ntfy.sh with a long private topic name. Enter the server address, the topic and, if the server needs one, the token on Settings › Notifications, press Send a test, and the morning brief arrives from the chosen hour each day. Approvals for sends will arrive there too once sending exists (M4.5).
 
 ### 10. Send policy (M4.5)
 
