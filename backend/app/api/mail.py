@@ -245,6 +245,15 @@ class ConfirmIn(BaseModel):
 def apply_fact(session: Session, fact: ExtractedFact, ref: MessageRef | None, body: ConfirmIn) -> str:
     """What a confirmed fact changes in the registers. Returns the applied_to tag."""
     fields = json.loads(fact.fields or "{}")
+    if fact.kind == "paystub":
+        from ..engine.paystubs import record_paystub
+
+        net = body.amount if body.amount is not None else fields.get("net")
+        pay_date = body.due_date or (date.fromisoformat(fields["pay_date"]) if fields.get("pay_date") else None)
+        if net is None or pay_date is None:
+            raise HTTPException(400, "A paystub needs a net amount and a pay date; add them to the confirmation")
+        stub = record_paystub(session, fields={**fields, "net": net, "pay_date": pay_date.isoformat()}, source=f"mail:{ref.id}" if ref else "fact", fact_id=fact.id, today=today())
+        return f"paystub:{stub.id}"
     if fact.kind in ("bill_due", "past_due", "price_change"):
         name = (body.name or fields.get("sender_name") or (ref.sender_name if ref else "") or "Bill").strip()
         amount = body.amount if body.amount is not None else fields.get("amount")

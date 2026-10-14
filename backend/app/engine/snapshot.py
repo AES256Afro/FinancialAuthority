@@ -202,14 +202,17 @@ def finance_snapshot(session: Session, today: date) -> dict:
 
     from .brief import build_brief
     from .payments import payments_overview
+    from .paystubs import paystubs_overview
 
     payments = payments_overview(session, today)
+    paystubs = paystubs_overview(session)
     snap = {
         "version": "snapshot.v0",
         "as_of": today.isoformat(),
         "windows": windows,
         "calendar": {"events": calendar_events, "weeks": weeks},
         "payments": payments,
+        "paystubs": paystubs,
         "accounts": [
             {"id": a.id, "name": a.name, "institution": a.institution, "kind": a.kind, "balance": a.balance, "balance_at": a.balance_at.isoformat() if a.balance_at else None, "connector": a.connector}
             for a in accounts

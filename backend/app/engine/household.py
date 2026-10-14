@@ -14,7 +14,10 @@ from hashlib import sha256
 
 from sqlmodel import Session, select
 
-from ..models import Account, Advance, Bill, Debt, Goal, Income, InstallmentPlan, Transaction
+import json
+from hashlib import sha256 as _sha256
+
+from ..models import Account, Advance, Bill, Debt, Goal, Income, InstallmentPlan, Paystub, Transaction
 
 TODAY = date(2026, 10, 14)
 NET_PAY = 2240.0
@@ -79,11 +82,12 @@ def generate(today: date = TODAY, months: int = 12, seed: int = 42) -> Household
     def tx(d: date, account: str, merchant: str, amount: float, category: str, **flags) -> None:
         h.transactions.append({"date": d, "account": account, "merchant": merchant, "amount": round(amount, 2), "category": category, **flags})
 
-    # Paychecks, with one short one two months back (8 fewer hours, overtime missing).
+    # Paychecks, with one short one two months back (8 fewer hours, overtime missing); the deposit equals the stub's net.
+    stub_net = {s["pay_date"]: s["net"] for s in paystubs_for(h, today)}
     for pd in paydays(today):
         if pd < start:
             continue
-        net = 2061.0 if pd == date(2026, 8, 21) else NET_PAY
+        net = stub_net.get(pd, NET_PAY)
         tx(pd, "checking", "Example Employer Payroll", -net, "Income", is_income=True)
 
     # Bills, monthly on their due day, with electricity varying by season and a streaming price rise on Oct 1.
@@ -220,5 +224,28 @@ def seed(session: Session, household: Household | None = None) -> dict:
         session.add(Income(name=inc["name"], cadence=inc["cadence"], expected_net=inc["expected_net"], next_date=inc["next_date"], account_id=ids[inc["account"]]))
     for g in h.goals:
         session.add(Goal(name=g["name"], kind=g["kind"], target=g["target"], pace=g["pace"], priority=g["priority"], funded=g["funded"]))
+    session.flush()
+    # The last six paystubs, matched to their deposits; one short one, as on the mock-ups.
+    deposits = {t.date: t for t in session.exec(select(Transaction).where(Transaction.is_income == True)).all()}  # noqa: E712
+    for pd in paystubs_for(h, today=TODAY):
+        deposit = deposits.get(pd["pay_date"])
+        session.add(Paystub(
+            employer="Example Employer", provider="Example Payroll", pay_date=pd["pay_date"], period_start=pd["pay_date"] - timedelta(days=18), period_end=pd["pay_date"] - timedelta(days=5),
+            gross=pd["gross"], net=pd["net"], hours=pd["hours"], deductions=json.dumps(pd["deductions"]), source="demo", transaction_id=deposit.id if deposit else None,
+            expected_net=NET_PAY, difference=round(pd["net"] - NET_PAY, 2), stub_hash=_sha256(f"demo|{pd['pay_date']}|{pd['net']}".encode()).hexdigest(),
+        ))
     session.commit()
     return {"seeded": True, "accounts": len(h.accounts), "transactions": len(h.transactions), "bills": len(h.bills)}
+
+
+def paystubs_for(h: Household, today: date) -> list[dict]:
+    stubs = []
+    for pd in paydays(today)[-6:]:
+        short = pd == date(2026, 8, 21)
+        hours = 72.0 if short else 80.0
+        gross = round(2980.77 * hours / 80, 2)
+        taxes = {"Federal income tax": round(gross * 0.10, 2), "Social Security": round(gross * 0.062, 2), "Medicare": round(gross * 0.0145, 2)}
+        benefits = {"Health insurance": 112.50, "401(k)": round(gross * 0.03, 2), "Dental": 12.74}
+        net = round(gross - sum(taxes.values()) - sum(benefits.values()), 2)
+        stubs.append({"pay_date": pd, "gross": gross, "net": net, "hours": hours, "deductions": [{"name": k, "amount": v} for k, v in {**taxes, **benefits}.items()]})
+    return stubs

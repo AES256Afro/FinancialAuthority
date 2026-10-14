@@ -209,6 +209,21 @@ def build_server() -> MCPServer:
             services.audit(session, client=client, client_kind="key", tool="payments_list", rows=sum(len(v) for v in out.values()), redaction=redaction)
             return out
 
+    @server.tool(name="paystubs_list", annotations=READ_ONLY)
+    def paystubs_list() -> dict:
+        """The last paystubs: gross, net, pay date, period, every deduction line, the deposit each matched, and how
+        each compares with the usual net."""
+        from .engine.paystubs import paystubs_overview
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            out = paystubs_overview(session, limit=12)
+            if redaction != "full":
+                for p in out["recent"]:
+                    p["employer"], p["deductions"] = "(redacted)", []
+            services.audit(session, client=client, client_kind="key", tool="paystubs_list", rows=len(out["recent"]), redaction=redaction)
+            return out
+
     @server.tool(name="brief_today", annotations=READ_ONLY)
     def brief_today() -> dict:
         """What needs attention today, as the engine's own sentences: what clears before payday, what is past

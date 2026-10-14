@@ -75,7 +75,20 @@ def handle_message(session: Session, account: MailAccount, folder: str, uid: int
         status = "applied" if outcome.get("imported") else "rejected"
         session.add(ExtractedFact(kind="export", message_ref_id=ref.id, fields=json.dumps({"inserted": outcome.get("imported", 0)}), confidence=1.0, status=status, excerpt=outcome.get("note", ""), produced_by=produced_by, resolved_at=utcnow()))
         return outcome
+    # A PDF attachment that reads like a paystub becomes a paystub fact whatever the subject said.
+    stub_fact = paystub_from_attachments(session, ref, parsed, today, produced_by)
+    if stub_fact and kind in ("none", "paystub", "statement"):
+        outcome["fact"] = "pending"
+        outcome["kind"] = "paystub"
+        return outcome
     fields = extract(kind, parsed.subject, parsed.text, today)
+    if kind == "paystub":
+        from ..parsers.paystub import parse_paystub_text
+
+        parsed_stub = parse_paystub_text(parsed.text, today)
+        if parsed_stub:
+            fields.update({k: v for k, v in parsed_stub.items() if k != "confidence"})
+            confidence = max(confidence, parsed_stub["confidence"])
     fields["sender"] = parsed.sender
     fields["sender_name"] = parsed.sender_name
     fields["subject"] = parsed.subject[:200]
@@ -87,6 +100,28 @@ def handle_message(session: Session, account: MailAccount, folder: str, uid: int
     session.add(ExtractedFact(kind=kind, message_ref_id=ref.id, fields=json.dumps(fields), confidence=confidence, status=status, excerpt=excerpt_for(parsed.text, fields), produced_by=produced_by, resolved_at=utcnow() if status == "auto" else None))
     outcome["fact"] = status
     return outcome
+
+
+def paystub_from_attachments(session: Session, ref: MessageRef, parsed: Parsed, today: date, produced_by: str) -> bool:
+    """Read each PDF attachment; one that reads like a paystub becomes a pending paystub fact."""
+    from ..parsers.paystub import parse_paystub_text, pdf_text
+
+    found = False
+    for attachment in parsed.attachments:
+        is_pdf = attachment.content_type == "application/pdf" or attachment.name.lower().endswith(".pdf")
+        if not is_pdf or not attachment.data:
+            continue
+        text = pdf_text(attachment.data)
+        stub = parse_paystub_text(text, today)
+        if not stub:
+            continue
+        confidence = stub.pop("confidence")
+        stub.update({"sender": parsed.sender, "sender_name": parsed.sender_name, "subject": parsed.subject[:200], "attachment": attachment.name})
+        if parsed.date:
+            stub["message_date"] = parsed.date.date().isoformat()
+        session.add(ExtractedFact(kind="paystub", message_ref_id=ref.id, fields=json.dumps(stub), confidence=confidence, status="pending", excerpt=excerpt_for(text, {"amount": stub.get("net"), "due_date": stub.get("pay_date")}), produced_by=f"{produced_by or 'rule:attachment'}+parser:paystub"))
+        found = True
+    return found
 
 
 def capture_export(session: Session, parsed: Parsed, fetch: Fetcher) -> dict:
