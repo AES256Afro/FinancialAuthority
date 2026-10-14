@@ -86,7 +86,7 @@ export function RiverChart({ snapshot, look }: Props) {
         {bottom < 0 && <rect x={LEFT} y={floorY} width={RIGHT - LEFT} height={BASE - floorY} fill={c.bill} fillOpacity={0.06} />}
         <path d={paceArea} fill={c.safe} fillOpacity={0.12} />
         <path d={paceLine} fill="none" stroke={c.safe} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-        <path d={pathOf("available")} fill="none" stroke={c.ink2} strokeWidth={1.25} strokeLinejoin="round" strokeOpacity={0.7} />
+        <path d={pathOf("available", windowEnd)} fill="none" stroke={c.ink2} strokeWidth={1.25} strokeLinejoin="round" strokeOpacity={0.7} />
         <line x1={LEFT} y1={floorY} x2={RIGHT} y2={floorY} stroke={c.buffer} strokeWidth={1.5} />
         {paydays.map((i, k) => (
           <g key={i}>
