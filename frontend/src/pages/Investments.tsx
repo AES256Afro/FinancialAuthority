@@ -122,6 +122,17 @@ export function Investments() {
     await api(`/api/v1/investments/${id}`, { method: "DELETE" });
     reload();
   }
+  async function importHoldings(id: number, file: File) {
+    const body = new FormData();
+    body.append("file", file);
+    try {
+      const r = await api<{ summary: string }>(`/api/v1/imports/holdings/${id}`, { method: "POST", body });
+      setNote(r.summary);
+      reload();
+    } catch (e) {
+      setNote((e as Error).message);
+    }
+  }
 
   const d = data;
   return (
@@ -203,6 +214,10 @@ export function Investments() {
                 <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                   <input id={`balance-${a.id}`} className="input num" inputMode="decimal" value={balances[a.id] ?? ""} onChange={(e) => setBalances({ ...balances, [a.id]: e.target.value })} placeholder="new balance from the statement" style={{ minHeight: 32, padding: "4px 8px", fontSize: 12, width: 220, ...(wanted === String(a.id) ? { outline: "3px solid var(--warning)", outlineOffset: 2 } : {}) }} aria-label={`New balance for ${a.name}`} />
                   <button className="btn" type="button" style={{ minHeight: 32, padding: "4px 10px", fontSize: 12 }} onClick={() => updateBalance(a.id)}>Record</button>
+                  <label className="btn" style={{ minHeight: 32, padding: "4px 10px", fontSize: 12, display: "inline-flex", alignItems: "center", cursor: "pointer" }}>
+                    Import holdings (CSV or OFX)
+                    <input type="file" accept=".csv,.ofx,.qfx,text/csv" style={{ display: "none" }} onChange={(e) => e.target.files?.[0] && importHoldings(a.id, e.target.files[0])} />
+                  </label>
                   <div style={{ flexGrow: 1 }} />
                   <button className="btn" type="button" style={{ minHeight: 32, padding: "4px 10px", fontSize: 12 }} onClick={() => remove(a.id)}>Remove</button>
                 </div>

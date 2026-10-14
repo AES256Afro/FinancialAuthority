@@ -61,7 +61,7 @@ def next_steps(session: Session, today: date) -> dict:
         if age is None or age > STALE_DAYS:
             what = f"{a.name} at {a.institution}" if a.institution else a.name
             if a.connector == "manual":
-                steps.append(_step(f"invest-stale-{a.id}", "warning", f"{what}: {'no balance yet' if age is None else f'the balance is {age} days old'}. Enter the new one from the statement.", "Update the balance", f"/investments?update={a.id}", f"account:{a.id}"))
+                steps.append(_step(f"invest-stale-{a.id}", "warning", f"{what}: {'no balance yet' if age is None else f'the balance is {age} days old'}. Enter the new one from the statement, or import the vendor's holdings file.", "Update the balance", f"/investments?update={a.id}", f"account:{a.id}"))
             else:
                 link = link_by_account.get(f"{a.connector}:{a.external_id}")
                 target = f"/settings/connectors?sync={link.id}" if link else "/settings/connectors#banks"

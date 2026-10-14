@@ -4,6 +4,7 @@ import { useLocation } from "react-router-dom";
 import { api, useApi } from "../api";
 import type { MailAccountRow } from "../types";
 import { Banks } from "./Banks";
+import { FileImport } from "../components/FileImport";
 
 interface ConnectorRow {
   id: string;
@@ -177,6 +178,14 @@ export function Connectors() {
           <div className="lab" style={{ marginBottom: 8 }}>Add a mailbox</div>
           {presets.data && <MailboxForm presets={presets.data.presets} onSaved={accounts.reload} />}
         </div>
+      </section>
+
+      <section id="import" className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div>
+          <strong>Import a file from any bank or vendor</strong>
+          <div style={{ fontSize: 13, color: "var(--ink-2)" }}>For a bank or a vendor with no live connection: download its CSV or OFX statement and bring it here. The app works out the columns, shows the first rows, and skips what the ledger already has. The same files can be dropped into the Imports folder.</div>
+        </div>
+        <FileImport onDone={(summary) => setResult(summary)} />
       </section>
 
       {rocket && (
