@@ -153,6 +153,19 @@ def match_payments_job() -> str:
         return f"payments: {counts['paid']} paid, {counts['late']} late, {counts['past_due']} past due, {counts['scheduled']} scheduled"
 
 
+def mail_sync() -> str:
+    """Read every connected mailbox for new messages, read-only."""
+    with session_scope() as session:
+        result = CONNECTORS["mail"].sync(session, today=_today())
+    if result.inserted:
+        with session_scope() as session:
+            from ..engine.payments import match_payments
+
+            match_payments(session, _today())
+    return result.summary
+
+
+jobs.register("mail_sync", mail_sync, 900, "Read every connected mailbox for new messages")
 jobs.register("self_check", self_check, 3600, "Connector health, stale data, disk and database size")
 jobs.register("import_watch", import_watch, 300, "Import new files from the import folder")
 jobs.register("detect_recurring", detect_recurring, 6 * 3600, "Find recurring charges and paychecks in the ledger, then match payments")

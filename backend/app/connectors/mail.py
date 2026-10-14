@@ -1,0 +1,193 @@
+"""The mail connector: every active mailbox, every quarter hour, read-only.
+
+New messages become MessageRefs; what the classifier recognises becomes an ExtractedFact that waits for the
+owner; a Rocket Money export email has its download link followed and the file imported; bank alerts land in
+the brief the same hour. Nothing here replies, marks, moves or deletes.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+from collections.abc import Callable
+from datetime import date
+
+import httpx
+from sqlmodel import Session, select
+
+from .. import crypto
+from ..mail.box import clean
+from ..mail.classify import classify, excerpt_for, extract
+from ..mail.imap import ImapClient, Parsed, parse_message
+from ..models import ExtractedFact, MailAccount, MessageRef, utcnow
+from ..store import get_setting, set_setting
+from .base import Connector, SyncResult
+from .rocketmoney import import_rows, parse_csv
+
+log = logging.getLogger("fa.mail")
+
+ClientFactory = Callable[..., ImapClient]
+Fetcher = Callable[[str], bytes]
+
+INFORMATIONAL = {"bank_alert", "payday", "payment_confirmation", "upcoming_bills"}  # kept as auto facts; no confirmation needed
+
+
+def default_fetch(url: str) -> bytes:
+    with httpx.Client(follow_redirects=True, timeout=60) as client:
+        with client.stream("GET", url) as response:
+            response.raise_for_status()
+            chunks, total = [], 0
+            for chunk in response.iter_bytes():
+                total += len(chunk)
+                if total > 50 * 1024 * 1024:
+                    raise RuntimeError("the export is over 50 MB")
+                chunks.append(chunk)
+            return b"".join(chunks)
+
+
+def uid_key(account_id: int, folder: str) -> str:
+    return f"mail.{account_id}.{folder}.last_uid"
+
+
+def account_password(account: MailAccount) -> str:
+    return crypto.decrypt(account.password_enc) if crypto.is_encrypted(account.password_enc) else account.password_enc
+
+
+def handle_message(session: Session, account: MailAccount, folder: str, uid: int, parsed: Parsed, today: date, fetch: Fetcher = default_fetch) -> dict:
+    """Record one message and whatever it yields. Returns what happened, for the sync summary."""
+    existing = session.exec(select(MessageRef).where(MessageRef.account_id == account.id, MessageRef.folder == folder, MessageRef.uid == uid)).first()
+    if existing is not None:
+        return {"seen": True}
+    kind, confidence, produced_by = classify(parsed.sender, parsed.subject, parsed.text)
+    ref = MessageRef(
+        account_id=account.id, folder=folder, uid=uid, message_id=parsed.message_id[:255], sender=parsed.sender[:255], sender_name=parsed.sender_name[:120],
+        subject=parsed.subject[:300], date=parsed.date, has_attachments=bool(parsed.attachments), attachment_names=", ".join(a.name for a in parsed.attachments)[:400],
+        snippet=clean(parsed.text, 200), kind=kind,
+    )
+    session.add(ref)
+    session.flush()
+    outcome: dict = {"kind": kind}
+    if kind == "none":
+        return outcome
+    if kind == "export":
+        outcome.update(capture_export(session, parsed, fetch))
+        status = "applied" if outcome.get("imported") else "rejected"
+        session.add(ExtractedFact(kind="export", message_ref_id=ref.id, fields=json.dumps({"inserted": outcome.get("imported", 0)}), confidence=1.0, status=status, excerpt=outcome.get("note", ""), produced_by=produced_by, resolved_at=utcnow()))
+        return outcome
+    fields = extract(kind, parsed.subject, parsed.text, today)
+    fields["sender"] = parsed.sender
+    fields["sender_name"] = parsed.sender_name
+    fields["subject"] = parsed.subject[:200]
+    if parsed.date:
+        fields["message_date"] = parsed.date.date().isoformat()
+    status = "auto" if kind in INFORMATIONAL else "pending"
+    if kind in ("bill_due", "past_due") and "amount" not in fields:
+        confidence = min(confidence, 0.5)
+    session.add(ExtractedFact(kind=kind, message_ref_id=ref.id, fields=json.dumps(fields), confidence=confidence, status=status, excerpt=excerpt_for(parsed.text, fields), produced_by=produced_by, resolved_at=utcnow() if status == "auto" else None))
+    outcome["fact"] = status
+    return outcome
+
+
+def capture_export(session: Session, parsed: Parsed, fetch: Fetcher) -> dict:
+    """Follow the export email's download link and import the file. The link lives seven days."""
+    links = [l for l in parsed.links if re.search(r"download|export|transactions|csv", l, re.IGNORECASE)] or parsed.links
+    if not links:
+        return {"imported": 0, "note": "no download link in the message"}
+    url = links[0]
+    try:
+        raw = fetch(url)
+    except Exception as error:  # noqa: BLE001
+        return {"imported": 0, "note": f"could not download the export: {type(error).__name__}"}
+    text = raw.decode("utf-8-sig", errors="replace")
+    rows = parse_csv(text, "rocketmoney-export-from-mail.csv")
+    if rows is None:
+        return {"imported": 0, "note": "the link did not give a Rocket Money transactions export"}
+    result = import_rows(session, rows, "rocketmoney-export-from-mail.csv")
+    return {"imported": result.inserted, "duplicates": result.duplicates, "note": f"export imported: {result.summary}"}
+
+
+class MailConnector(Connector):
+    id = "mail"
+    title = "Mailboxes"
+    yields = "Bills, statements, paystubs, installment schedules, payment confirmations, past-due and bank alerts, and the Rocket Money export, from Proton Mail, Gmail or any IMAP mailbox."
+    settings_schema = [
+        {"name": "label", "label": "Name", "help": "Proton, Gmail, Work"},
+        {"name": "kind", "label": "Kind", "help": "proton (through the Bridge), gmail (app password), or imap"},
+        {"name": "host", "label": "IMAP host"},
+        {"name": "port", "label": "Port"},
+        {"name": "username", "label": "Username"},
+        {"name": "password", "label": "Password or app password", "secret": True},
+        {"name": "folders", "label": "Folders to watch", "help": "comma separated; INBOX by default"},
+    ]
+
+    def __init__(self, client_factory: ClientFactory = ImapClient, fetch: Fetcher = default_fetch) -> None:
+        self.client_factory = client_factory
+        self.fetch = fetch
+
+    def sync(self, session: Session, today: date | None = None, account_id: int | None = None, **_: object) -> SyncResult:
+        today = today or date.today()
+        query = select(MailAccount).where(MailAccount.active == True)  # noqa: E712
+        if account_id is not None:
+            query = query.where(MailAccount.id == account_id)
+        accounts = session.exec(query).all()
+        if not accounts:
+            return SyncResult(ok=True, summary="no mailboxes connected")
+        notes: list[str] = []
+        total_new = 0
+        ok = True
+        for account in accounts:
+            try:
+                new, facts = self._sync_account(session, account, today)
+                total_new += new
+                account.last_error = ""
+                account.last_sync_at = utcnow()
+                account.messages_seen += new
+                notes.append(f"{account.label}: {new} new, {facts} facts")
+            except Exception as error:  # noqa: BLE001
+                ok = False
+                account.last_error = f"{type(error).__name__}: {error}"[:300]
+                notes.append(f"{account.label}: {account.last_error}")
+                log.warning("mail sync failed for %s: %s", account.label, error)
+            session.add(account)
+            session.commit()
+        return SyncResult(ok=ok, summary="; ".join(notes), inserted=total_new, at=utcnow())
+
+    def _sync_account(self, session: Session, account: MailAccount, today: date) -> tuple[int, int]:
+        client = self.client_factory(account.host, account.port, account.username, account_password(account), account.use_ssl, account.starttls)
+        client.connect()
+        new = facts = 0
+        try:
+            for folder in [f.strip() for f in account.folders.split(",") if f.strip()]:
+                client.select_readonly(folder)
+                last = int(get_setting(session, uid_key(account.id, folder), 0) or 0)
+                uids = client.new_uids(last)
+                if last == 0 and uids:
+                    uids = uids[-BATCH_FIRST:]  # a new mailbox starts from the recent end, not from the beginning of time
+                for uid in uids:
+                    parsed = parse_message(client.fetch_raw(uid))
+                    outcome = handle_message(session, account, folder, uid, parsed, today, self.fetch)
+                    if not outcome.get("seen"):
+                        new += 1
+                    if outcome.get("fact") or outcome.get("imported"):
+                        facts += 1
+                    last = max(last, uid)
+                    set_setting(session, uid_key(account.id, folder), last)
+                session.commit()
+        finally:
+            client.close()
+        return new, facts
+
+
+BATCH_FIRST = 150
+
+
+def test_account(host: str, port: int, username: str, password: str, use_ssl: bool = True, starttls: bool = False, client_factory: ClientFactory = ImapClient) -> dict:
+    client = client_factory(host, port, username, password, use_ssl, starttls)
+    client.connect()
+    try:
+        folders = client.folders()
+        exists, _ = client.select_readonly("INBOX")
+        return {"ok": True, "folders": folders, "inbox_messages": exists}
+    finally:
+        client.close()

@@ -37,6 +37,16 @@ def build_brief(snap: dict) -> list[dict]:
     adv = snap["advances"]
     if adv["total"] > 0:
         items.append({"severity": "info", "text": f"{len(adv['items'])} advance{'s' if len(adv['items']) != 1 else ''} repay {money(adv['total'])} as the paycheck lands.", "link": "/"})
+    mail = snap.get("mail", {"pending": [], "alerts": []})
+    for alert in mail.get("alerts", [])[:3]:
+        what = alert["fields"].get("alert", "balance")
+        if what in ("overdraft", "declined"):
+            amount = alert["fields"].get("amount")
+            items.append({"severity": "critical", "text": f"{alert['sender_name'] or 'The bank'} sent {'an overdraft' if what == 'overdraft' else 'a declined-charge'} alert on {when(alert['date']) if alert.get('date') else 'a recent day'}{f' for {money(amount)}' if amount else ''}.", "link": "/mail"})
+    past_due_notices = [f for f in mail.get("pending", []) if f["kind"] == "past_due"]
+    if past_due_notices:
+        names = ", ".join(f["sender_name"] or f["subject"] for f in past_due_notices[:3])
+        items.append({"severity": "critical", "text": f"Past-due notice{'s' if len(past_due_notices) > 1 else ''} in the mail from {names}.", "link": "/confirm"})
     payments = snap.get("payments", {})
     if payments.get("past_due"):
         names = ", ".join(f"{p['name']} {money(p['amount'])}" for p in payments["past_due"][:3])
@@ -49,8 +59,14 @@ def build_brief(snap: dict) -> list[dict]:
         w = bad_weeks[0]
         items.append({"severity": "warning", "text": f"At your usual pace of {money(snap['usual_pace']['per_day'])} a day, the week of {when(w['start'])} dips {money(-w['low'])} under the buffer.", "link": "/?view=month"})
     pending = snap["pending"]
-    if pending["confirmations"]:
-        items.append({"severity": "warning", "text": f"{pending['confirmations']} recurring charge{'s' if pending['confirmations'] != 1 else ''} need{'s' if pending['confirmations'] == 1 else ''} a name.", "link": "/confirm"})
+    series = pending.get("series", pending["confirmations"])
+    if series:
+        items.append({"severity": "warning", "text": f"{series} recurring charge{'s' if series != 1 else ''} need{'s' if series == 1 else ''} a name.", "link": "/confirm"})
+    mail_pending = [f for f in mail.get("pending", []) if f["kind"] != "past_due"]
+    if mail_pending:
+        bills = [f for f in mail_pending if f["kind"] == "bill_due"]
+        text = f"{len(bills)} bill{'s' if len(bills) != 1 else ''} found in the mail need a look" if bills else f"{len(mail_pending)} thing{'s' if len(mail_pending) != 1 else ''} from the mail need a look"
+        items.append({"severity": "warning", "text": text + ".", "link": "/confirm"})
     safe = snap["safe_to_spend"]
     items.append({"severity": "critical" if safe["amount"] < 0 else "info", "text": (f"Short by {money(-safe['amount'])} through {when(safe['through'])} after bills and set-asides." if safe["amount"] < 0 else f"Safe to spend {money(safe['amount'])} through {when(safe['through'])}."), "link": "/"})
     return items
