@@ -7,7 +7,7 @@ from datetime import date, timedelta
 from sqlmodel import Session, select
 
 from ..engine.recurring import detect, merchant_key
-from ..models import Bill, Income, RecurringSeries, Transaction
+from ..models import Bill, Income, InstallmentPlan, RecurringSeries, Transaction
 
 
 def _series_key(found: dict) -> tuple:
@@ -28,6 +28,7 @@ def run_detection(session: Session, today: date, lookback_days: int = 400) -> di
     existing = {(_series_key({"merchant_key": s.merchant_key, "cadence": s.cadence, "typical_amount": s.typical_amount})): s for s in session.exec(select(RecurringSeries)).all()}
     bills = {b.name.lower(): b for b in session.exec(select(Bill).where(Bill.active == True)).all()}  # noqa: E712
     incomes = list(session.exec(select(Income).where(Income.active == True)).all())  # noqa: E712
+    plans = list(session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all())  # noqa: E712
     created = updated = linked = 0
     for f in found:
         key = _series_key(f)
@@ -54,6 +55,12 @@ def run_detection(session: Session, today: date, lookback_days: int = 400) -> di
                 series.kind, series.confirmed = bill.kind, True
                 bill.series_id = series.id
                 session.add_all([series, bill])
+                linked += 1
+                continue
+            plan = next((p for p in plans if p.merchant and series.merchant_key.startswith(p.merchant.lower())), None)
+            if plan is not None and f["kind"] != "income":
+                series.kind, series.confirmed = "installment", True
+                session.add(series)
                 linked += 1
                 continue
             if f["kind"] == "income":
