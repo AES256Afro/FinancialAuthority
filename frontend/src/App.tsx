@@ -2,7 +2,9 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { useApi } from "./api";
 import { Shell } from "./components/Shell";
 import { Appearance } from "./pages/Appearance";
+import { Bills } from "./pages/Bills";
 import { Clients } from "./pages/Clients";
+import { Confirm } from "./pages/Confirm";
 import { Connectors } from "./pages/Connectors";
 import { Home } from "./pages/Home";
 import { Jobs } from "./pages/Jobs";
@@ -37,6 +39,8 @@ export default function App() {
         <Route path="/" element={body((s) => <Home snapshot={s} />)} />
         <Route path="/today" element={body((s) => <Today snapshot={s} />)} />
         <Route path="/transactions" element={<Transactions />} />
+        <Route path="/bills" element={<Bills onChanged={snapshot.reload} />} />
+        <Route path="/confirm" element={<Confirm onChanged={snapshot.reload} />} />
         <Route path="/settings" element={<SettingsIndex />} />
         <Route path="/settings/appearance" element={<Appearance />} />
         <Route path="/settings/clients" element={<Clients />} />

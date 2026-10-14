@@ -23,16 +23,16 @@ Done when: CI publishes the image, it runs on BigBox, and the coding agent did t
 - ☐ **M1.2 Rocket Money and exports.** The Rocket Money connector: the export email recognised and its link followed within its seven-day life, a button that opens Rocket Money's export page, drop-folder and upload; the loader ported from `MCPManagement/rocketmoney-mcp` (columns, de-duplication, newest-export-wins, the is-spending rule); Rocket Money's weekly upcoming-bills, income and balance mails read as cross-checks; the ledger exported in the same CSV shape. Generic CSV with column mapping; OFX and QFX.
 - ☐ **M1.3 Accounts and balances.** Accounts from every connector, balances live or entered, snapshots over time, `accounts.list`.
 - ☐ **M1.4 Normalisation and rules.** Merchant cleanup, categories seeded from the export and re-mappable, flags for transfers, card payments, income and ignored rows; a rules engine that matches on merchant, amount, account or text and can categorise, rename, tag, split or hide; every correction the owner makes becomes a rule (merchant memory).
-- ☐ **M1.5 Recurring detection.** Port the cadence detection into `RecurringSeries` with amount tolerance and next expected date.
-- ☐ **M1.6 Paycheck detection.** Recurring income becomes `Income` after the owner confirms employer, cadence, expected net and next date.
-- ☐ **M1.7 Read tools.** `transactions.search`, `spending.summary`, `recurring.list`, `accounts.list`.
+- ✅ **M1.5 Recurring detection** (2026-10-14). The cadence detection ported into `RecurringSeries` with amount tolerance and next expected date; a six-hourly job and a run after every import; series linked to bills and incomes already known; the rest wait on the Needs-you page, where one tap makes each a bill, a subscription, a paycheck, an installment plan, or ignored.
+- 🔄 **M1.6 Paycheck detection** (2026-10-14). Recurring income is found and linked to a known `Income`, or confirmed from Needs you. *Left: adjusting the expected net from the last stubs (M2.6).*
+- 🔄 **M1.7 Read tools** (2026-10-14). `transactions_search`, `accounts_list`, `recurring_list`, `bills_list`, `finance_snapshot`, `jobs_status` over MCP and REST. *Left: `spending_summary`.*
 - ☐ **M1.8 Alert mail as signals.** The bank's alert mail (purchase, deposit, overdraft, negative balance, declined, payment received, statement ready) and the budget app's alerts become events the same quarter-hour: an overdraft or a decline reaches the brief at once, a deposit alert confirms a paycheck before the next sync, a statement notice fetches the PDF for reconciliation. Needs the mail connector's first slice, pulled forward from M4.1.
 
 Done when: Capital One and the credit union sync daily with no hand in it, an overdraft alert shows in the app within fifteen minutes of the mail, three years of history are loaded from the export, and the recurring series and paychecks found match what the owner knows.
 
 ## M2 — Obligations, payments, paystubs (2 weeks)
 
-- ☐ **M2.1 Bill registry.** Each recurring series is confirmed as a bill, a subscription, income, an advance, or ignored. Manual add. Fields: biller, amount (fixed or estimated), due day, autopay and its account, grace days, late fee, movable and the allowed window.
+- 🔄 **M2.1 Bill registry** (2026-10-14). Each recurring series is confirmed as a bill, a subscription, income, an installment plan, or ignored; manual add; the Bills page edits amount, due day, autopay and whether the date can move. *Left: the paying account, grace days, late fees and the allowed move window in the UI.*
 - ☐ **M2.2 Debts.** Cards, loans, medical plans: balance, APR, minimum, statement day, due day.
 - ☐ **M2.3 Installment plans.** BNPL purchases with schedules, detected from transactions and confirmed, or entered in a thirty-second form.
 - ☐ **M2.4 Advances.** Earned-wage and cash-advance apps: amount, fee, repayment date, repaid or not; detected from the pair of transactions and confirmed.

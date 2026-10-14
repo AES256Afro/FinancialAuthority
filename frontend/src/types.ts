@@ -50,6 +50,41 @@ export interface TransactionRow {
   note: string;
 }
 
+export interface SeriesRow {
+  id: number;
+  merchant: string;
+  category: string;
+  cadence: string;
+  typical_amount: number;
+  latest_amount: number;
+  charges_seen: number;
+  first_seen: string;
+  last_date: string;
+  next_expected: string;
+  active: boolean;
+  kind: string;
+  confirmed: boolean;
+}
+
+export interface BillRow {
+  id: number;
+  name: string;
+  kind: string;
+  amount: number;
+  amount_mode: string;
+  cadence: string;
+  due_day: number;
+  autopay: boolean;
+  pay_from_account_id: number | null;
+  grace_days: number;
+  late_fee: number;
+  movable: boolean;
+  move_window: string;
+  category: string;
+  series_id: number | null;
+  active: boolean;
+}
+
 export interface Me {
   kind: string;
   name: string;

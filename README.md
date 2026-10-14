@@ -50,6 +50,6 @@ Make a key on Settings › Clients, then:
 claude mcp add --transport http financialauthority http://<host>:8430/mcp --header "Authorization: Bearer <key>"
 ```
 
-The tools: `finance_snapshot`, `accounts_list`, `transactions_search`, `jobs_status`, growing with each milestone. The REST mirror is under `/api/v1`.
+The tools: `finance_snapshot`, `accounts_list`, `transactions_search`, `recurring_list`, `bills_list`, `jobs_status`, growing with each milestone. The REST mirror is under `/api/v1`.
 
 FinancialAuthority is not financial advice. It is a calculator that shows its work.

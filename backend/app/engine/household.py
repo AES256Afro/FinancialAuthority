@@ -141,6 +141,15 @@ def generate(today: date = TODAY, months: int = 12, seed: int = 42) -> Household
         h.advances.append({"provider": "Example Advance", "amount": 150.0, "fee": 6.0, "taken_on": date(2026, 10, 8), "repay_date": NEXT_PAYDAY})
     h.advances.append({"provider": "Example Cash App", "amount": 75.0, "fee": 0.0, "taken_on": date(2026, 10, 10), "repay_date": NEXT_PAYDAY})
 
+    # Two recurring charges the household has no bill for yet, so the Needs-you flow has something to show.
+    d = date(start.year, start.month, 1)
+    while d <= today:
+        for name, amount, day, first in (("Example Cloud Storage", 2.99, 9, date(2026, 3, 1)), ("Example Storage Unit", 89.0, 12, date(2026, 5, 1))):
+            due = date(d.year, d.month, day)
+            if first <= due <= today and due >= start:
+                tx(due, "card" if amount < 10 else "checking", name, amount, "Shopping" if amount < 10 else "Home")
+        d = date(d.year + (d.month == 12), (d.month % 12) + 1, 1)
+
     # Everyday spending.
     d = start
     while d <= today:

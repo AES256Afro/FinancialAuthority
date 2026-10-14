@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import auth
-from .api import routes
+from .api import registers, routes
 from .config import settings
 from .db import init_db, session_scope
 from .engine.household import seed
@@ -32,7 +32,12 @@ async def lifespan(app: FastAPI):
     init_db()
     if settings.demo:
         with session_scope() as session:
-            log.info("demo mode: %s", seed(session))
+            result = seed(session)
+            log.info("demo mode: %s", result)
+        if result.get("seeded"):
+            from .jobs.scheduler import detect_recurring
+
+            log.info("demo detection: %s", detect_recurring())
     log.info("data dir: %s · imports: %s · tz: %s", settings.data_dir, settings.import_root, settings.tz)
     if not auth.auth_enabled():
         log.warning("sign-in is OFF because FA_PASSWORD is empty; never run like this where anyone else can reach it")
@@ -50,6 +55,7 @@ app = FastAPI(title="FinancialAuthority", version=__version__, lifespan=lifespan
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.include_router(auth.router)
 app.include_router(routes.router)
+app.include_router(registers.router)
 for route in asgi_routes():
     app.router.routes.append(route)
 
