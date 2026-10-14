@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chat beside the table, with a reviewer</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f6f4ef;color:#141518;font-family:Manrope,system-ui,sans-serif;font-size:14px;line-height:1.4}
+a{color:#1c5cab}a:hover{color:#104281}
+.rail a{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;border-radius:10px;color:#4e5058;text-decoration:none;font-size:10px;font-weight:600;letter-spacing:.02em}
+.rail a:hover{background:#ece9e1;color:#141518}
+.rail a.on{background:#141518;color:#ffffff}
+.card{background:#ffffff;border:1px solid #e4e1da;border-radius:14px}
+.num{font-variant-numeric:tabular-nums}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:6px}
+.lab{font-size:11px;font-weight:800;color:#85878f;text-transform:uppercase;letter-spacing:.06em}
+.me{align-self:flex-end;background:#141518;color:#ffffff;border-radius:14px 14px 4px 14px;padding:10px 14px;max-width:70%;font-size:14px}
+.ai{align-self:flex-start;background:#ffffff;border:1px solid #e4e1da;border-radius:14px 14px 14px 4px;padding:12px 16px;max-width:88%;font-size:14px;line-height:1.55}
+.cite{display:inline-block;font-size:10px;font-weight:800;background:#e3eefb;color:#184f95;border-radius:5px;padding:0 5px;vertical-align:2px;margin-left:2px}
+.row{display:grid;grid-template-columns:22px minmax(0,1fr) 80px;gap:8px;align-items:center;padding:6px 0;border-top:1px solid #efece5;font-size:13px}
+.row .c{font-size:10px;font-weight:800;background:#e3eefb;color:#184f95;border-radius:5px;text-align:center;padding:1px 0}
+.btn{font:inherit;font-weight:800;font-size:12px;border-radius:9px;padding:7px 12px;border:1px solid #d9d6ce;background:#ffffff;color:#141518;cursor:pointer;min-height:36px}
+.btn.dark{background:#141518;color:#ffffff;border-color:#141518}
+.note{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid #efece5;font-size:13px}
+.note .k{flex:0 0 22px;height:22px;border-radius:50%;background:#4a3aa7;color:#ffffff;font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; background: #f6f4ef;">
+  <nav class="rail" aria-label="Sections" style="flex: 0 0 76px; display: flex; flex-direction: column; gap: 2px; padding: 14px 8px; box-sizing: border-box; border-right: 1px solid #e4e1da; background: #f6f4ef;">
+    <div style="display: flex; align-items: center; justify-content: center; height: 36px; margin-bottom: 10px;">
+      <svg width="28" height="28" viewBox="0 0 28 28" role="img" aria-label="FinancialAuthority"><rect x="2" y="2" width="24" height="24" rx="7" fill="#141518"></rect><path d="M8 18 L12 11 L16 15 L20 9" fill="none" stroke="#1baf7a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+    </div>
+    <a href="#today"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="7"></circle><path d="M10 6v4l3 2"></path></svg>Today</a>
+    <a href="#river"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2 14c3 0 3-4 6-4s3 4 6 4 3-4 4-4"></path><path d="M2 8c3 0 3-3 6-3s3 3 6 3 3-3 4-3"></path></svg>River</a>
+    <a href="#bills"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="3" width="12" height="14" rx="2"></rect><path d="M7 8h6M7 12h4"></path></svg>Bills</a>
+    <a href="#debts"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 16l4-8 4 5 3-7 3 10"></path></svg>Debts</a>
+    <a href="#paystubs"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="2"></rect><circle cx="10" cy="10" r="2.2"></circle></svg>Paystubs</a>
+    <a href="#mail"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="2"></rect><path d="M3 7l7 5 7-5"></path></svg>Mail</a>
+    <a href="#chat" class="on"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 5h12v8H9l-4 3v-3H4z"></path></svg>Chat</a>
+    <a href="#settings" style="margin-top: auto;"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="2.5"></circle><path d="M10 2v3M10 15v3M2 10h3M15 10h3M4.3 4.3l2.1 2.1M13.6 13.6l2.1 2.1M4.3 15.7l2.1-2.1M13.6 6.4l2.1-2.1"></path></svg>Settings</a>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 14px; padding: 14px 24px 24px; box-sizing: border-box;">
+    <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-height: 40px;">
+      <h1 style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.01em;">Ask, with the numbers in view</h1>
+      <div style="font-size: 13px; color: #4e5058;">The model talks on the left. The engine's table sits on the right, and every number the model says must be in it.</div>
+      <div style="flex-grow: 1;"></div>
+      <div style="display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; color: #4e5058;"><span>Advisor</span><span style="padding: 5px 10px; border-radius: 999px; background: #ffffff; border: 1px solid #e4e1da; color: #141518;">Local · 8B on BigBox · free</span><span>Reviewer</span><span style="padding: 5px 10px; border-radius: 999px; background: #ffffff; border: 1px solid #e4e1da; color: #141518;">Claude · API · ~$0.02 a review</span></div>
+    </header>
+
+    <section style="display: grid; grid-template-columns: minmax(0, 1.25fr) 420px; gap: 14px; align-items: start;">
+      <div class="card" style="padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; min-height: 700px;">
+        <div class="me">What should Friday's paycheck go on?</div>
+        <div class="ai">
+          <div style="font-size: 11px; font-weight: 800; color: #85878f; margin-bottom: 6px;">LOCAL ADVISOR · 0.9 s · every number checked against the table <span style="color: #0b5c3f;">✓</span></div>
+          Friday brings <strong>$2,240</strong><span class="cite">1</span>. Two advance apps take <strong>$231</strong><span class="cite">2</span> as it lands, so the first thing to do is nothing: let them clear. Eight bills fall before the next paycheck, <strong>$891</strong><span class="cite">3</span> in all, and the only two that need your hand are electricity on the 20th and the car loan on the 28th; the rest are autopay. Put <strong>$811</strong><span class="cite">4</span> aside for rent, insurance, water and the gym in the first week of November, keep the <strong>$200</strong><span class="cite">5</span> buffer, and <strong>$362</strong><span class="cite">6</span> is yours through the 29th, about $26 a day.<br><br>
+          If you want one thing to change: the car loan is due two days before the following payday, so a draft asking to move it to the 17th is waiting for your approval.
+        </div>
+        <div class="me">Can I put $100 toward the store card this time?</div>
+        <div class="ai">
+          <div style="font-size: 11px; font-weight: 800; color: #85878f; margin-bottom: 6px;">LOCAL ADVISOR · 1.1 s · checked <span style="color: #0b5c3f;">✓</span></div>
+          Yes, if it comes out of the <strong>$362</strong><span class="cite">6</span>: that leaves <strong>$262</strong><span class="cite">7</span>, still above the buffer at the thinnest point on the 28th. It saves about <strong>$2.60</strong><span class="cite">8</span> in interest this month and moves the store card's payoff from April to March. The engine would rather you did this than took a fourth installment plan.
+        </div>
+        <div style="margin-top: auto; display: flex; gap: 8px; align-items: center;">
+          <input type="text" placeholder="Ask about this paycheck" aria-label="Ask about this paycheck" style="font: inherit; font-size: 14px; padding: 12px 14px; border-radius: 12px; border: 1px solid #d9d6ce; flex-grow: 1; min-height: 44px; box-sizing: border-box;">
+          <button class="btn dark" type="button" style="min-height: 44px;">Ask</button>
+          <button class="btn" type="button" style="min-height: 44px;">Ask the reviewer</button>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <div class="card" style="padding: 14px 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px;"><strong>The engine's table · Fri Oct 16</strong><span style="font-size: 11px; color: #85878f;">computed 07:00</span></div>
+          <div class="row" style="border-top: 0;"><span class="c">1</span><span>Paycheck</span><strong class="num" style="text-align: right;">+$2,240</strong></div>
+          <div class="row"><span class="c">2</span><span>Advances repay</span><span class="num" style="text-align: right;">−$231</span></div>
+          <div class="row"><span class="c">3</span><span>Bills Oct 16 to 29 · 8</span><span class="num" style="text-align: right;">−$891</span></div>
+          <div class="row"><span class="c">4</span><span>Set aside, Nov 1 to 5</span><span class="num" style="text-align: right;">−$811</span></div>
+          <div class="row"><span class="c">5</span><span>Buffer kept</span><span class="num" style="text-align: right;">−$200</span></div>
+          <div class="row"><span class="c">6</span><strong>Safe to spend</strong><strong class="num" style="text-align: right;">$362</strong></div>
+          <div class="row"><span class="c">7</span><span>…after $100 to the store card</span><span class="num" style="text-align: right;">$262</span></div>
+          <div class="row"><span class="c">8</span><span>Interest saved this month</span><span class="num" style="text-align: right;">$2.60</span></div>
+        </div>
+
+        <div class="card" style="padding: 14px 16px; border: 2px solid #4a3aa7;">
+          <div style="display: flex; justify-content: space-between; align-items: baseline;"><strong>Second opinion · Claude</strong><span style="font-size: 11px; color: #85878f;">reviewed the plan 07:01 · 2 notes</span></div>
+          <div style="font-size: 12px; color: #4e5058; margin: 4px 0 6px;">A frontier model reads the engine's plan and the rules, not the raw mail or account numbers, and says where it would push back. It cannot change a number; it can only ask you to.</div>
+          <div class="note"><span class="k">1</span><span><strong>The $200 buffer is thin.</strong> Six overdraft alerts in the last 30 days. A $300 buffer still leaves $262 safe this window and would have absorbed five of the six. <a href="#buffer">Raise the buffer to $300</a></span></div>
+          <div class="note"><span class="k">2</span><span><strong>The car-loan move is sound; ask now.</strong> Most lenders allow one due-date change a year and want the current cycle paid first. Approving the draft today lands the change before the November payment.</span></div>
+          <div class="note"><span class="k" style="background: #1baf7a;">✓</span><span>No disagreement with the plan's arithmetic or the payoff order.</span></div>
+          <div style="display: flex; gap: 8px; margin-top: 8px;"><button class="btn dark" type="button">Apply note 1</button><button class="btn" type="button">Review again on payday</button></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

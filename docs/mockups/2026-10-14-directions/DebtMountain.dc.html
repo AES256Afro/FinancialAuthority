@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Debt mountain</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f6f4ef;color:#141518;font-family:Manrope,system-ui,sans-serif;font-size:14px;line-height:1.4}
+a{color:#1c5cab}a:hover{color:#104281}
+.rail a{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;border-radius:10px;color:#4e5058;text-decoration:none;font-size:10px;font-weight:600;letter-spacing:.02em}
+.rail a:hover{background:#ece9e1;color:#141518}
+.rail a.on{background:#141518;color:#ffffff}
+.card{background:#ffffff;border:1px solid #e4e1da;border-radius:14px}
+.num{font-variant-numeric:tabular-nums}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:6px}
+.lab{font-size:11px;font-weight:800;color:#85878f;text-transform:uppercase;letter-spacing:.06em}
+.step{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 0;border-top:1px solid #efece5;font-size:13px}
+.step .k{width:24px;height:24px;border-radius:50%;background:#141518;color:#ffffff;font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; background: #f6f4ef;">
+  <nav class="rail" aria-label="Sections" style="flex: 0 0 76px; display: flex; flex-direction: column; gap: 2px; padding: 14px 8px; box-sizing: border-box; border-right: 1px solid #e4e1da; background: #f6f4ef;">
+    <div style="display: flex; align-items: center; justify-content: center; height: 36px; margin-bottom: 10px;">
+      <svg width="28" height="28" viewBox="0 0 28 28" role="img" aria-label="FinancialAuthority"><rect x="2" y="2" width="24" height="24" rx="7" fill="#141518"></rect><path d="M8 18 L12 11 L16 15 L20 9" fill="none" stroke="#1baf7a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+    </div>
+    <a href="#today"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="7"></circle><path d="M10 6v4l3 2"></path></svg>Today</a>
+    <a href="#river"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2 14c3 0 3-4 6-4s3 4 6 4 3-4 4-4"></path><path d="M2 8c3 0 3-3 6-3s3 3 6 3 3-3 4-3"></path></svg>River</a>
+    <a href="#bills"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="3" width="12" height="14" rx="2"></rect><path d="M7 8h6M7 12h4"></path></svg>Bills</a>
+    <a href="#debts" class="on"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 16l4-8 4 5 3-7 3 10"></path></svg>Debts</a>
+    <a href="#paystubs"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="2"></rect><circle cx="10" cy="10" r="2.2"></circle></svg>Paystubs</a>
+    <a href="#mail"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="2"></rect><path d="M3 7l7 5 7-5"></path></svg>Mail</a>
+    <a href="#chat"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 5h12v8H9l-4 3v-3H4z"></path></svg>Chat</a>
+    <a href="#settings" style="margin-top: auto;"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="2.5"></circle><path d="M10 2v3M10 15v3M2 10h3M15 10h3M4.3 4.3l2.1 2.1M13.6 13.6l2.1 2.1M4.3 15.7l2.1-2.1M13.6 6.4l2.1-2.1"></path></svg>Settings</a>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px; padding: 14px 24px 24px; box-sizing: border-box;">
+    <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-height: 40px;">
+      <h1 style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.01em;">Debts, as a mountain you walk down</h1>
+      <div style="font-size: 13px; color: #4e5058;">Every layer is one debt. The slope is the plan: minimums on everything, and whatever is freed up goes to the most expensive layer.</div>
+    </header>
+
+    <section style="display: grid; grid-template-columns: minmax(0, 1.5fr) 380px; gap: 16px; align-items: start;">
+      <div class="card" style="padding: 16px 20px 10px; display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: baseline;">
+          <div><span class="lab">Owed today</span><div style="font-size: 30px; font-weight: 800; letter-spacing: -0.02em;" class="num">$21,851</div></div>
+          <div><span class="lab">Interest this month</span><div style="font-size: 22px; font-weight: 800;" class="num">$195</div></div>
+          <div><span class="lab">Free of everything but the car</span><div style="font-size: 22px; font-weight: 800;">Jun 2028</div></div>
+        </div>
+        <svg viewBox="0 0 1120 360" width="100%" style="display: block; height: auto;" role="img" aria-label="Stacked balances of five debts over the next twenty four months under the plan">
+          <g stroke="#e4e1da" stroke-width="1"><line x1="60" y1="193" x2="1068" y2="193"></line><line x1="60" y1="56" x2="1068" y2="56"></line></g>
+          <g fill="#85878f" font-size="11" text-anchor="end" font-family="Manrope, system-ui, sans-serif"><text x="54" y="60">$20,000</text><text x="54" y="197">$10,000</text><text x="54" y="334">$0</text></g>
+          <path d="M60,78 L144,87 L312,105 L564,134 L816,164 L900,175 L1068,196 L1068,330 L60,330 Z" fill="#4a3aa7" stroke="#ffffff" stroke-width="2"></path>
+          <path d="M60,46 L144,57 L312,79 L564,116 L816,157 L900,175 L1068,196 L900,175 L816,164 L564,134 L312,105 L144,87 L60,78 Z" fill="#6a5cd0" stroke="#ffffff" stroke-width="2"></path>
+          <path d="M60,38 L144,50 L312,75 L564,116 L312,79 L144,57 L60,46 Z" fill="#8f84dd" stroke="#ffffff" stroke-width="2"></path>
+          <path d="M60,31 L144,50 L60,38 Z" fill="#b3abe8" stroke="#ffffff" stroke-width="2"></path>
+          <line x1="60" y1="330" x2="1068" y2="330" stroke="#c3c2b7" stroke-width="1.5"></line>
+          <g font-family="Manrope, system-ui, sans-serif" font-size="12" font-weight="800" fill="#ffffff">
+            <text x="76" y="212">Car loan · $18,400 · 7.9% · $412 a month</text>
+            <text x="76" y="68" font-size="11">Credit card · $2,310 · 29.9%</text>
+          </g>
+          <g font-family="Manrope, system-ui, sans-serif" font-size="11" font-weight="700" fill="#4e5058">
+            <line x1="100" y1="42" x2="230" y2="18" stroke="#c3c2b7"></line><text x="236" y="20">Store card $640 · 31% · paid off by Apr</text>
+            <line x1="70" y1="33" x2="70" y2="14" stroke="#c3c2b7"></line><text x="76" y="12">Plans and advances $501 · gone by December</text>
+            <text x="396" y="104">store card paid · Apr 2027</text>
+            <text x="820" y="150">credit card paid · Jun 2028</text>
+          </g>
+          <g stroke="#141518" stroke-width="1.5"><line x1="564" y1="116" x2="564" y2="330"></line><line x1="900" y1="175" x2="900" y2="330"></line></g>
+          <g fill="#85878f" font-size="11" text-anchor="middle" font-family="Manrope, system-ui, sans-serif">
+            <text x="60" y="350">Oct 2026</text><text x="312" y="350">Apr 2027</text><text x="564" y="350">Oct 2027</text><text x="816" y="350">Apr 2028</text><text x="1068" y="350">Oct 2028</text>
+          </g>
+        </svg>
+        <div style="display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: #4e5058; font-weight: 600;">
+          <span><span class="sw" style="background: #4a3aa7;"></span>Car loan</span><span><span class="sw" style="background: #6a5cd0;"></span>Credit card</span><span><span class="sw" style="background: #8f84dd;"></span>Store card</span><span><span class="sw" style="background: #b3abe8;"></span>Plans and advances</span>
+        </div>
+      </div>
+
+      <div class="card" style="padding: 16px 18px;">
+        <div class="lab" style="margin-bottom: 4px;">The order, most expensive first</div>
+        <div class="step" style="border-top: 0;"><span class="k">1</span><span><strong>Advances</strong> · $225 · fees, not interest<br><span style="color: #4e5058;">Repay Friday. Then stop taking them: the plan funds Oct 15 without one.</span></span><span class="num" style="color: #4e5058;">Oct 16</span></div>
+        <div class="step"><span class="k">2</span><span><strong>Store card</strong> · $640 · 31%<br><span style="color: #4e5058;">$200 a month from the freed-up plan money. Minimum on everything else.</span></span><span class="num" style="color: #4e5058;">Apr 2027</span></div>
+        <div class="step"><span class="k">3</span><span><strong>Credit card</strong> · $2,310 · 29.9%<br><span style="color: #4e5058;">Takes the $200 after the store card, plus the $100 the plans used.</span></span><span class="num" style="color: #4e5058;">Jun 2028</span></div>
+        <div class="step"><span class="k">4</span><span><strong>Car loan</strong> · $18,400 · 7.9%<br><span style="color: #4e5058;">Stays on schedule. Cheapest money you owe; nothing extra until the cards are gone.</span></span><span class="num" style="color: #4e5058;">2031</span></div>
+        <div style="margin-top: 10px; padding: 12px 14px; border-radius: 10px; background: #f3f1ec; font-size: 12px; color: #4e5058;"><strong style="color: #141518;">What a $50 bump does.</strong> Adding $50 a month to step 2 brings the card-free date from Jun 2028 to Feb 2028 and saves about $310 in interest. The purchase check knows this, so a $50 question gets this answer.</div>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

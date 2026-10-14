@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Can I buy this, on the phone</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f6f4ef;color:#141518;font-family:Manrope,system-ui,sans-serif;font-size:15px;line-height:1.4}
+a{color:#1c5cab}a:hover{color:#104281}
+.card{background:#ffffff;border:1px solid #e4e1da;border-radius:16px}
+.num{font-variant-numeric:tabular-nums}
+.btn{font:inherit;font-weight:800;font-size:14px;border-radius:12px;padding:11px 14px;border:1px solid #d9d6ce;background:#ffffff;color:#141518;cursor:pointer;min-height:44px;flex:1 1 auto}
+.btn.dark{background:#141518;color:#ffffff;border-color:#141518}
+.in{font:inherit;font-size:18px;font-weight:700;padding:10px 12px;border-radius:12px;border:1px solid #d9d6ce;background:#ffffff;min-height:44px;box-sizing:border-box;width:100%}
+.f{display:flex;justify-content:space-between;gap:10px;font-size:14px;padding:6px 0;border-top:1px solid #efece5}
+.tabs{position:absolute;left:0;right:0;bottom:0;height:78px;background:#ffffff;border-top:1px solid #e4e1da;display:flex;justify-content:space-around;align-items:flex-start;padding-top:8px}
+.tabs a{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:10px;font-weight:700;color:#85878f;text-decoration:none;min-width:56px;min-height:44px}
+.tabs a.on{color:#141518}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; position: relative; overflow: hidden; background: #f6f4ef; box-sizing: border-box;">
+  <div style="padding: 18px 18px 90px; display: flex; flex-direction: column; gap: 12px; height: 100%; box-sizing: border-box; overflow: hidden;">
+    <h1 style="margin: 0; font-size: 20px; font-weight: 800;">Can I buy this?</h1>
+
+    <section class="card" style="padding: 14px 16px; display: flex; flex-direction: column; gap: 8px;">
+      <label for="what" style="font-size: 12px; font-weight: 800; color: #85878f; text-transform: uppercase; letter-spacing: .06em;">What</label>
+      <input id="what" class="in" type="text" value="Headphones">
+      <div style="display: flex; gap: 8px;">
+        <div style="flex: 1 1 50%;"><label for="amt" style="font-size: 12px; font-weight: 800; color: #85878f; text-transform: uppercase; letter-spacing: .06em;">Price</label><input id="amt" class="in num" type="text" value="$189"></div>
+        <div style="flex: 1 1 50%;"><label for="when" style="font-size: 12px; font-weight: 800; color: #85878f; text-transform: uppercase; letter-spacing: .06em;">When</label><input id="when" class="in" type="text" value="Today"></div>
+      </div>
+    </section>
+
+    <section class="card" style="padding: 16px; display: flex; flex-direction: column; gap: 10px; border: 2px solid #f0b36b;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <svg width="30" height="30" viewBox="0 0 26 26" role="img" aria-label="Wait"><circle cx="13" cy="13" r="11" fill="#fab219"></circle><path d="M13 7v6l4 2" stroke="#141518" stroke-width="2.2" fill="none" stroke-linecap="round"></path></svg>
+        <div><div style="font-size: 22px; font-weight: 800; letter-spacing: -0.01em;">Wait until Friday</div><div style="font-size: 12px; color: #4e5058;">Fits on payday. Not today.</div></div>
+      </div>
+      <div style="font-size: 13px; color: #4e5058;">Today's $312 has $57 clearing tomorrow. Buying now leaves $66 and no buffer. On Friday it fits inside the $362 that is safe to spend, with $173 left.</div>
+      <svg viewBox="0 0 350 70" width="100%" style="display: block; height: auto;" role="img" aria-label="Lowest balance if bought today versus Friday">
+        <text x="0" y="14" font-family="Manrope, system-ui, sans-serif" font-size="11" font-weight="700" fill="#4e5058">Buy today</text>
+        <rect x="100" y="4" width="30" height="12" rx="0 3 3 0" fill="#eb6834"></rect>
+        <text x="138" y="14" font-family="Manrope, system-ui, sans-serif" font-size="11" font-weight="800" fill="#141518">low point $66, under buffer</text>
+        <text x="0" y="44" font-family="Manrope, system-ui, sans-serif" font-size="11" font-weight="700" fill="#4e5058">Buy Friday</text>
+        <rect x="100" y="34" width="180" height="12" rx="0 3 3 0" fill="#1baf7a"></rect>
+        <text x="288" y="44" font-family="Manrope, system-ui, sans-serif" font-size="11" font-weight="800" fill="#141518">$373</text>
+        <line x1="100" y1="0" x2="100" y2="54" stroke="#c3c2b7" stroke-width="1"></line>
+        <text x="100" y="66" text-anchor="middle" font-family="Manrope, system-ui, sans-serif" font-size="10" font-weight="700" fill="#85878f">buffer $200</text>
+      </svg>
+      <div style="display: flex; gap: 8px;"><button class="btn dark" type="button">Remind me Friday</button><button class="btn" type="button">Why?</button></div>
+    </section>
+
+    <section class="card" style="padding: 14px 16px; display: flex; flex-direction: column; gap: 4px;">
+      <strong style="font-size: 14px;">If you pay in 4 instead</strong>
+      <div class="f" style="border-top: 0;"><span style="color: #4e5058;">4 × $47.25, every 2 weeks</span><strong class="num">$189</strong></div>
+      <div class="f"><span style="color: #4e5058;">Adds to each of the next 3 paychecks</span><strong class="num">−$47</strong></div>
+      <div class="f"><span style="color: #4e5058;">Lowest point moves to</span><strong class="num">$268</strong></div>
+      <div style="font-size: 12px; color: #4e5058; margin-top: 4px;">It fits, but that would be plan number four. The don't-buy list says three is the ceiling you set.</div>
+    </section>
+  </div>
+  <nav class="tabs" aria-label="Tabs">
+    <a href="#today"><svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="7"></circle><path d="M10 6v4l3 2"></path></svg>Today</a>
+    <a href="#river"><svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2 14c3 0 3-4 6-4s3 4 6 4 3-4 4-4"></path><path d="M2 8c3 0 3-3 6-3s3 3 6 3 3-3 4-3"></path></svg>River</a>
+    <a href="#bills"><svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="3" width="12" height="14" rx="2"></rect><path d="M7 8h6M7 12h4"></path></svg>Bills</a>
+    <a href="#mail"><svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="2"></rect><path d="M3 7l7 5 7-5"></path></svg>Mail</a>
+    <a href="#chat" class="on"><svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 5h12v8H9l-4 3v-3H4z"></path></svg>Chat</a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mail lens</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f6f4ef;color:#141518;font-family:Manrope,system-ui,sans-serif;font-size:14px;line-height:1.4}
+a{color:#1c5cab}a:hover{color:#104281}
+.rail a{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;border-radius:10px;color:#4e5058;text-decoration:none;font-size:10px;font-weight:600;letter-spacing:.02em}
+.rail a:hover{background:#ece9e1;color:#141518}
+.rail a.on{background:#141518;color:#ffffff}
+.card{background:#ffffff;border:1px solid #e4e1da;border-radius:14px}
+.num{font-variant-numeric:tabular-nums}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:6px}
+.lab{font-size:11px;font-weight:800;color:#85878f;text-transform:uppercase;letter-spacing:.06em}
+.msg{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:10px;border:1px solid transparent}
+.msg.on{background:#f3f1ec;border-color:#e4e1da}
+.msg .f{display:flex;justify-content:space-between;gap:8px;font-size:12px;color:#4e5058}
+.msg .s{font-weight:700;font-size:13px}
+.acct{font-size:10px;font-weight:800;padding:1px 6px;border-radius:999px;background:#ece9e1;color:#4e5058}
+.hl{background:#fdebd3;border-bottom:2px solid #eb6834;padding:0 2px}
+.f2{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:6px 0;border-top:1px solid #efece5}
+.btn{font:inherit;font-weight:800;font-size:13px;border-radius:10px;padding:9px 14px;border:1px solid #d9d6ce;background:#ffffff;color:#141518;cursor:pointer;min-height:40px}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; background: #f6f4ef;">
+  <nav class="rail" aria-label="Sections" style="flex: 0 0 76px; display: flex; flex-direction: column; gap: 2px; padding: 14px 8px; box-sizing: border-box; border-right: 1px solid #e4e1da; background: #f6f4ef;">
+    <div style="display: flex; align-items: center; justify-content: center; height: 36px; margin-bottom: 10px;">
+      <svg width="28" height="28" viewBox="0 0 28 28" role="img" aria-label="FinancialAuthority"><rect x="2" y="2" width="24" height="24" rx="7" fill="#141518"></rect><path d="M8 18 L12 11 L16 15 L20 9" fill="none" stroke="#1baf7a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+    </div>
+    <a href="#today"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="7"></circle><path d="M10 6v4l3 2"></path></svg>Today</a>
+    <a href="#river"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2 14c3 0 3-4 6-4s3 4 6 4 3-4 4-4"></path><path d="M2 8c3 0 3-3 6-3s3 3 6 3 3-3 4-3"></path></svg>River</a>
+    <a href="#bills"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="3" width="12" height="14" rx="2"></rect><path d="M7 8h6M7 12h4"></path></svg>Bills</a>
+    <a href="#debts"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 16l4-8 4 5 3-7 3 10"></path></svg>Debts</a>
+    <a href="#paystubs"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="2"></rect><circle cx="10" cy="10" r="2.2"></circle></svg>Paystubs</a>
+    <a href="#mail" class="on"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="2"></rect><path d="M3 7l7 5 7-5"></path></svg>Mail</a>
+    <a href="#chat"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 5h12v8H9l-4 3v-3H4z"></path></svg>Chat</a>
+    <a href="#settings" style="margin-top: auto;"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="2.5"></circle><path d="M10 2v3M10 15v3M2 10h3M15 10h3M4.3 4.3l2.1 2.1M13.6 13.6l2.1 2.1M4.3 15.7l2.1-2.1M13.6 6.4l2.1-2.1"></path></svg>Settings</a>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 14px; padding: 14px 24px 24px; box-sizing: border-box;">
+    <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-height: 40px;">
+      <h1 style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.01em;">Mail, through the lens</h1>
+      <div style="font-size: 13px; color: #4e5058;">Both mailboxes, read every 15 minutes. The message on the left is data; the card on the right is what the app took from it, and where it went.</div>
+    </header>
+
+    <section style="display: grid; grid-template-columns: 300px minmax(0, 1fr) 360px; gap: 14px; align-items: start;">
+      <div class="card" style="padding: 10px; display: flex; flex-direction: column; gap: 4px;">
+        <div style="display: flex; gap: 6px; padding: 4px 6px 8px;"><input type="search" placeholder="Search both mailboxes" aria-label="Search both mailboxes" style="font: inherit; font-size: 13px; padding: 8px 10px; border-radius: 9px; border: 1px solid #d9d6ce; width: 100%; box-sizing: border-box;"></div>
+        <div class="msg on"><div class="f"><span>Electric utility</span><span>Oct 9</span></div><div class="s">Your statement is ready</div><div class="f"><span class="acct">Proton</span><span style="color: #0b5c3f; font-weight: 800;">bill · auto-confirmed</span></div></div>
+        <div class="msg"><div class="f"><span>Internet provider</span><span>Oct 9</span></div><div class="s">Your bill statement is available</div><div class="f"><span class="acct">Gmail</span><span style="color: #0b5c3f; font-weight: 800;">bill · auto-confirmed</span></div></div>
+        <div class="msg"><div class="f"><span>Lender</span><span>Oct 7</span></div><div class="s">You've enabled AutoPay</div><div class="f"><span class="acct">Proton</span><span style="color: #4e5058; font-weight: 800;">plan · schedule read</span></div></div>
+        <div class="msg"><div class="f"><span>Bank</span><span>Oct 6</span></div><div class="s">Your latest bank statement is ready</div><div class="f"><span class="acct">Proton</span><span style="color: #4e5058; font-weight: 800;">statement · PDF kept</span></div></div>
+        <div class="msg"><div class="f"><span>Payroll</span><span>Oct 2</span></div><div class="s">Fw: pay stub</div><div class="f"><span class="acct">Proton</span><span style="color: #0b5c3f; font-weight: 800;">paystub · matched</span></div></div>
+        <div class="msg"><div class="f"><span>Toll authority</span><span>Oct 4</span></div><div class="s">Your monthly statement is available</div><div class="f"><span class="acct">Proton</span><span style="color: #4e5058; font-weight: 800;">bill · $40</span></div></div>
+        <div class="msg"><div class="f"><span>Cloud billing</span><span>Oct 13</span></div><div class="s">Action required: billing account is past due</div><div class="f"><span class="acct">Gmail</span><span style="color: #a32020; font-weight: 800;">past due · in the brief</span></div></div>
+        <div class="msg"><div class="f"><span>Budget app</span><span>Oct 11</span></div><div class="s">This week's upcoming bills</div><div class="f"><span class="acct">Proton</span><span style="color: #4e5058; font-weight: 800;">2 charges cross-checked</span></div></div>
+      </div>
+
+      <div class="card" style="padding: 16px 18px; display: flex; flex-direction: column; gap: 10px;">
+        <div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 10px; background: #f3f1ec; font-size: 12px; color: #4e5058;"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="14" height="12" rx="2"></rect><path d="M7 9h6M7 12h3"></path></svg>Shown as data. Nothing in a message can tell the app what to do; it can only be read from.</div>
+        <div style="display: grid; grid-template-columns: 70px 1fr; gap: 4px 10px; font-size: 13px;">
+          <span style="color: #85878f;">From</span><span>Electric utility &lt;billing@…&gt;</span>
+          <span style="color: #85878f;">To</span><span>the owner's custom-domain address, via Proton</span>
+          <span style="color: #85878f;">Date</span><span>Fri Oct 9, 2026 · 11:12</span>
+          <span style="color: #85878f;">Subject</span><strong>Your statement is ready</strong>
+        </div>
+        <div style="border-top: 1px solid #efece5; padding-top: 12px; font-size: 14px; line-height: 1.6; color: #141518;">
+          Hello Christopher,<br><br>
+          Your statement for the service period <span class="hl">Sep 8 to Oct 7</span> is ready. <br>
+          Amount due: <span class="hl">$142.17</span><br>
+          Due date: <span class="hl">October 20, 2026</span><br>
+          Account ending in <span class="hl">4471</span><br><br>
+          Pay online, by phone, or set up AutoPay to never miss a payment. Usage was 12% higher than last month; the weather was warmer than usual.<br><br>
+          Thank you for being a customer.
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center; font-size: 12px; color: #4e5058; border-top: 1px solid #efece5; padding-top: 10px;"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M6 3h6l4 4v10H6z"></path><path d="M12 3v4h4"></path></svg>statement-oct.pdf · 84 KB · kept encrypted, read for the usage line</div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <div class="card" style="padding: 16px 18px; display: flex; flex-direction: column; gap: 4px; border: 2px solid #1baf7a;">
+          <div style="display: flex; justify-content: space-between; align-items: baseline;"><span class="lab">What the app took</span><span style="font-size: 11px; font-weight: 800; color: #0b5c3f;">96% · auto-confirmed</span></div>
+          <div style="font-size: 18px; font-weight: 800;">Bill due · Electricity</div>
+          <div class="f2"><span style="color: #4e5058;">Amount</span><strong class="num">$142.17</strong></div>
+          <div class="f2"><span style="color: #4e5058;">Due</span><strong>Tue Oct 20</strong></div>
+          <div class="f2"><span style="color: #4e5058;">Period</span><span>Sep 8 to Oct 7</span></div>
+          <div class="f2"><span style="color: #4e5058;">Pays from</span><span>Checking ••41</span></div>
+          <div class="f2"><span style="color: #4e5058;">Versus last month</span><span class="num">+$13.77</span></div>
+          <div class="f2"><span style="color: #4e5058;">Read by</span><span>sender rule, no model needed</span></div>
+          <div style="display: flex; gap: 8px; margin-top: 8px;"><button class="btn" type="button">Undo</button><button class="btn" type="button">Open the bill</button></div>
+        </div>
+        <div class="card" style="padding: 14px 18px; display: flex; flex-direction: column; gap: 4px;">
+          <div class="lab">Where it went</div>
+          <div class="f2" style="border-top: 0;"><span>Bills · Electricity · Oct period</span><span style="color: #0b5c3f; font-weight: 800;">updated</span></div>
+          <div class="f2"><span>Calendar · Oct 20</span><span style="color: #0b5c3f; font-weight: 800;">placed</span></div>
+          <div class="f2"><span>Paycheck plan · Oct 16 window</span><span style="color: #0b5c3f; font-weight: 800;">recomputed</span></div>
+          <div class="f2"><span>Brief · "up $14, warmer month"</span><span style="color: #0b5c3f; font-weight: 800;">noted</span></div>
+        </div>
+        <div class="card" style="padding: 14px 18px; display: flex; flex-direction: column; gap: 4px;">
+          <div class="lab">This sender</div>
+          <div style="font-size: 13px; color: #4e5058;">Confirmed by you Aug 10 and Sep 9. Auto-confirm on for "bill due" since Sep 9. Amounts outside $90 to $190 still ask you.</div>
+          <div><a href="#rules">Change the rule</a></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

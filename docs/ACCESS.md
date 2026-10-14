@@ -39,9 +39,14 @@ ssh <username>@bigbox 'whoami && docker ps --format "{{.Names}}" | head'
 
 BoxPilot's catalog cannot pull from a private registry. The published package `ghcr.io/aes256afro/financialauthority` must be public; the repository can stay private. The first publish creates the package private; make it public once in GitHub, Packages, Package settings, Change visibility. The image holds code and no data.
 
-### 3. SimpleFIN (M1.1)
+### 3. Bank data, at no cost (M1.1)
 
-At the SimpleFIN Bridge site, create an account, connect each bank and card, then make a **setup token** and paste it into the app's Connectors page. The token is one-time and the app keeps the access URL encrypted. Add institutions there whenever a new one appears; the app picks them up at the next sync.
+Three free sources, stacked. Do the first two when M1 starts; the third is already half done.
+
+- **Plaid, Trial plan.** Create a developer account at Plaid's dashboard (free; it asks for a name and an app name). Copy the client id and the secret for the Trial plan into the app's Connectors page, never into chat. The app then shows the bank's own login page for each institution; the first ten logins are free, and removing one does not free its slot, so connect the ones that matter: the bank and the credit union.
+- **Teller, developer tier.** Create a developer account at Teller (free up to a hundred logins, rate-limited). Download the application certificate it issues and paste the application id and the certificate into the Connectors page. The app uses Teller for whatever Plaid's trial does not cover.
+- **Era Context, free tier.** One slot holds a healthy connection to the bank; the other is a redundant copy of the same bank that can be removed to make room for the credit union. The coding agent can remove the redundant one and produce the credit union's connection link on request; the sign-in on that link is the owner's.
+- **Bank alerts by mail.** In the bank's alert settings, turn on email alerts for every transaction, deposit, low balance and declined charge, to the address that lands in Proton. The app reads them the same quarter-hour.
 
 ### 4. Gmail app password (M4.3)
 
@@ -71,6 +76,10 @@ Install ntfy or Gotify from BoxPilot's catalog and subscribe the phone to a topi
 ### 10. Send policy (M4.5)
 
 Decide the default: approve each send, or grant standing allowances to known recipients as they come up. The app ships with approve-each and lets allowances be granted one tap at a time.
+
+### 11. A reviewer model (M3.7)
+
+Optional. An Anthropic API key pasted into Settings › Models makes Claude the reviewer; reviews cost cents and the app shows each one's cost. Any OpenAI-compatible endpoint works the same way. With no key, the local model advises and reviews for nothing.
 
 ## What the coding agent never asks for
 

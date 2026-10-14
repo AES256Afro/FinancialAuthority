@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bill board: home</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#f6f4ef;color:#141518;font-family:Manrope,system-ui,sans-serif;font-size:14px;line-height:1.4}
+a{color:#1c5cab}a:hover{color:#104281}
+.rail a{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;border-radius:10px;color:#4e5058;text-decoration:none;font-size:10px;font-weight:600;letter-spacing:.02em}
+.rail a:hover{background:#ece9e1;color:#141518}
+.rail a.on{background:#141518;color:#ffffff}
+.num{font-variant-numeric:tabular-nums}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:6px}
+.col{background:#efece5;border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:8px;min-height:640px}
+.col h2{margin:0 0 2px;font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#4e5058;display:flex;justify-content:space-between;align-items:baseline}
+.k{background:#ffffff;border:1px solid #e4e1da;border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:4px}
+.k .t{display:flex;justify-content:space-between;align-items:baseline;font-weight:800}
+.k .m{font-size:12px;color:#4e5058;display:flex;justify-content:space-between;gap:8px}
+.src{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#85878f}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:0}
+.btn{font:inherit;font-weight:700;font-size:12px;border-radius:8px;padding:5px 10px;border:1px solid #d9d6ce;background:#ffffff;color:#141518;cursor:pointer}
+</style>
+</helmet>
+<div style="min-height: 100vh; display: flex; flex-wrap: wrap; background: #f6f4ef;">
+  <nav class="rail" aria-label="Sections" style="flex: 0 0 76px; display: flex; flex-direction: column; gap: 2px; padding: 14px 8px; box-sizing: border-box; border-right: 1px solid #e4e1da; background: #f6f4ef;">
+    <div style="display: flex; align-items: center; justify-content: center; height: 36px; margin-bottom: 10px;">
+      <svg width="28" height="28" viewBox="0 0 28 28" role="img" aria-label="FinancialAuthority"><rect x="2" y="2" width="24" height="24" rx="7" fill="#141518"></rect><path d="M8 18 L12 11 L16 15 L20 9" fill="none" stroke="#1baf7a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+    </div>
+    <a href="#today"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="7"></circle><path d="M10 6v4l3 2"></path></svg>Today</a>
+    <a href="#board" class="on"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="4" height="12" rx="1"></rect><rect x="8" y="4" width="4" height="8" rx="1"></rect><rect x="13" y="4" width="4" height="10" rx="1"></rect></svg>Board</a>
+    <a href="#debts"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 16l4-8 4 5 3-7 3 10"></path></svg>Debts</a>
+    <a href="#paystubs"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="2"></rect><circle cx="10" cy="10" r="2.2"></circle></svg>Paystubs</a>
+    <a href="#mail"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="14" height="10" rx="2"></rect><path d="M3 7l7 5 7-5"></path></svg>Mail</a>
+    <a href="#chat"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 5h12v8H9l-4 3v-3H4z"></path></svg>Chat</a>
+    <a href="#settings" style="margin-top: auto;"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="10" cy="10" r="2.5"></circle><path d="M10 2v3M10 15v3M2 10h3M15 10h3M4.3 4.3l2.1 2.1M13.6 13.6l2.1 2.1M4.3 15.7l2.1-2.1M13.6 6.4l2.1-2.1"></path></svg>Settings</a>
+  </nav>
+
+  <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 14px; padding: 14px 24px 24px; box-sizing: border-box;">
+    <header style="display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-height: 40px;">
+      <h1 style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.01em;">Bill board</h1>
+      <div style="font-size: 13px; color: #4e5058;">Every bill is a card that moves right as it gets paid. A card that stops moving is the problem.</div>
+      <div style="flex-grow: 1;"></div>
+      <div style="display: flex; align-items: center; gap: 10px; background: #ffffff; border: 1px solid #e4e1da; border-radius: 999px; padding: 6px 14px;"><span class="sw" style="background: #1baf7a;"></span><strong class="num">$362</strong><span style="font-size: 12px; color: #4e5058;">safe to spend</span></div>
+      <div style="display: flex; gap: 14px; font-size: 12px; color: #4e5058; font-weight: 600;"><span><span class="dot" style="background: #1baf7a;"></span>funded</span><span><span class="dot" style="background: #fab219;"></span>not yet</span></div>
+    </header>
+
+    <section style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px;">
+      <div class="col" style="background: #fdebd3;">
+        <h2><span>Due in 7 days</span><span class="num">$272</span></h2>
+        <div class="k"><div class="t"><span><span class="dot" style="background: #1baf7a;"></span>Streaming</span><span class="num">$17</span></div><div class="m"><span>Thu Oct 15 · autopay</span><span class="src">series</span></div></div>
+        <div class="k"><div class="t"><span><span class="dot" style="background: #1baf7a;"></span>Tolls</span><span class="num">$40</span></div><div class="m"><span>Thu Oct 15 · pay online</span><span class="src">statement</span></div><div><button class="btn" type="button">Mark paid</button></div></div>
+        <div class="k"><div class="t"><span><span class="dot" style="background: #1baf7a;"></span>Music</span><span class="num">$11</span></div><div class="m"><span>Mon Oct 19 · autopay</span><span class="src">series</span></div></div>
+        <div class="k"><div class="t"><span><span class="dot" style="background: #1baf7a;"></span>Electricity</span><span class="num">$142</span></div><div class="m"><span>Tue Oct 20 · pay online</span><span class="src">mail</span></div><div><button class="btn" type="button">Mark paid</button></div></div>
+        <div class="k"><div class="t"><span><span class="dot" style="background: #1baf7a;"></span>Couch plan 3 of 4</span><span class="num">$62</span></div><div class="m"><span>Wed Oct 21 · autopay</span><span class="src">mail</span></div></div>
+      </div>
+
+      <div class="col">
+        <h2><span>Later this window</span><span class="num">$676</span></h2>
+        <div class="k"><div class="t"><span><span class="dot" style="background: #1baf7a;"></span>Phone</span><span class="num">$96</span></div><div class="m"><span>Thu Oct 22 · autopay</span><span class="src">series</span></div></div>
+        <div class="k"><div class="t"><span><span class="dot" style="background: #1baf7a;"></span>Internet</span><span class="num">$85</span></div><div class="m"><span>Sat Oct 24 · pay online</span><span class="src">mail</span></div></div>
+        <div class="k"><div class="t"><span><span class="dot" style="background: #1baf7a;"></span>Card minimum</span><span class="num">$45</span></div><div class="m"><span>Sun Oct 25 · autopay</span><span class="src">statement</span></div></div>
+        <div class="k"><div class="t"><span><span class="dot" style="background: #1baf7a;"></span>Laptop plan 5 of 6</span><span class="num">$38</span></div><div class="m"><span>Tue Oct 27 · autopay</span><span class="src">transactions</span></div></div>
+        <div class="k" style="border-width: 2px; border-color: #141518;"><div class="t"><span><span class="dot" style="background: #1baf7a;"></span>Car loan</span><span class="num">$412</span></div><div class="m"><span>Wed Oct 28 · pay online</span><span class="src">statement</span></div><div style="font-size: 12px; color: #4e5058;">Move to the 17th? Draft to the credit union is waiting for your approval.</div></div>
+      </div>
+
+      <div class="col">
+        <h2><span>Next window, set aside</span><span class="num">$1,527</span></h2>
+        <div class="k"><div class="t"><span><span class="dot" style="background: #fab219;"></span>Rent</span><span class="num">$1,295</span></div><div class="m"><span>Sun Nov 1 · half set aside</span><span class="src">series</span></div></div>
+        <div class="k"><div class="t"><span><span class="dot" style="background: #1baf7a;"></span>Water and trash</span><span class="num">$64</span></div><div class="m"><span>Mon Nov 2 · set aside</span><span class="src">mail</span></div></div>
+        <div class="k"><div class="t"><span><span class="dot" style="background: #fab219;"></span>Insurance</span><span class="num">$138</span></div><div class="m"><span>Tue Nov 3 · half set aside</span><span class="src">series</span></div></div>
+        <div class="k"><div class="t"><span><span class="dot" style="background: #1baf7a;"></span>Gym</span><span class="num">$30</span></div><div class="m"><span>Thu Nov 5 · set aside</span><span class="src">series</span></div></div>
+      </div>
+
+      <div class="col" style="background: #ece9e1;">
+        <h2><span>Paid this month</span><span class="num">$1,751</span></h2>
+        <div class="k" style="opacity: 0.75;"><div class="t"><span>Rent</span><span class="num">$1,295</span></div><div class="m"><span>Oct 1 · matched to transfer</span><span class="src">paid</span></div></div>
+        <div class="k" style="opacity: 0.75;"><div class="t"><span>Insurance</span><span class="num">$138</span></div><div class="m"><span>Oct 3 · matched</span><span class="src">paid</span></div></div>
+        <div class="k" style="opacity: 0.75;"><div class="t"><span>Tolls</span><span class="num">$40</span></div><div class="m"><span>Oct 4 · confirmation mail</span><span class="src">paid</span></div></div>
+        <div class="k" style="opacity: 0.75;"><div class="t"><span>Gym</span><span class="num">$30</span></div><div class="m"><span>Oct 5 · matched</span><span class="src">paid</span></div></div>
+        <div class="k" style="opacity: 0.75;"><div class="t"><span>Couch plan 2 of 4</span><span class="num">$62</span></div><div class="m"><span>Oct 7 · matched</span><span class="src">paid</span></div></div>
+        <div class="k" style="opacity: 0.75;"><div class="t"><span>Phone</span><span class="num">$96</span></div><div class="m"><span>Oct 8 · confirmation mail</span><span class="src">paid</span></div></div>
+        <div class="k" style="opacity: 0.75;"><div class="t"><span>Internet</span><span class="num">$85</span></div><div class="m"><span>Oct 10 · matched</span><span class="src">paid</span></div></div>
+        <div class="k" style="opacity: 0.75;"><div class="t"><span>Card minimum</span><span class="num">$45</span></div><div class="m"><span>Oct 12 · matched</span><span class="src">paid</span></div></div>
+        <div style="margin-top: auto; padding: 10px 12px; border-radius: 10px; background: #ffffff; border: 1px solid #e4e1da; font-size: 12px; color: #4e5058;"><strong style="color: #141518;">Past due: none.</strong> Last one was in August. Keep the column empty.</div>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
