@@ -10,7 +10,7 @@ from datetime import date, timedelta
 
 from sqlmodel import Session, select
 
-from ..models import Account, Advance, Bill, Debt, Income, InstallmentPlan, Transaction
+from ..models import Account, Advance, Bill, Debt, Income, InstallmentPlan, RecurringSeries, Transaction
 from ..store import get_setting
 
 CASH_KINDS = {"checking", "savings", "cash"}
@@ -63,6 +63,7 @@ def finance_snapshot(session: Session, today: date) -> dict:
     plans = session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all()  # noqa: E712
     advances = session.exec(select(Advance).where(Advance.repaid == False)).all()  # noqa: E712
     debts = session.exec(select(Debt).where(Debt.active == True)).all()  # noqa: E712
+    unconfirmed = len(session.exec(select(RecurringSeries.id).where(RecurringSeries.confirmed == False, RecurringSeries.active == True)).all())  # noqa: E712
 
     events: list[dict] = []
     horizon = today + timedelta(days=75)
@@ -133,7 +134,7 @@ def finance_snapshot(session: Session, today: date) -> dict:
         "safe_to_spend": {"amount": _money(safe), "through": (following_payday - timedelta(days=1)).isoformat(), "version": "v0"},
         "usual_pace": pace,
         "debts": [{"id": d.id, "name": d.name, "kind": d.kind, "balance": d.balance, "apr": d.apr, "minimum": d.minimum, "due_day": d.due_day} for d in debts],
-        "pending": {"confirmations": 0, "approvals": 0},
+        "pending": {"confirmations": unconfirmed, "approvals": 0},
         "projection": projection,
         "not_advice": "Computed by the engine from the registers above. Not financial advice.",
     }

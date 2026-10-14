@@ -109,7 +109,7 @@ def self_check() -> str:
 
 
 def import_watch() -> str:
-    """Import any new file in the import folder. Keeps a record of what it has already taken."""
+    """Import any new file in the import folder, then re-run detection. Keeps a record of what it has taken."""
     settings.ensure_dirs()
     with session_scope() as session:
         processed = {tuple(p) for p in get_setting(session, "imports.processed", [])}
@@ -123,8 +123,22 @@ def import_watch() -> str:
             taken.append(f"{path.name}: {result.summary}")
             processed.add(stamp)
         set_setting(session, "imports.processed", sorted(processed))
-        return "; ".join(taken) if taken else "nothing new"
+    if taken:
+        detect_recurring()
+    return "; ".join(taken) if taken else "nothing new"
+
+
+def detect_recurring() -> str:
+    """Find recurring series in the ledger and link them to the bills and incomes already known."""
+    from datetime import date
+
+    from .detect import run_detection
+
+    with session_scope() as session:
+        result = run_detection(session, date.today())
+        return f"{result['found']} series: {result['created']} new, {result['updated']} updated, {result['linked']} linked"
 
 
 jobs.register("self_check", self_check, 3600, "Connector health, stale data, disk and database size")
 jobs.register("import_watch", import_watch, 300, "Import new files from the import folder")
+jobs.register("detect_recurring", detect_recurring, 6 * 3600, "Find recurring charges and paychecks in the ledger")

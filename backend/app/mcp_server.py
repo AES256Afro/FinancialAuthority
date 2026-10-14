@@ -132,6 +132,42 @@ def build_server() -> MCPServer:
             services.audit(session, client=client, client_kind="key", tool="transactions_search", args={"text": text, "category": category, "account": account}, rows=result["returned"], redaction=redaction)
             return result
 
+    @server.tool(name="recurring_list", annotations=READ_ONLY)
+    def recurring_list(include_classified: bool = True) -> dict:
+        """Recurring charges and paychecks found in the ledger: merchant, cadence, typical amount, next expected
+        date, and whether the owner has confirmed what each one is (bill, subscription, income, installment, ignored).
+
+        Args:
+            include_classified: False lists only the series still waiting for the owner.
+        """
+        from .api.registers import series_out
+        from .jobs.detect import pending_series
+        from .models import RecurringSeries
+        from sqlmodel import select
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            rows = session.exec(select(RecurringSeries).order_by(RecurringSeries.typical_amount.desc())).all() if include_classified else pending_series(session)
+            out = [series_out(s) for s in rows]
+            if redaction == "aggregates":
+                for s in out:
+                    s["merchant"] = "(redacted)"
+            services.audit(session, client=client, client_kind="key", tool="recurring_list", rows=len(out), redaction=redaction)
+            return {"series": out, "pending": len(pending_series(session))}
+
+    @server.tool(name="bills_list", annotations=READ_ONLY)
+    def bills_list() -> dict:
+        """Every bill and subscription the owner has confirmed: amount, due day, autopay, whether the date can move."""
+        from .api.registers import bill_out
+        from .models import Bill
+        from sqlmodel import select
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            rows = session.exec(select(Bill).where(Bill.active == True).order_by(Bill.due_day)).all()  # noqa: E712
+            services.audit(session, client=client, client_kind="key", tool="bills_list", rows=len(rows), redaction=redaction)
+            return {"bills": [bill_out(b) for b in rows]}
+
     @server.tool(name="jobs_status", annotations=READ_ONLY)
     def jobs_status() -> dict:
         """Whether the app is healthy: the scheduled jobs, their last runs, and the last self-check."""

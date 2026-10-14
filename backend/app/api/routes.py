@@ -89,7 +89,10 @@ async def import_rocketmoney(file: UploadFile = File(...), session: Session = De
     result = CONNECTORS["rocketmoney"].sync(session, text=text, source_file=file.filename or "upload.csv")
     if not result.ok:
         raise HTTPException(400, result.summary)
-    return {"ok": True, "summary": result.summary, "inserted": result.inserted, "duplicates": result.duplicates, "accounts_created": result.accounts}
+    from ..jobs.detect import run_detection
+
+    detection = run_detection(session, today()) if result.inserted else {}
+    return {"ok": True, "summary": result.summary, "inserted": result.inserted, "duplicates": result.duplicates, "accounts_created": result.accounts, "detection": detection}
 
 
 @router.get("/exports/rocketmoney.csv", response_class=PlainTextResponse)

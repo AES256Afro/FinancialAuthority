@@ -39,7 +39,9 @@ export function River({ snapshot }: ViewProps) {
         </div>
         <Tile label="Due before payday" value={money(s.due_before_payday.total)} sub={before.length ? `${before.map((e) => e.name).slice(0, 2).join(", ")} · ${shortDate(before[0].date)}` : "Nothing before payday"} />
         <Tile label="Cash today" value={money(s.cash)} sub={`${s.accounts.filter((a) => ["checking", "savings", "cash"].includes(a.kind)).length} accounts`} />
-        <Tile label="Needs you" value={String(s.pending.confirmations + s.pending.approvals)} sub={`${s.pending.confirmations} confirmations, ${s.pending.approvals} approvals`} />
+        <Link to="/confirm" style={{ textDecoration: "none", color: "inherit", display: "contents" }}>
+          <Tile label="Needs you" value={String(s.pending.confirmations + s.pending.approvals)} sub={`${s.pending.confirmations} to confirm, ${s.pending.approvals} to approve`} />
+        </Link>
       </section>
 
       <section className="card" style={{ padding: "16px 20px 12px", display: "flex", flexDirection: "column", gap: 8 }}>

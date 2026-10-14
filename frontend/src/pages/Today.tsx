@@ -38,8 +38,9 @@ export function Today({ snapshot }: { snapshot: Snapshot }) {
           <span className="sw" style={{ background: "var(--warning)" }} />
           <div style={{ flexGrow: 1 }}>
             <strong>{s.pending.confirmations + s.pending.approvals} things need you</strong>
-            <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Confirmations and approvals arrive with the mail connector (M4).</div>
+            <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{s.pending.confirmations ? "Recurring charges to name." : "Nothing waiting."} Approvals arrive with the mail connector (M4).</div>
           </div>
+          {s.pending.confirmations + s.pending.approvals > 0 && <Link to="/confirm" className="btn dark" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Open</Link>}
         </div>
       </section>
 
