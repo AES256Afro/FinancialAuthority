@@ -293,6 +293,19 @@ def build_server() -> MCPServer:
             services.audit(session, client=client, client_kind="key", tool="billing_dates_suggest", rows=len(out["suggestions"]), redaction=redaction)
             return out
 
+    @server.tool(name="watchlist", annotations=READ_ONLY)
+    def watchlist_tool() -> dict:
+        """The don't-buy list: what to hold off on and why. Active advances, too many pay-later plans, the week
+        the usual pace dips under the buffer, price rises on recurring charges, duplicate subscriptions, a
+        pay-in-full card carrying a balance, categories over their usual. Each item carries its sources."""
+        from .engine.watchlist import watchlist
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            out = watchlist(session, _today())
+            services.audit(session, client=client, client_kind="key", tool="watchlist", rows=len(out["items"]), redaction=redaction)
+            return out
+
     @server.tool(name="brief_today", annotations=READ_ONLY)
     def brief_today() -> dict:
         """What needs attention today, as the engine's own sentences: what clears before payday, what is past
