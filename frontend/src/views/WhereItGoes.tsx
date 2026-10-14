@@ -57,7 +57,7 @@ export function WhereItGoes({ snapshot }: ViewProps) {
     for (const l of mine) {
       const h = Math.max(6, l.amount * scale);
       leafPlaced.push({ ...l, y, h, fromY: from });
-      y += h + 3;
+      y += Math.max(15, h) + 3; // a label needs its own line even when the bar is thin
       from += h;
     }
   }
