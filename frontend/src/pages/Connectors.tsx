@@ -1,7 +1,8 @@
-// Connectors: the Rocket Money export in and out, and the mailboxes, read-only.
+// Connectors: live banks through Plaid and Teller, the mailboxes, and the Rocket Money export in and out. All read-only.
 import { useState } from "react";
 import { api, useApi } from "../api";
 import type { MailAccountRow } from "../types";
+import { Banks } from "./Banks";
 
 interface ConnectorRow {
   id: string;
@@ -142,6 +143,8 @@ export function Connectors() {
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 900 }}>
       <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Connectors</h1>
 
+      <Banks />
+
       <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
         <div>
           <strong>Mailboxes</strong>
@@ -190,9 +193,6 @@ export function Connectors() {
         </section>
       )}
       {result && <div className="card" style={{ padding: 12, fontSize: 13 }}>{result}</div>}
-      <div className="card" style={{ padding: 16, color: "var(--ink-2)", fontSize: 13 }}>
-        Live bank connectors (Plaid trial, Teller developer tier, Era Context) arrive in M1.1. Nothing here will ever ask for a bank password.
-      </div>
     </div>
   );
 }

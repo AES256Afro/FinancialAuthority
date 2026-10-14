@@ -382,3 +382,21 @@ class ReviewRun(SQLModel, table=True):
     output_tokens: int = 0
     cost: float | None = None
     packet_hash: str = ""
+
+class BankLink(SQLModel, table=True):
+    """A bank signed in through a vendor's window (Plaid Link, Teller Connect): the token, encrypted, and
+    where the sync left off. The app never holds a bank password."""
+
+    __tablename__ = "bank_links"
+    id: int | None = Field(default=None, primary_key=True)
+    provider: str = Field(index=True)  # plaid | teller
+    external_id: str = Field(default="", index=True)  # Plaid item id, Teller enrollment id
+    institution: str = ""
+    access_token_enc: str = ""
+    cursor: str = ""
+    accounts: str = ""  # comma-separated vendor account ids
+    active: bool = True
+    needs_login: bool = False
+    created_at: dt.datetime = Field(default_factory=utcnow)
+    last_sync_at: dt.datetime | None = None
+    last_error: str = ""

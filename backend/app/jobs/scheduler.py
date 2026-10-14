@@ -180,3 +180,21 @@ def review_if_due() -> str:
 
 
 jobs.register("review_if_due", review_if_due, 3600, "Ask the reviewer for notes on payday and after a confirmed change")
+
+
+def bank_sync() -> str:
+    """Every live bank link, through its connector; a link that fails does not stop the others."""
+    from ..models import BankLink
+
+    notes: list[str] = []
+    with session_scope() as session:
+        links = session.exec(select(BankLink).where(BankLink.active == True)).all()  # noqa: E712
+        if not links:
+            return "no bank links"
+        for link in links:
+            result = CONNECTORS[link.provider].sync(session, link_id=link.id)
+            notes.append(result.summary)
+    return "; ".join(notes)
+
+
+jobs.register("bank_sync", bank_sync, 4 * 3600, "Read every linked bank for new transactions and balances")
