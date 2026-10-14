@@ -186,8 +186,8 @@ def search_messages(q: str | None = None, sender: str | None = None, kind: str |
     return {"returned": len(rows), "messages": [message_out(m, labels) for m in rows]}
 
 
-@router.get("/mail/messages/{message_id}")
-def read_message(message_id: int, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+def fetch_parsed(session: Session, message_id: int):  # noqa: ANN201
+    """Fetch one message live, read-only, and parse it. Raises HTTPException with the reason."""
     ref = session.get(MessageRef, message_id)
     if ref is None:
         raise HTTPException(404, "No such message")
@@ -203,6 +203,47 @@ def read_message(message_id: int, session: Session = Depends(get_session), _: au
         raise HTTPException(502, f"Could not fetch the message: {type(error).__name__}") from error
     finally:
         client.close()
+    return ref, account, parsed
+
+
+TEXT_TYPES = ("text/plain", "text/csv", "text/html", "text/markdown", "application/json")
+MAX_ATTACHMENT_CHARS = 60_000
+
+
+def attachment_out(session: Session, message_id: int, name: str) -> dict:
+    """One attachment's text, boxed as untrusted data: PDFs through the PDF reader, text as it is, anything
+    else by name, type and size only. Never the bytes."""
+    from ..parsers.paystub import pdf_text
+
+    ref, account, parsed = fetch_parsed(session, message_id)
+    attachment = next((a for a in parsed.attachments if a.name == name), None)
+    if attachment is None:
+        raise HTTPException(404, f"No attachment called {name!r}; the message lists {[a.name for a in parsed.attachments]}")
+    is_pdf = attachment.content_type == "application/pdf" or attachment.name.lower().endswith(".pdf")
+    text = None
+    if attachment.data is not None:
+        if is_pdf:
+            text = pdf_text(attachment.data)
+        elif attachment.content_type in TEXT_TYPES or attachment.name.lower().endswith((".txt", ".csv", ".md", ".json")):
+            text = attachment.data.decode("utf-8", errors="replace")
+    truncated = text is not None and len(text) > MAX_ATTACHMENT_CHARS
+    return {
+        "message_id": ref.id, "name": attachment.name, "content_type": attachment.content_type, "size": attachment.size,
+        "readable": text is not None,
+        "boxed": box_untrusted(text[:MAX_ATTACHMENT_CHARS] if text is not None else "", f"attachment {attachment.name} from {parsed.sender_name or parsed.sender} ({account.label})") if text is not None else None,
+        "truncated": truncated,
+        "note": None if text is not None else "Only PDFs and text attachments are read; this one is listed by name, type and size.",
+    }
+
+
+@router.get("/mail/messages/{message_id}/attachments/{name}")
+def read_attachment(message_id: int, name: str, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+    return attachment_out(session, message_id, name)
+
+
+@router.get("/mail/messages/{message_id}")
+def read_message(message_id: int, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+    ref, account, parsed = fetch_parsed(session, message_id)
     facts = session.exec(select(ExtractedFact).where(ExtractedFact.message_ref_id == ref.id)).all()
     labels = {account.id: account.label}
     return {
