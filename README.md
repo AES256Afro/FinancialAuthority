@@ -10,7 +10,7 @@ It answers three questions:
 
 Every morning it says what needs attention. Eight home views and three looks are switchable in Settings › Appearance; all of them render the same numbers. It never moves money. It reads, plans, drafts, and sends only with an approval. It pays nobody to see your own money.
 
-**Status: M0 through M4, first cuts.** The engine's first snapshot (windows, calendar, payments, paystubs, the usual pace, the brief), the Rocket Money loader with recurring detection and the export captured from mail, payment matching, all eight home views, the Needs-you flow, owner sign-in, the OAuth 2.1 server for claude.ai and Claude Code, API keys, the scheduler, the MCP endpoint, the mail connector for Proton (through the Bridge), Gmail and any IMAP mailbox with a rules-first classifier, and the two model roles: the advisor in the built-in chat and the reviewer with one-tap notes, over Ollama, any OpenAI-compatible server or Claude by API. Not deployed yet; the live bank connectors and the full engine are next.
+**Status: M0 through M5, first cuts.** The engine's snapshot (windows, calendar, payments, paystubs, the usual pace, the brief), the purchase check and the billing-date optimiser, reports, net worth and the debt mountain; the Rocket Money loader with recurring detection and the export captured from mail; payment matching; live bank links through Plaid and Teller; all eight home views and the Today, Bills, Debts, Accounts, Reports, Paystubs, Mail, Ledger and Chat pages; the Needs-you flow; owner sign-in, the OAuth 2.1 server for claude.ai and Claude Code, API keys, the audit log; the scheduler; the MCP endpoint with sixteen tools; the mail connector for Proton (through the Bridge), Gmail and any IMAP mailbox with a rules-first classifier; and the two model roles, the advisor in the built-in chat and the reviewer with one-tap notes, over Ollama, any OpenAI-compatible server or Claude by API. Not deployed yet; that needs a shell on BigBox and the owner's keys.
 
 - [docs/PLAN.md](docs/PLAN.md): what it is, how it operates, where the data comes from, the engine, reach from anywhere, views and looks, security, decisions.
 - [docs/ROADMAP.md](docs/ROADMAP.md): milestones M0 to M8 and what comes later.
@@ -52,7 +52,7 @@ claude mcp add --transport http financialauthority http://<host>:8430/mcp
 
 Anything without a browser takes an API key from Settings › Clients as a bearer token instead.
 
-The tools: `finance_snapshot`, `brief_today`, `accounts_list`, `transactions_search`, `recurring_list`, `bills_list`, `payments_list`, `paystubs_list`, `mail_search`, `mail_read`, `facts_pending`, `facts_confirm`, `jobs_status`, growing with each milestone. The REST mirror is under `/api/v1`.
+The tools: `finance_snapshot`, `brief_today`, `purchase_check`, `billing_dates_suggest`, `spending_summary`, `debts_list`, `accounts_list`, `transactions_search`, `recurring_list`, `bills_list`, `payments_list`, `paystubs_list`, `mail_search`, `mail_read`, `facts_pending`, `facts_confirm`, `jobs_status`. The REST mirror is under `/api/v1`.
 
 ## Two models, neither of which calculates
 
