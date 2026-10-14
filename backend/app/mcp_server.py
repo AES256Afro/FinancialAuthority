@@ -417,6 +417,35 @@ def build_server() -> MCPServer:
             services.audit(session, client=client, client_kind="key", tool="facts_confirm", args={"fact_id": fact_id}, rows=1, redaction=redaction)
             return {"ok": True, "status": fact.status, "applied_to": applied}
 
+    @server.tool(name="mail_send_request")
+    def mail_send_request(to: str, subject: str, body: str, reason: str = "") -> dict:
+        """Queue an email for the owner's approval. Nothing is sent by this call: the draft waits on the Needs
+        you page and on the phone until the owner approves it, unless the owner has a standing allowance for
+        that recipient. Needs a client holding the confirm scope.
+
+        Args:
+            to: One recipient address.
+            subject: The subject line.
+            body: The plain-text body.
+            reason: Why, in a few words, shown beside the draft.
+        """
+        from . import approvals as approvals_service
+
+        token = get_access_token()
+        scopes = set(token.scopes) if token else set()
+        if "confirm" not in scopes:
+            return {"error": "queuing a send needs a client holding the confirm scope"}
+        client, redaction = _caller()
+        with session_scope() as session:
+            try:
+                row = approvals_service.create(session, to=to, subject=subject, body=body, reason=reason, created_by=client, created_kind="key")
+            except ValueError as error:
+                return {"error": str(error)}
+            services.audit(session, client=client, client_kind="key", tool="mail_send_request", args={"to": to}, rows=1, redaction=redaction)
+            out = approvals_service.out(row)
+            out["note"] = "Queued. The owner must approve it on Needs you before anything is sent." if row.status == "pending" else f"The recipient is always allowed; status {row.status}."
+            return out
+
     @server.tool(name="jobs_status", annotations=READ_ONLY)
     def jobs_status() -> dict:
         """Whether the app is healthy: the scheduled jobs, their last runs, and the last self-check."""

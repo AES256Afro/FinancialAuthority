@@ -1,7 +1,7 @@
 // Which billing dates should move: the engine's ranked changes, each with the low point before and after,
 // the instruction for the biller, and a draft request to copy. The app drafts; it never sends.
 import { useState } from "react";
-import { useApi } from "../api";
+import { api, useApi } from "../api";
 import { money, shortDate } from "../format";
 
 interface Suggestion {
@@ -46,6 +46,19 @@ function ordinal(n: number): string {
 export function DateMoves({ refreshKey }: { refreshKey?: number }) {
   const { data, error } = useApi<Moves>(`/api/v1/bills/suggestions?k=${refreshKey ?? 0}`);
   const [copied, setCopied] = useState<number | null>(null);
+  const [asking, setAsking] = useState<number | null>(null);
+  const [to, setTo] = useState("");
+  const [queued, setQueued] = useState<string | null>(null);
+  async function queue(s: Suggestion) {
+    try {
+      await api("/api/v1/approvals", { method: "POST", body: JSON.stringify({ to, subject: `Request to move my billing date to the ${ordinal(s.to_day)}`, body: s.draft, reason: `${s.name}: ${ordinal(s.from_day)} to ${ordinal(s.to_day)}`, source: `bill:${s.bill_id}` }) });
+      setQueued(`Queued for your approval on Needs you. Nothing is sent until you approve it there.`);
+      setAsking(null);
+      setTo("");
+    } catch (e) {
+      setQueued((e as Error).message);
+    }
+  }
   async function copy(s: Suggestion) {
     try {
       await navigator.clipboard.writeText(`${s.instruction}\n\n${s.draft}`);
@@ -80,8 +93,22 @@ export function DateMoves({ refreshKey }: { refreshKey?: number }) {
             <div style={{ color: "var(--ink-2)" }}>Low point {money(s.low_before)} → <strong style={{ color: s.low_after < 0 ? "var(--warning)" : "var(--safe)" }}>{money(s.low_after)}</strong>, up {money(s.improvement)}.</div>
           </div>
           <button className="btn" type="button" onClick={() => copy(s)} style={{ minHeight: 34, padding: "4px 10px" }}>{copied === s.bill_id ? "Copied" : "Copy the request"}</button>
+          <button className="btn" type="button" onClick={() => setAsking(asking === s.bill_id ? null : s.bill_id)} style={{ minHeight: 34, padding: "4px 10px" }}>Send it, with approval</button>
+          {asking === s.bill_id && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                queue(s);
+              }}
+              style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", flexBasis: "100%" }}
+            >
+              <input className="input" type="email" value={to} onChange={(e) => setTo(e.target.value)} placeholder="the biller's address" required style={{ flex: "1 1 220px", minHeight: 34, padding: "4px 10px" }} aria-label="Recipient" />
+              <button className="btn dark" type="submit" style={{ minHeight: 34, padding: "4px 10px" }}>Queue for approval</button>
+            </form>
+          )}
         </div>
       ))}
+      {queued && <div style={{ fontSize: 13, color: "var(--ink-2)" }}>{queued}</div>}
       {data && <div style={{ fontSize: 11, color: "var(--muted)" }}>{data.drafts_only} {data.not_advice}</div>}
     </section>
   );

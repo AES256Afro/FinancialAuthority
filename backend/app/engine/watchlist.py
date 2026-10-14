@@ -8,6 +8,7 @@ from datetime import date
 from sqlmodel import Session, select
 
 from ..models import Advance, Bill, Debt, InstallmentPlan, RecurringSeries
+from .brief import when
 from .reports import spending_summary
 from .snapshot import finance_snapshot
 
@@ -47,7 +48,7 @@ def watchlist(session: Session, today: date) -> dict:
         w = bad_weeks[0]
         items.append({
             "kind": "buffer", "severity": "critical" if w["low"] < -snap["buffer"] else "warning",
-            "text": f"Nothing optional until after {w['low_date']}: at the usual pace the week of {w['start']} dips {-w['low']:,.2f} under the buffer.",
+            "text": f"Nothing optional until after {when(w['low_date'])}: at the usual pace the week of {when(w['start'])} dips {-w['low']:,.2f} under the buffer.",
             "amount": round(-w["low"], 2), "sources": ["snapshot:projection"], "link": "/?view=month",
         })
 

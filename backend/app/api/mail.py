@@ -22,9 +22,9 @@ from .routes import today
 router = APIRouter(prefix="/api/v1", tags=["mail"])
 
 PRESETS = {
-    "proton": {"host": "bridge", "port": 1143, "use_ssl": False, "starttls": True, "help": "The Proton Mail Bridge sidecar. Sign in to the Bridge once from the server, then enter the local password it prints."},
-    "gmail": {"host": "imap.gmail.com", "port": 993, "use_ssl": True, "starttls": False, "help": "Gmail with an app password (Google Account › Security › 2-Step Verification › App passwords)."},
-    "imap": {"host": "", "port": 993, "use_ssl": True, "starttls": False, "help": "Any mailbox over IMAP."},
+    "proton": {"host": "bridge", "port": 1143, "use_ssl": False, "starttls": True, "smtp_host": "bridge", "smtp_port": 1025, "smtp_ssl": False, "smtp_starttls": True, "help": "The Proton Mail Bridge sidecar. Sign in to the Bridge once from the server, then enter the local password it prints."},
+    "gmail": {"host": "imap.gmail.com", "port": 993, "use_ssl": True, "starttls": False, "smtp_host": "smtp.gmail.com", "smtp_port": 465, "smtp_ssl": True, "smtp_starttls": False, "help": "Gmail with an app password (Google Account › Security › 2-Step Verification › App passwords)."},
+    "imap": {"host": "", "port": 993, "use_ssl": True, "starttls": False, "smtp_host": "", "smtp_port": 0, "smtp_ssl": False, "smtp_starttls": True, "help": "Any mailbox over IMAP."},
 }
 
 
@@ -36,7 +36,7 @@ def account_out(a: MailAccount) -> dict:
     return {
         "id": a.id, "label": a.label, "kind": a.kind, "host": a.host, "port": a.port, "username": a.username, "use_ssl": a.use_ssl, "starttls": a.starttls,
         "folders": a.folders, "active": a.active, "last_sync_at": a.last_sync_at.isoformat() if a.last_sync_at else None, "last_error": a.last_error, "messages_seen": a.messages_seen,
-        "has_password": bool(a.password_enc),
+        "has_password": bool(a.password_enc), "smtp_host": a.smtp_host, "smtp_port": a.smtp_port, "smtp_ssl": a.smtp_ssl, "smtp_starttls": a.smtp_starttls,
     }
 
 
@@ -51,6 +51,10 @@ class MailAccountIn(BaseModel):
     starttls: bool | None = None
     folders: str | None = None
     active: bool | None = None
+    smtp_host: str | None = None
+    smtp_port: int | None = None
+    smtp_ssl: bool | None = None
+    smtp_starttls: bool | None = None
 
 
 @router.get("/mail/presets")
@@ -82,6 +86,8 @@ def create_account(body: MailAccountIn, session: Session = Depends(get_session),
         label=body.label or kind.title(), kind=kind, host=host, port=body.port or preset["port"], username=body.username, password_enc=enc,
         use_ssl=body.use_ssl if body.use_ssl is not None else preset["use_ssl"], starttls=body.starttls if body.starttls is not None else preset["starttls"],
         folders=body.folders or "INBOX", active=body.active if body.active is not None else True,
+        smtp_host=body.smtp_host if body.smtp_host is not None else preset["smtp_host"], smtp_port=body.smtp_port if body.smtp_port is not None else preset["smtp_port"],
+        smtp_ssl=body.smtp_ssl if body.smtp_ssl is not None else preset["smtp_ssl"], smtp_starttls=body.smtp_starttls if body.smtp_starttls is not None else preset["smtp_starttls"],
     )
     session.add(account)
     session.commit()
