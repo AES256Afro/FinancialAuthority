@@ -12,6 +12,7 @@ from sqlmodel import Session, select
 
 from ..models import Account, Advance, Bill, Debt, ExtractedFact, Income, InstallmentPlan, MessageRef, RecurringSeries, Transaction
 from ..store import get_setting
+from .projection import build_events, line_of, next_due, project, set_aside_of, split_windows  # noqa: F401
 
 CASH_KINDS = {"checking", "savings", "cash"}
 PACE_DAYS = 56
@@ -34,33 +35,8 @@ def usual_pace(session: Session, today: date, bill_names: set[str]) -> dict:
     return {"per_day": _money(per_day), "per_window": _money(per_day * 14), "basis_days": PACE_DAYS, "transactions": counted}
 
 
-def next_due(due_day: int, today: date) -> date:
-    day = min(due_day, 28)
-    candidate = date(today.year, today.month, day)
-    if candidate < today:
-        y, m = (today.year + 1, 1) if today.month == 12 else (today.year, today.month + 1)
-        candidate = date(y, m, day)
-    return candidate
-
-
 def _money(v: float) -> float:
     return round(float(v), 2)
-
-
-HOUSING = {"rent", "home", "housing", "insurance", "mortgage", "hoa"}
-DEBT = {"loan payment", "credit card payment", "loans", "debt"}
-
-
-def line_of(category: str, kind: str) -> str:
-    """Which line a bill rides on the transit map: housing, utilities or debt."""
-    if kind in ("installment", "advance"):
-        return "debt"
-    c = (category or "").lower()
-    if c in HOUSING or any(w in c for w in ("rent", "insurance", "mortgage")):
-        return "housing"
-    if c in DEBT or "loan" in c or "credit card" in c:
-        return "debt"
-    return "utilities"
 
 
 def _mail_facts(session: Session, today: date) -> dict:
@@ -101,57 +77,21 @@ def finance_snapshot(session: Session, today: date) -> dict:
     unconfirmed = len(session.exec(select(RecurringSeries.id).where(RecurringSeries.confirmed == False, RecurringSeries.active == True)).all())  # noqa: E712
     facts = _mail_facts(session, today)
 
-    events: list[dict] = []
-    horizon = today + timedelta(days=75)
-    for b in bills:
-        d = next_due(b.due_day, today)
-        while d <= horizon:
-            events.append({"date": d, "name": b.name, "amount": _money(b.amount), "kind": b.kind, "autopay": b.autopay, "source": f"bill:{b.id}", "line": line_of(b.category, b.kind), "bill_id": b.id})
-            d = next_due(b.due_day, d + timedelta(days=1))
-    for p in plans:
-        d, left = p.next_date, p.remaining
-        while left > 0 and d <= today + timedelta(days=90):
-            events.append({"date": d, "name": f"{p.merchant} {p.count - left + 1} of {p.count}", "amount": _money(p.installment), "kind": "installment", "autopay": True, "source": f"plan:{p.id}", "line": "debt"})
-            d, left = d + timedelta(days=p.cadence_days), left - 1
-    for a in advances:
-        events.append({"date": a.repay_date, "name": f"{a.provider} repays", "amount": _money(a.amount + a.fee), "kind": "advance", "autopay": True, "source": f"advance:{a.id}", "line": "debt"})
-    events.sort(key=lambda e: e["date"])
-
-    before = [e for e in events if today <= e["date"] < next_payday and e["kind"] != "advance"]
-    window = [e for e in events if next_payday <= e["date"] < following_payday and e["kind"] != "advance"]
-    next_window = [e for e in events if following_payday <= e["date"] < following_payday + timedelta(days=14) and e["kind"] != "advance"]
-    advances_due = [e for e in events if e["kind"] == "advance" and e["date"] <= next_payday]
+    events = build_events(bills, plans, advances, today)
+    windows_split = split_windows(events, today, next_payday, following_payday)
+    before, window, next_window, advances_due = windows_split["before"], windows_split["window"], windows_split["next_window"], windows_split["advances_due"]
 
     due_before = sum(e["amount"] for e in before)
     window_total = sum(e["amount"] for e in window)
-    set_aside = sum(e["amount"] for e in next_window if e["amount"] >= 500) / 2 + sum(e["amount"] for e in next_window if e["amount"] < 500)
+    set_aside = windows_split["set_aside"]
     advances_total = sum(e["amount"] for e in advances_due)
     safe = cash - due_before + expected_net - advances_total - window_total - set_aside - buffer
 
     # A daily path for sixty days: `available` is cash minus the buffer minus what is reserved, if nothing
     # else is spent; `at_pace` also spends the usual everyday amount each day, which is the honest line.
     pace = usual_pace(session, today, {b.name for b in bills})
-    projection = []
-    balance = cash
-    reserved = 0.0
-    spent = 0.0
-    by_day: dict[date, list[dict]] = {}
-    for e in events:
-        by_day.setdefault(e["date"], []).append(e)
     pay_dates = {next_payday, following_payday, following_payday + timedelta(days=14), following_payday + timedelta(days=28)}
-    for i in range(60):
-        d = today + timedelta(days=i)
-        if d in pay_dates and expected_net:
-            balance += expected_net
-            reserved = set_aside
-        for e in by_day.get(d, []):
-            balance -= e["amount"]
-            if d >= following_payday and reserved:
-                reserved = max(0.0, reserved - e["amount"])
-        if i > 0:
-            spent += pace["per_day"]
-        available = balance - buffer - reserved
-        projection.append({"date": d.isoformat(), "available": _money(available), "at_pace": _money(available - spent), "cash": _money(balance)})
+    projection = project(today, cash=cash, buffer=buffer, expected_net=expected_net, pay_dates=pay_dates, set_aside=set_aside, events=events, per_day=pace["per_day"])
 
     # Four paycheck windows, each filled the same way: what the paycheck carries in, what leaves it, what is left.
     windows = []
@@ -163,7 +103,7 @@ def finance_snapshot(session: Session, today: date) -> dict:
         in_window = [e for e in events if start <= e["date"] <= end and e["kind"] != "advance"]
         adv = [e for e in events if e["kind"] == "advance" and (start <= e["date"] <= end or (k == 0 and e["date"] <= start))]
         following = [e for e in events if end < e["date"] <= after_end and e["kind"] != "advance"]
-        aside = sum(e["amount"] for e in following if e["amount"] >= 500) / 2 + sum(e["amount"] for e in following if e["amount"] < 500)
+        aside = set_aside_of(following)
         bills_total = sum(e["amount"] for e in in_window)
         adv_total = sum(e["amount"] for e in adv)
         left = carried + expected_net - adv_total - bills_total - aside

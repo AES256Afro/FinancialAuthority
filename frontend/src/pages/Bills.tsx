@@ -1,6 +1,7 @@
 // Bills: every confirmed bill and subscription, editable in place.
 import { useState } from "react";
 import { api, useApi } from "../api";
+import { DateMoves } from "../components/DateMoves";
 import { money } from "../format";
 import type { BillRow } from "../types";
 
@@ -68,6 +69,7 @@ export function Bills({ onChanged }: { onChanged: () => void }) {
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Bills</h1>
         <span style={{ fontSize: 13, color: "var(--ink-2)" }}>{data ? `${data.bills.length} bills and subscriptions · about ${money(total)} a month` : ""}</span>
       </div>
+      <DateMoves refreshKey={data?.bills.length} />
       <div className="card" style={{ padding: "6px 14px", overflowX: "auto" }}>
         <table className="ledger">
           <thead><tr><th>Bill</th><th>Amount</th><th>Due day</th><th></th><th></th><th></th></tr></thead>

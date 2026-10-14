@@ -1,5 +1,6 @@
 // The phone home: the brief, in the order it matters this morning, from the engine's own sentences.
 import { Link } from "react-router-dom";
+import { PurchaseCheck } from "../components/PurchaseCheck";
 import { money, shortDate } from "../format";
 import type { Snapshot } from "../types";
 
@@ -30,6 +31,8 @@ export function Today({ snapshot }: { snapshot: Snapshot }) {
           </div>
         ))}
       </section>
+
+      <PurchaseCheck />
 
       <section className="card" style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
         <strong style={{ fontSize: 14 }}>Cash today</strong>

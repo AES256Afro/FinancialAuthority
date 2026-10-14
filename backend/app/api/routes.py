@@ -15,6 +15,7 @@ from ..config import settings
 from ..connectors import CONNECTORS
 from ..connectors.rocketmoney import export_csv
 from ..db import get_session
+from ..engine.decisions import billing_date_suggestions, purchase_check
 from ..engine.reports import debt_mountain, net_worth, spending_summary
 from ..engine.snapshot import finance_snapshot
 from ..jobs.scheduler import jobs
@@ -71,6 +72,28 @@ def search_transactions(
     if principal.kind == "key":
         services.audit(session, client=principal.name, client_kind="key", tool="transactions_search", args={"text": text, "category": category}, rows=result["returned"], redaction=principal.redaction)
     return result
+
+
+@router.get("/check")
+def check_purchase(amount: float, on: str | None = None, installments: int | None = None, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
+    if amount < 0 or amount > 1_000_000:
+        raise HTTPException(400, "amount must be between 0 and a million")
+    if installments is not None and not 1 <= installments <= 24:
+        raise HTTPException(400, "installments must be between 1 and 24")
+    try:
+        when = date.fromisoformat(on) if on else None
+    except ValueError as error:
+        raise HTTPException(400, "on must be YYYY-MM-DD") from error
+    out = purchase_check(session, today(), amount, on=when, installments=installments)
+    services.audit(session, client=principal.name, client_kind=principal.kind, tool="purchase_check", args={"amount": amount}, rows=1, redaction=principal.redaction)
+    return out
+
+
+@router.get("/bills/suggestions")
+def bill_suggestions(session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
+    out = billing_date_suggestions(session, today())
+    services.audit(session, client=principal.name, client_kind=principal.kind, tool="billing_dates_suggest", rows=len(out["suggestions"]), redaction=principal.redaction)
+    return out
 
 
 @router.get("/reports/spending")
