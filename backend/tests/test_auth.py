@@ -49,3 +49,13 @@ def test_api_keys_scopes(owner: TestClient, client: TestClient):
     assert forbidden.status_code == 400
     owner.delete(f"/api/v1/keys/{created['id']}")
     assert anon.get("/api/v1/snapshot", headers={"Authorization": f"Bearer {token}"}).status_code == 401
+
+
+def test_session_cookie_is_secure_only_over_https(client: TestClient, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "public_url", "https://money.example.test")
+    plain = client.post("/api/auth/login", json={"username": "owner", "password": "correct horse battery"})
+    assert plain.status_code == 200 and "secure" not in plain.headers["set-cookie"].lower()  # plain http inside the tailnet still signs in
+    proxied = TestClient(client.app).post("/api/auth/login", json={"username": "owner", "password": "correct horse battery"}, headers={"X-Forwarded-Proto": "https"})
+    assert proxied.status_code == 200 and "secure" in proxied.headers["set-cookie"].lower()

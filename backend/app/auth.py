@@ -209,10 +209,18 @@ def login(body: LoginIn, request: Request, response: Response) -> dict:
         max_age=SESSION_MAX_AGE,
         httponly=True,
         samesite="lax",
-        secure=settings.public_url.startswith("https://"),
+        secure=request_is_https(request),
         path="/",
     )
     return {"ok": True, "user": settings.username}
+
+
+def request_is_https(request: Request) -> bool:
+    """Whether this request arrived over https, directly or through a proxy that says so. The session cookie
+    is marked Secure only then, so the same app signs in over plain http inside the tailnet and over https
+    through a tunnel, whatever the published address says."""
+    forwarded = request.headers.get("x-forwarded-proto", "").split(",")[0].strip().lower()
+    return request.url.scheme == "https" or forwarded == "https"
 
 
 @router.post("/logout")

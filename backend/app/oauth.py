@@ -279,7 +279,7 @@ async def consent_post(request: Request, req: str = Form(""), decision: str = Fo
             return _page("Sign in", _signin_body(req, "Wrong username or password."))
         response = _page("Allow access", _consent_body(data, req, await _client_name(data["client_id"])))
         token = auth._serializer().dumps({"u": settings.username, "iat": int(time.time())})
-        response.set_cookie(auth.COOKIE, token, max_age=auth.SESSION_MAX_AGE, httponly=True, samesite="lax", secure=settings.public_url.startswith("https://"), path="/")
+        response.set_cookie(auth.COOKIE, token, max_age=auth.SESSION_MAX_AGE, httponly=True, samesite="lax", secure=auth.request_is_https(request), path="/")
         return response
     if principal is None or principal.kind != "owner":
         return _page("Sign in", _signin_body(req))
