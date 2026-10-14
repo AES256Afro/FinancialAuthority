@@ -57,7 +57,7 @@ export function Goals({ onChanged }: { onChanged?: () => void }) {
 
   if (!data) return null;
   return (
-    <section className="card" style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+    <section id="goals" className="card" style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
         <strong style={{ fontSize: 14 }}>Goals</strong>
         {data.items.length > 0 && <span style={{ fontSize: 12, color: "var(--ink-2)" }}>{money(data.per_paycheck)} a paycheck together{data.safe_to_spend.after_goals !== undefined ? ` · leaves ${money(data.safe_to_spend.after_goals)} safe to spend` : ""}</span>}

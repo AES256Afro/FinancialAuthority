@@ -1,5 +1,6 @@
 // The phone home: the brief, in the order it matters this morning, from the engine's own sentences.
-import { Link } from "react-router-dom";
+import { useEffect } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { PurchaseCheck } from "../components/PurchaseCheck";
 import { Goals } from "../components/Goals";
 import { NextStepsCard } from "../components/NextSteps";
@@ -11,6 +12,11 @@ const DOT = { info: "var(--paycheck)", warning: "var(--warning)", critical: "var
 
 export function Today({ snapshot }: { snapshot: Snapshot }) {
   const s = snapshot;
+  const { hash } = useLocation();
+  useEffect(() => {
+    // A next-step or an outlook link lands on one card of this page.
+    if (hash) window.setTimeout(() => document.getElementById(hash.slice(1))?.scrollIntoView({ block: "start", behavior: "smooth" }), 150);
+  }, [hash]);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 640 }}>
       <section className="card" style={{ padding: "18px 18px 14px", display: "flex", flexDirection: "column", gap: 8 }}>

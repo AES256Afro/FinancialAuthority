@@ -73,6 +73,16 @@ async function get(path: string): Promise<Response> {
     const by = params.get("by") ?? "category";
     return json(data.responses[`GET /api/v1/reports/spending?months=${months}&by=${by}`] ?? data.responses["GET /api/v1/reports/spending?months=6&by=category"]);
   }
+  if (base === "/api/v1/projections/where") {
+    const amounts = [25, 50, 75, 100, 150, 200, 300, 500];
+    const years = [5, 10, 20, 25, 30];
+    const wantAmount = Number(params.get("amount") ?? 50);
+    const wantYears = Number(params.get("years") ?? 10);
+    const amount = amounts.reduce((a, b) => (Math.abs(b - wantAmount) < Math.abs(a - wantAmount) ? b : a));
+    const year = years.reduce((a, b) => (Math.abs(b - wantYears) < Math.abs(a - wantYears) ? b : a));
+    const scenario = ["low", "mid", "high"].includes(params.get("scenario") ?? "") ? params.get("scenario") : "mid";
+    return json(data.responses[`GET /api/v1/projections/where?amount=${amount}&years=${year}&scenario=${scenario}`] ?? data.responses["GET /api/v1/projections/where?amount=50&years=10&scenario=mid"]);
+  }
   if (base === "/api/v1/bills/suggestions") return json(data.responses["GET /api/v1/bills/suggestions"]);
   if (base === "/api/v1/reviews") return json(data.responses["GET /api/v1/reviews?limit=3"]);
   if (base === "/api/v1/approvals") {
@@ -150,6 +160,11 @@ async function write(path: string, method: string, body: unknown): Promise<Respo
   if (base === "/api/v1/rules" && method === "PUT") {
     flash("In the demo, rules are not kept.");
     return json(data.responses["GET /api/v1/rules"]);
+  }
+  if (base === "/api/v1/projections/assumptions") {
+    flash("In the demo, assumptions are not kept.");
+    const captured = data.responses["GET /api/v1/projections"] as Record<string, unknown>;
+    return json({ assumptions: captured.assumptions, outlook: captured });
   }
   if (base.startsWith("/api/v1/goals")) {
     flash("In the demo, goals are not kept.");

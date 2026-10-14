@@ -47,7 +47,7 @@ GETS = [
     "/api/v1/facts?status=pending", "/api/v1/incomes", "/api/v1/payments", "/api/v1/paystubs", "/api/v1/mail/accounts", "/api/v1/mail/presets",
     "/api/v1/mail/messages?limit=200", "/api/v1/connectors", "/api/v1/banks", "/api/v1/keys", "/api/v1/oauth/clients", "/api/v1/jobs", "/api/v1/models",
     "/api/v1/rules", "/api/v1/push", "/api/v1/reviews?limit=3", "/api/v1/approvals?status=all&limit=30", "/api/v1/goals", "/api/v1/watchlist",
-    "/api/v1/bills/suggestions", "/api/v1/debts", "/api/v1/accounts/overview", "/api/v1/audit?limit=300", "/api/v1/investments", "/api/v1/ledger/rules", "/api/v1/next_steps",
+    "/api/v1/bills/suggestions", "/api/v1/debts", "/api/v1/accounts/overview", "/api/v1/audit?limit=300", "/api/v1/investments", "/api/v1/ledger/rules", "/api/v1/next_steps", "/api/v1/projections", *[f"/api/v1/projections/where?amount={x}&years={y}&scenario={sc}" for x in (25, 50, 75, 100, 150, 200, 300, 500) for y in (5, 10, 20, 25, 30) for sc in ("low", "mid", "high")],
     *[f"/api/v1/reports/spending?months={m}&by={b}" for m in (3, 6, 12, 24) for b in ("category", "merchant")],
 ]
 
@@ -98,6 +98,7 @@ def seed_extras(client: TestClient) -> None:
     client.post(f"/api/v1/investments/{plan_id}/holdings", json={"name": "Example Bond Index", "ticker": "EXBND", "kind": "fixed income", "quantity": 300, "price": 11.09, "value": 3327.38})
     client.post("/api/v1/investments", json={"name": "Roth IRA", "institution": "Example Brokerage", "subtype": "roth_ira", "balance": 6120.00, "as_of": "2026-10-01"})
     client.post("/api/v1/ledger/rules", json={"kind": "rename", "pattern": "example taqueria", "value": "Example Taqueria", "match_field": "merchant"})
+    client.put("/api/v1/projections/assumptions", json={"years_to_retirement": 25, "employer_match_per_paycheck": 55})
     # A connected app and a key, as they appear on Settings › Clients.
     client.post("/register", json={"client_name": "Claude on the phone", "redirect_uris": ["https://claude.ai/api/mcp/auth_callback"], "token_endpoint_auth_method": "none", "grant_types": ["authorization_code", "refresh_token"], "response_types": ["code"], "scope": "read confirm"})
     client.post("/api/v1/keys", json={"name": "claude-code", "scopes": ["read"], "redaction": "full"})
