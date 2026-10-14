@@ -16,7 +16,7 @@ Every morning it says what needs attention. Eight home views and three looks are
 - [docs/ROADMAP.md](docs/ROADMAP.md): milestones M0 to M8 and what comes later.
 - [docs/FEATURES.md](docs/FEATURES.md): what Monarch, Empower, Simplifi, YNAB, Copilot, Cleo, Origin and Rocket Money do, and what this app takes from them.
 - [docs/ACCESS.md](docs/ACCESS.md): what the coding agent already reaches and the few things only the owner can grant.
-- [docs/DEMO.md](docs/DEMO.md): the shareable demo, the same screens over a synthetic household, and how to regenerate it.
+- [docs/DEMO.md](docs/DEMO.md): the shareable demo, the same screens over a synthetic household, at demo.aes256afro.com and demo.cybercard.net, and how to regenerate it.
 - [docs/SECURITY.md](docs/SECURITY.md): what the app holds, who can reach what, each risk and its control.
 - [docs/mockups/](docs/mockups/): the eighteen mock-up artboards.
 - [AGENTS.md](AGENTS.md): rules for working in this repository, for people and coding agents.
