@@ -4,7 +4,8 @@ import { useApi } from "../api";
 const ITEMS = [
   { to: "/settings/appearance", title: "Appearance", text: "Eight home views, three looks, kept per device." },
   { to: "/settings/connectors", title: "Connectors", text: "Rocket Money export in and out; the import folder; live bank connectors arrive in M1." },
-  { to: "/settings/clients", title: "Clients", text: "API keys for Claude Code, scripts and any MCP client, each with a scope and a redaction level." },
+  { to: "/settings/models", title: "Models", text: "The advisor and the reviewer: Ollama, any OpenAI-compatible server, or Claude by API; your rules and goals." },
+  { to: "/settings/clients", title: "Clients", text: "Apps signed in through OAuth, and API keys for scripts, each with a scope and a redaction level." },
   { to: "/settings/jobs", title: "Jobs", text: "What the app does on its own, and whether it ran." },
 ];
 

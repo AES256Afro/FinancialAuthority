@@ -170,3 +170,13 @@ jobs.register("self_check", self_check, 3600, "Connector health, stale data, dis
 jobs.register("import_watch", import_watch, 300, "Import new files from the import folder")
 jobs.register("detect_recurring", detect_recurring, 6 * 3600, "Find recurring charges and paychecks in the ledger, then match payments")
 jobs.register("match_payments", match_payments_job, 24 * 3600, "Match each bill period to its payment; mark late and past due")
+
+
+def review_if_due() -> str:
+    from ..api.routes import today
+    from ..llm.reviewer import run_if_due
+
+    return run_if_due(session_scope, today())
+
+
+jobs.register("review_if_due", review_if_due, 3600, "Ask the reviewer for notes on payday and after a confirmed change")

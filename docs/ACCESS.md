@@ -80,7 +80,7 @@ Decide the default: approve each send, or grant standing allowances to known rec
 
 ### 11. A reviewer model (M3.7)
 
-Optional. An Anthropic API key pasted into Settings › Models makes Claude the reviewer; reviews cost cents and the app shows each one's cost. Any OpenAI-compatible endpoint works the same way. With no key, the local model advises and reviews for nothing.
+Optional. An Anthropic API key pasted into Settings › Models (never into chat) makes Claude the reviewer; set the reviewer's provider to Anthropic and press Test. Enter the model's prices per million tokens there and every review shows its cost in dollars; without them, tokens only. Any OpenAI-compatible endpoint works the same way. With no key, Ollama on BigBox advises and can review for nothing; the advisor uses it by default.
 
 ## What the coding agent never asks for
 

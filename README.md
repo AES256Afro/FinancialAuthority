@@ -10,7 +10,7 @@ It answers three questions:
 
 Every morning it says what needs attention. Eight home views and three looks are switchable in Settings › Appearance; all of them render the same numbers. It never moves money. It reads, plans, drafts, and sends only with an approval. It pays nobody to see your own money.
 
-**Status: M0 through M4, first cuts.** The engine's first snapshot (windows, calendar, payments, the usual pace, the brief), the Rocket Money loader with recurring detection and the export captured from mail, payment matching, all eight home views, the Needs-you flow, owner sign-in, API keys, the scheduler, the MCP endpoint, and the mail connector for Proton (through the Bridge), Gmail and any IMAP mailbox with a rules-first classifier. Not deployed yet; the live bank connectors, the full engine and the OAuth sign-in for claude.ai are next.
+**Status: M0 through M4, first cuts.** The engine's first snapshot (windows, calendar, payments, paystubs, the usual pace, the brief), the Rocket Money loader with recurring detection and the export captured from mail, payment matching, all eight home views, the Needs-you flow, owner sign-in, the OAuth 2.1 server for claude.ai and Claude Code, API keys, the scheduler, the MCP endpoint, the mail connector for Proton (through the Bridge), Gmail and any IMAP mailbox with a rules-first classifier, and the two model roles: the advisor in the built-in chat and the reviewer with one-tap notes, over Ollama, any OpenAI-compatible server or Claude by API. Not deployed yet; the live bank connectors and the full engine are next.
 
 - [docs/PLAN.md](docs/PLAN.md): what it is, how it operates, where the data comes from, the engine, reach from anywhere, views and looks, security, decisions.
 - [docs/ROADMAP.md](docs/ROADMAP.md): milestones M0 to M8 and what comes later.
@@ -52,6 +52,10 @@ claude mcp add --transport http financialauthority http://<host>:8430/mcp
 
 Anything without a browser takes an API key from Settings › Clients as a bearer token instead.
 
-The tools: `finance_snapshot`, `brief_today`, `accounts_list`, `transactions_search`, `recurring_list`, `bills_list`, `payments_list`, `mail_search`, `mail_read`, `facts_pending`, `facts_confirm`, `jobs_status`, growing with each milestone. The REST mirror is under `/api/v1`.
+The tools: `finance_snapshot`, `brief_today`, `accounts_list`, `transactions_search`, `recurring_list`, `bills_list`, `payments_list`, `paystubs_list`, `mail_search`, `mail_read`, `facts_pending`, `facts_confirm`, `jobs_status`, growing with each milestone. The REST mirror is under `/api/v1`.
+
+## Two models, neither of which calculates
+
+Settings › Models holds two roles. The **advisor** answers in the Chat page, with the plan already computed in its prompt and the read tools at hand; Ollama on the host by default, so it costs nothing. The **reviewer** is a second opinion: on payday, after a confirmed change and on request it reads the plan and your rules, never the mail, and returns notes you apply with one tap. Claude by API is the recommended reviewer; any OpenAI-compatible model works; keys are stored encrypted. Every figure either model states is checked against what the engine returned, and anything else is marked.
 
 FinancialAuthority is not financial advice. It is a calculator that shows its work.

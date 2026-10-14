@@ -364,3 +364,21 @@ class ExtractedFact(SQLModel, table=True):
     applied_to: str = ""
     created_at: dt.datetime = Field(default_factory=utcnow)
     resolved_at: dt.datetime | None = None
+
+class ReviewRun(SQLModel, table=True):
+    """One run of the reviewer: what triggered it, which model, its notes with their statuses, and its cost."""
+
+    __tablename__ = "review_runs"
+    id: int | None = Field(default=None, primary_key=True)
+    created_at: dt.datetime = Field(default_factory=utcnow, index=True)
+    trigger: str = "request"  # payday | change | request
+    provider: str = ""
+    model: str = ""
+    ok: bool = False
+    error: str = ""
+    notes: str = "[]"  # JSON list of {n, kind, text, action, status, unverified}
+    raw: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost: float | None = None
+    packet_hash: str = ""

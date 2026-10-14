@@ -11,6 +11,7 @@ from sqlmodel import Session, select
 from .. import auth
 from ..db import get_session
 from ..jobs.detect import pending_series, run_detection
+from ..llm.reviewer import mark_pending
 from ..models import Bill, Income, InstallmentPlan, RecurringSeries
 from .routes import today
 
@@ -151,6 +152,7 @@ def create_bill(body: BillIn, session: Session = Depends(get_session), _: auth.P
     session.add(bill)
     session.commit()
     session.refresh(bill)
+    mark_pending(session, f"bill added: {bill.name}")
     return bill_out(bill)
 
 
@@ -170,6 +172,7 @@ def update_bill(bill_id: int, body: BillIn, session: Session = Depends(get_sessi
     session.add(bill)
     session.commit()
     session.refresh(bill)
+    mark_pending(session, f"bill changed: {bill.name}")
     return bill_out(bill)
 
 
