@@ -10,16 +10,17 @@ import logging
 from datetime import date
 
 from mcp.server import MCPServer
-from mcp.server.auth.provider import AccessToken, TokenVerifier
-from mcp.server.auth.settings import AuthSettings
+from mcp.server.auth.provider import AccessToken
+from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 
-from . import auth, services
+from . import services
 from .config import settings
 from .db import session_scope
 from .engine.snapshot import finance_snapshot
 from .jobs.scheduler import jobs
+from .oauth import VALID_SCOPES, issuer, provider
 from .version import __version__
 
 log = logging.getLogger("fa.mcp")
@@ -32,17 +33,6 @@ except Exception:  # noqa: BLE001
 
     def get_access_token() -> AccessToken | None:  # type: ignore[misc]
         return None
-
-
-class KeyVerifier(TokenVerifier):
-    """A bearer token is one of the app's API keys."""
-
-    async def verify_token(self, token: str) -> AccessToken | None:
-        with session_scope() as session:
-            key = auth.lookup_key(session, token)
-            if key is None:
-                return None
-            return AccessToken(token=token, client_id=key.name, scopes=sorted(key.scope_set), expires_at=None, claims={"redaction": key.redaction})
 
 
 def _caller() -> tuple[str, str]:
@@ -89,7 +79,7 @@ def _read_message_plain(session, message_id: int) -> dict:  # noqa: ANN001
 
 
 def build_server() -> MCPServer:
-    issuer = settings.public_url or f"http://localhost:{settings.port}"
+    base = issuer()
     server = MCPServer(
         "financialauthority",
         instructions=(
@@ -99,8 +89,12 @@ def build_server() -> MCPServer:
             "with a source. Explain the numbers it gives; never compute your own. It is not financial advice."
         ),
         version=__version__,
-        token_verifier=KeyVerifier(),
-        auth=AuthSettings(issuer_url=issuer, resource_server_url=issuer, required_scopes=["read"], validate_token_resource=False),
+        auth_server_provider=provider,
+        auth=AuthSettings(
+            issuer_url=base, resource_server_url=base, required_scopes=["read"], validate_token_resource=False,
+            client_registration_options=ClientRegistrationOptions(enabled=True, valid_scopes=VALID_SCOPES, default_scopes=["read"]),
+            revocation_options=RevocationOptions(enabled=True),
+        ),
         log_level="WARNING",
     )
 
@@ -357,9 +351,21 @@ mcp_server = build_server()
 
 
 def asgi_routes():
-    """The MCP endpoint and the OAuth protected-resource metadata, as routes to add to the main app."""
+    """The MCP endpoint, the OAuth endpoints and the metadata documents, as routes to add to the main app.
+
+    The SDK builds its own Starlette app whose middleware turns a bearer token into the request's user;
+    only its routes are taken, so that middleware is wrapped around the `/mcp` endpoint here. Without it
+    every call would be refused as unauthenticated, whatever token it carried."""
     app = mcp_server.streamable_http_app(
         streamable_http_path="/mcp",
         transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
     )
-    return list(app.routes)
+    routes = []
+    for route in app.routes:
+        if getattr(route, "path", "") == "/mcp":
+            inner = route.app
+            for m in reversed(app.user_middleware):
+                inner = m.cls(inner, *m.args, **m.kwargs)
+            route.app = inner
+        routes.append(route)
+    return routes

@@ -44,11 +44,13 @@ One image, published by CI as `ghcr.io/aes256afro/financialauthority` (`:edge` f
 
 ## Any model
 
-Make a key on Settings › Clients, then:
+The app is its own OAuth 2.1 server. claude.ai (web, desktop, phone): Settings › Connectors › Add custom connector with `https://<your-address>/mcp`; the app's consent page appears once. Claude Code:
 
 ```bash
-claude mcp add --transport http financialauthority http://<host>:8430/mcp --header "Authorization: Bearer <key>"
+claude mcp add --transport http financialauthority http://<host>:8430/mcp
 ```
+
+Anything without a browser takes an API key from Settings › Clients as a bearer token instead.
 
 The tools: `finance_snapshot`, `brief_today`, `accounts_list`, `transactions_search`, `recurring_list`, `bills_list`, `payments_list`, `mail_search`, `mail_read`, `facts_pending`, `facts_confirm`, `jobs_status`, growing with each milestone. The REST mirror is under `/api/v1`.
 
