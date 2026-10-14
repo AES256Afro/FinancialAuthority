@@ -2,6 +2,7 @@
 import { Link } from "react-router-dom";
 import { PurchaseCheck } from "../components/PurchaseCheck";
 import { Goals } from "../components/Goals";
+import { NextStepsCard } from "../components/NextSteps";
 import { Watchlist } from "../components/Watchlist";
 import { money, shortDate } from "../format";
 import type { Snapshot } from "../types";
@@ -33,6 +34,8 @@ export function Today({ snapshot }: { snapshot: Snapshot }) {
           </div>
         ))}
       </section>
+
+      <NextStepsCard />
 
       <PurchaseCheck />
 

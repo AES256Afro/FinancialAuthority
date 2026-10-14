@@ -247,3 +247,18 @@ def morning_brief() -> str:
 
 
 jobs.register("morning_brief", morning_brief, 600, "Send the brief to the phone once a day, from the chosen hour")
+
+
+def balance_history() -> str:
+    """Today's balance of every account with one, so net worth and each investment have a line over time."""
+    from ..connectors.banks import record_balance
+
+    with session_scope() as session:
+        accounts = [a for a in session.exec(select(Account).where(Account.active == True)).all() if a.balance is not None]  # noqa: E712
+        for a in accounts:
+            record_balance(session, a, a.balance, utcnow().date(), commit=False)
+        session.commit()
+        return f"{len(accounts)} balances recorded"
+
+
+jobs.register("balance_history", balance_history, 24 * 3600, "Keep today's balance of every account, for net worth over time")

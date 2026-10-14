@@ -47,7 +47,7 @@ GETS = [
     "/api/v1/facts?status=pending", "/api/v1/incomes", "/api/v1/payments", "/api/v1/paystubs", "/api/v1/mail/accounts", "/api/v1/mail/presets",
     "/api/v1/mail/messages?limit=200", "/api/v1/connectors", "/api/v1/banks", "/api/v1/keys", "/api/v1/oauth/clients", "/api/v1/jobs", "/api/v1/models",
     "/api/v1/rules", "/api/v1/push", "/api/v1/reviews?limit=3", "/api/v1/approvals?status=all&limit=30", "/api/v1/goals", "/api/v1/watchlist",
-    "/api/v1/bills/suggestions", "/api/v1/debts", "/api/v1/accounts/overview", "/api/v1/audit?limit=300",
+    "/api/v1/bills/suggestions", "/api/v1/debts", "/api/v1/accounts/overview", "/api/v1/audit?limit=300", "/api/v1/investments", "/api/v1/ledger/rules", "/api/v1/next_steps",
     *[f"/api/v1/reports/spending?months={m}&by={b}" for m in (3, 6, 12, 24) for b in ("category", "merchant")],
 ]
 
@@ -90,6 +90,14 @@ def seed_extras(client: TestClient) -> None:
         session.add(ExtractedFact(kind="bill_due", message_ref_id=refs[0].id, fields=json.dumps({"name": "Example Water", "amount": 64.0, "due_date": "2026-11-02"}), confidence=0.92, status="pending", excerpt="Amount due $64.00 by 11/02/2026", produced_by="rules"))
         session.add(ExtractedFact(kind="installment", message_ref_id=refs[4].id, fields=json.dumps({"provider": "Example BNPL", "merchant": "Laptop plan", "installment": 38.0, "next_date": "2026-10-21"}), confidence=0.85, status="pending", excerpt="payment of $38.00 for Laptop plan is scheduled for 10/21/2026", produced_by="rules"))
         session.commit()
+    # A 401(k) kept by hand, with its holdings and two statements' balances, so the Investing page shows.
+    made = client.post("/api/v1/investments", json={"name": "Work 401(k)", "institution": "Example Retirement Co", "subtype": "401k", "balance": 23980.10, "as_of": "2026-06-30"}).json()
+    plan_id = next(i["id"] for i in made["items"] if i["name"] == "Work 401(k)")
+    client.put(f"/api/v1/investments/{plan_id}", json={"balance": 24810.55, "as_of": "2026-09-30"})
+    client.post(f"/api/v1/investments/{plan_id}/holdings", json={"name": "Example Target 2055 Fund", "ticker": "EXTGT", "kind": "mutual fund", "quantity": 412.345, "price": 52.10, "value": 21483.17})
+    client.post(f"/api/v1/investments/{plan_id}/holdings", json={"name": "Example Bond Index", "ticker": "EXBND", "kind": "fixed income", "quantity": 300, "price": 11.09, "value": 3327.38})
+    client.post("/api/v1/investments", json={"name": "Roth IRA", "institution": "Example Brokerage", "subtype": "roth_ira", "balance": 6120.00, "as_of": "2026-10-01"})
+    client.post("/api/v1/ledger/rules", json={"kind": "rename", "pattern": "example taqueria", "value": "Example Taqueria", "match_field": "merchant"})
     # A connected app and a key, as they appear on Settings › Clients.
     client.post("/register", json={"client_name": "Claude on the phone", "redirect_uris": ["https://claude.ai/api/mcp/auth_callback"], "token_endpoint_auth_method": "none", "grant_types": ["authorization_code", "refresh_token"], "response_types": ["code"], "scope": "read confirm"})
     client.post("/api/v1/keys", json={"name": "claude-code", "scopes": ["read"], "redaction": "full"})

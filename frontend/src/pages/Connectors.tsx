@@ -1,5 +1,6 @@
 // Connectors: live banks through Plaid and Teller, the mailboxes, and the Rocket Money export in and out. All read-only.
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { api, useApi } from "../api";
 import type { MailAccountRow } from "../types";
 import { Banks } from "./Banks";
@@ -137,6 +138,10 @@ export function Connectors() {
     accounts.reload();
   }
 
+  const { hash } = useLocation();
+  useEffect(() => {
+    if (hash) document.getElementById(hash.slice(1))?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [hash, data]);
   const rocket = data?.connectors.find((c) => c.id === "rocketmoney");
   const live = (accounts.data?.accounts ?? []).filter((a) => a.active);
   return (
@@ -145,7 +150,7 @@ export function Connectors() {
 
       <Banks />
 
-      <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+      <section id="mail" className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
         <div>
           <strong>Mailboxes</strong>
           <div style={{ fontSize: 13, color: "var(--ink-2)" }}>Bills, statements, paystubs, installment schedules, payment confirmations, past-due and bank alerts, and the Rocket Money export, read every fifteen minutes.</div>

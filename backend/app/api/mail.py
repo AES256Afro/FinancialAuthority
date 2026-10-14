@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -16,7 +16,7 @@ from ..db import get_session
 from ..engine.recurring import merchant_key
 from ..mail.box import box_untrusted
 from ..mail.imap import parse_message
-from ..models import Bill, ExtractedFact, MailAccount, MessageRef, utcnow
+from ..models import Account, Bill, ExtractedFact, MailAccount, MessageRef, utcnow
 from .routes import today
 
 router = APIRouter(prefix="/api/v1", tags=["mail"])
@@ -301,6 +301,31 @@ def apply_fact(session: Session, fact: ExtractedFact, ref: MessageRef | None, bo
             raise HTTPException(400, "A paystub needs a net amount and a pay date; add them to the confirmation")
         stub = record_paystub(session, fields={**fields, "net": net, "pay_date": pay_date.isoformat()}, source=f"mail:{ref.id}" if ref else "fact", fact_id=fact.id, today=today())
         return f"paystub:{stub.id}"
+    if fact.kind == "investment_balance":
+        from ..connectors.banks import record_balance
+        from ..engine.investments import SUBTYPE_WORDS
+
+        balance = body.amount if body.amount is not None else fields.get("balance")
+        if balance is None:
+            raise HTTPException(400, "A statement needs the balance; add it to the confirmation")
+        vendor = (ref.sender_name if ref else "") or fields.get("sender_name") or "Vendor"
+        name = (body.name or "").strip() or f"{vendor} {fields.get('what') or 'account'}".strip()
+        as_of = body.due_date or (date.fromisoformat(fields["as_of"]) if fields.get("as_of") else today())
+        key = merchant_key(name)
+        accounts = session.exec(select(Account).where(Account.active == True, Account.kind == "investment")).all()  # noqa: E712
+        account = next((a for a in accounts if merchant_key(a.name) == key or (a.institution and merchant_key(a.institution) == merchant_key(vendor) and (fields.get("what") or "") in (SUBTYPE_WORDS.get(a.subtype, ""), ""))), None)
+        if account is None:
+            subtype = next((k for k, w in SUBTYPE_WORDS.items() if k and w == fields.get("what")), "other")
+            account = Account(name=name, institution=vendor, kind="investment", subtype=subtype, connector="manual", external_id=f"statement:{key}")
+            session.add(account)
+            session.flush()
+        when = datetime.combine(as_of, datetime.min.time(), tzinfo=timezone.utc)
+        if account.balance_at is None or when >= account.balance_at:
+            account.balance, account.balance_at = round(float(balance), 2), when
+        session.add(account)
+        session.flush()
+        record_balance(session, account, float(balance), as_of, commit=False)
+        return f"account:{account.id}"
     if fact.kind in ("bill_due", "past_due", "price_change"):
         name = (body.name or fields.get("sender_name") or (ref.sender_name if ref else "") or "Bill").strip()
         amount = body.amount if body.amount is not None else fields.get("amount")

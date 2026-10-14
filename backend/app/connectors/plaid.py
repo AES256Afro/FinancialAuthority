@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any
 
 import httpx
@@ -19,7 +19,7 @@ from sqlmodel import Session, select
 
 from .. import crypto
 from ..models import BankLink
-from .banks import PLAID_CATEGORIES, PLAID_DETAILED, PLAID_KINDS, SAVINGS_SUBTYPES, bank_settings, finish_link, link_token, remove_transaction, upsert_account, upsert_transaction
+from .banks import PLAID_CATEGORIES, PLAID_DETAILED, PLAID_KINDS, SAVINGS_SUBTYPES, bank_settings, finish_link, link_token, remove_transaction, upsert_account, upsert_holding, upsert_transaction
 from .base import Connector, SyncResult
 
 log = logging.getLogger("fa.plaid")
@@ -53,14 +53,21 @@ class PlaidClient:
             raise PlaidError(str(data.get("error_code") or response.status_code), str(data.get("display_message") or data.get("error_message") or "Plaid refused the request"))
         return data
 
-    def link_token(self, *, public_url: str, access_token: str | None = None) -> str:
+    def link_token(self, *, public_url: str, access_token: str | None = None, purpose: str = "bank") -> str:
+        """A Link token. `purpose` "bank" asks for transactions with investments optional; "investments" asks for
+        the investments product first (a 401(k), an IRA, a brokerage account), with transactions optional, so
+        a retirement vendor that has no transactions still links."""
         body: dict[str, Any] = {
             "client_name": "FinancialAuthority", "language": "en", "country_codes": ["US"], "user": {"client_user_id": "owner"},
         }
         if access_token:
             body["access_token"] = access_token  # update mode: the owner signs in again on the same item
+        elif purpose == "investments":
+            body["products"] = ["investments"]
+            body["optional_products"] = ["transactions"]
         else:
             body["products"] = ["transactions"]
+            body["optional_products"] = ["investments"]
             body["transactions"] = {"days_requested": 730}
         if public_url.startswith("https://"):
             body["redirect_uri"] = public_url.rstrip("/") + "/settings/connectors"
@@ -82,11 +89,27 @@ class PlaidClient:
     def remove(self, access_token: str) -> None:
         self.post("/item/remove", {"access_token": access_token})
 
+    def holdings(self, access_token: str) -> dict[str, Any]:
+        return self.post("/investments/holdings/get", {"access_token": access_token})
+
 
 def account_kind(plaid_type: str, subtype: str | None) -> str:
     if plaid_type == "depository" and (subtype or "").lower() in SAVINGS_SUBTYPES:
         return "savings"
     return PLAID_KINDS.get(plaid_type, "checking")
+
+
+def investment_subtype(subtype: str | None) -> str:
+    """Plaid's investment subtypes to the app's: 401k, 403b, 457b, ira, roth_ira, brokerage, hsa, 529, pension, crypto, other."""
+    key = (subtype or "").lower().replace(" ", "_")
+    if key in ("401k", "401a", "403b", "457b", "ira", "sep_ira", "simple_ira", "brokerage", "hsa", "529", "pension", "tsp", "profit_sharing_plan", "stock_plan", "crypto_exchange", "cash_management", "trust", "ugma", "utma", "roth", "roth_401k", "keogh", "sarsep", "non-custodial_wallet", "mutual_fund", "retirement", "education_savings_account"):
+        return {"401a": "401k", "roth": "roth_ira", "roth_401k": "401k", "crypto_exchange": "crypto", "non-custodial_wallet": "crypto", "profit_sharing_plan": "pension", "mutual_fund": "brokerage", "education_savings_account": "529", "keogh": "pension", "sarsep": "sep_ira"}.get(key, key)
+    return "other"
+
+
+def security_kind(sec: dict[str, Any]) -> str:
+    kind = str(sec.get("type") or "other").lower()
+    return {"equity": "equity", "etf": "etf", "mutual fund": "mutual fund", "fixed income": "fixed income", "cash": "cash", "derivative": "derivative", "cryptocurrency": "cryptocurrency", "loan": "fixed income"}.get(kind, "other")
 
 
 def category_for(tx: dict[str, Any]) -> str:
@@ -158,10 +181,14 @@ class PlaidConnector(Connector):
         for a in got.get("accounts", []):
             balances = a.get("balances") or {}
             current = balances.get("current")
+            kind = account_kind(str(a.get("type") or ""), a.get("subtype"))
             accounts[a["account_id"]] = upsert_account(
                 session, provider="plaid", external_id=a["account_id"], name=str(a.get("name") or a.get("official_name") or "Account"), institution=institution,
-                kind=account_kind(str(a.get("type") or ""), a.get("subtype")), balance=float(current) if current is not None else None, last4=str(a.get("mask") or ""),
+                kind=kind, balance=float(current) if current is not None else None, last4=str(a.get("mask") or ""),
+                subtype=investment_subtype(a.get("subtype")) if kind == "investment" else "",
             )
+        if any(a.kind == "investment" for a in accounts.values()):
+            self.sync_holdings(session, api, token, accounts)
         inserted = updated = removed = 0
         cursor = link.cursor or ""
         for _page in range(50):
@@ -187,6 +214,31 @@ class PlaidConnector(Connector):
         link.needs_login = False
         session.commit()
         return inserted, updated, removed, list(accounts)
+
+    def sync_holdings(self, session: Session, api: PlaidClient, token: str, accounts: dict[str, Any]) -> int:
+        """Every position in the item's investment accounts; a vendor without the product is simply skipped."""
+        try:
+            got = api.holdings(token)
+        except PlaidError as error:
+            if error.code in ("PRODUCTS_NOT_SUPPORTED", "PRODUCT_NOT_READY", "NO_INVESTMENT_ACCOUNTS", "INVALID_PRODUCT"):
+                log.info("no holdings for this item: %s", error)
+                return 0
+            raise
+        securities = {str(s.get("security_id")): s for s in got.get("securities", [])}
+        count = 0
+        for h in got.get("holdings", []):
+            account = accounts.get(h.get("account_id"))
+            if account is None or account.kind != "investment":
+                continue
+            sec = securities.get(str(h.get("security_id")), {})
+            as_of_raw = h.get("institution_price_as_of")
+            as_of = datetime.combine(date.fromisoformat(as_of_raw), datetime.min.time(), tzinfo=timezone.utc) if as_of_raw else None
+            upsert_holding(
+                session, account=account, external_id=str(h.get("security_id")), name=str(sec.get("name") or sec.get("ticker_symbol") or "Holding"), ticker=str(sec.get("ticker_symbol") or ""),
+                kind=security_kind(sec), quantity=h.get("quantity"), price=h.get("institution_price"), value=h.get("institution_value"), cost_basis=h.get("cost_basis"), as_of=as_of,
+            )
+            count += 1
+        return count
 
     def connect(self, session: Session, api: PlaidClient, public_token: str, institution: str) -> BankLink:
         access_token, item_id = api.exchange(public_token)
