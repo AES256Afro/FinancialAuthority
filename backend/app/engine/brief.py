@@ -5,12 +5,19 @@ No model is involved. A model may read these through brief_today and say them in
 
 from __future__ import annotations
 
-from .snapshot import _money
-
 
 def money(v: float) -> str:
     v = round(v)
     return f"−${abs(v):,}" if v < 0 else f"${v:,}"
+
+
+MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
+def when(iso: str) -> str:
+    """'2026-10-25' as 'Oct 25'."""
+    y, m, d = iso.split("-")
+    return f"{MONTHS[int(m) - 1]} {int(d)}"
 
 
 def build_brief(snap: dict) -> list[dict]:
@@ -40,12 +47,10 @@ def build_brief(snap: dict) -> list[dict]:
     bad_weeks = [w for w in snap["calendar"]["weeks"][:6] if w["low"] is not None and w["low"] < 0]
     if bad_weeks:
         w = bad_weeks[0]
-        items.append({"severity": "warning", "text": f"At your usual pace of {money(snap['usual_pace']['per_day'])} a day, the week of {w['start'][5:]} dips {money(-w['low'])} under the buffer.", "link": "/?view=month"})
+        items.append({"severity": "warning", "text": f"At your usual pace of {money(snap['usual_pace']['per_day'])} a day, the week of {when(w['start'])} dips {money(-w['low'])} under the buffer.", "link": "/?view=month"})
     pending = snap["pending"]
     if pending["confirmations"]:
         items.append({"severity": "warning", "text": f"{pending['confirmations']} recurring charge{'s' if pending['confirmations'] != 1 else ''} need{'s' if pending['confirmations'] == 1 else ''} a name.", "link": "/confirm"})
     safe = snap["safe_to_spend"]
-    items.append({"severity": "critical" if safe["amount"] < 0 else "info", "text": (f"Short by {money(-safe['amount'])} through {safe['through'][5:]} after bills and set-asides." if safe["amount"] < 0 else f"Safe to spend {money(safe['amount'])} through {safe['through'][5:]}."), "link": "/"})
-    for it in items:
-        it["amount_check"] = _money(0)
+    items.append({"severity": "critical" if safe["amount"] < 0 else "info", "text": (f"Short by {money(-safe['amount'])} through {when(safe['through'])} after bills and set-asides." if safe["amount"] < 0 else f"Safe to spend {money(safe['amount'])} through {when(safe['through'])}."), "link": "/"})
     return items

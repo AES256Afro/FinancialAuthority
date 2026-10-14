@@ -34,12 +34,12 @@ Done when: Capital One and the credit union sync daily with no hand in it, an ov
 
 - 🔄 **M2.1 Bill registry** (2026-10-14). Each recurring series is confirmed as a bill, a subscription, income, an installment plan, or ignored; manual add; the Bills page edits amount, due day, autopay and whether the date can move. *Left: the paying account, grace days, late fees and the allowed move window in the UI.*
 - ☐ **M2.2 Debts.** Cards, loans, medical plans: balance, APR, minimum, statement day, due day.
-- ☐ **M2.3 Installment plans.** BNPL purchases with schedules, detected from transactions and confirmed, or entered in a thirty-second form.
+- 🔄 **M2.3 Installment plans** (2026-10-14). Biweekly series are detected and linked to known plans or confirmed as plans from Needs you. *Left: the thirty-second form with provider, total and schedule.*
 - ☐ **M2.4 Advances.** Earned-wage and cash-advance apps: amount, fee, repayment date, repaid or not; detected from the pair of transactions and confirmed.
-- ☐ **M2.5 Payment matching.** Each bill period finds its payment or becomes late, then past due; the Payments page and `payments.list`; the "pay this now" list.
+- 🔄 **M2.5 Payment matching** (2026-10-14). Each bill period finds its payment by name and amount, or by exact amount alone; unmatched periods go late, then past due; `payments_list`; the bill board shows it. *Left: the Payments page and the "pay this now" list.*
 - ☐ **M2.6 Paystubs.** PDFs from `/imports/paystubs`, upload, or forwarded mail; a parser for the owner's payroll format with a model fallback and confirmation; gross, net, taxes, deductions, period, pay date; matched to the deposit; expected-versus-actual net with a discrepancy flag; `paystubs.list`, `paystubs.get`.
 - ☐ **M2.7 Subscriptions.** Price history, last charge, category, duplicate detection.
-- ☐ **M2.8 Calendar and snapshot.** Paydays, due dates and advance repayments on one grid, sixty days ahead; `finance.snapshot`, `bills.upcoming`, `debts.list`, `installments.list`, `advances.list`, `subscriptions.list`.
+- 🔄 **M2.8 Calendar and snapshot** (2026-10-14). Paydays, due dates, installments and advance repayments on one grid, sixty days ahead, with each week's low point; `finance_snapshot` carries the windows, the calendar, the payments and the brief. *Left: `debts_list`, `installments_list`, `advances_list`, `subscriptions_list` as their own tools.*
 - ☐ **M2.9 Accounts and net worth.** Every account with its balance, connector and freshness; net worth as assets minus debts, kept daily; investment balances read-only where a connector offers them; `networth.history`.
 
 Done when: every recurring charge in the fixture and in the real data is classified, last month's bills each show their payment, the owner's last three paystubs are parsed and matched to their deposits, and the calendar shows the next sixty days correctly.
@@ -85,7 +85,7 @@ Done when: on the fixture the plan matches its golden output, the optimiser find
 ## M6 — It runs itself (1.5 weeks)
 
 - ☐ **M6.1 Schedules.** Mail every fifteen minutes, bank daily and on demand, import watch, re-plan on payday and after confirmed changes, the brief at 07:00, the self-check hourly; all idempotent, all on the Jobs page.
-- ☐ **M6.2 The brief, the recap, the report.** Daily: due in three days and unfunded, past due, paystub discrepancies, new plans or advances, price increases, failed connectors, approvals waiting; `brief.today`. Monday: the week's recap, what was spent against the plan, what changed. Month end: the report, by category, merchant and tag, against last month and the same month last year, with the savings rate. All three readable by any model.
+- 🔄 **M6.2 The brief, the recap, the report** (2026-10-14, the brief pulled forward). Daily, written by the engine in its own sentences: what clears before payday, past due and unmatched, the week that dips under the buffer at the usual pace, what waits for the owner, safe to spend; `brief_today`; Today and mission control show it. *Left: paystub discrepancies, new plans or advances, price increases and failed connectors as the registers arrive; the Monday recap; the month report.*
 - ☐ **M6.3 Push.** Delivery through ntfy or Gotify from BoxPilot's catalog, with an approve action for sends; the Today page on the phone.
 - ☐ **M6.4 Self-check.** Each connector's last success, stale-data warnings, the public address reachable, disk and database size; `jobs.status`.
 - ☐ **M6.5 Export reminder.** The aggregator's export email triggers a reminder; nothing is downloaded automatically.
@@ -99,7 +99,7 @@ Done when: a week passes with no hand on the app and the brief is right every mo
 - ☐ **M7.3 Confirm, Connectors, Clients, Jobs, Audit, Settings.** Finished, not skeletons; send allowances, auto-confirm rules, watchlists and goals visible and editable.
 - ☐ **M7.4 Chat.** The advisor beside the engine's table with citations, the reviewer's notes with their one-tap actions, "ask about this" from every page.
 - ☐ **M7.5 Installable.** Web app manifest, icons, a service worker for the shell, light and dark.
-- ☐ **M7.6 The other seven home views.** Paycheck windows, Month grid, Where it goes, Envelopes, Bill board, Transit map, Mission control, each a layout over the same four engine results, each with a thumbnail in Settings › Appearance, switchable per device.
+- 🔄 **M7.6 The other seven home views** (2026-10-14, pulled forward). Paycheck windows, Month grid, Where it goes, Envelopes, Bill board, Transit map and Mission control all render from the engine's results and are switchable in Settings › Appearance and by `?view=`. *Left: thumbnails in Appearance, hover detail and table twins on each, and the polish pass once the full engine (M5) feeds them.*
 - ☐ **M7.7 Looks.** Light, dark and console as token sets; the chart palette of each validated in both modes; Settings › Appearance with a live preview; kept per device.
 - ☐ **M7.8 Reports.** Spending by category, merchant and tag over a chosen period, against the previous period and the same period last year; income, spending, net and savings rate; every chart with a table twin.
 
