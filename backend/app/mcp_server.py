@@ -258,6 +258,41 @@ def build_server() -> MCPServer:
             services.audit(session, client=client, client_kind="key", tool="debts_list", rows=len(out["items"]), redaction=redaction)
             return out
 
+    @server.tool(name="purchase_check", annotations=READ_ONLY)
+    def purchase_check_tool(amount: float, on: str | None = None, installments: int | None = None) -> dict:
+        """Should the owner buy this? Yes, wait or no: whether the purchase keeps the honest line above zero
+        through the horizon, the first thing it would break, and the first date it would pass. Explain the
+        verdict with the figures returned; do not compute your own.
+
+        Args:
+            amount: The price, in dollars.
+            on: The day of the purchase, YYYY-MM-DD; today if omitted.
+            installments: For a pay-in-four plan, the number of installments (every fourteen days).
+        """
+        from datetime import date as _date
+
+        from .engine.decisions import purchase_check
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            when = _date.fromisoformat(on) if on else None
+            out = purchase_check(session, _today(), max(0.0, min(float(amount), 1_000_000.0)), on=when, installments=installments)
+            services.audit(session, client=client, client_kind="key", tool="purchase_check", args={"amount": amount}, rows=1, redaction=redaction)
+            return out
+
+    @server.tool(name="billing_dates_suggest", annotations=READ_ONLY)
+    def billing_dates_suggest() -> dict:
+        """Which billing dates should move: for each movable bill, the due day that lifts the sixty-day low
+        point the most, with the before and after, the instruction for the biller and a draft request. The
+        app drafts; it never sends."""
+        from .engine.decisions import billing_date_suggestions
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            out = billing_date_suggestions(session, _today())
+            services.audit(session, client=client, client_kind="key", tool="billing_dates_suggest", rows=len(out["suggestions"]), redaction=redaction)
+            return out
+
     @server.tool(name="brief_today", annotations=READ_ONLY)
     def brief_today() -> dict:
         """What needs attention today, as the engine's own sentences: what clears before payday, what is past
