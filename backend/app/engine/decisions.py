@@ -72,6 +72,7 @@ def purchase_check(session: Session, today: date, amount: float, *, on: date | N
         breaks = {
             "date": first_bad["date"],
             "name": target["name"] if target else "the buffer",
+            "event_date": target["date"] if target else first_bad["date"],
             "source": target["source"] if target else "setting:buffer",
             "shortfall": round(-first_bad["at_pace"], 2),
             "already_short": round(-was["at_pace"], 2) if was["at_pace"] < 0 else 0.0,
@@ -152,10 +153,35 @@ def billing_date_suggestions(session: Session, today: date) -> dict:
                 "source": f"bill:{b.id}",
             })
     suggestions.sort(key=lambda s: (-s["improvement"], s["name"]))
+
+    # Together: take the best move, then the best next move given it, until nothing lifts the low point a dollar.
+    plan: list[dict] = []
+    chosen: dict[int, int] = {}
+    current = baseline["value"]
+    movable_ids = [b.id for b in bills if b.movable]
+    for _step in range(len(movable_ids)):
+        best = None
+        for b in bills:
+            if not b.movable or b.id in chosen:
+                continue
+            for day in range(1, 29):
+                if day == b.due_day:
+                    continue
+                low = low_for({**chosen, b.id: day})
+                if best is None or low["value"] > best[2] + 0.005:
+                    best = (b, day, low["value"], low["date"])
+        if best is None or best[2] - current < 1.0:
+            break
+        b, day, value, when = best
+        chosen[b.id] = day
+        plan.append({"bill_id": b.id, "name": b.name, "from_day": b.due_day, "to_day": day, "low_after": round(value, 2), "low_date": when, "improvement": round(value - current, 2), "source": f"bill:{b.id}"})
+        current = value
     return {
         "as_of": today.isoformat(),
         "baseline": {"low": baseline["value"], "low_date": baseline["date"]},
         "suggestions": suggestions,
+        "plan": plan,
+        "plan_low": round(current, 2),
         "movable": sum(1 for b in bills if b.movable),
         "sources": ["snapshot:projection", *(s["source"] for s in suggestions)],
         "drafts_only": "The app drafts the request; it never sends anything. Copy it to the biller yourself, or approve a send once sending exists.",

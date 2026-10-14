@@ -9,7 +9,7 @@ interface Check {
   on: string;
   installments: number | null;
   verdict: "yes" | "wait" | "no";
-  breaks: { date: string; name: string; shortfall: number; already_short: number } | null;
+  breaks: { date: string; name: string; event_date: string; shortfall: number; already_short: number } | null;
   first_ok_date: string | null;
   low_point: { date: string; at_pace: number };
   fits_safe_to_spend: boolean;
@@ -66,8 +66,10 @@ export function PurchaseCheck() {
             {r.breaks && (
               <div>
                 {r.breaks.already_short > 0
-                  ? `The honest line is already ${money(r.breaks.already_short)} short on ${shortDate(r.breaks.date)} (${r.breaks.name}); this would make it ${money(r.breaks.shortfall)}.`
-                  : `It breaks ${r.breaks.name} on ${shortDate(r.breaks.date)} by ${money(r.breaks.shortfall)}.`}
+                  ? `The honest line is already ${money(r.breaks.already_short)} short on ${shortDate(r.breaks.date)}; this would make it ${money(r.breaks.shortfall)}, with ${r.breaks.name} due ${r.breaks.event_date === r.breaks.date ? "that day" : shortDate(r.breaks.event_date)}.`
+                  : r.breaks.event_date === r.breaks.date
+                    ? `It breaks ${r.breaks.name} on ${shortDate(r.breaks.date)} by ${money(r.breaks.shortfall)}.`
+                    : `It leaves you ${money(r.breaks.shortfall)} short on ${shortDate(r.breaks.date)}, before ${r.breaks.name} on ${shortDate(r.breaks.event_date)}.`}
               </div>
             )}
             {r.verdict === "wait" && r.first_ok_date && <div>It passes from <strong>{shortDate(r.first_ok_date)}</strong>.</div>}
