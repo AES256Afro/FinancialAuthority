@@ -10,7 +10,7 @@ It answers three questions:
 
 Every morning it says what needs attention. Eight home views and three looks are switchable in Settings › Appearance; all of them render the same numbers. It never moves money. It reads, plans, drafts, and sends only with an approval. It pays nobody to see your own money.
 
-**Status: M0, foundations.** The backend (FastAPI, SQLite, the engine's first snapshot, the Rocket Money loader and recurring detection, owner sign-in, API keys, the scheduler, the MCP endpoint) and the frontend shell (the River view, Today, the ledger, Settings with Appearance, Clients, Connectors and Jobs) build and pass their tests. Nothing is deployed yet.
+**Status: M0 through M4, first cuts.** The engine's first snapshot (windows, calendar, payments, the usual pace, the brief), the Rocket Money loader with recurring detection and the export captured from mail, payment matching, all eight home views, the Needs-you flow, owner sign-in, API keys, the scheduler, the MCP endpoint, and the mail connector for Proton (through the Bridge), Gmail and any IMAP mailbox with a rules-first classifier. Not deployed yet; the live bank connectors, the full engine and the OAuth sign-in for claude.ai are next.
 
 - [docs/PLAN.md](docs/PLAN.md): what it is, how it operates, where the data comes from, the engine, reach from anywhere, views and looks, security, decisions.
 - [docs/ROADMAP.md](docs/ROADMAP.md): milestones M0 to M8 and what comes later.
@@ -50,6 +50,6 @@ Make a key on Settings › Clients, then:
 claude mcp add --transport http financialauthority http://<host>:8430/mcp --header "Authorization: Bearer <key>"
 ```
 
-The tools: `finance_snapshot`, `accounts_list`, `transactions_search`, `recurring_list`, `bills_list`, `jobs_status`, growing with each milestone. The REST mirror is under `/api/v1`.
+The tools: `finance_snapshot`, `brief_today`, `accounts_list`, `transactions_search`, `recurring_list`, `bills_list`, `payments_list`, `mail_search`, `mail_read`, `facts_pending`, `facts_confirm`, `jobs_status`, growing with each milestone. The REST mirror is under `/api/v1`.
 
 FinancialAuthority is not financial advice. It is a calculator that shows its work.

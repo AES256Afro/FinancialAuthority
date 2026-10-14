@@ -8,6 +8,7 @@ import { Confirm } from "./pages/Confirm";
 import { Connectors } from "./pages/Connectors";
 import { Home } from "./pages/Home";
 import { Jobs } from "./pages/Jobs";
+import { Mail } from "./pages/Mail";
 import { SettingsIndex } from "./pages/Settings";
 import { SignIn } from "./pages/SignIn";
 import { Today } from "./pages/Today";
@@ -40,6 +41,7 @@ export default function App() {
         <Route path="/today" element={body((s) => <Today snapshot={s} />)} />
         <Route path="/transactions" element={<Transactions />} />
         <Route path="/bills" element={<Bills onChanged={snapshot.reload} />} />
+        <Route path="/mail" element={<Mail />} />
         <Route path="/confirm" element={<Confirm onChanged={snapshot.reload} />} />
         <Route path="/settings" element={<SettingsIndex />} />
         <Route path="/settings/appearance" element={<Appearance />} />
