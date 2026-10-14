@@ -10,6 +10,10 @@ The real frontend, built once with `VITE_STATIC_DEMO=1`, routed after the hash, 
 
 No figure is computed in the browser. Writes are acknowledged with a line in the banner and forgotten.
 
+## On the owner's domain
+
+The same build is served by GitHub Pages from two public repositories that hold the built files only, never the app's source or any data: `AES256Afro/financialauthority-demo` at **https://demo.aes256afro.com** and `AES256Afro/financialauthority-demo-cybercard` at **https://demo.cybercard.net** (a Pages site carries one custom domain, so each domain has its own site). Each needs one CNAME record in its zone, `demo` pointing at `aes256afro.github.io`, DNS only (grey cloud) so GitHub can issue the certificate; `https_enforced` is switched on once the record resolves. `scripts/publish-demo.sh` rebuilds the demo and pushes it to both.
+
 ## Regenerating it
 
 After a change to the screens or the engine:
