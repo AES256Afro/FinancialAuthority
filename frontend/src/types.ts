@@ -17,6 +17,29 @@ export interface Event {
   kind: string;
   autopay: boolean;
   source: string;
+  line?: "housing" | "utilities" | "debt";
+  funded?: boolean;
+  share?: number;
+  bill_id?: number;
+}
+
+export interface PaymentRow {
+  bill_id: number;
+  name: string;
+  kind: string;
+  due_date: string;
+  amount: number;
+  status: "paid" | "late" | "past_due" | "scheduled";
+  paid_date: string | null;
+  evidence: string;
+  autopay: boolean;
+  source: string;
+}
+
+export interface BriefItem {
+  severity: "info" | "warning" | "critical";
+  text: string;
+  link: string;
 }
 
 export interface Window {
@@ -43,6 +66,8 @@ export interface Snapshot {
   as_of: string;
   windows: Window[];
   calendar: { events: Event[]; weeks: CalendarWeek[] };
+  payments: { past_due: PaymentRow[]; late: PaymentRow[]; paid: PaymentRow[]; scheduled: PaymentRow[] };
+  brief: BriefItem[];
   accounts: AccountRow[];
   cash: number;
   buffer: number;
@@ -54,7 +79,7 @@ export interface Snapshot {
   safe_to_spend: { amount: number; through: string; version: string };
   usual_pace: { per_day: number; per_window: number; basis_days: number; transactions: number };
   debts: { id: number; name: string; kind: string; balance: number; apr: number; minimum: number; due_day: number | null }[];
-  pending: { confirmations: number; approvals: number };
+  pending: { confirmations: number; approvals: number; past_due: number };
   projection: { date: string; available: number; at_pace: number; cash: number }[];
   not_advice: string;
 }
