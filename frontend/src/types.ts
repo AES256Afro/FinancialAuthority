@@ -81,6 +81,24 @@ export interface FactRow {
   message: { id: number; sender: string; sender_name: string; subject: string; date: string | null } | null;
 }
 
+export interface PaystubRow {
+  id: number;
+  employer: string;
+  provider: string;
+  pay_date: string;
+  period_start: string | null;
+  period_end: string | null;
+  gross: number | null;
+  net: number;
+  hours: number | null;
+  deductions: { name: string; amount: number }[];
+  source: string;
+  transaction_id: number | null;
+  matched: boolean;
+  expected_net: number | null;
+  difference: number | null;
+}
+
 export interface BriefItem {
   severity: "info" | "warning" | "critical";
   text: string;
@@ -112,6 +130,7 @@ export interface Snapshot {
   windows: Window[];
   calendar: { events: Event[]; weeks: CalendarWeek[] };
   payments: { past_due: PaymentRow[]; late: PaymentRow[]; paid: PaymentRow[]; scheduled: PaymentRow[] };
+  paystubs: { recent: PaystubRow[]; last: PaystubRow | null; short: PaystubRow[] };
   brief: BriefItem[];
   accounts: AccountRow[];
   cash: number;
