@@ -117,9 +117,50 @@ def finance_snapshot(session: Session, today: date) -> dict:
         available = balance - buffer - reserved
         projection.append({"date": d.isoformat(), "available": _money(available), "at_pace": _money(available - spent), "cash": _money(balance)})
 
+    # Four paycheck windows, each filled the same way: what the paycheck carries in, what leaves it, what is left.
+    windows = []
+    carried = cash - due_before - buffer
+    for k in range(4):
+        start = next_payday + timedelta(days=14 * k)
+        end = start + timedelta(days=13)
+        after_end = end + timedelta(days=14)
+        in_window = [e for e in events if start <= e["date"] <= end and e["kind"] != "advance"]
+        adv = [e for e in events if e["kind"] == "advance" and (start <= e["date"] <= end or (k == 0 and e["date"] <= start))]
+        following = [e for e in events if end < e["date"] <= after_end and e["kind"] != "advance"]
+        aside = sum(e["amount"] for e in following if e["amount"] >= 500) / 2 + sum(e["amount"] for e in following if e["amount"] < 500)
+        bills_total = sum(e["amount"] for e in in_window)
+        adv_total = sum(e["amount"] for e in adv)
+        left = carried + expected_net - adv_total - bills_total - aside
+        windows.append({
+            "start": start.isoformat(), "end": end.isoformat(), "paycheck": _money(expected_net), "carried_in": _money(carried),
+            "advances": {"total": _money(adv_total), "items": [{**e, "date": e["date"].isoformat()} for e in adv]},
+            "bills": {"total": _money(bills_total), "items": [{**e, "date": e["date"].isoformat()} for e in in_window]},
+            "set_aside": {"total": _money(aside), "items": [{**e, "date": e["date"].isoformat()} for e in following]},
+            "buffer": _money(buffer) if k == 0 else 0.0,
+            "safe": _money(left),
+        })
+        carried = aside
+
+    # The calendar: every event for sixty days, paydays included, and each week's low point at the usual pace.
+    calendar_events = [{**e, "date": e["date"].isoformat()} for e in events if today <= e["date"] <= today + timedelta(days=60)]
+    for pd in sorted(pay_dates):
+        if today <= pd <= today + timedelta(days=60) and expected_net:
+            calendar_events.append({"date": pd.isoformat(), "name": "Payday", "amount": _money(-expected_net), "kind": "paycheck", "autopay": True, "source": f"income:{next_pay[1].id}" if next_pay else "income"})
+    calendar_events.sort(key=lambda e: e["date"])
+    weeks = []
+    week_start = today - timedelta(days=(today.weekday() + 1) % 7)  # the Sunday on or before today
+    while week_start <= today + timedelta(days=60):
+        week_end = week_start + timedelta(days=6)
+        in_week = [p for p in projection if week_start.isoformat() <= p["date"] <= week_end.isoformat()]
+        low = min(in_week, key=lambda p: p["at_pace"]) if in_week else None
+        weeks.append({"start": week_start.isoformat(), "end": week_end.isoformat(), "low": low["at_pace"] if low else None, "low_date": low["date"] if low else None})
+        week_start += timedelta(days=7)
+
     return {
         "version": "snapshot.v0",
         "as_of": today.isoformat(),
+        "windows": windows,
+        "calendar": {"events": calendar_events, "weeks": weeks},
         "accounts": [
             {"id": a.id, "name": a.name, "institution": a.institution, "kind": a.kind, "balance": a.balance, "balance_at": a.balance_at.isoformat() if a.balance_at else None, "connector": a.connector}
             for a in accounts

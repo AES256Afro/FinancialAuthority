@@ -19,9 +19,30 @@ export interface Event {
   source: string;
 }
 
+export interface Window {
+  start: string;
+  end: string;
+  paycheck: number;
+  carried_in: number;
+  advances: { total: number; items: Event[] };
+  bills: { total: number; items: Event[] };
+  set_aside: { total: number; items: Event[] };
+  buffer: number;
+  safe: number;
+}
+
+export interface CalendarWeek {
+  start: string;
+  end: string;
+  low: number | null;
+  low_date: string | null;
+}
+
 export interface Snapshot {
   version: string;
   as_of: string;
+  windows: Window[];
+  calendar: { events: Event[]; weeks: CalendarWeek[] };
   accounts: AccountRow[];
   cash: number;
   buffer: number;
