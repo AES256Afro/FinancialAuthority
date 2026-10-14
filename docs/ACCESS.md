@@ -48,6 +48,10 @@ Three free sources, stacked. Do the first two when M1 starts; the third is alrea
 - **Era Context, free tier.** One slot holds a healthy connection to the bank; the other is a redundant copy of the same bank that can be removed to make room for the credit union. The coding agent can remove the redundant one and produce the credit union's connection link on request; the sign-in on that link is the owner's.
 - **Bank alerts by mail.** In the bank's alert settings, turn on email alerts for every transaction, deposit, low balance and declined charge, to the address that lands in Proton. The app reads them the same quarter-hour.
 
+### 3a. Retirement and investment accounts (M1.3)
+
+The same Plaid keys reach the investment vendors: on the Investing page, **Sign in at the vendor** opens Plaid Link asking for the investments product, and Fidelity (NetBenefits), Vanguard, Schwab, Empower, Principal, Voya, TIAA, T. Rowe Price, John Hancock, Transamerica, Merrill, E*TRADE, Robinhood, Betterment, Wealthfront and Coinbase sign the owner in on their own page (their OAuth where they offer it) and hand back a read token with balances and holdings. A vendor Plaid does not reach (the Thrift Savings Plan, a pension) is added by hand with the balance from its last statement, and each statement email the vendor sends becomes a pending balance fact that updates it when confirmed. Nothing here asks for the vendor's password.
+
 ### 4. Gmail app password (M4.3)
 
 Google Account, Security, 2-Step Verification, App passwords: create one named for the app and paste it into the Connectors page. Never into chat.

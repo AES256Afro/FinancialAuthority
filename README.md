@@ -8,7 +8,7 @@ It answers three questions:
 2. **Should I buy this?** Yes, wait, or no, with the bill or buffer it would break.
 3. **Which billing dates should move?** So bills land after paydays, with the request to each biller drafted and sent once approved.
 
-Every morning it says what needs attention. Eight home views and three looks are switchable in Settings › Appearance; all of them render the same numbers. It never moves money. It reads, plans, drafts, and sends only with an approval. It pays nobody to see your own money.
+Every morning it says what needs attention. Eight home views and three looks are switchable in Settings › Appearance; all of them render the same numbers. Retirement and investment accounts (a 401(k), an IRA, a brokerage account, an HSA) come in by signing in at the vendor through Plaid's investments product, or by hand from each statement. Everything the app still needs from you is a tappable next step on every screen, landing on the exact button or box. It never moves money. It reads, plans, drafts, and sends only with an approval. It pays nobody to see your own money.
 
 **Status: M0 through M5, first cuts.** The engine's snapshot (windows, calendar, payments, paystubs, the usual pace, the brief), the purchase check and the billing-date optimiser, reports, net worth and the debt mountain; the Rocket Money loader with recurring detection and the export captured from mail; payment matching; live bank links through Plaid and Teller; all eight home views and the Today, Bills, Debts, Accounts, Reports, Paystubs, Mail, Ledger and Chat pages; the Needs-you flow; owner sign-in, the OAuth 2.1 server for claude.ai and Claude Code, API keys, the audit log; the scheduler; the MCP endpoint with sixteen tools; the mail connector for Proton (through the Bridge), Gmail and any IMAP mailbox with a rules-first classifier; and the two model roles, the advisor in the built-in chat and the reviewer with one-tap notes, over Ollama, any OpenAI-compatible server or Claude by API. Not deployed yet; that needs a shell on BigBox and the owner's keys.
 
@@ -54,7 +54,7 @@ claude mcp add --transport http financialauthority http://<host>:8430/mcp
 
 Anything without a browser takes an API key from Settings › Clients as a bearer token instead.
 
-The tools: `finance_snapshot`, `brief_today`, `purchase_check`, `watchlist`, `billing_dates_suggest`, `spending_summary`, `debts_list`, `accounts_list`, `transactions_search`, `recurring_list`, `bills_list`, `payments_list`, `paystubs_list`, `mail_search`, `mail_read`, `facts_pending`, `facts_confirm`, `jobs_status`. The REST mirror is under `/api/v1`.
+The tools: `finance_snapshot`, `brief_today`, `next_steps`, `purchase_check`, `watchlist`, `billing_dates_suggest`, `spending_summary`, `debts_list`, `investments_list`, `accounts_list`, `transactions_search`, `recurring_list`, `bills_list`, `payments_list`, `paystubs_list`, `mail_search`, `mail_read`, `mail_attachment`, `facts_pending`, `facts_confirm`, `mail_send_request`, `jobs_status`. The REST mirror is under `/api/v1`.
 
 ## Two models, neither of which calculates
 
