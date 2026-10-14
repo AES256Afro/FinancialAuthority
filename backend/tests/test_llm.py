@@ -303,3 +303,28 @@ def test_anthropic_converts_messages_and_streams_tool_use():
     body = seen["body"]
     assert seen["key"] == "sk-ant-x" and body["system"] == "Be brief." and body["tools"][0]["input_schema"]["type"] == "object"
     assert body["messages"][1]["content"][0]["type"] == "tool_use" and body["messages"][2]["content"][0] == {"type": "tool_result", "tool_use_id": "t0", "content": "{\"bills\": []}"}
+
+
+def test_ollama_falls_back_to_a_model_the_server_has():
+    from app.llm.providers import Ollama
+
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/tags":
+            return httpx.Response(200, json={"models": [{"name": "hermes3:8b"}, {"name": "qwen3:30b-a3b"}]})
+        body = json.loads(request.content)
+        calls.append(body["model"])
+        if body["model"] == "llama3.2":
+            return httpx.Response(404, json={"error": {"message": "model \"llama3.2\" not found, try pulling it first"}})
+        chunks = [{"choices": [{"delta": {"content": "ready"}}]}, {"choices": [], "usage": {"prompt_tokens": 3, "completion_tokens": 1}}]
+        return httpx.Response(200, text="".join(f"data: {json.dumps(c)}\n\n" for c in chunks) + "data: [DONE]\n\n", headers={"content-type": "text/event-stream"})
+
+    provider = Ollama("llama3.2", "http://ollama.test:11434", client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+
+    async def run():
+        return [e async for e in provider.chat([{"role": "user", "content": "hi"}])]
+
+    events = asyncio.run(run())
+    assert [e.type for e in events] == ["text", "usage", "done"] and events[0].text == "ready"
+    assert calls == ["llama3.2", "hermes3:8b"] and provider.model == "hermes3:8b"

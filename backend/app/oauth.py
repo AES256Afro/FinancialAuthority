@@ -8,6 +8,7 @@ API keys (fa_…) are accepted by the same verifier, so one bearer check serves 
 
 from __future__ import annotations
 
+import logging
 import hashlib
 import hmac
 import html
@@ -15,7 +16,7 @@ import json
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -27,6 +28,8 @@ from sqlmodel import select
 
 from . import auth, crypto
 from .config import settings
+
+log = logging.getLogger("fa.oauth")
 from .db import session_scope
 from .models import OAuthClient, OAuthCode, OAuthToken as TokenRow, utcnow
 
@@ -37,7 +40,21 @@ VALID_SCOPES = ["read", "confirm"]
 
 
 def issuer() -> str:
-    return (settings.public_url or f"http://localhost:{settings.port}").rstrip("/")
+    """The OAuth issuer: the published https address, or the loopback. An http address that is not the
+    loopback cannot be an issuer (RFC 8414 wants https, and the MCP SDK refuses to start with one), so the
+    app keeps running on the loopback issuer and says so once; the REST, the screens and API keys are unaffected."""
+    public = (settings.public_url or "").rstrip("/")
+    if public:
+        host = urlparse(public).hostname or ""
+        if public.startswith("https://") or host in ("localhost", "127.0.0.1", "::1"):
+            return public
+        if not _warned_issuer:
+            _warned_issuer.append(public)
+            log.warning("FA_PUBLIC_URL %s is not https, so it cannot be the OAuth issuer; connected apps sign in only once an https address is set. API keys work regardless.", public)
+    return f"http://localhost:{settings.port}"
+
+
+_warned_issuer: list[str] = []
 
 
 def _hash(value: str) -> str:
