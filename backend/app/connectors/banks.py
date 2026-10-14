@@ -14,6 +14,7 @@ from typing import Any
 from sqlmodel import Session, select
 
 from .. import crypto
+from ..engine.rules import apply_rules, rules_for
 from ..models import Account, BankLink, Transaction, utcnow
 from ..store import get_setting, set_setting
 
@@ -135,6 +136,7 @@ def upsert_transaction(session: Session, *, provider: str, tx_id: str, account: 
     row.is_transfer = category == "Transfer"
     row.is_card_payment = category == "Credit Card Payment"
     row.is_income = category == "Income" or (amount < 0 and category in ("Income", "Paycheck"))
+    apply_rules(rules_for(session), row)
     return new
 
 
