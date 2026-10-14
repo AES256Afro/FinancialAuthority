@@ -24,6 +24,7 @@ class Account(SQLModel, table=True):
     name: str
     institution: str = ""
     kind: str = "checking"  # checking | savings | cash | card | loan | bnpl | advance | investment
+    subtype: str = ""  # for investments: 401k | 403b | ira | roth_ira | brokerage | hsa | 529 | pension | crypto | other
     last4_enc: str = ""
     balance: float | None = None
     balance_at: dt.datetime | None = None
@@ -429,3 +430,32 @@ class Approval(SQLModel, table=True):
     sent_at: dt.datetime | None = None
     message_id: str = ""
     error: str = ""
+
+
+class Holding(SQLModel, table=True):
+    """One position inside an investment account: what it is, how much, what it is worth, and as of when."""
+
+    __tablename__ = "holdings"
+    id: int | None = Field(default=None, primary_key=True)
+    account_id: int = Field(foreign_key="accounts.id", index=True)
+    external_id: str = Field(default="", index=True)  # the vendor's security id, or manual:<name>
+    name: str = ""
+    ticker: str = ""
+    kind: str = "other"  # equity | etf | mutual fund | fixed income | cash | derivative | cryptocurrency | other
+    quantity: float | None = None
+    price: float | None = None
+    value: float | None = None
+    cost_basis: float | None = None
+    as_of: dt.datetime | None = None
+    updated_at: dt.datetime = Field(default_factory=utcnow)
+
+
+class BalanceSnapshot(SQLModel, table=True):
+    """An account's balance on a day, kept so net worth and each investment have a line over time."""
+
+    __tablename__ = "balance_snapshots"
+    __table_args__ = (UniqueConstraint("account_id", "date", name="uq_balance_day"),)
+    id: int | None = Field(default=None, primary_key=True)
+    account_id: int = Field(foreign_key="accounts.id", index=True)
+    date: dt.date = Field(index=True)
+    balance: float

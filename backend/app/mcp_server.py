@@ -306,6 +306,35 @@ def build_server() -> MCPServer:
             services.audit(session, client=client, client_kind="key", tool="watchlist", rows=len(out["items"]), redaction=redaction)
             return out
 
+    @server.tool(name="investments_list", annotations=READ_ONLY)
+    def investments_list() -> dict:
+        """Every investment and retirement account (401(k), IRA, brokerage, HSA and the rest) with its vendor,
+        balance and freshness, its holdings and allocation, the balance over time, and what the paychecks put in."""
+        from .engine.investments import investments_overview
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            out = investments_overview(session, _today())
+            if redaction != "full":
+                for item in out["items"]:
+                    item["name"], item["institution"] = item["what"], ""
+                    item["holdings"] = []
+            services.audit(session, client=client, client_kind="key", tool="investments_list", rows=len(out["items"]), redaction=redaction)
+            return out
+
+    @server.tool(name="next_steps", annotations=READ_ONLY)
+    def next_steps_tool() -> dict:
+        """What the app needs from the owner, each with the page to do it on: a vendor that wants a new sign-in,
+        a key to paste, a balance to update from a statement, a mailbox to fix, a send to approve. Point the owner
+        at the link; never pretend a step is done."""
+        from .engine.next_steps import next_steps
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            out = next_steps(session, _today())
+            services.audit(session, client=client, client_kind="key", tool="next_steps", rows=len(out["steps"]), redaction=redaction)
+            return out
+
     @server.tool(name="brief_today", annotations=READ_ONLY)
     def brief_today() -> dict:
         """What needs attention today, as the engine's own sentences: what clears before payday, what is past

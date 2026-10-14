@@ -15,7 +15,7 @@ from sqlmodel import Session, select
 
 from .. import crypto
 from ..engine.rules import apply_rules, rules_for
-from ..models import Account, BankLink, Transaction, utcnow
+from ..models import Account, BalanceSnapshot, BankLink, Holding, Transaction, utcnow
 from ..store import get_setting, set_setting
 
 SECRET_FIELDS = {"plaid": {"secret"}, "teller": {"certificate", "private_key"}}
@@ -96,7 +96,7 @@ def tx_hash(provider: str, tx_id: str) -> str:
     return sha256(f"{provider}:{tx_id}".encode()).hexdigest()
 
 
-def upsert_account(session: Session, *, provider: str, external_id: str, name: str, institution: str, kind: str, balance: float | None, last4: str = "") -> Account:
+def upsert_account(session: Session, *, provider: str, external_id: str, name: str, institution: str, kind: str, balance: float | None, last4: str = "", subtype: str = "") -> Account:
     row = session.exec(select(Account).where(Account.connector == provider, Account.external_id == external_id)).first()
     if row is None:
         row = Account(name=name or "Account", institution=institution, kind=kind, connector=provider, external_id=external_id)
@@ -104,6 +104,8 @@ def upsert_account(session: Session, *, provider: str, external_id: str, name: s
     row.name = name or row.name
     row.institution = institution or row.institution
     row.kind = kind
+    if subtype:
+        row.subtype = subtype
     if last4:
         try:
             row.last4_enc = crypto.encrypt(last4)
@@ -114,6 +116,31 @@ def upsert_account(session: Session, *, provider: str, external_id: str, name: s
         row.balance_at = utcnow()
     row.active = True
     session.flush()
+    if balance is not None:
+        record_balance(session, row, float(balance), utcnow().date(), commit=False)
+    return row
+
+
+def record_balance(session: Session, account: Account, balance: float, when: date, *, commit: bool = True) -> None:
+    """One balance per account per day, the latest winning, so every account has a line over time."""
+    row = session.exec(select(BalanceSnapshot).where(BalanceSnapshot.account_id == account.id, BalanceSnapshot.date == when)).first()
+    if row is None:
+        row = BalanceSnapshot(account_id=account.id, date=when, balance=round(float(balance), 2))
+    else:
+        row.balance = round(float(balance), 2)
+    session.add(row)
+    if commit:
+        session.commit()
+
+
+def upsert_holding(session: Session, *, account: Account, external_id: str, name: str, ticker: str, kind: str, quantity: float | None, price: float | None, value: float | None, cost_basis: float | None, as_of: datetime | None) -> Holding:
+    row = session.exec(select(Holding).where(Holding.account_id == account.id, Holding.external_id == external_id)).first()
+    if row is None:
+        row = Holding(account_id=account.id, external_id=external_id)
+    row.name, row.ticker, row.kind = name or row.name or "Holding", (ticker or "").upper(), kind or "other"
+    row.quantity, row.price, row.value, row.cost_basis = quantity, price, round(float(value), 2) if value is not None else None, cost_basis
+    row.as_of, row.updated_at = as_of, utcnow()
+    session.add(row)
     return row
 
 

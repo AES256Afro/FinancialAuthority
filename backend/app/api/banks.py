@@ -33,6 +33,7 @@ class TellerSettingsIn(BaseModel):
 
 class LinkTokenIn(BaseModel):
     link_id: int | None = None
+    purpose: str = "bank"  # bank | investments
 
 
 class ExchangeIn(BaseModel):
@@ -115,7 +116,8 @@ def plaid_link_token(body: LinkTokenIn | None = None, session: Session = Depends
 
         access_token = token_of(link)
     try:
-        return {"link_token": api.link_token(public_url=settings.public_url, access_token=access_token), "environment": bank_state(session, "plaid")["environment"]}
+        purpose = body.purpose if body and body.purpose in ("bank", "investments") else "bank"
+        return {"link_token": api.link_token(public_url=settings.public_url, access_token=access_token, purpose=purpose), "environment": bank_state(session, "plaid")["environment"]}
     except PlaidError as error:
         raise HTTPException(502, str(error)) from error
 

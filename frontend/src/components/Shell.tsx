@@ -1,8 +1,9 @@
 // The app shell: a rail on wide screens, tabs on a phone, and the header with the payday chip.
-import { BarChart3, BellDot, Clock, FileText, Landmark, List, Mail, MessageSquare, Mountain, Receipt, Settings, Waves } from "lucide-react";
+import { BarChart3, BellDot, Clock, FileText, Landmark, List, Mail, MessageSquare, Mountain, Receipt, Settings, TrendingUp, Waves } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 import { DEMO } from "../demo/shim";
+import { NextStepsStrip } from "./NextSteps";
 import { daysWord, longDate, shortDate } from "../format";
 import type { Snapshot } from "../types";
 
@@ -38,6 +39,7 @@ export function Shell({ children, snapshot, title }: { children: ReactNode; snap
     { to: "/paystubs", label: "Paystubs", icon: FileText, phone: false },
     { to: "/debts", label: "Debts", icon: Mountain, phone: false },
     { to: "/accounts", label: "Accounts", icon: Landmark, phone: false },
+    { to: "/investments", label: "Investing", icon: TrendingUp, phone: false },
     { to: "/reports", label: "Reports", icon: BarChart3, phone: false },
     { to: "/transactions", label: "Ledger", icon: List, phone: false },
     { to: "/mail", label: "Mail", icon: Mail, phone: false },
@@ -73,6 +75,7 @@ export function Shell({ children, snapshot, title }: { children: ReactNode; snap
           <div style={{ flexGrow: 1 }} />
           <div style={{ fontSize: 12, color: "var(--muted)" }}>{snapshot ? `${snapshot.accounts.length} accounts` : ""}</div>
         </header>
+        <NextStepsStrip />
         {children}
       </main>
       <nav className="tabs fixed left-0 right-0 bottom-0 flex justify-around items-start pt-2 md:hidden" aria-label="Tabs" style={{ height: 72, background: "var(--surface)", borderTop: "1px solid var(--hairline)" }}>

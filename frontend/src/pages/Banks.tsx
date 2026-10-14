@@ -1,7 +1,9 @@
 // Live bank links through Plaid (Trial plan) and Teller (developer tier): the bank's own login page opens in
 // the vendor's window; the app receives a token and reads with it. Nothing here ever asks for a bank password.
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, useApi } from "../api";
+import { loadScript, openPlaidLink } from "../plaid";
 
 interface LinkRow {
   id: number;
@@ -23,22 +25,6 @@ interface BanksOut {
   public_url: string;
 }
 
-const scripts: Record<string, Promise<void>> = {};
-function loadScript(src: string): Promise<void> {
-  if (!scripts[src]) {
-    scripts[src] = new Promise((resolve, reject) => {
-      const el = document.createElement("script");
-      el.src = src;
-      el.async = true;
-      el.onload = () => resolve();
-      el.onerror = () => reject(new Error(`Could not load ${src}`));
-      document.head.appendChild(el);
-    });
-  }
-  return scripts[src];
-}
-
-type PlaidGlobal = { create: (opts: { token: string; onSuccess: (publicToken: string, metadata: { institution?: { name?: string } }) => void; onExit?: (err: unknown) => void }) => { open: () => void } };
 type TellerGlobal = { setup: (opts: { applicationId: string; environment: string; products: string[]; onSuccess: (enrollment: { accessToken: string; enrollment: { id: string; institution: { name: string } } }) => void; onExit?: () => void }) => { open: () => void } };
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -56,6 +42,17 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
   const [teller, setTeller] = useState({ application_id: "", certificate: "", private_key: "", environment: "" });
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [params, setParams] = useSearchParams();
+  const wanted = { signin: params.get("signin"), sync: params.get("sync"), connect: params.get("connect") };
+  const synced = useRef<string | null>(null);
+  useEffect(() => {
+    // A next-step link lands here: a sync runs by itself; a sign-in or a connection is highlighted for the tap it needs.
+    if (wanted.sync && data && synced.current !== wanted.sync) {
+      synced.current = wanted.sync;
+      sync(Number(wanted.sync)).then(() => setParams({}, { replace: true }));
+    }
+  }, [wanted.sync, data]);  // eslint-disable-line react-hooks/exhaustive-deps
+  const highlight = (on: boolean) => (on ? { outline: "3px solid var(--warning)", outlineOffset: 2 } : {});
 
   async function savePlaid() {
     setBusy("plaid-save");
@@ -85,30 +82,11 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
     }
   }
 
-  async function connectPlaid(linkId?: number) {
+  async function connectPlaid(linkId?: number, purpose: "bank" | "investments" = "bank") {
     setBusy("plaid-connect");
     setNote(null);
     try {
-      const made = await api<{ link_token: string }>("/api/v1/banks/plaid/link_token", { method: "POST", body: JSON.stringify({ link_id: linkId ?? null }) });
-      await loadScript("https://cdn.plaid.com/link/v2/stable/link-initialize.js");
-      const Plaid = (window as unknown as { Plaid?: PlaidGlobal }).Plaid;
-      if (!Plaid) throw new Error("Plaid Link did not load");
-      const handler = Plaid.create({
-        token: made.link_token,
-        onSuccess: async (publicToken, metadata) => {
-          if (linkId) {
-            const r = await api<{ summary: string }>(`/api/v1/banks/${linkId}/sync`, { method: "POST" });
-            setNote(`Signed in again. ${r.summary}`);
-          } else {
-            const r = await api<{ link: LinkRow; sync: { summary: string } }>("/api/v1/banks/plaid/exchange", { method: "POST", body: JSON.stringify({ public_token: publicToken, institution: metadata.institution?.name ?? "" }) });
-            setNote(`${r.link.institution || "The bank"} is linked. ${r.sync.summary}`);
-          }
-          reload();
-          onChanged?.();
-        },
-        onExit: () => setBusy(null),
-      });
-      handler.open();
+      await openPlaidLink({ purpose, linkId, onDone: (m) => { setNote(m); reload(); onChanged?.(); }, onExit: () => setBusy(null) });
     } catch (e) {
       setNote((e as Error).message);
     } finally {
@@ -160,7 +138,7 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
   const p = data?.providers.plaid;
   const t = data?.providers.teller;
   return (
-    <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+    <section id="banks" className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
       <div>
         <strong>Banks, live</strong>
         <div style={{ fontSize: 13, color: "var(--ink-2)" }}>Transactions and balances straight from the bank, every four hours. Two free doors: Plaid's Trial plan (ten logins) and Teller's developer tier (a hundred). The bank's own login page opens in the vendor's window; this app only ever holds a read token, encrypted.</div>
@@ -177,7 +155,7 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
                   <td style={{ color: "var(--ink-2)" }}>{l.accounts.map((a) => `${a.name} (${a.kind})`).join(", ") || "none yet"}</td>
                   <td style={{ color: l.last_error ? "var(--critical)" : "var(--ink-2)" }}>{l.last_error || (l.last_sync_at ? l.last_sync_at.slice(0, 16).replace("T", " ") : "not yet")}</td>
                   <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                    {l.needs_login && l.provider === "plaid" && <button className="btn" type="button" onClick={() => connectPlaid(l.id)}>Sign in again</button>}{" "}
+                    {l.needs_login && l.provider === "plaid" && <button className="btn dark" type="button" style={highlight(wanted.signin === String(l.id))} onClick={() => connectPlaid(l.id)}>Sign in again at {l.institution || "the bank"}</button>}{" "}
                     <button className="btn" type="button" onClick={() => sync(l.id)}>Sync now</button> <button className="btn" type="button" onClick={() => remove(l.id)}>Remove</button>
                   </td>
                 </tr>
@@ -204,7 +182,8 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
           </Field>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button className="btn dark" type="button" disabled={busy !== null} onClick={savePlaid}>Save</button>
-            <button className="btn" type="button" disabled={!p?.configured || busy !== null} onClick={() => connectPlaid()}>{busy === "plaid-connect" ? "Opening…" : "Connect a bank through Plaid"}</button>
+            <button className="btn" type="button" disabled={!p?.configured || busy !== null} style={highlight(wanted.connect === "plaid")} onClick={() => connectPlaid()}>{busy === "plaid-connect" ? "Opening…" : "Connect a bank through Plaid"}</button>
+            <button className="btn" type="button" disabled={!p?.configured || busy !== null} onClick={() => connectPlaid(undefined, "investments")}>Connect a 401(k) or brokerage</button>
           </div>
         </div>
         <div style={{ border: "1px solid var(--hairline)", borderRadius: 12, padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -225,7 +204,7 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
           </Field>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button className="btn dark" type="button" disabled={busy !== null} onClick={saveTeller}>Save</button>
-            <button className="btn" type="button" disabled={!t?.configured || busy !== null} onClick={connectTeller}>{busy === "teller-connect" ? "Opening…" : "Connect a bank through Teller"}</button>
+            <button className="btn" type="button" disabled={!t?.configured || busy !== null} style={highlight(wanted.connect === "teller")} onClick={connectTeller}>{busy === "teller-connect" ? "Opening…" : "Connect a bank through Teller"}</button>
           </div>
         </div>
       </div>

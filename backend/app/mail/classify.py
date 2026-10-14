@@ -43,6 +43,7 @@ RULES: list[Rule] = [
     Rule("installment", "installment", subject=r"installment|pay in 4|your (loan|plan) (is )?(approved|confirmed)|autopay!?$|purchase (is )?complete", sender=r"affirm|klarna|afterpay|sezzle|paypal|zip", confidence=0.8),
     Rule("advance", "advance", sender=r"earnin|dave|brigit|moneylion|chime|cleo|empower", subject=r"advance|repay|cash out|your (advance|cash)", confidence=0.8),
     Rule("price-change", "price_change", subject=r"price (change|increase|update)|new price|rate (change|increase)|updating (our|your) (price|rate)s?"),
+    Rule("investment-statement", "investment_balance", sender=r"fidelity|netbenefits|vanguard|schwab|empower|principal|voya|tiaa|troweprice|t\.? ?rowe|johnhancock|transamerica|merrill|etrade|morganstanley|robinhood|betterment|wealthfront|coinbase|tsp\.gov|adp", subject=r"statement|balance|account (value|summary)|quarterly|your (401|retirement|ira|brokerage|portfolio)", confidence=0.8),
     Rule("bill-due", "bill_due", subject=r"(bill|invoice|statement) (is )?(ready|available|due)|amount due|payment (is )?due|due (on|tomorrow|soon|today)|your (monthly )?(bill|invoice)"),
     Rule("statement", "statement", subject=r"statement (is )?(ready|available|here)|e-?statement|monthly statement|account statement|your .* statement"),
 ]
@@ -127,6 +128,21 @@ def extract(kind: str, subject: str, text: str, ref: date | None = None) -> dict
         paid = _date_near(blob, ("on ", "date", "scheduled for", "posted"), ref)
         if paid:
             fields["paid_date"] = paid.isoformat()
+    if kind == "investment_balance":
+        balance = _amount_near(blob, ("ending balance", "account value", "total value", "current balance", "balance as of", "total balance", "your balance", "balance:", "value:", "market value", "vested balance"))
+        if balance is None:
+            a = AMOUNT.search(blob)
+            balance = float(a.group(1).replace(",", "")) if a else None
+        if balance is not None:
+            fields["balance"] = round(balance, 2)
+        as_of = _date_near(blob, ("as of", "ending", "statement date", "through", "period ending"), ref)
+        if as_of:
+            fields["as_of"] = as_of.isoformat()
+        low = blob.lower()
+        for key, word in (("401k", "401(k)"), ("401(k)", "401(k)"), ("403b", "403(b)"), ("roth", "Roth IRA"), ("ira", "IRA"), ("hsa", "HSA"), ("529", "529 plan"), ("brokerage", "brokerage"), ("pension", "pension")):
+            if key in low:
+                fields["what"] = word
+                break
     if kind == "bank_alert":
         low = blob.lower()
         fields["alert"] = "overdraft" if re.search(r"overdrawn|overdraft|negative balance", low) else "declined" if "declined" in low else "deposit" if re.search(r"deposit|received money", low) else "purchase" if re.search(r"purchase|transaction|charge", low) else "balance"
