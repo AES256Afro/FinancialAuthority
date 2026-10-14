@@ -1,5 +1,5 @@
 // The app shell: a rail on wide screens, tabs on a phone, and the header with the payday chip.
-import { BellDot, Clock, FileText, List, Mail, MessageSquare, Receipt, Settings, Waves } from "lucide-react";
+import { BarChart3, BellDot, Clock, FileText, Landmark, List, Mail, MessageSquare, Mountain, Receipt, Settings, Waves } from "lucide-react";
 import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 import { daysWord, longDate, shortDate } from "../format";
@@ -15,6 +15,9 @@ export function Shell({ children, snapshot, title }: { children: ReactNode; snap
     { to: "/confirm", label: "Needs you", icon: BellDot, badge: pending },
     { to: "/chat", label: "Chat", icon: MessageSquare },
     { to: "/paystubs", label: "Paystubs", icon: FileText, phone: false },
+    { to: "/debts", label: "Debts", icon: Mountain, phone: false },
+    { to: "/accounts", label: "Accounts", icon: Landmark, phone: false },
+    { to: "/reports", label: "Reports", icon: BarChart3, phone: false },
     { to: "/transactions", label: "Ledger", icon: List, phone: false },
     { to: "/mail", label: "Mail", icon: Mail, phone: false },
     { to: "/settings", label: "Settings", icon: Settings },
@@ -28,7 +31,7 @@ export function Shell({ children, snapshot, title }: { children: ReactNode; snap
   );
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexWrap: "wrap", background: "var(--ground)" }}>
-      <nav className="rail hidden md:flex" aria-label="Sections" style={{ flex: "0 0 76px", flexDirection: "column", gap: 2, padding: "14px 8px", boxSizing: "border-box", borderRight: "1px solid var(--hairline)" }}>
+      <nav className="rail hidden md:flex" aria-label="Sections" style={{ flex: "0 0 76px", flexDirection: "column", gap: 2, padding: "14px 8px", boxSizing: "border-box", borderRight: "1px solid var(--hairline)", position: "sticky", top: 0, maxHeight: "100vh", overflowY: "auto", alignSelf: "flex-start" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 36, marginBottom: 10 }}>
           <img src="/favicon.svg" width={28} height={28} alt="FinancialAuthority" />
         </div>
