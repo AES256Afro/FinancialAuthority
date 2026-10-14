@@ -59,6 +59,13 @@ class ClassifyIn(BaseModel):
     remaining: int | None = None
 
 
+@router.get("/paystubs")
+def list_paystubs(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+    from ..engine.paystubs import paystubs_overview
+
+    return paystubs_overview(session, limit=12)
+
+
 @router.get("/payments")
 def list_payments(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
     from ..engine.payments import payments_overview

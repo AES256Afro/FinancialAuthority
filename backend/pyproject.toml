@@ -15,6 +15,7 @@ dependencies = [
   "cryptography>=43",
   "itsdangerous>=2.2",
   "python-multipart>=0.0.18",
+  "pypdf>=5.1",
 ]
 
 [dependency-groups]

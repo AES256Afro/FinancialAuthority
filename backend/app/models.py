@@ -277,6 +277,29 @@ class MessageRef(SQLModel, table=True):
     created_at: dt.datetime = Field(default_factory=utcnow)
 
 
+class Paystub(SQLModel, table=True):
+    """One pay statement: the figures, the lines, the deposit it matched, and how it compares with the usual."""
+
+    __tablename__ = "paystubs"
+    id: int | None = Field(default=None, primary_key=True)
+    employer: str = ""
+    provider: str = ""
+    pay_date: dt.date = Field(index=True)
+    period_start: dt.date | None = None
+    period_end: dt.date | None = None
+    gross: float | None = None
+    net: float
+    hours: float | None = None
+    deductions: str = "[]"  # JSON list of {name, amount}
+    source: str = ""  # mail:<message ref id> | file:<name>
+    fact_id: int | None = Field(default=None, foreign_key="extracted_facts.id")
+    transaction_id: int | None = Field(default=None, foreign_key="transactions.id")
+    expected_net: float | None = None
+    difference: float | None = None
+    stub_hash: str = Field(index=True, unique=True)
+    created_at: dt.datetime = Field(default_factory=utcnow)
+
+
 class ExtractedFact(SQLModel, table=True):
     """Something the app took from a message or a document: pending until the owner, or an earned rule, confirms it."""
 

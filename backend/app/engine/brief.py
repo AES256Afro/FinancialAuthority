@@ -47,6 +47,8 @@ def build_brief(snap: dict) -> list[dict]:
     if past_due_notices:
         names = ", ".join(f["sender_name"] or f["subject"] for f in past_due_notices[:3])
         items.append({"severity": "critical", "text": f"Past-due notice{'s' if len(past_due_notices) > 1 else ''} in the mail from {names}.", "link": "/confirm"})
+    for stub in snap.get("paystubs", {}).get("short", [])[:1]:
+        items.append({"severity": "warning", "text": f"The {when(stub['pay_date'])} paystub was {money(-stub['difference'])} under the usual net of {money(stub['expected_net'])}.", "link": "/paystubs"})
     payments = snap.get("payments", {})
     if payments.get("past_due"):
         names = ", ".join(f"{p['name']} {money(p['amount'])}" for p in payments["past_due"][:3])
