@@ -168,6 +168,29 @@ def build_server() -> MCPServer:
             services.audit(session, client=client, client_kind="key", tool="bills_list", rows=len(rows), redaction=redaction)
             return {"bills": [bill_out(b) for b in rows]}
 
+    @server.tool(name="payments_list", annotations=READ_ONLY)
+    def payments_list() -> dict:
+        """Each bill period and whether it was paid, matched to the transaction that paid it; what is late and
+        what is past due."""
+        from .engine.payments import payments_overview
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            out = payments_overview(session, _today())
+            services.audit(session, client=client, client_kind="key", tool="payments_list", rows=sum(len(v) for v in out.values()), redaction=redaction)
+            return out
+
+    @server.tool(name="brief_today", annotations=READ_ONLY)
+    def brief_today() -> dict:
+        """What needs attention today, as the engine's own sentences: what clears before payday, what is past
+        due, where the usual pace dips under the buffer, what waits for the owner, and what is safe to spend.
+        Say these in your own words; do not change the numbers."""
+        client, redaction = _caller()
+        with session_scope() as session:
+            snap = finance_snapshot(session, _today())
+            services.audit(session, client=client, client_kind="key", tool="brief_today", rows=len(snap["brief"]), redaction=redaction)
+            return {"as_of": snap["as_of"], "brief": snap["brief"], "safe_to_spend": snap["safe_to_spend"], "next_paycheck": snap["next_paycheck"], "not_advice": snap["not_advice"]}
+
     @server.tool(name="jobs_status", annotations=READ_ONLY)
     def jobs_status() -> dict:
         """Whether the app is healthy: the scheduled jobs, their last runs, and the last self-check."""

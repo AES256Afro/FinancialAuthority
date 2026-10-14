@@ -128,17 +128,32 @@ def import_watch() -> str:
     return "; ".join(taken) if taken else "nothing new"
 
 
+def _today():
+    from ..api.routes import today
+
+    return today()
+
+
 def detect_recurring() -> str:
     """Find recurring series in the ledger and link them to the bills and incomes already known."""
-    from datetime import date
-
     from .detect import run_detection
 
     with session_scope() as session:
-        result = run_detection(session, date.today())
-        return f"{result['found']} series: {result['created']} new, {result['updated']} updated, {result['linked']} linked"
+        result = run_detection(session, _today())
+    matched = match_payments_job()
+    return f"{result['found']} series: {result['created']} new, {result['updated']} updated, {result['linked']} linked · {matched}"
+
+
+def match_payments_job() -> str:
+    """Match each bill period to its payment, or mark it late, then past due."""
+    from ..engine.payments import match_payments
+
+    with session_scope() as session:
+        counts = match_payments(session, _today())
+        return f"payments: {counts['paid']} paid, {counts['late']} late, {counts['past_due']} past due, {counts['scheduled']} scheduled"
 
 
 jobs.register("self_check", self_check, 3600, "Connector health, stale data, disk and database size")
 jobs.register("import_watch", import_watch, 300, "Import new files from the import folder")
-jobs.register("detect_recurring", detect_recurring, 6 * 3600, "Find recurring charges and paychecks in the ledger")
+jobs.register("detect_recurring", detect_recurring, 6 * 3600, "Find recurring charges and paychecks in the ledger, then match payments")
+jobs.register("match_payments", match_payments_job, 24 * 3600, "Match each bill period to its payment; mark late and past due")

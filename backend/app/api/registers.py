@@ -59,6 +59,20 @@ class ClassifyIn(BaseModel):
     remaining: int | None = None
 
 
+@router.get("/payments")
+def list_payments(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+    from ..engine.payments import payments_overview
+
+    return payments_overview(session, today())
+
+
+@router.post("/payments/match")
+def match_now(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    from ..engine.payments import match_payments
+
+    return match_payments(session, today())
+
+
 @router.post("/recurring/{series_id}/classify")
 def classify(series_id: int, body: ClassifyIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_scope("confirm"))) -> dict:
     series = session.get(RecurringSeries, series_id)
