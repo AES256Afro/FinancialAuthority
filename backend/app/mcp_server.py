@@ -386,6 +386,37 @@ def build_server() -> MCPServer:
             services.audit(session, client=client, client_kind="key", tool="weekly_checkin", args={}, rows=len(out["unexpected"]), redaction=redaction)
             return out
 
+    @server.tool(name="paycheck_views", annotations=READ_ONLY)
+    def paycheck_views_tool() -> dict:
+        """Each paycheck split into its parts in a fixed order (housing, bills, the card payment, pay-later and
+        advances, set aside, saving, yours): the next four checks as projected, the last six from the ledger,
+        the next six months, and the bills between paydays with whether their due day can move. Describe the
+        split with these figures."""
+        from .engine.paychecks import paycheck_views
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            out = paycheck_views(session, _today())
+            services.audit(session, client=client, client_kind="key", tool="paycheck_views", args={}, rows=len(out["windows"]) + len(out["history"]), redaction=redaction)
+            return out
+
+    @server.tool(name="billing_date_check", annotations=READ_ONLY)
+    def billing_date_check_tool(bill_id: int, day: int) -> dict:
+        """What moving one bill's due day to `day` (1 to 28) does to the sixty-day low point: better, worse or
+        the same, by how much, and the request to send the biller. The app only drafts; nothing is sent.
+
+        Args:
+            bill_id: The bill, from bills_list.
+            day: The new due day of the month, 1 to 28.
+        """
+        from .engine.decisions import date_move_check
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            out = date_move_check(session, _today(), bill_id, max(1, min(28, day)))
+            services.audit(session, client=client, client_kind="key", tool="billing_date_check", args={"bill_id": bill_id, "day": day}, rows=1, redaction=redaction)
+            return out
+
     @server.tool(name="purchase_check", annotations=READ_ONLY)
     def purchase_check_tool(amount: float, on: str | None = None, installments: int | None = None) -> dict:
         """Should the owner buy this? Yes, wait or no: whether the purchase keeps the honest line above zero

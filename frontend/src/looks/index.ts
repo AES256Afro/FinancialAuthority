@@ -14,12 +14,40 @@ export const LOOKS: Look[] = [
   { id: "console", name: "Console", description: "Darker still, squarer corners, a monospace face.", swatch: { ground: "#0b0d10", ink: "#f2f2ee", accent: "#199e70" } },
 ];
 
-export function applyLook(id: LookId): void {
-  document.documentElement.dataset.look = id;
+// The colour roles the owner may change, each tied to the palette slot it replaces and the CSS token it sets.
+export type Role = "housing" | "bills" | "card" | "later" | "aside" | "saving" | "yours";
+export const ROLES: { role: Role; label: string; slot: keyof ReturnType<typeof basePalette>; token: string }[] = [
+  { role: "housing", label: "Housing", slot: "housing", token: "--housing" },
+  { role: "bills", label: "Bills", slot: "bill", token: "--bill" },
+  { role: "card", label: "Card payment", slot: "debt", token: "--debt" },
+  { role: "later", label: "Pay-later and advances", slot: "later", token: "--later" },
+  { role: "aside", label: "Set aside", slot: "buffer", token: "--buffer" },
+  { role: "saving", label: "Saving", slot: "saving", token: "--saving" },
+  { role: "yours", label: "Yours", slot: "safe", token: "--safe" },
+];
+/** The categorical order the validator checks: set aside is a neutral and sits outside it. */
+export const VALIDATED_ORDER: Role[] = ["housing", "bills", "card", "later", "saving", "yours"];
+
+export type ColourOverrides = Partial<Record<"light" | "dark", Partial<Record<Role, string>>>>;
+let overrides: ColourOverrides | null = null;
+
+export function setColourOverrides(next: ColourOverrides | null): void {
+  overrides = next;
+  const root = document.documentElement;
+  const mode = (root.dataset.look ?? "light") === "light" ? "light" : "dark";
+  for (const r of ROLES) {
+    const v = next?.[mode]?.[r.role];
+    if (v) root.style.setProperty(r.token, v);
+    else root.style.removeProperty(r.token);
+  }
 }
 
-/** The chart series colours of a look, validated in both modes. */
-export function palette(id: LookId) {
+export function applyLook(id: LookId): void {
+  document.documentElement.dataset.look = id;
+  setColourOverrides(overrides);
+}
+
+function basePalette(id: LookId) {
   const dark = id !== "light";
   return {
     paycheck: dark ? "#3987e5" : "#2a78d6",
@@ -38,4 +66,18 @@ export function palette(id: LookId) {
     muted: "#85878f",
     hairline: dark ? "#2a2e36" : "#e4e1da",
   };
+}
+
+/** The validated default colour of each role in a mode. */
+export function defaultRoleColours(mode: "light" | "dark"): Record<Role, string> {
+  const p = basePalette(mode === "light" ? "light" : "dark");
+  return Object.fromEntries(ROLES.map((r) => [r.role, p[r.slot]])) as Record<Role, string>;
+}
+
+/** The chart colours of a look: the validated palette, with the owner's own role colours where they passed. */
+export function palette(id: LookId) {
+  const p = basePalette(id);
+  const mine = overrides?.[id === "light" ? "light" : "dark"];
+  if (mine) for (const r of ROLES) if (mine[r.role]) (p as Record<string, string>)[r.slot] = mine[r.role] as string;
+  return p;
 }

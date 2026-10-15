@@ -104,6 +104,29 @@ def checkin_record(body: CheckinIn, session: Session = Depends(get_session), _: 
     return record_checkin(session, today(), answers, finance_snapshot(session, today()))
 
 
+@router.get("/paychecks")
+def paychecks(session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
+    from ..engine.paychecks import paycheck_views
+
+    out = paycheck_views(session, today())
+    services.audit(session, client=principal.name, client_kind=_who(principal)[1], tool="paycheck_views", args={}, rows=len(out["windows"]) + len(out["history"]), redaction=principal.redaction)
+    return out
+
+
+@router.get("/bills/{bill_id}/move_check")
+def move_check(bill_id: int, day: int, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
+    from ..engine.decisions import date_move_check
+
+    if not 1 <= day <= 28:
+        raise HTTPException(400, "day is 1 to 28")
+    try:
+        out = date_move_check(session, today(), bill_id, day)
+    except KeyError as error:
+        raise HTTPException(404, "No such bill") from error
+    services.audit(session, client=principal.name, client_kind=_who(principal)[1], tool="billing_date_check", args={"bill_id": bill_id, "day": day}, rows=1, redaction=principal.redaction)
+    return out
+
+
 @router.get("/firstrun")
 def firstrun(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
     return firstrun_engine.firstrun(session)

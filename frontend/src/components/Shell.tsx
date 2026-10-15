@@ -2,12 +2,12 @@
 import { BarChart3, BellDot, Clock, FileText, Gauge, Landmark, List, Mail, MessageSquare, Mountain, PiggyBank, Receipt, Repeat, Settings, Telescope, TrendingUp, Truck, Waves } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink } from "react-router-dom";
+import { brandMark, brandName, useAppearance } from "../appearance";
 import { DEMO } from "../demo/shim";
 import { NextStepsStrip } from "./NextSteps";
 import { daysWord, longDate, shortDate } from "../format";
 import type { Snapshot } from "../types";
 
-const ICON = `${import.meta.env.BASE_URL}favicon.svg`;
 
 function DemoBanner() {
   const [flash, setFlash] = useState<string | null>(null);
@@ -28,6 +28,7 @@ function DemoBanner() {
 }
 
 export function Shell({ children, snapshot, title }: { children: ReactNode; snapshot: Snapshot | null; title?: string }) {
+  useAppearance();
   const today = snapshot?.as_of ?? new Date().toISOString().slice(0, 10);
   const pending = snapshot ? snapshot.pending.confirmations + snapshot.pending.approvals : 0;
   const NAV = [
@@ -63,7 +64,7 @@ export function Shell({ children, snapshot, title }: { children: ReactNode; snap
     <div style={{ flexGrow: 1, display: "flex", flexWrap: "wrap" }}>
       <nav className="rail hidden md:flex" aria-label="Sections" style={{ flex: "0 0 76px", flexDirection: "column", gap: 2, padding: "14px 8px", boxSizing: "border-box", borderRight: "1px solid var(--hairline)", position: "sticky", top: DEMO ? 30 : 0, maxHeight: "100vh", overflowY: "auto", alignSelf: "flex-start" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 36, marginBottom: 10 }}>
-          <img src={ICON} width={28} height={28} alt="FinancialAuthority" />
+          <img src={brandMark()} width={28} height={28} alt={brandName()} style={{ objectFit: "contain", borderRadius: 6 }} />
         </div>
         {NAV.map((n) => item(n, 20))}
       </nav>
