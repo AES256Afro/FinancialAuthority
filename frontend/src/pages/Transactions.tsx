@@ -37,7 +37,7 @@ export function Transactions() {
                   <tr key={t.id}>
                     <td style={{ whiteSpace: "nowrap" }}>{shortDate(t.date)}</td>
                     <td>{t.merchant}</td>
-                    <td style={{ color: "var(--ink-2)" }}>{t.category}</td>
+                    <td style={{ color: t.category === "Borrowing" ? "var(--critical)" : "var(--ink-2)", fontWeight: t.category === "Borrowing" ? 800 : 400 }}>{t.category}{t.category === "Borrowing" ? " · avoid" : ""}</td>
                     <td style={{ color: "var(--ink-2)" }}>{t.account}</td>
                     <td className="num" style={{ textAlign: "right" }}>{money(t.amount, { cents: true })}</td>
                   </tr>

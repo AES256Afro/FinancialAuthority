@@ -53,10 +53,13 @@ def detect_after(session: Session, result) -> dict:  # noqa: ANN001
     bills and paychecks on the next screen instead of after the six-hourly job."""
     if not result.inserted:
         return {}
+    from ..engine.borrowing import sync_borrowing
     from ..jobs.detect import run_detection
     from .routes import today
 
-    return run_detection(session, today())
+    out = run_detection(session, today())
+    sync_borrowing(session, today())
+    return out
 
 
 def plaid() -> PlaidConnector:

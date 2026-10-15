@@ -33,6 +33,7 @@ def _consistent(amounts: list[float]) -> bool:
 
 BILL_WORDS = ("rent", "mortgage", "loan", "insurance", "electric", "utilities", "utility", "water", "sewer", "trash", "internet", "phone", "cable", "wireless", "cell", "tuition", "childcare", "child care", "daycare", "hoa", "property tax", "power", "heating")
 SUBSCRIPTION_WORDS = ("streaming", "music", "subscription", "software", "gym", "fitness", "membership", "news", "entertainment", "services", "games", "apps", "app store", "cloud", "storage")
+BORROWING_WORDS = ("borrowing", "loan payment", "installment", "pay later", "advance")
 SPEND_WORDS = ("groceries", "grocery", "dining", "restaurant", "food", "shopping", "gas", "fuel", "transfer", "credit card payment", "financial", "atm", "travel", "transport", "pharmacy", "coffee", "general merchandise")
 
 
@@ -42,6 +43,8 @@ def suggest_kind(category: str, merchant: str = "", income: bool = False) -> str
     if income:
         return "income"
     text = f"{category} {merchant}".lower()
+    if any(w in text for w in BORROWING_WORDS) and "loan payment" not in text:
+        return "installment"
     bill = any(w in text for w in BILL_WORDS)
     subscription = any(w in text for w in SUBSCRIPTION_WORDS)
     if any(w in text for w in SPEND_WORDS) and not bill and not subscription:

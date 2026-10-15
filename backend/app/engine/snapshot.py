@@ -13,10 +13,10 @@ from sqlmodel import Session, select
 from ..models import Account, Advance, Approval, Bill, Debt, ExtractedFact, Income, InstallmentPlan, MessageRef, RecurringSeries, Transaction
 from ..store import get_setting
 from .cadence import next_paydays, payday_position
-from .projection import build_events, cash_of, line_of, next_due, project, projection_caveats, set_aside_of, split_windows, wdate  # noqa: F401
+from .projection import build_events, card_events, cash_of, line_of, next_due, project, projection_caveats, set_aside_of, split_windows, wdate  # noqa: F401
 
 PACE_DAYS = 56
-OBLIGATION_CATEGORIES = {"Rent", "Loan Payment", "Credit Card Payment", "Fees & Charges", "Insurance", "Bills & Utilities"}
+OBLIGATION_CATEGORIES = {"Rent", "Loan Payment", "Credit Card Payment", "Fees & Charges", "Insurance", "Bills & Utilities", "Borrowing"}
 
 
 def usual_pace(session: Session, today: date, bill_names: set[str]) -> dict:
@@ -91,6 +91,8 @@ def finance_snapshot(session: Session, today: date) -> dict:
     approvals_waiting = len(session.exec(select(Approval.id).where(Approval.status == "pending")).all())
 
     events = build_events(bills, plans, advances, today)
+    card_mode = (get_setting(session, "cards", {}) or {}).get("pay_from", "auto")
+    events = sorted(events + card_events([a for a in accounts if a.kind == "card"], paydays[:4], card_mode, today, debts), key=lambda e: e["date"])
     windows_split = split_windows(events, today, next_payday, following_payday, paydays[2])
     before, window, next_window, advances_due = windows_split["before"], windows_split["window"], windows_split["next_window"], windows_split["advances_due"]
 
@@ -168,6 +170,9 @@ def finance_snapshot(session: Session, today: date) -> dict:
 
     payments = payments_overview(session, today)
     paystubs = paystubs_overview(session)
+    from .borrowing import borrowing_summary
+
+    borrowing = borrowing_summary(session, today)
     snap = {
         "version": "snapshot.v0",
         "as_of": today.isoformat(),
@@ -175,6 +180,7 @@ def finance_snapshot(session: Session, today: date) -> dict:
         "calendar": {"events": calendar_events, "weeks": weeks},
         "payments": payments,
         "paystubs": paystubs,
+        "borrowing": borrowing,
         "accounts": [
             {"id": a.id, "name": a.name, "institution": a.institution, "kind": a.kind, "balance": a.balance, "balance_at": a.balance_at.isoformat() if a.balance_at else None, "connector": a.connector}
             for a in accounts

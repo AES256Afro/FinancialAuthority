@@ -195,10 +195,12 @@ def _today():
 
 def detect_recurring() -> str:
     """Find recurring series in the ledger and link them to the bills and incomes already known."""
+    from ..engine.borrowing import sync_borrowing
     from .detect import run_detection
 
     with session_scope() as session:
         result = run_detection(session, _today())
+        sync_borrowing(session, _today())
     matched = match_payments_job()
     return f"{result['found']} series: {result['created']} new, {result['updated']} updated, {result['linked']} linked · {matched}"
 

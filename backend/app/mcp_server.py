@@ -258,6 +258,23 @@ def build_server() -> MCPServer:
             services.audit(session, client=client, client_kind="key", tool="debts_list", rows=len(out["items"]), redaction=redaction)
             return out
 
+    @server.tool(name="borrowing", annotations=READ_ONLY)
+    def borrowing_tool() -> dict:
+        """Borrowing from pay: every advance (Earnin, Dave and the like) paired with its repayment and the fee
+        between them, the installment streams (Affirm and the like) and where each stands, what it all costs a
+        month and a year, what stands outstanding against the next paycheck, the cycle by payday, what the same
+        money would become, and the steps that end it. Explain with these figures; never call it a
+        recommendation, and never compute a rate of your own."""
+        from .engine.borrowing import borrowing_overview
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            out = borrowing_overview(session, _today())
+            if redaction != "full":
+                out["advances"] = [{k: v for k, v in a.items() if k != "sources"} for a in out["advances"]]
+            services.audit(session, client=client, client_kind="key", tool="borrowing", rows=len(out["advances"]) + len(out["installments"]), redaction=redaction)
+            return out
+
     @server.tool(name="purchase_check", annotations=READ_ONLY)
     def purchase_check_tool(amount: float, on: str | None = None, installments: int | None = None) -> dict:
         """Should the owner buy this? Yes, wait or no: whether the purchase keeps the honest line above zero

@@ -7,7 +7,7 @@ import calendar
 from datetime import date, timedelta
 
 from ..models import Account, Advance, Bill, InstallmentPlan
-from .cadence import payday_for
+from .cadence import payday_for, payday_position
 
 SPENDABLE_KINDS = {"checking", "cash"}
 CASH_KINDS = {"checking", "savings", "cash"}
@@ -80,6 +80,37 @@ def build_events(bills: list[Bill], plans: list[InstallmentPlan], advances: list
     for a in advances:
         events.append({"date": a.repay_date, "name": f"{a.provider} repays", "amount": _money(a.amount + a.fee), "kind": "advance", "autopay": True, "source": f"advance:{a.id}", "line": "debt"})
     events.sort(key=lambda e: e["date"])
+    return events
+
+
+def card_events(cards: list[Account], paydays: list[date], mode: str, today: date, debts: list | None = None) -> list[dict]:
+    """What the card takes from the coming checks. "auto" (the default) reserves the minimum on its due day
+    when a debt row knows it, and otherwise the whole balance split across the next two checks; "split",
+    "next", "mid" and "end" reserve the whole balance as the owner pays it; "minimum" only the minimum; "off"
+    nothing. Spending on the card is already in the pace; this is the money already owed."""
+    events: list[dict] = []
+    if not paydays or mode == "off":
+        return events
+    for a in cards:
+        balance = float(a.balance or 0.0)
+        if balance <= 0:
+            continue
+        debt = next((d for d in (debts or []) if (getattr(d, "account_id", None) == a.id) or (d.name or "").strip().lower() == (a.name or "").strip().lower()), None)
+        if mode == "minimum" or (mode == "auto" and debt is not None and (debt.minimum or 0) > 0):
+            if debt is None or not (debt.minimum or 0):
+                continue
+            due = next_due(int(debt.due_day or paydays[0].day), today)
+            events.append({"date": due, "window_date": due, "name": f"{a.name} minimum", "amount": _money(min(float(debt.minimum), balance)), "kind": "card_payment", "autopay": False, "source": f"debt:{debt.id}", "line": "debt", "paid_from": "due"})
+            continue
+        if mode in ("split", "auto") and len(paydays) > 1:
+            shares = [(paydays[0], round(balance / 2, 2)), (paydays[1], round(balance - round(balance / 2, 2), 2))]
+        elif mode in ("mid", "end"):
+            when = next((d for d in paydays if payday_position(d) == mode), paydays[0])
+            shares = [(when, balance)]
+        else:
+            shares = [(paydays[0], balance)]
+        for when, amount in shares:
+            events.append({"date": when, "window_date": when, "name": f"{a.name} payment", "amount": _money(amount), "kind": "card_payment", "autopay": False, "source": f"account:{a.id}", "line": "debt", "paid_from": mode})
     return events
 
 

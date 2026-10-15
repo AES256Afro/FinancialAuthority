@@ -8,6 +8,7 @@ import { Bills } from "./pages/Bills";
 import { Chat } from "./pages/Chat";
 import { Clients } from "./pages/Clients";
 import { Confirm } from "./pages/Confirm";
+import { Borrowing } from "./pages/Borrowing";
 import { Debts } from "./pages/Debts";
 import { Connectors } from "./pages/Connectors";
 import { Home } from "./pages/Home";
@@ -55,6 +56,7 @@ export default function App() {
         <Route path="/chat" element={body((s) => <Chat snapshot={s} onChanged={snapshot.reload} />)} />
         <Route path="/paystubs" element={<Paystubs />} />
         <Route path="/debts" element={<Debts />} />
+        <Route path="/borrowing" element={<Borrowing />} />
         <Route path="/accounts" element={<Accounts />} />
         <Route path="/investments" element={<Investments />} />
         <Route path="/outlook" element={<Outlook />} />

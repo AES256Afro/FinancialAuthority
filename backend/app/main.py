@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import auth, oauth
-from .api import approvals, banks, goals, imports, investments, ledger_rules, llm, mail, projections, push, registers, routes, tools
+from .api import approvals, banks, borrowing, goals, imports, investments, ledger_rules, llm, mail, projections, push, registers, routes, tools
 from .config import settings
 from .db import init_db, session_scope
 from .engine.household import seed
@@ -65,6 +65,7 @@ app.include_router(approvals.router)
 app.include_router(tools.router)
 app.include_router(goals.router)
 app.include_router(ledger_rules.router)
+app.include_router(borrowing.router)
 app.include_router(investments.router)
 app.include_router(imports.router)
 app.include_router(projections.router)

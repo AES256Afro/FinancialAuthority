@@ -75,6 +75,11 @@ def next_steps(session: Session, today: date) -> dict:
                 target = f"/settings/connectors?sync={link.id}" if link else "/settings/connectors#banks"
                 steps.append(_step(f"invest-stale-{a.id}", "warning", f"{what}: the balance is {age} days old. Sync at the vendor.", "Sync", target, f"account:{a.id}"))
 
+    from .borrowing import borrowing_summary
+
+    borrowing = borrowing_summary(session, today)
+    if borrowing["fees_90d"] > 0 or borrowing["outstanding"]:
+        steps.append(_step("borrowing", "warning", f"Borrowing cost ${borrowing['fees_90d']:,.0f} in fees in the last 90 days" + (f"; {borrowing['outstanding']} advance{'s' if borrowing['outstanding'] != 1 else ''} still out" if borrowing["outstanding"] else "") + ". The cycle, its cost and the way out are laid out.", "Borrowing", "/borrowing", "borrowing"))
     if session.exec(select(Paystub.id)).first() is None:
         steps.append(_step("paystub-none", "info", "No paystub yet: forward a pay statement PDF to the mailbox, or drop it into Imports.", "Paystubs", "/paystubs", "paystubs"))
 
