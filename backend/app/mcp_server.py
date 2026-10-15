@@ -319,6 +319,73 @@ def build_server() -> MCPServer:
             services.audit(session, client=client, client_kind="key", tool="readiness", args={"move_date": move_date}, rows=len(out["items"]), redaction=redaction)
             return out
 
+    @server.tool(name="accounts_cover", annotations=READ_ONLY)
+    def accounts_cover_tool() -> dict:
+        """For every account, what leaves it before each of the next two paydays, what it holds and the
+        difference, with the rows behind each figure; each card's statement day, projected statement balance and
+        utilisation; savings against the next rung; and the payday sheet, the moves that would cover it in date
+        order. The app never moves money: say what the owner would move, with these figures."""
+        from .engine.cover import account_cover
+        from .engine.saving import saving_plan
+        from .engine.snapshot import finance_snapshot
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            snap = finance_snapshot(session, _today())
+            out = account_cover(session, _today(), saving=saving_plan(session, _today(), snap=snap))
+            services.audit(session, client=client, client_kind="key", tool="accounts_cover", args={}, rows=len(out["accounts"]), redaction=redaction)
+            return out
+
+    @server.tool(name="saving_plan", annotations=READ_ONLY)
+    def saving_plan_tool() -> dict:
+        """The saving ladder: five rungs computed from the owner's bills (a starter, one pay period of must-pays,
+        one, three and six months), the balance against each, the date each is reached at the chosen share of
+        what each check leaves (or the suggested share, said so), the same at every share from 0 to 60 percent,
+        and the rollover of finished pay-later payments. Report the engine's dates; never call them advice."""
+        from .engine.saving import saving_plan
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            out = saving_plan(session, _today())
+            services.audit(session, client=client, client_kind="key", tool="saving_plan", args={}, rows=len(out["rungs"]), redaction=redaction)
+            return out
+
+    @server.tool(name="today_one_thing", annotations=READ_ONLY)
+    def today_one_thing_tool() -> dict:
+        """The single most useful action today with why and where, the next two, and the streaks counted from
+        the ledger (days without an advance, bills paid on time in a row, checks with money saved, weekly
+        check-ins). Lead with the one thing; do not add actions of your own."""
+        from .engine.cover import account_cover
+        from .engine.guide import one_thing
+        from .engine.saving import saving_plan
+        from .engine.snapshot import finance_snapshot
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            snap = finance_snapshot(session, _today())
+            cov = account_cover(session, _today(), saving=saving_plan(session, _today(), snap=snap))
+            out = one_thing(session, _today(), snap=snap, cover=cov)
+            services.audit(session, client=client, client_kind="key", tool="today_one_thing", args={}, rows=1 + len(out["others"]), redaction=redaction)
+            return out
+
+    @server.tool(name="weekly_checkin", annotations=READ_ONLY)
+    def weekly_checkin_tool() -> dict:
+        """This week's check-in from the ledger: the largest unexpected charges, one subscription to keep or
+        drop, each card near its statement day, what moved into savings, the week's coming payments, and one
+        line against last week. Ask the questions; the owner answers on the Check-in page."""
+        from .engine.cover import account_cover
+        from .engine.guide import weekly_checkin
+        from .engine.saving import saving_plan
+        from .engine.snapshot import finance_snapshot
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            snap = finance_snapshot(session, _today())
+            cov = account_cover(session, _today(), saving=saving_plan(session, _today(), snap=snap))
+            out = weekly_checkin(session, _today(), snap=snap, cover=cov)
+            services.audit(session, client=client, client_kind="key", tool="weekly_checkin", args={}, rows=len(out["unexpected"]), redaction=redaction)
+            return out
+
     @server.tool(name="purchase_check", annotations=READ_ONLY)
     def purchase_check_tool(amount: float, on: str | None = None, installments: int | None = None) -> dict:
         """Should the owner buy this? Yes, wait or no: whether the purchase keeps the honest line above zero

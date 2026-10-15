@@ -27,6 +27,11 @@ export function palette(id: LookId) {
     safe: dark ? "#199e70" : "#1baf7a",
     debt: dark ? "#9085e9" : "#4a3aa7",
     buffer: dark ? "#3a3f49" : "#c3c2b7",
+    // The parts of a paycheck, in their fixed order (housing, bills, card, pay-later, set aside, saving, yours).
+    // Adjacent pairs pass the colour-blind validator in both modes; every picture also labels each part.
+    housing: dark ? "#3987e5" : "#2a78d6",
+    later: dark ? "#d55181" : "#e87ba4",
+    saving: dark ? "#c98500" : "#eda100",
     surface: dark ? (id === "console" ? "#14171c" : "#1b1e24") : "#ffffff",
     ink: dark ? "#f2f2ee" : "#141518",
     ink2: dark ? "#b9bcc6" : "#4e5058",
