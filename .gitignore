@@ -34,3 +34,4 @@ Thumbs.db
 # The static demo: generated from the synthetic household, never committed
 frontend/dist-demo/
 frontend/demo/demo-data.json
+.samples/
