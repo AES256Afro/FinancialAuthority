@@ -76,7 +76,7 @@ def test_plaid_settings_link_exchange_sync_cursor_and_removal(owner: TestClient)
         assert owner.post("/api/v1/banks/plaid/link_token", json={}).status_code == 409
 
         saved = owner.put("/api/v1/banks/plaid/settings", json={"client_id": "cid", "secret": "s3cret-value-77", "environment": "sandbox"}).json()
-        assert saved["providers"]["plaid"] == {"configured": True, "environment": "sandbox", "client_id": "cid", "secret_set": True}
+        assert saved["providers"]["plaid"] == {"configured": True, "environment": "sandbox", "client_id": "cid", "secret_set": True, "keys": {"result": "ok", "message": "Plaid accepts the keys for sandbox.", "environment": "sandbox"}}
         assert "s3cret-value-77" not in json.dumps(saved)
         with Session(engine) as session:
             raw = get_setting(session, "banks.secrets")["plaid"]["secret"]
@@ -235,5 +235,33 @@ def test_link_token_falls_back_when_the_redirect_uri_is_not_registered(owner: Te
         again = owner.post("/api/v1/banks/plaid/link_token", json={}).json()
         assert again["oauth_redirect"]["ok"] is True and "redirect_uri" in seen[-1]
         assert "plaid-redirect" not in {s["id"] for s in owner.get("/api/v1/next_steps").json()["steps"]}
+    finally:
+        CONNECTORS["plaid"].client_factory = None
+
+
+def test_saving_plaid_keys_names_a_sandbox_secret_set_to_production(owner: TestClient):
+    """Plaid issues one secret per environment; the sandbox secret with the environment on production is the usual
+    slip, and the page and the next steps must say so instead of a bare 'invalid keys'."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path != "/link/token/create":
+            return httpx.Response(404, json={"error_code": "NOT_FOUND"})
+        if request.url.host.startswith("production"):
+            return httpx.Response(400, json={"error_type": "INVALID_INPUT", "error_code": "INVALID_API_KEYS", "error_message": "invalid client_id or secret provided"})
+        return httpx.Response(200, json={"link_token": "link-sandbox-ok"})
+
+    CONNECTORS["plaid"].client_factory = lambda: httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        out = owner.put("/api/v1/banks/plaid/settings", json={"client_id": "cid", "secret": "sandbox-secret-value", "environment": "production"}).json()
+        keys = out["providers"]["plaid"]["keys"]
+        assert keys["result"] == "sandbox_secret" and "production secret" in keys["message"] and keys["environment"] == "production"
+        refused = owner.post("/api/v1/banks/plaid/link_token", json={})
+        assert refused.status_code == 502 and "sandbox one" in refused.json()["detail"]
+        steps = {s["id"]: s for s in owner.get("/api/v1/next_steps").json()["steps"]}
+        assert steps["plaid-keys"]["severity"] == "warning" and steps["plaid-keys"]["link"] == "/settings/connectors#banks"
+        assert "plaid-sandbox" not in steps  # the environment is production; the key verdict is the one step that matters
+        out = owner.put("/api/v1/banks/plaid/settings", json={"environment": "sandbox"}).json()
+        assert out["providers"]["plaid"]["keys"]["result"] == "ok"
+        assert "plaid-keys" not in {s["id"] for s in owner.get("/api/v1/next_steps").json()["steps"]}
     finally:
         CONNECTORS["plaid"].client_factory = None

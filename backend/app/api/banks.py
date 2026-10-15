@@ -69,7 +69,7 @@ def link_out(session: Session, link: BankLink) -> dict:
 def overview(session: Session) -> dict:
     links = session.exec(select(BankLink).where(BankLink.active == True).order_by(BankLink.created_at)).all()  # noqa: E712
     return {
-        "providers": {"plaid": bank_state(session, "plaid"), "teller": bank_state(session, "teller")},
+        "providers": {"plaid": {**bank_state(session, "plaid"), "keys": (get_setting(session, "banks.plaid", {}) or {}).get("keys")}, "teller": bank_state(session, "teller")},
         "links": [link_out(session, l) for l in links],
         "can_store_secrets": bool(settings.data_key),
         "public_url": settings.public_url,
@@ -89,7 +89,17 @@ def put_plaid(body: PlaidSettingsIn, session: Session = Depends(get_session), _:
         save_bank_settings(session, "plaid", body.model_dump(exclude_unset=True))
     except crypto.DataKeyMissing as error:
         raise HTTPException(409, str(error)) from error
+    api = plaid().api(session)
+    if api is not None:
+        record_key_check(session, api)
     return overview(session)
+
+
+def record_key_check(session: Session, api) -> dict[str, str]:  # noqa: ANN001
+    """Try the keys once and keep the verdict where the page and the next steps can show it."""
+    verdict = api.check_keys()
+    set_setting(session, "banks.plaid", {**(get_setting(session, "banks.plaid", {}) or {}), "keys": {**verdict, "environment": api.environment}})
+    return verdict
 
 
 @router.put("/teller/settings")
@@ -121,8 +131,11 @@ def plaid_link_token(body: LinkTokenIn | None = None, session: Session = Depends
     oauth = {"ok": uri is not None, "uri": uri}
     try:
         token = api.link_token(public_url=settings.public_url, access_token=access_token, purpose=purpose)
+        state = get_setting(session, "banks.plaid", {}) or {}
+        state["keys"] = {"result": "ok", "message": f"Plaid accepts the keys for {api.environment}.", "environment": api.environment}
         if uri:
-            set_setting(session, "banks.plaid", {**(get_setting(session, "banks.plaid", {}) or {}), "redirect_ok": True, "redirect_uri": uri})
+            state.update(redirect_ok=True, redirect_uri=uri)
+        set_setting(session, "banks.plaid", state)
     except PlaidError as error:
         if uri and "redirect uri" in str(error).lower():
             # The URI is not registered in the Plaid dashboard yet. Banks that sign in without OAuth can still
@@ -133,6 +146,8 @@ def plaid_link_token(body: LinkTokenIn | None = None, session: Session = Depends
                 token = api.link_token(public_url=settings.public_url, access_token=access_token, purpose=purpose, redirect=False)
             except PlaidError as again:
                 raise HTTPException(502, str(again)) from again
+        elif getattr(error, "code", "") == "INVALID_API_KEYS":
+            raise HTTPException(502, record_key_check(session, api)["message"]) from error
         else:
             raise HTTPException(502, str(error)) from error
     return {"link_token": token, "environment": bank_state(session, "plaid")["environment"], "oauth_redirect": oauth}
