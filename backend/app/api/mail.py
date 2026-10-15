@@ -16,7 +16,7 @@ from ..db import get_session
 from ..engine.recurring import merchant_key
 from ..mail.box import box_untrusted
 from ..mail.imap import parse_message
-from ..models import Account, Bill, ExtractedFact, MailAccount, MessageRef, utcnow
+from ..models import Account, Bill, ExtractedFact, InstallmentPlan, MailAccount, MessageRef, utcnow
 from .routes import today
 
 router = APIRouter(prefix="/api/v1", tags=["mail"])
@@ -287,6 +287,7 @@ class ConfirmIn(BaseModel):
     amount: float | None = None
     due_date: date | None = None
     autopay: bool | None = None
+    remaining: int | None = None
 
 
 def apply_fact(session: Session, fact: ExtractedFact, ref: MessageRef | None, body: ConfirmIn) -> str:
@@ -326,6 +327,13 @@ def apply_fact(session: Session, fact: ExtractedFact, ref: MessageRef | None, bo
         session.flush()
         record_balance(session, account, float(balance), as_of, commit=False)
         return f"account:{account.id}"
+    if fact.kind == "installment":
+        from ..engine.borrowing import plan_from_fields
+
+        plan = plan_from_fields(session, fields, body.amount, body.remaining, today())
+        if plan is None:
+            raise HTTPException(400, "A plan needs the lender's schedule, or an amount and the payments left; add them to the confirmation")
+        return f"plan:{plan.id}"
     if fact.kind in ("bill_due", "past_due", "price_change"):
         name = (body.name or fields.get("name") or fields.get("sender_name") or (ref.sender_name if ref else "") or "Bill").strip()
         amount = body.amount if body.amount is not None else fields.get("amount")

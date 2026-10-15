@@ -77,6 +77,15 @@ def build_events(bills: list[Bill], plans: list[InstallmentPlan], advances: list
             events.append({"date": d, "window_date": window_date(d, paid_from), "name": b.name, "amount": _money(b.amount), "kind": b.kind, "autopay": b.autopay, "source": f"bill:{b.id}", "line": line_of(b.category, b.kind), "bill_id": b.id, "paid_from": paid_from, "from_kind": from_kind, "from_account_id": b.pay_from_account_id})
             d = next_due(due_day, d + timedelta(days=1))
     for p in plans:
+        schedule = _schedule_of(p)
+        if schedule:
+            upcoming = [s for s in schedule if date.fromisoformat(s["date"]) >= today][-max(0, p.remaining):] if p.remaining else []
+            for i, s in enumerate(upcoming):
+                when = date.fromisoformat(s["date"])
+                if when > today + timedelta(days=90):
+                    break
+                events.append({"date": when, "name": f"{p.merchant or p.provider} {p.count - len(upcoming) + i + 1} of {p.count}", "amount": _money(s["amount"]), "kind": "installment", "autopay": True, "source": f"plan:{p.id}", "line": "debt", "interest": s.get("interest", 0.0)})
+            continue
         d, left = p.next_date, p.remaining
         while left > 0 and d <= today + timedelta(days=90):
             events.append({"date": d, "name": f"{p.merchant} {p.count - left + 1} of {p.count}", "amount": _money(p.installment), "kind": "installment", "autopay": True, "source": f"plan:{p.id}", "line": "debt"})
@@ -189,6 +198,16 @@ def assemble(*, bills: list[Bill], plans: list[InstallmentPlan], advances: list[
     math = sorted(cash + payoffs, key=lambda e: e["date"])
     display = sorted(cash + payoffs + card_bills, key=lambda e: e["date"])
     return {"math": math, "display": display, "card_bills": card_bills, "payoffs": payoffs}
+
+
+def _schedule_of(p: InstallmentPlan) -> list[dict]:
+    import json
+
+    try:
+        rows = json.loads(getattr(p, "schedule", "") or "[]")
+    except ValueError:
+        return []
+    return sorted((r for r in rows if r.get("date") and r.get("amount")), key=lambda r: r["date"])
 
 
 def set_aside_of(items: list[dict]) -> float:
