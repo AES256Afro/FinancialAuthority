@@ -10,6 +10,7 @@ from email.message import EmailMessage
 from email.utils import make_msgid
 
 from ..models import MailAccount
+from .imap import sidecar_port
 
 LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1", "bridge", "host.docker.internal")
 
@@ -32,10 +33,11 @@ def send_message(account: MailAccount, password: str, *, to: str, subject: str, 
     message["Subject"] = subject
     message["Message-ID"] = make_msgid(domain=account.username.split("@")[-1] if "@" in account.username else None)
     message.set_content(body)
+    port = sidecar_port(account.smtp_host, account.smtp_port)
     if account.smtp_ssl:
-        server: smtplib.SMTP = smtplib.SMTP_SSL(account.smtp_host, account.smtp_port, context=_context(account.smtp_host), timeout=timeout)
+        server: smtplib.SMTP = smtplib.SMTP_SSL(account.smtp_host, port, context=_context(account.smtp_host), timeout=timeout)
     else:
-        server = smtplib.SMTP(account.smtp_host, account.smtp_port, timeout=timeout)
+        server = smtplib.SMTP(account.smtp_host, port, timeout=timeout)
     with server:
         if not account.smtp_ssl and account.smtp_starttls:
             server.starttls(context=_context(account.smtp_host))

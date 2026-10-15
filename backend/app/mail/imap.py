@@ -112,10 +112,21 @@ def parse_message(raw: bytes) -> Parsed:
     return Parsed(message_id=msg.get("Message-ID", "") or "", sender=sender.lower(), sender_name=sender_name, subject=msg.get("Subject", "") or "", date=date, text=text or "", html=html or "", attachments=attachments, links=links)
 
 
+# The Bridge sidecar forwards the Bridge's loopback ports to the standard ones, so from the app's container
+# it answers on 143 (IMAP) and 25 (SMTP). The Bridge's own info screen still prints 1143 and 1025, and that is
+# what an owner types; both mean the sidecar.
+SIDECAR_PORTS = {1143: 143, 1025: 25}
+
+
+def sidecar_port(host: str, port: int) -> int:
+    return SIDECAR_PORTS.get(port, port) if host == "bridge" else port
+
+
 class ImapClient:
     """imaplib with the few calls the connector needs, every folder opened read-only."""
 
     def __init__(self, host: str, port: int, username: str, password: str, use_ssl: bool = True, starttls: bool = False, timeout: int = 30) -> None:
+        port = sidecar_port(host, port)
         self.host, self.port, self.username, self.password, self.use_ssl, self.starttls, self.timeout = host, port, username, password, use_ssl, starttls, timeout
         self.conn: imaplib.IMAP4 | None = None
 

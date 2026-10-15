@@ -30,7 +30,7 @@ def test_queue_approve_deny_allowances_and_scopes(owner: TestClient, client: Tes
 
     # With a mailbox that has an SMTP server, approving sends through it with the stored password.
     made = owner.post("/api/v1/mail/accounts", json={"kind": "proton", "label": "Proton", "username": "owner@example.test", "password": "bridge-pass"}).json()
-    assert made["smtp_host"] == "bridge" and made["smtp_port"] == 1025
+    assert made["smtp_host"] == "bridge" and made["smtp_port"] == 25
     second = owner.post("/api/v1/approvals", json={"to": "support@example-loan.test", "subject": "Due date", "body": "Please move it to the 13th."}).json()
     edited = owner.put(f"/api/v1/approvals/{second['id']}", json={"subject": "Due date change request"}).json()
     assert edited["subject"] == "Due date change request"

@@ -24,7 +24,7 @@ function MailboxForm({ presets, onSaved }: { presets: Record<string, Preset>; on
   const [kind, setKind] = useState<"proton" | "gmail" | "imap">("proton");
   const [label, setLabel] = useState("Proton");
   const [host, setHost] = useState(presets.proton?.host ?? "bridge");
-  const [port, setPort] = useState(String(presets.proton?.port ?? 1143));
+  const [port, setPort] = useState(String(presets.proton?.port ?? 143));
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [folders, setFolders] = useState("INBOX");
@@ -79,6 +79,14 @@ function MailboxForm({ presets, onSaved }: { presets: Record<string, Preset>; on
         ))}
       </div>
       <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{presets[kind]?.help}</div>
+      {kind === "proton" && (
+        <div style={{ display: "grid", gap: 6, fontSize: 12, color: "var(--ink-2)", background: "var(--surface-2)", borderRadius: 8, padding: 10 }}>
+          <div><strong>1. Sign in to the Bridge, once.</strong> Over SSH to the server, in the app's folder. At its prompt type <code>login</code>, then your Proton address, password and code; then <code>info</code> shows the username and password for this form; then <code>exit</code>.</div>
+          <code style={{ display: "block", padding: "6px 8px", background: "var(--surface)", borderRadius: 6, overflowX: "auto", whiteSpace: "nowrap" }}>docker compose run --rm bridge init</code>
+          <div><strong>2. Start it for good.</strong> It keeps the sign-in across restarts and backups.</div>
+          <code style={{ display: "block", padding: "6px 8px", background: "var(--surface)", borderRadius: 6, overflowX: "auto", whiteSpace: "nowrap" }}>docker compose --profile bridge up -d bridge</code>
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
         <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Name</span><input className="input" value={label} onChange={(e) => setLabel(e.target.value)} /></label>
         <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">IMAP host</span><input className="input" value={host} onChange={(e) => setHost(e.target.value)} required /></label>

@@ -143,7 +143,7 @@ def test_mail_api_and_fact_confirmation(owner: TestClient, monkeypatch):
     monkeypatch.setattr(CONNECTORS["mail"], "client_factory", FakeClient)
     monkeypatch.setattr(CONNECTORS["mail"], "fetch", fake_fetch)
     created = owner.post("/api/v1/mail/accounts", json={"label": "Proton", "kind": "proton", "username": "owner@example.test", "password": "app-pass"}).json()
-    assert created["host"] == "bridge" and created["port"] == 1143 and created["has_password"] and "password" not in created
+    assert created["host"] == "bridge" and created["port"] == 143 and created["has_password"] and "password" not in created
     with Session(engine) as session:
         stored = session.get(MailAccount, created["id"])
         assert stored.password_enc.startswith("fa1:")
@@ -211,3 +211,19 @@ def test_rocket_money_upcoming_bills_become_one_fact_per_charge(owner: TestClien
         assert fact.applied_to.startswith("bill:") and fact.status != "pending"
     bills = {b["name"]: b for b in owner.get("/api/v1/bills").json()["bills"]}
     assert bills["Example Water Utility"]["due_day"] == 12 and bills["Example Water Utility"]["amount"] == 61.4
+
+
+def test_the_bridge_sidecar_answers_on_the_standard_ports_and_errors_read_plainly():
+    import imaplib
+    import socket
+
+    from app.connectors.mail import explain_error
+    from app.mail.imap import ImapClient, sidecar_port
+
+    # the Bridge's own screen says 1143 and 1025; inside the server the sidecar answers on 143 and 25
+    assert sidecar_port("bridge", 1143) == 143 and sidecar_port("bridge", 1025) == 25 and sidecar_port("bridge", 143) == 143
+    assert sidecar_port("imap.example.test", 1143) == 1143
+    assert ImapClient("bridge", 1143, "u", "p").port == 143
+    assert explain_error("bridge", socket.gaierror(-2, "Name or service not known")).startswith("The Bridge is not running")
+    assert "not the Proton account password" in explain_error("bridge", imaplib.IMAP4.error("AUTHENTICATIONFAILED Invalid credentials"))
+    assert explain_error("imap.example.test", RuntimeError("boom")) == "RuntimeError: boom"

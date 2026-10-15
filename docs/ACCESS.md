@@ -60,7 +60,13 @@ Google Account, Security, 2-Step Verification, App passwords: create one named f
 
 ### 5. Proton Mail Bridge sign-in (M4.2)
 
-The Bridge runs as a sidecar of the app on BigBox and needs the owner to sign in once, interactively, with the Proton password and second factor. The coding agent prepares the container and gives the exact command; the owner runs it over SSH from any device on the tailnet. The Bridge then prints a local IMAP password, which goes into the app's Connectors page. The sign-in survives restarts and is included in backups.
+The Bridge runs as a sidecar of the app on BigBox and needs the owner to sign in once, interactively, with the Proton password and second factor. The coding agent prepares the container (the image is pulled) and gives the exact command; the owner runs it over SSH from any device on the tailnet:
+
+1. `ssh -t` to the server, then in the app's folder: `docker compose run --rm bridge init`. At the Bridge prompt: `login`, then the Proton address, password and code; `info` prints the IMAP username and password; `exit`.
+2. `docker compose --profile bridge up -d bridge` starts it for good.
+3. On Connectors › Mailboxes: remove the Proton row and add it again with the username and password `info` printed (not the Proton password). Host `bridge` and port 143 are already filled: the Bridge's screen says 1143, which inside the server is 143, and the app accepts either.
+
+Until step 1 is done the mailbox shows "The Bridge is not running on the server yet". The sign-in survives restarts and is included in backups.
 
 ### 6. A public address (M3.3)
 
