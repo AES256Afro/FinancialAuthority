@@ -173,6 +173,10 @@ class InstallmentPlan(SQLModel, table=True):
     cadence_days: int = 14
     debt_id: int | None = Field(default=None, foreign_key="debts.id")
     active: bool = True
+    loan_id: str = ""  # the lender's own id, which keeps one email from making two plans
+    schedule: str = "[]"  # JSON [{date, amount, principal, interest}] from the lender's confirmation, when there is one
+    finance_charge: float = 0.0  # what the loan costs over its life, the lender's figure
+    loan_amount: float | None = None
 
 
 class Advance(SQLModel, table=True):

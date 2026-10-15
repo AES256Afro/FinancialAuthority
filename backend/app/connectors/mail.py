@@ -85,6 +85,15 @@ def handle_message(session: Session, account: MailAccount, folder: str, uid: int
         outcome["kind"] = "paystub"
         return outcome
     fields = extract(kind, parsed.subject, parsed.text, today)
+    if kind == "installment":
+        from ..parsers.affirm import parse_loan_confirmation
+
+        loan = parse_loan_confirmation(parsed.text, parsed.date.date() if parsed.date else today)
+        if loan:
+            confidence = max(confidence, loan.pop("confidence"))
+            fields.update(loan)
+            fields["amount"] = loan["installment"]
+            fields["due_date"] = loan["first_date"]
     if kind == "paystub":
         from ..parsers.paystub import parse_paystub_text
 

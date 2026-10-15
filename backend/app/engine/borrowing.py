@@ -213,6 +213,7 @@ def sync_borrowing(session: Session, today: date) -> dict:
     retire any 'bill' that is really an advance app's repayment, and queue each installment stream the register
     does not know as a series to name."""
     recategorised = ensure_borrowing_rules(session)
+    refresh_plan_progress(session, today)
     advance_rows, installment_rows = _rows(session, today)
     paired = pair_advances(advance_rows, _next_payday(session, today), today)
     existing = {(a.provider, a.taken_on, round(a.amount, 2)): a for a in session.exec(select(Advance)).all()}
@@ -342,6 +343,20 @@ def borrowing_overview(session: Session, today: date) -> dict:
             "per_month": _money(s["amount"] * 30.0 / s["cadence_days"]),
         })
     installments_month = _money(sum(i["per_month"] for i in installments if i["active"]))
+    import json as _json
+
+    loans = []
+    for p in session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all():  # noqa: E712
+        sched = sorted(_json.loads(p.schedule or "[]"), key=lambda r: r["date"])
+        upcoming = sched[len(sched) - p.remaining:] if sched and p.remaining else []
+        loans.append({
+            "id": p.id, "provider": p.provider, "merchant": p.merchant, "loan_id": p.loan_id, "loan_amount": p.loan_amount, "total": p.total, "finance_charge": p.finance_charge, "installment": p.installment,
+            "count": p.count, "remaining": p.remaining, "next_date": p.next_date.isoformat(), "ends": (upcoming[-1]["date"] if upcoming else (p.next_date + timedelta(days=p.cadence_days * max(0, p.remaining - 1))).isoformat()),
+            "left_to_pay": _money(sum(r["amount"] for r in upcoming) if upcoming else p.installment * p.remaining), "interest_left": _money(sum(r.get("interest", 0.0) for r in upcoming)) if upcoming else None, "from_lender": bool(sched),
+        })
+    loans.sort(key=lambda l: l["next_date"])
+    installment_interest = _money(sum(l["finance_charge"] for l in loans))
+    left_to_pay = _money(sum(l["left_to_pay"] for l in loans))
 
     cards = [a for a in session.exec(select(Account).where(Account.active == True, Account.kind == "card")).all()]  # noqa: E712
     card_balance = _money(sum((a.balance or 0.0) for a in cards))
@@ -409,6 +424,82 @@ def borrowing_overview(session: Session, today: date) -> dict:
         "cycle": cycle, "typical_per_period": typical_period, "next_payday": next_payday.isoformat() if next_payday else None,
         "unresolved": [{**{k: (v.isoformat() if isinstance(v, date) else v) for k, v in p.items()}} for p in unresolved], "unresolved_total": _money(sum(p["amount"] for p in unresolved)),
         "advances": [{**{k: (v.isoformat() if isinstance(v, date) else v) for k, v in p.items()}} for p in sorted(pairs, key=lambda p: p["taken_on"], reverse=True)],
-        "installments": installments, "becomes": becomes, "steps": steps, "sources": sources,
+        "installments": installments, "loans": loans, "loans_left_to_pay": left_to_pay, "loans_finance_charge": installment_interest, "becomes": becomes, "steps": steps, "sources": sources,
         "not_advice": NOT_ADVICE + " What an advance costs is its fee over the days it is out; what a plan costs needs the lender's own figures, which only you can enter.",
     }
+
+
+def plan_from_fields(session: Session, fields: dict, amount: float | None, remaining: int | None, today: date) -> InstallmentPlan | None:
+    """A plan from a lender's confirmation (its schedule) or from what the owner typed (an amount and the
+    payments left). The lender's loan ID keeps one email from making two plans."""
+    import json
+
+    schedule = fields.get("schedule") or []
+    loan_id = str(fields.get("loan_id") or "")
+    provider = str(fields.get("provider") or provider_of(str(fields.get("sender", "")) + " " + str(fields.get("sender_name", "")), INSTALLMENT_PROVIDERS) or fields.get("sender_name") or "Lender")
+    merchant = str(fields.get("merchant") or "")
+    existing = session.exec(select(InstallmentPlan).where(InstallmentPlan.loan_id == loan_id)).first() if loan_id else None
+    if schedule:
+        upcoming = [s for s in schedule if s["date"] >= today.isoformat()]
+        gaps = [(date.fromisoformat(b["date"]) - date.fromisoformat(a["date"])).days for a, b in zip(schedule, schedule[1:])]
+        cadence_days = 30 if not gaps or sum(gaps) / len(gaps) > 20 else 14
+        plan = existing or InstallmentPlan(provider=provider, merchant=merchant, total=0.0, installment=0.0, count=0, remaining=0, next_date=today)
+        plan.provider, plan.merchant = provider, merchant or plan.merchant
+        plan.total = float(fields.get("total") or sum(s["amount"] for s in schedule))
+        plan.installment = float(fields.get("installment") or schedule[0]["amount"])
+        plan.count, plan.remaining = len(schedule), len(upcoming)
+        plan.next_date = date.fromisoformat(upcoming[0]["date"]) if upcoming else date.fromisoformat(schedule[-1]["date"])
+        plan.cadence_days, plan.loan_id, plan.schedule = cadence_days, loan_id, json.dumps(schedule)
+        plan.finance_charge = float(fields.get("finance_charge") or 0.0)
+        plan.loan_amount = float(fields["loan_amount"]) if fields.get("loan_amount") else None
+        plan.active = plan.remaining > 0
+    else:
+        each = amount if amount is not None else fields.get("amount")
+        if each is None or not remaining:
+            return None
+        plan = existing or InstallmentPlan(provider=provider, merchant=merchant, total=round(float(each) * remaining, 2), installment=round(float(each), 2), count=remaining, remaining=remaining, next_date=today, cadence_days=30, loan_id=loan_id)
+    session.add(plan)
+    session.commit()
+    session.refresh(plan)
+    refresh_plan_progress(session, today)
+    return plan
+
+
+def refresh_plan_progress(session: Session, today: date) -> int:
+    """A plan with the lender's schedule follows the ledger: each payment to the lender of a scheduled amount
+    on or after the loan's first date ticks one off. Returns how many plans changed."""
+    import json
+
+    changed = 0
+    plans = [p for p in session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all() if p.schedule and p.schedule != "[]"]  # noqa: E712
+    if not plans:
+        return 0
+    rows = session.exec(select(Transaction).where(Transaction.amount > 0)).all()
+    paid_to = {}
+    for t in rows:
+        provider = provider_of(_text(t), INSTALLMENT_PROVIDERS)
+        if provider:
+            paid_to.setdefault(provider, []).append((t.date, float(t.amount)))
+    for p in plans:
+        schedule = sorted(json.loads(p.schedule), key=lambda s: s["date"])
+        first = date.fromisoformat(schedule[0]["date"])
+        amounts = [s["amount"] for s in schedule]
+        matched = 0
+        pool = sorted((row for row in paid_to.get(p.provider, []) if row[0] >= first - timedelta(days=5)), key=lambda r: r[0])
+        used: set = set()
+        for i, target in enumerate(amounts):
+            hit = next((j for j, (d, a) in enumerate(pool) if j not in used and abs(a - target) <= 0.05), None)
+            if hit is None:
+                break
+            used.add(hit)
+            matched += 1
+        remaining = max(0, len(schedule) - matched)
+        upcoming = schedule[len(schedule) - remaining:] if remaining else []
+        next_date = date.fromisoformat(upcoming[0]["date"]) if upcoming else date.fromisoformat(schedule[-1]["date"])
+        if (p.remaining, p.next_date, p.active) != (remaining, next_date, remaining > 0):
+            p.remaining, p.next_date, p.active = remaining, next_date, remaining > 0
+            session.add(p)
+            changed += 1
+    if changed:
+        session.commit()
+    return changed

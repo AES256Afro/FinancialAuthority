@@ -58,6 +58,9 @@ interface Borrowing {
   typical_per_period: number;
   next_payday: string | null;
   installments: Stream[];
+  loans: { id: number; provider: string; merchant: string; loan_id: string; loan_amount: number | null; total: number; finance_charge: number; installment: number; count: number; remaining: number; next_date: string; ends: string; left_to_pay: number; interest_left: number | null; from_lender: boolean }[];
+  loans_left_to_pay: number;
+  loans_finance_charge: number;
   becomes: { per_paycheck: number; years: number; name: string; after_tax: number; guaranteed: boolean } | null;
   steps: { n: number; text: string; action: string; link: string }[];
   settings: { cards_pay_from: string };
@@ -232,6 +235,32 @@ export function Borrowing() {
           <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 6 }}>The lender's app shows how many payments are left on each plan; with that, the windows see when it ends and the freed money moves on. Interest on a plan is the lender's own figure and is not guessed here.</div>
         </div>
       </section>
+
+      {d.loans && d.loans.length > 0 && (
+        <section className="card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 8 }} id="loans">
+          <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+            <strong>Pay-later loans, from the lender's own figures</strong>
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>{money(d.loans_left_to_pay)} left to pay · {money(d.loans_finance_charge)} of finance charges over their lives</span>
+          </div>
+          <table className="ledger" style={{ fontSize: 13 }}>
+            <thead><tr><th>Loan</th><th style={{ textAlign: "right" }}>Borrowed</th><th style={{ textAlign: "right" }}>Costs</th><th style={{ textAlign: "right" }}>Each</th><th>Left</th><th>Next</th><th>Ends</th></tr></thead>
+            <tbody>
+              {d.loans.map((l) => (
+                <tr key={l.id}>
+                  <td><strong>{l.merchant || l.provider}</strong><div style={{ fontSize: 11, color: "var(--muted)" }}>{l.provider}{l.loan_id ? ` · ${l.loan_id}` : ""}{l.from_lender ? " · from the confirmation email" : " · typed"}</div></td>
+                  <td className="num" style={{ textAlign: "right" }}>{l.loan_amount !== null ? money(l.loan_amount) : money(l.total)}</td>
+                  <td className="num" style={{ textAlign: "right", color: l.finance_charge > 0 ? "var(--critical)" : "var(--safe-ink)", fontWeight: 800 }}>{l.finance_charge > 0 ? money(l.finance_charge) : "0% interest"}</td>
+                  <td className="num" style={{ textAlign: "right" }}>{money(l.installment, { cents: true })}</td>
+                  <td>{l.remaining} of {l.count} · {money(l.left_to_pay)}{l.interest_left ? ` (${money(l.interest_left)} interest)` : ""}</td>
+                  <td>{shortDate(l.next_date)}</td>
+                  <td>{shortDate(l.ends)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Each confirmation email the lender sends becomes one of these, with its exact dates and its cost; the ledger ticks the payments off as they post.</div>
+        </section>
+      )}
 
       {d.credit.length > 0 && (
         <section className="card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>

@@ -47,6 +47,7 @@ Three free sources, stacked. Do the first two when M1 starts; the third is alrea
 - **Teller, developer tier.** Create a developer account at Teller (free up to a hundred logins, rate-limited). Download the application certificate it issues and paste the application id and the certificate into the Connectors page. The app uses Teller for whatever Plaid's trial does not cover.
 - **Era Context, free tier.** One slot holds a healthy connection to the bank; the other is a redundant copy of the same bank that can be removed to make room for the credit union. The coding agent can remove the redundant one and produce the credit union's connection link on request; the sign-in on that link is the owner's.
 - **Rocket Money's own mail.** Keep its weekly "This week's upcoming bills" and its balance and income alerts turned on in Rocket Money's notification settings, to an address the app reads. Each listed charge becomes a bill fact to confirm with one tap, so the bill schedule stays current without an export.
+- **Affirm's own mail.** Affirm has no API and no export. Its "Your loan confirmation" email carries each loan's full schedule and cost, so the mailbox it lands in is the sync: keep those emails coming to an address the app reads, and each becomes a plan to confirm with one tap.
 - **Bank alerts by mail.** In the bank's alert settings, turn on email alerts for every transaction, deposit, low balance and declined charge, to the address that lands in Proton. The app reads them the same quarter-hour.
 
 ### 3a. Retirement and investment accounts (M1.3)
