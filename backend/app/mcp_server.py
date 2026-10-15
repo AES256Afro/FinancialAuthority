@@ -275,6 +275,50 @@ def build_server() -> MCPServer:
             services.audit(session, client=client, client_kind="key", tool="borrowing", rows=len(out["advances"]) + len(out["installments"]), redaction=redaction)
             return out
 
+    @server.tool(name="scenario_run", annotations=READ_ONLY)
+    def scenario_run_tool(move_date: str, new_rent: float | None = None, overlap_months: int = 0, one_offs: list[dict] | None = None, recurring: list[dict] | None = None, stop_bills: list[int] | None = None, name: str = "Scenario") -> dict:
+        """A what-if over the owner's real registers, nothing changed: a move or any dated change. Returns the
+        verdict (passes or short), the first date that passes, the honest line's low point with and without
+        the scenario, each check's load with the change, the monthly change and the one-off total. Explain
+        with these figures; never call it a recommendation to move or not.
+
+        Args:
+            move_date: The date the change starts, YYYY-MM-DD.
+            new_rent: The new rent a month, if the rent changes.
+            overlap_months: Months the old rent is still paid after the date (0 to 3).
+            one_offs: [{name, amount, date}] for a deposit, fees, a truck.
+            recurring: [{name, amount, due_day}] for bills that start with the move.
+            stop_bills: Bill ids that end on the date.
+            name: A short name for the scenario.
+        """
+        from .engine.scenario import run_scenario
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            spec = {"name": name[:60], "move_date": move_date, "new_rent": new_rent, "overlap_months": max(0, min(3, int(overlap_months or 0))), "one_offs": [dict(o) for o in (one_offs or [])][:30], "recurring": [dict(r) for r in (recurring or [])][:30], "stop_bills": [int(x) for x in (stop_bills or [])]}
+            out = run_scenario(session, _today(), spec)
+            services.audit(session, client=client, client_kind="key", tool="scenario_run", args={"move_date": move_date, "new_rent": new_rent}, rows=len(out["windows"]), redaction=redaction)
+            return out
+
+    @server.tool(name="readiness", annotations=READ_ONLY)
+    def readiness_tool(move_date: str | None = None, new_rent: float | None = None) -> dict:
+        """What has to be true before a move, computed from the ledger: a cushion of one pay period's advances,
+        two periods with no advance, the card under thirty percent of its line on the statement day, the
+        pay-later plans that end before the date, the rent-to-gross ratio a landlord screens on, a mailbox
+        connected, one window checked by hand. Each with its value, its target, whether it is met and where
+        to act. Report them as they are; never call it a recommendation."""
+        from datetime import date as _date
+
+        from .engine.readiness import readiness
+        from .engine.snapshot import finance_snapshot
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            snap = finance_snapshot(session, _today())
+            out = readiness(session, _today(), move_date=_date.fromisoformat(move_date) if move_date else None, new_rent=new_rent, safe_to_spend=snap["safe_to_spend"]["amount"])
+            services.audit(session, client=client, client_kind="key", tool="readiness", args={"move_date": move_date}, rows=len(out["items"]), redaction=redaction)
+            return out
+
     @server.tool(name="purchase_check", annotations=READ_ONLY)
     def purchase_check_tool(amount: float, on: str | None = None, installments: int | None = None) -> dict:
         """Should the owner buy this? Yes, wait or no: whether the purchase keeps the honest line above zero

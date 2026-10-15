@@ -49,7 +49,8 @@ interface Stream {
 interface Borrowing {
   as_of: string;
   window_days: number;
-  cost: { fees_90d: number; fees_month: number; fees_year: number; advanced_90d: number; advances_90d: number; tips_90d: number; installments_month: number; card_balance: number; card_interest_month: number | null };
+  cost: { fees_90d: number; fees_month: number; fees_year: number; advanced_90d: number; advances_90d: number; tips_90d: number; installments_month: number; card_balance: number; card_interest_month: number | null; affirm_interest_month?: number; affirm_interest_ytd?: number };
+  statement?: { period_start?: string; period_end?: string; interest_period?: number; interest_ytd?: number; total_closing?: number; at?: string };
   credit: { account_id: number; debt_id: number | null; name: string; balance: number; credit_limit: number | null; utilisation: number | null; apr: number | null; pay_in_full: boolean | null; next_statement: string | null; next_due: string | null; interest_month_if_carried: number }[];
   providers: Provider[];
   outstanding: { provider: string; amount: number; taken_on: string; repay_date: string }[];
@@ -58,7 +59,7 @@ interface Borrowing {
   typical_per_period: number;
   next_payday: string | null;
   installments: Stream[];
-  loans: { id: number; provider: string; merchant: string; loan_id: string; loan_amount: number | null; total: number; finance_charge: number; installment: number; count: number; remaining: number; next_date: string; ends: string; left_to_pay: number; interest_left: number | null; from_lender: boolean }[];
+  loans: { id: number; provider: string; merchant: string; loan_id: string; loan_amount: number | null; total: number; finance_charge: number; installment: number; count: number; remaining: number; next_date: string; ends: string; left_to_pay: number; interest_left: number | null; from_lender: boolean; balance?: number | null; balance_at?: string | null; apr?: number | null; interest_paid?: number }[];
   loans_left_to_pay: number;
   loans_finance_charge: number;
   becomes: { per_paycheck: number; years: number; name: string; after_tax: number; guaranteed: boolean } | null;
@@ -142,6 +143,33 @@ function StreamRow({ s, onDone }: { s: Stream; onDone: () => void }) {
   );
 }
 
+function StatementUpload({ onDone }: { onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  async function upload(f: File) {
+    setBusy(true);
+    setNote(null);
+    try {
+      const body = new FormData();
+      body.append("file", f);
+      const r = await api<{ loans: number; created: number; updated: number; retired: number; period_end: string | null; interest_period: number | null; interest_ytd: number | null; total_closing: number | null }>("/api/v1/borrowing/statement", { method: "POST", body });
+      setNote(`${f.name}: ${r.loans} loans read${r.period_end ? ` for the period to ${shortDate(r.period_end)}` : ""}; ${r.created} new, ${r.updated} updated, ${r.retired} closed${r.total_closing !== null ? `; ${money(r.total_closing)} owed in all` : ""}${r.interest_period !== null ? `; ${money(r.interest_period)} of interest this period` : ""}.`);
+      onDone();
+    } catch (e) {
+      setNote((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", borderTop: "1px solid var(--surface-2)", paddingTop: 8 }}>
+      <input className="input" type="file" accept=".pdf,application/pdf" disabled={busy} onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} aria-label="Affirm statement PDF" />
+      <span style={{ fontSize: 12, color: "var(--muted)" }}>Affirm's Loans Statement PDF. The same file dropped into the import folder lands by itself.</span>
+      {note && <div style={{ fontSize: 13, flexBasis: "100%" }}>{note}</div>}
+    </div>
+  );
+}
+
 export function Borrowing() {
   const { data, reload, error } = useApi<Borrowing>("/api/v1/borrowing");
   const [saving, setSaving] = useState(false);
@@ -168,9 +196,9 @@ export function Borrowing() {
 
       <section className="grid grid-cols-2 xl:grid-cols-4" style={{ gap: 12 }}>
         <div className="card" style={{ padding: 14, borderTop: "4px solid var(--critical)" }}>
-          <div className="lab">Fees paid, {d.window_days} days</div>
-          <div className="num" style={{ fontSize: 28, fontWeight: 800 }}>{money(d.cost.fees_90d)}</div>
-          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{money(d.cost.fees_month)} a month · {money(d.cost.fees_year)} a year at this pace · {d.cost.advances_90d} advances totalling {money(d.cost.advanced_90d)}</div>
+          <div className="lab">Lost to borrowing, a month</div>
+          <div className="num" style={{ fontSize: 28, fontWeight: 800 }}>{money(d.cost.fees_month)}</div>
+          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{money(d.cost.fees_year)} a year at this pace · advance fees {money(d.cost.fees_90d)} in {d.window_days} days over {d.cost.advances_90d} advances{d.cost.affirm_interest_month ? ` · Affirm interest ${money(d.cost.affirm_interest_month)} last statement, ${money(d.cost.affirm_interest_ytd ?? 0)} this year` : ""}</div>
         </div>
         <div className="card" style={{ padding: 14, borderTop: "4px solid var(--warning)" }}>
           <div className="lab">Out against the next check</div>
@@ -240,25 +268,26 @@ export function Borrowing() {
         <section className="card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 8 }} id="loans">
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
             <strong>Pay-later loans, from the lender's own figures</strong>
-            <span style={{ fontSize: 12, color: "var(--muted)" }}>{money(d.loans_left_to_pay)} left to pay · {money(d.loans_finance_charge)} of finance charges over their lives</span>
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>{money(d.loans_left_to_pay)} left to pay{d.statement?.period_end ? ` as of the statement to ${shortDate(d.statement.period_end)}` : ""}{d.loans_finance_charge > 0 ? ` · ${money(d.loans_finance_charge)} of finance charges over their lives` : ""}</span>
           </div>
           <table className="ledger" style={{ fontSize: 13 }}>
-            <thead><tr><th>Loan</th><th style={{ textAlign: "right" }}>Borrowed</th><th style={{ textAlign: "right" }}>Costs</th><th style={{ textAlign: "right" }}>Each</th><th>Left</th><th>Next</th><th>Ends</th></tr></thead>
+            <thead><tr><th>Loan</th><th style={{ textAlign: "right" }}>Borrowed</th><th style={{ textAlign: "right" }}>Owed</th><th style={{ textAlign: "right" }}>Rate</th><th style={{ textAlign: "right" }}>Interest so far</th><th style={{ textAlign: "right" }}>Each</th><th>Next</th></tr></thead>
             <tbody>
               {d.loans.map((l) => (
                 <tr key={l.id}>
-                  <td><strong>{l.merchant || l.provider}</strong><div style={{ fontSize: 11, color: "var(--muted)" }}>{l.provider}{l.loan_id ? ` · ${l.loan_id}` : ""}{l.from_lender ? " · from the confirmation email" : " · typed"}</div></td>
+                  <td><strong>{l.merchant || l.provider}</strong><div style={{ fontSize: 11, color: "var(--muted)" }}>{l.provider}{l.loan_id ? ` · ${l.loan_id}` : ""}{l.balance_at ? ` · statement ${shortDate(l.balance_at)}` : l.from_lender ? " · from the confirmation email" : " · typed"}</div></td>
                   <td className="num" style={{ textAlign: "right" }}>{l.loan_amount !== null ? money(l.loan_amount) : money(l.total)}</td>
-                  <td className="num" style={{ textAlign: "right", color: l.finance_charge > 0 ? "var(--critical)" : "var(--safe-ink)", fontWeight: 800 }}>{l.finance_charge > 0 ? money(l.finance_charge) : "0% interest"}</td>
+                  <td className="num" style={{ textAlign: "right", fontWeight: 800 }}>{money(l.balance ?? l.left_to_pay)}</td>
+                  <td className="num" style={{ textAlign: "right", color: (l.apr ?? 0) > 0 ? "var(--critical)" : "var(--safe-ink)" }}>{l.apr !== null && l.apr !== undefined ? `${l.apr}%` : l.finance_charge > 0 ? money(l.finance_charge) : "0%"}</td>
+                  <td className="num" style={{ textAlign: "right", color: "var(--critical)" }}>{l.interest_paid ? money(l.interest_paid) : l.finance_charge ? `${money(l.finance_charge)} over its life` : "—"}</td>
                   <td className="num" style={{ textAlign: "right" }}>{money(l.installment, { cents: true })}</td>
-                  <td>{l.remaining} of {l.count} · {money(l.left_to_pay)}{l.interest_left ? ` (${money(l.interest_left)} interest)` : ""}</td>
-                  <td>{shortDate(l.next_date)}</td>
-                  <td>{shortDate(l.ends)}</td>
+                  <td>{shortDate(l.next_date)}{l.remaining ? ` · about ${l.remaining} left` : ""}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Each confirmation email the lender sends becomes one of these, with its exact dates and its cost; the ledger ticks the payments off as they post.</div>
+          <StatementUpload onDone={reload} />
+          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Affirm's monthly Loans Statement PDF, from Manage on affirm.com, is the lender's own register: upload it and every loan lands with its balance, rate and interest. The confirmation email for each new loan does the same with the exact schedule once a mailbox is connected.</div>
         </section>
       )}
 

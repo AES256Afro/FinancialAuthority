@@ -147,9 +147,10 @@ def finance_snapshot(session: Session, today: date) -> dict:
 
     # A daily path for sixty days: `available` is cash minus the buffer minus what is reserved, if nothing
     # else is spent; `at_pace` also spends the usual everyday amount each day, which is the honest line.
-    pay_dates = set(paydays[:4])
-    pay_amounts = {d: net_for(d) for d in paydays[:4]}
-    projection = project(today, cash=cash, buffer=buffer, expected_net=expected_net, pay_dates=pay_dates, set_aside=set_aside, events=events, per_day=pace["per_day_cash"], pay_amounts=pay_amounts)
+    in_view = [d for d in paydays if d <= today + timedelta(days=60)]  # every payday the sixty-day line can see
+    pay_dates = set(in_view)
+    pay_amounts = {d: net_for(d) for d in in_view}
+    projection = project(today, cash=cash, buffer=buffer, expected_net=expected_net, pay_dates=pay_dates, set_aside=set_aside, events=events, per_day=pace["per_day_cash"], pay_amounts=pay_amounts, reserved_for={(e.get("source"), e["date"]) for e in windows_split["next_window"]})
 
     # Four paycheck windows, each filled the same way: what the paycheck carries in, what leaves it, what is left.
     windows = []
