@@ -24,6 +24,8 @@ INSTALLMENT_PROVIDERS = {"affirm": "Affirm", "klarna": "Klarna", "afterpay": "Af
 INSTALLMENT_DEFAULT_DAYS = {"Affirm": 30, "Klarna": 14, "Afterpay": 14, "Sezzle": 14, "Zip": 14, "PayPal Pay in 4": 14, "Uplift": 30}
 LOOKBACK_DAYS = 180
 FEE_CEILING = 0.30  # a repayment more than 30% over the advance is not its repayment
+MATCH_DAYS = 21  # an advance app takes its money back within a pay period; later repayments belong to later advances
+MIN_ADVANCE = 5.0  # a cent or a dollar in is a verification deposit, not an advance
 TIP_CEILING = 15.0  # a small payment to an advance app with no advance behind it is a tip or a membership fee
 WINDOW_DAYS = 90
 
@@ -44,13 +46,14 @@ def _text(t: Transaction) -> str:
     return f"{t.merchant} {t.raw_name} {t.description}"
 
 
-def pair_advances(rows: list[dict], next_payday: date | None = None) -> dict:
+def pair_advances(rows: list[dict], next_payday: date | None = None, today: date | None = None) -> dict:
     """rows: dicts with id, date, amount (positive = money out), provider. Money in from an advance app is an
     advance; money out to it is a repayment. Each advance takes the first later repayment that covers it with a
     fee of up to thirty percent, or a run of partial repayments that adds up within ten days; an advance with
     no repayment yet is outstanding and due on the next payday. Small payments with no advance behind them are
     tips and membership fees."""
-    ins = sorted((r for r in rows if r["amount"] < 0), key=lambda r: (r["date"], r["id"]))
+    ins = sorted((r for r in rows if r["amount"] <= -MIN_ADVANCE), key=lambda r: (r["date"], r["id"]))
+    today = today or (max((r["date"] for r in rows), default=date.today()))
     outs = sorted((r for r in rows if r["amount"] > 0), key=lambda r: (r["date"], r["id"]))
     used: set = set()
     pairs: list[dict] = []
@@ -59,7 +62,7 @@ def pair_advances(rows: list[dict], next_payday: date | None = None) -> dict:
         taken = adv["date"]
         whole = None
         for out in outs:
-            if out["id"] in used or out["provider"] != adv["provider"] or out["date"] < taken or (out["date"] - taken).days > 45:
+            if out["id"] in used or out["provider"] != adv["provider"] or out["date"] < taken or (out["date"] - taken).days > MATCH_DAYS:
                 continue
             if amount * 0.98 <= out["amount"] <= amount * (1.0 + FEE_CEILING):
                 whole = [out]
@@ -68,7 +71,7 @@ def pair_advances(rows: list[dict], next_payday: date | None = None) -> dict:
         run: list[dict] = []
         total = 0.0
         for out in outs:
-            if out["id"] in used or out["provider"] != adv["provider"] or out["date"] < taken or (out["date"] - taken).days > 45 or out["amount"] >= amount * 0.98:
+            if out["id"] in used or out["provider"] != adv["provider"] or out["date"] < taken or (out["date"] - taken).days > MATCH_DAYS or out["amount"] >= amount * 0.98:
                 continue
             if run and (out["date"] - run[0]["date"]).days > 10:
                 run, total = [], 0.0
@@ -90,8 +93,9 @@ def pair_advances(rows: list[dict], next_payday: date | None = None) -> dict:
             pairs.append({"provider": adv["provider"], "taken_on": taken, "amount": _money(amount), "fee": _money(repaid - amount), "repaid": True, "repay_date": repaid_on, "days": days,
                           "annual_rate": _money((repaid - amount) / amount * 365.0 / days) if amount else 0.0, "sources": [f"transaction:{adv['id']}", *[f"transaction:{o['id']}" for o in match]]})
         else:
+            stale = (today - taken).days > MATCH_DAYS  # no repayment within a pay period: unresolved history, not money due
             due = next_payday if next_payday and next_payday > taken else taken + timedelta(days=14)
-            pairs.append({"provider": adv["provider"], "taken_on": taken, "amount": _money(amount), "fee": 0.0, "repaid": False, "repay_date": due, "days": None, "annual_rate": None, "sources": [f"transaction:{adv['id']}"]})
+            pairs.append({"provider": adv["provider"], "taken_on": taken, "amount": _money(amount), "fee": 0.0, "repaid": False, "stale": stale, "repay_date": due, "days": None, "annual_rate": None, "sources": [f"transaction:{adv['id']}"]})
     tips = [o for o in outs if o["id"] not in used and o["amount"] <= TIP_CEILING]
     unmatched = [o for o in outs if o["id"] not in used and o["amount"] > TIP_CEILING]
     return {"pairs": pairs, "tips": tips, "unmatched_repayments": unmatched}
@@ -191,10 +195,10 @@ def borrowing_summary(session: Session, today: date) -> dict:
     stands outstanding, and what was taken since the last payday."""
     advance_rows, _installments = _rows(session, today)
     next_payday = _next_payday(session, today)
-    paired = pair_advances(advance_rows, next_payday)
+    paired = pair_advances(advance_rows, next_payday, today)
     since = today - timedelta(days=WINDOW_DAYS)
     fees = sum(p["fee"] for p in paired["pairs"] if p["taken_on"] >= since) + sum(t["amount"] for t in paired["tips"] if t["date"] >= since)
-    outstanding = [p for p in paired["pairs"] if not p["repaid"]]
+    outstanding = [p for p in paired["pairs"] if not p["repaid"] and not p.get("stale")]
     last_payday = previous_payday(next_payday, _cadence(session), today) if next_payday is not None else None
     since_payday = [p for p in paired["pairs"] if last_payday and p["taken_on"] >= last_payday and p["taken_on"] <= today]
     return {
@@ -210,10 +214,16 @@ def sync_borrowing(session: Session, today: date) -> dict:
     does not know as a series to name."""
     recategorised = ensure_borrowing_rules(session)
     advance_rows, installment_rows = _rows(session, today)
-    paired = pair_advances(advance_rows, _next_payday(session, today))
+    paired = pair_advances(advance_rows, _next_payday(session, today), today)
     existing = {(a.provider, a.taken_on, round(a.amount, 2)): a for a in session.exec(select(Advance)).all()}
     created = updated = 0
+    for key, row in list(existing.items()):
+        if not row.repaid and (today - row.taken_on).days > MATCH_DAYS:  # it never showed a repayment; it is not due against the next check
+            session.delete(row)
+            existing.pop(key)
     for p in paired["pairs"]:
+        if p.get("stale"):
+            continue
         key = (p["provider"], p["taken_on"], round(p["amount"], 2))
         row = existing.get(key)
         if row is None:
@@ -263,13 +273,14 @@ def borrowing_overview(session: Session, today: date) -> dict:
     the steps that end it. Everything here is read from the ledger and the registers."""
     advance_rows, installment_rows = _rows(session, today)
     next_payday = _next_payday(session, today)
-    paired = pair_advances(advance_rows, next_payday)
+    paired = pair_advances(advance_rows, next_payday, today)
     since = today - timedelta(days=WINDOW_DAYS)
     pairs = [p for p in paired["pairs"] if p["taken_on"] >= since]
     tips = [t for t in paired["tips"] if t["date"] >= since]
     fees = sum(p["fee"] for p in pairs) + sum(t["amount"] for t in tips)
     advanced = sum(p["amount"] for p in pairs)
-    outstanding = [p for p in paired["pairs"] if not p["repaid"]]
+    outstanding = [p for p in paired["pairs"] if not p["repaid"] and not p.get("stale")]
+    unresolved = [p for p in pairs if p.get("stale")]
     by_provider: dict[str, dict] = {}
     for p in pairs:
         row = by_provider.setdefault(p["provider"], {"provider": p["provider"], "advances": 0, "advanced": 0.0, "fees": 0.0, "outstanding": 0.0, "typical_advance": [], "days": []})
@@ -396,6 +407,7 @@ def borrowing_overview(session: Session, today: date) -> dict:
         "credit": credit,
         "providers": providers, "outstanding": [{**{k: (v.isoformat() if isinstance(v, date) else v) for k, v in p.items()}} for p in outstanding], "outstanding_total": _money(sum(p["amount"] for p in outstanding)),
         "cycle": cycle, "typical_per_period": typical_period, "next_payday": next_payday.isoformat() if next_payday else None,
+        "unresolved": [{**{k: (v.isoformat() if isinstance(v, date) else v) for k, v in p.items()}} for p in unresolved], "unresolved_total": _money(sum(p["amount"] for p in unresolved)),
         "advances": [{**{k: (v.isoformat() if isinstance(v, date) else v) for k, v in p.items()}} for p in sorted(pairs, key=lambda p: p["taken_on"], reverse=True)],
         "installments": installments, "becomes": becomes, "steps": steps, "sources": sources,
         "not_advice": NOT_ADVICE + " What an advance costs is its fee over the days it is out; what a plan costs needs the lender's own figures, which only you can enter.",
