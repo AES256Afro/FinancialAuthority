@@ -106,11 +106,18 @@ def put_assumptions(body: AssumptionsIn, session: Session = Depends(get_session)
 
 
 @router.get("/where")
-def get_where(amount: float, years: int | None = None, scenario: str = "mid", session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
-    if amount < 0 or amount > 100_000:
+def get_where(amount: float | None = None, percent: float | None = None, basis: str = "net", years: int | None = None, scenario: str = "mid", session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+    """Dollars a paycheck (amount), or a share of the paycheck on file (percent, of take-home or gross pay)."""
+    if amount is None and percent is None:
+        raise HTTPException(400, "give amount (dollars a paycheck) or percent (a share of the paycheck)")
+    if amount is not None and (amount < 0 or amount > 100_000):
         raise HTTPException(400, "amount must be between 0 and 100,000 a paycheck")
+    if percent is not None and not 0 <= percent <= 100:
+        raise HTTPException(400, "percent must be between 0 and 100")
+    if basis not in ("net", "gross"):
+        raise HTTPException(400, "basis is net (take-home) or gross")
     if years is not None and not 1 <= years <= 60:
         raise HTTPException(400, "years must be between 1 and 60")
     if scenario not in ("low", "mid", "high"):
         raise HTTPException(400, "scenario is low, mid or high")
-    return where_to_put(session, today(), amount, years=years, scenario=scenario)
+    return where_to_put(session, today(), amount or 0.0, years=years, scenario=scenario, percent=percent, basis=basis)

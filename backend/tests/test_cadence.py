@@ -113,6 +113,10 @@ def test_usual_net_is_kept_per_position_for_a_semimonthly_paycheck():
         assert first.expected_net == 1900.0 and second.expected_net == 1900.0  # each stub was judged against what was known when it landed
         third = record_paystub(session, {"net": 1810.0, "gross": 2500.0, "pay_date": "2026-10-30"}, "upload", None, TODAY)
         assert third.expected_net == 1800.4  # an end-of-month check is judged against end-of-month checks
+        from app.engine.paystubs import paystubs_overview
+
+        overview = paystubs_overview(session)
+        assert overview["short"] == [] and all(abs(p["difference"]) < 20 for p in overview["recent"])  # judged afresh by position: none is short
 
 
 def test_columns_layout_reads_every_figure():
