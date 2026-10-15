@@ -136,7 +136,7 @@ def pending_installment_events(series_rows: list, today: date) -> list[dict]:
     return events
 
 
-def card_payoffs(cards: list[Account], paydays: list[date], mode: str, today: date, debts: list | None, planned: dict[int, float] | None, card_bills: list[dict], card_pace_per_day: float) -> list[dict]:
+def card_payoffs(cards: list[Account], paydays: list[date], mode: str, today: date, debts: list | None, planned: dict[int, float] | None, card_bills: list[dict], card_pace_by_account: dict[int, float] | None) -> list[dict]:
     """The card payments across the horizon, as the owner pays the card. Each carries what the card holds by
     then: its share of today's balance, the bills charged to it since the last payment, and the usual card
     spend over those days. A planned payment already counted nets off the balance. A card the owner carries
@@ -157,12 +157,15 @@ def card_payoffs(cards: list[Account], paydays: list[date], mode: str, today: da
         dates = [d for d in paydays if today <= d <= horizon and (mode in ("split", "next", "auto") or payday_position(d) == mode)]
         if not dates:
             continue
-        mine = [e for e in card_bills if e.get("from_account_id") in (a.id, None)]
+        mine = [e for e in card_bills if e.get("from_account_id") == a.id]
+        pace = float((card_pace_by_account or {}).get(a.id, 0.0))
+        if balance <= 0 and not mine and pace <= 0:
+            continue  # an idle card: nothing rides it, nothing to pay
         shares = [round(balance / 2, 2), round(balance - round(balance / 2, 2), 2)] if mode in ("split", "auto") and len(dates) > 1 else [balance]
         prev = today
         for i, d in enumerate(dates):
             bills_part = sum(e["amount"] for e in mine if prev <= e["date"] < d)
-            spend_part = card_pace_per_day * (d - prev).days
+            spend_part = pace * (d - prev).days
             balance_part = shares[i] if i < len(shares) else 0.0
             amount = balance_part + bills_part + spend_part
             if amount > 0.5:
@@ -172,7 +175,7 @@ def card_payoffs(cards: list[Account], paydays: list[date], mode: str, today: da
     return events
 
 
-def assemble(*, bills: list[Bill], plans: list[InstallmentPlan], advances: list[Advance], today: date, accounts: dict[int, Account], paydays: list[date], card_mode: str, debts: list | None, planned: dict[int, float] | None, extra: list[dict], card_pace_per_day: float, due_days: dict[int, int] | None = None) -> dict:
+def assemble(*, bills: list[Bill], plans: list[InstallmentPlan], advances: list[Advance], today: date, accounts: dict[int, Account], paydays: list[date], card_mode: str, debts: list | None, planned: dict[int, float] | None, extra: list[dict], card_pace_by_account: dict[int, float] | None, due_days: dict[int, int] | None = None) -> dict:
     """Everything the windows and the daily path count, with the card done right. `math` is what leaves
     checking: cash bills, plans, advances, planned payments and the card payments. `display` adds the bills
     that ride the card, marked via_card, so the picture still names them."""
@@ -180,7 +183,7 @@ def assemble(*, bills: list[Bill], plans: list[InstallmentPlan], advances: list[
     card_bills = [e for e in events if e.get("from_kind") == "card"]
     cash = [e for e in events if e.get("from_kind") != "card"]
     cards = [a for a in accounts.values() if a.kind == "card" and a.active]
-    payoffs = card_payoffs(cards, paydays, card_mode, today, debts, planned, card_bills, card_pace_per_day)
+    payoffs = card_payoffs(cards, paydays, card_mode, today, debts, planned, card_bills, card_pace_by_account)
     for e in card_bills:
         e["via_card"] = True
     math = sorted(cash + payoffs, key=lambda e: e["date"])
@@ -189,6 +192,10 @@ def assemble(*, bills: list[Bill], plans: list[InstallmentPlan], advances: list[
 
 
 def set_aside_of(items: list[dict]) -> float:
+    """What the previous check sets aside for the next window's bills: half of each large one, the whole of each
+    small one. A card payment is paid by the check it lands on, from the spending it carries, so it is not set
+    aside twice."""
+    items = [e for e in items if e.get("kind") != "card_payment"]
     return sum(e["amount"] for e in items if e["amount"] >= LARGE_BILL) / 2 + sum(e["amount"] for e in items if e["amount"] < LARGE_BILL)
 
 

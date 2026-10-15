@@ -170,17 +170,27 @@ def update_bill(bill_id: int, body: BillIn, session: Session = Depends(get_sessi
     bill = session.get(Bill, bill_id)
     if bill is None:
         raise HTTPException(404, "No such bill")
+    rematch = False
     for field, value in body.model_dump(exclude_unset=True).items():
         if value is None:
             continue
         if field == "due_day":
             value = max(1, min(31, int(value)))
+            rematch = rematch or value != bill.due_day
         if field == "paid_from" and value not in PAID_FROM:
             raise HTTPException(400, "paid_from is due, mid or end")
         if field == "kind" and value not in ("bill", "subscription"):
             raise HTTPException(400, "kind must be bill or subscription")
         setattr(bill, field, value)
     session.add(bill)
+    if rematch:
+        from ..engine.payments import match_payments
+        from ..models import Payment
+
+        for p in session.exec(select(Payment).where(Payment.bill_id == bill.id)).all():
+            session.delete(p)
+        session.flush()
+        match_payments(session, today())
     session.commit()
     session.refresh(bill)
     mark_pending(session, f"bill changed: {bill.name}")
