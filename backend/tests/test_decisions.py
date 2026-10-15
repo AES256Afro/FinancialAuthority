@@ -42,7 +42,8 @@ def test_purchase_check_wait_finds_the_first_passing_date():
         seed(session)
         snap = finance_snapshot(session, TODAY)
         already_short = min(p["at_pace"] for p in snap["projection"]) < 0
-        over = purchase_check(session, TODAY, snap["safe_to_spend"]["amount"] + 150)
+        headroom = max(0.0, min(p["at_pace"] for p in snap["projection"]))  # what the honest line can lose before it dips under zero
+        over = purchase_check(session, TODAY, headroom + 150)
         small = purchase_check(session, TODAY, 20)
     assert over["verdict"] in ("wait", "no")
     if already_short:

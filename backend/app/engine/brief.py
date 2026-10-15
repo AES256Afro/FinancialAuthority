@@ -37,6 +37,12 @@ def build_brief(snap: dict) -> list[dict]:
     adv = snap["advances"]
     if adv["total"] > 0:
         items.append({"severity": "info", "text": f"{len(adv['items'])} advance{'s' if len(adv['items']) != 1 else ''} repay {money(adv['total'])} as the paycheck lands.", "link": "/"})
+    borrowing = snap.get("borrowing") or {}
+    if borrowing.get("since_payday", {}).get("advances"):
+        sp = borrowing["since_payday"]
+        items.append({"severity": "warning", "text": f"{sp['advances']} advance{'s' if sp['advances'] != 1 else ''} taken since payday, {money(sp['advanced'])} from {', '.join(sp['providers'])}; each costs its fee on the next check.", "link": "/borrowing"})
+    if borrowing.get("fees_90d", 0) > 0:
+        items.append({"severity": "warning", "text": f"Borrowing cost {money(borrowing['fees_90d'])} in fees in the last 90 days, about {money(borrowing['fees_month'])} a month.", "link": "/borrowing"})
     mail = snap.get("mail", {"pending": [], "alerts": []})
     for alert in mail.get("alerts", [])[:3]:
         what = alert["fields"].get("alert", "balance")

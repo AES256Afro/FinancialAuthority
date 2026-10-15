@@ -63,16 +63,17 @@ const CADENCE: Record<string, string> = { weekly: "every week", biweekly: "every
 function Row({ s, onDone }: { s: SeriesRow; onDone: () => void }) {
   const [busy, setBusy] = useState(false);
   const [autopay, setAutopay] = useState(false);
+  const [remaining, setRemaining] = useState("");
   const [error, setError] = useState<string | null>(null);
   const isIncome = s.kind === "income";
   const hint = s.suggested_kind && s.suggested_kind !== "income" ? s.suggested_kind : "";
-  const HINT: Record<string, string> = { bill: "Looks like a bill", subscription: "Looks like a subscription", ignored: "Looks like regular spending, not a bill" };
+  const HINT: Record<string, string> = { bill: "Looks like a bill", subscription: "Looks like a subscription", installment: "Looks like a pay-later plan", ignored: "Looks like regular spending, not a bill" };
 
   async function classify(kind: string) {
     setBusy(true);
     setError(null);
     try {
-      await api(`/api/v1/recurring/${s.id}/classify`, { method: "POST", body: JSON.stringify({ kind, autopay, remaining: kind === "installment" ? 2 : undefined }) });
+      await api(`/api/v1/recurring/${s.id}/classify`, { method: "POST", body: JSON.stringify({ kind, autopay, remaining: kind === "installment" ? Math.max(1, Number(remaining) || 1) : undefined }) });
       onDone();
     } catch (e) {
       setError((e as Error).message);
@@ -101,9 +102,12 @@ function Row({ s, onDone }: { s: SeriesRow; onDone: () => void }) {
           </>
         ) : (
           <>
-            <button className={hint === "subscription" || hint === "ignored" ? "btn" : "btn dark"} type="button" disabled={busy} onClick={() => classify("bill")}>Bill</button>
+            <button className={hint === "subscription" || hint === "ignored" || hint === "installment" ? "btn" : "btn dark"} type="button" disabled={busy} onClick={() => classify("bill")}>Bill</button>
             <button className={hint === "subscription" ? "btn dark" : "btn"} type="button" disabled={busy} onClick={() => classify("subscription")}>Subscription</button>
-            <button className="btn" type="button" disabled={busy} onClick={() => classify("installment")}>Installment plan</button>
+            <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+              <button className={hint === "installment" ? "btn dark" : "btn"} type="button" disabled={busy} onClick={() => classify("installment")}>Installment plan</button>
+              <input className="input num" style={{ width: 58 }} value={remaining} onChange={(e) => setRemaining(e.target.value)} inputMode="numeric" placeholder="left" aria-label="Payments left on the plan" title="How many payments are left; the lender's app shows it" />
+            </span>
             <button className={hint === "ignored" ? "btn dark" : "btn"} type="button" disabled={busy} onClick={() => classify("ignored")}>Ignore</button>
             <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, marginLeft: "auto" }}>
               <input type="checkbox" checked={autopay} onChange={(e) => setAutopay(e.target.checked)} />

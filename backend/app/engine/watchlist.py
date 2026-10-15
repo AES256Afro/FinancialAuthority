@@ -34,6 +34,14 @@ def watchlist(session: Session, today: date) -> dict:
             "amount": total, "sources": [f"advance:{a.id}" for a in advances], "link": "/debts",
         })
 
+    borrowing = snap.get("borrowing") or {}
+    if borrowing.get("fees_90d", 0) > 0:
+        items.append({
+            "kind": "borrowing", "severity": "critical" if borrowing.get("since_payday", {}).get("advances") else "warning",
+            "text": f"No new advances: borrowing cost {borrowing['fees_90d']:,.2f} in fees in the last 90 days" + (f", and {borrowing['since_payday']['advances']} already taken since payday" if borrowing.get("since_payday", {}).get("advances") else "") + ".",
+            "amount": borrowing["fees_90d"], "sources": ["ledger:borrowing"], "link": "/borrowing",
+        })
+
     plans = session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True, InstallmentPlan.remaining > 0)).all()  # noqa: E712
     if len(plans) >= MANY_PLANS:
         left = round(sum(p.installment * p.remaining for p in plans), 2)
