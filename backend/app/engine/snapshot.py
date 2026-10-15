@@ -131,7 +131,7 @@ def finance_snapshot(session: Session, today: date) -> dict:
         adv_total = sum(e["amount"] for e in adv)
         left = carried + net_for(start) - adv_total - bills_total - aside
         # Funded, in date order: the money runs out on the last bills when a window is short.
-        running = carried + expected_net - adv_total
+        running = carried + net_for(start) - adv_total
         funded_items = []
         for e in in_window:
             ok = running >= e["amount"]
@@ -139,7 +139,7 @@ def finance_snapshot(session: Session, today: date) -> dict:
             funded_items.append({**e, "date": e["date"].isoformat(), "funded": ok})
         aside_items = [{**e, "date": e["date"].isoformat(), "funded": running >= aside, "share": 0.5 if e["amount"] >= 500 else 1.0} for e in following]
         windows.append({
-            "start": start.isoformat(), "end": end.isoformat(), "paycheck": _money(expected_net), "carried_in": _money(carried),
+            "start": start.isoformat(), "end": end.isoformat(), "paycheck": _money(net_for(start)), "carried_in": _money(carried),
             "advances": {"total": _money(adv_total), "items": [{**e, "date": e["date"].isoformat(), "funded": True} for e in adv]},
             "bills": {"total": _money(bills_total), "items": funded_items},
             "set_aside": {"total": _money(aside), "items": aside_items},

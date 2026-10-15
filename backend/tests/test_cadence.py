@@ -87,7 +87,7 @@ def test_rent_paid_from_the_end_of_month_check_is_not_due_before_payday(owner: T
     assert {e["name"] for e in snap["due_before_payday"]["items"]} == {"Example Internet"}  # rent rides the end-of-month check; the power bill is due after payday
     window = {e["name"]: e["date"] for e in snap["window"]["items"]}
     assert window["Example Apartments"] == "2026-11-01" and window["Example Power"] == "2026-10-31" and snap["window"]["end"] == "2026-11-12"
-    assert snap["windows"][1]["start"] == "2026-11-13"
+    assert snap["windows"][1]["start"] == "2026-11-13" and snap["windows"][0]["paycheck"] == 2000.0 and snap["windows"][1]["paycheck"] == 2200.0  # each window shows its own check
     # Savings is kept, not spent: the plan runs on checking. Safe to spend until payday is checking, less the
     # internet bill due before it, less the buffer; the end-of-month check covers its own window, so no shortfall.
     assert snap["cash"] == 1000.0 and snap["cash_all"] == 6000.0 and snap["savings"] == 5000.0
