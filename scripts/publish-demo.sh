@@ -22,9 +22,9 @@ for entry in "${sites[@]}"; do
   git clone -q --depth 1 "https://github.com/$repo.git" "$dir"
   (
     cd "$dir"
-    git rm -rq --ignore-unmatch assets index.html demo-data.json favicon.svg icon.svg manifest.webmanifest >/dev/null
+    git rm -rq --ignore-unmatch assets index.html demo-data.json favicon.svg icon.svg manifest.webmanifest ./*.png >/dev/null
     cp -r "$root/frontend/dist-demo/assets" .
-    cp "$root/frontend/dist-demo/index.html" "$root/frontend/dist-demo/demo-data.json" "$root/frontend/dist-demo/favicon.svg" "$root/frontend/dist-demo/icon.svg" "$root/frontend/dist-demo/manifest.webmanifest" .
+    cp "$root/frontend/dist-demo/index.html" "$root/frontend/dist-demo/demo-data.json" "$root/frontend/dist-demo/favicon.svg" "$root/frontend/dist-demo/icon.svg" "$root/frontend/dist-demo/manifest.webmanifest" "$root"/frontend/dist-demo/*.png .
     echo "$domain" > CNAME
     touch .nojekyll
     git add -A

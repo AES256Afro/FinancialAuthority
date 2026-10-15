@@ -18,7 +18,7 @@ APP_CSP = (
     "connect-src 'self' https://*.plaid.com; frame-src 'self' https://cdn.plaid.com https://*.plaid.com; worker-src 'self'; manifest-src 'self'; "
     "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 )
-OAUTH_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; form-action 'self' https: http://localhost:* http://127.0.0.1:*; frame-ancestors 'none'; base-uri 'none'"
+OAUTH_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; form-action 'self' https: http://localhost:* http://127.0.0.1:* financialauthority:; frame-ancestors 'none'; base-uri 'none'"
 
 COMMON = [
     (b"x-content-type-options", b"nosniff"),

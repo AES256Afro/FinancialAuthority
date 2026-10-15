@@ -195,8 +195,7 @@ router = APIRouter(tags=["oauth"])
 
 PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title}</title><link rel="icon" href="/favicon.svg">
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
-<style>body{{margin:0;min-height:100vh;display:grid;place-items:center;background:#f6f4ef;color:#141518;font-family:Manrope,system-ui,sans-serif;font-size:15px;line-height:1.45}}
+<style>body{{margin:0;min-height:100vh;display:grid;place-items:center;background:#f6f4ef;color:#141518;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;font-size:15px;line-height:1.45}}
 .card{{background:#fff;border:1px solid #e4e1da;border-radius:16px;padding:24px;width:min(100% - 32px,420px);display:flex;flex-direction:column;gap:12px;box-sizing:border-box}}
 h1{{margin:0;font-size:20px;font-weight:800}}label{{display:flex;flex-direction:column;gap:4px;font-size:11px;font-weight:800;color:#85878f;text-transform:uppercase;letter-spacing:.06em}}
 input[type=text],input[type=password]{{font:inherit;font-size:15px;padding:10px 12px;border-radius:10px;border:1px solid #d9d6ce;min-height:44px;box-sizing:border-box}}
