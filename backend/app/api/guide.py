@@ -77,6 +77,17 @@ def today_thing(session: Session = Depends(get_session), principal: auth.Princip
     return out
 
 
+@router.get("/glance")
+def glance_route(session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
+    from ..engine.guide import glance
+
+    snap = finance_snapshot(session, today())
+    cov = account_cover(session, today(), saving=saving_plan(session, today(), snap=snap))
+    out = glance(session, today(), snap=snap, cover=cov)
+    services.audit(session, client=principal.name, client_kind=_who(principal)[1], tool="glance", args={}, rows=1, redaction=principal.redaction)
+    return out
+
+
 @router.get("/checkin")
 def checkin(session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
     snap = finance_snapshot(session, today())

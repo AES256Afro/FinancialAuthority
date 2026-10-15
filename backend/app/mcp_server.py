@@ -386,6 +386,24 @@ def build_server() -> MCPServer:
             services.audit(session, client=client, client_kind="key", tool="weekly_checkin", args={}, rows=len(out["unexpected"]), redaction=redaction)
             return out
 
+    @server.tool(name="glance", annotations=READ_ONLY)
+    def glance_tool() -> dict:
+        """The few figures for a quick look: safe to spend and through when, the next payday, the next bill,
+        the one thing today, each account's cover status, and one sentence that says it all. Use it for a
+        short answer; the other tools hold the detail."""
+        from .engine.cover import account_cover
+        from .engine.guide import glance
+        from .engine.saving import saving_plan
+        from .engine.snapshot import finance_snapshot
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            snap = finance_snapshot(session, _today())
+            cov = account_cover(session, _today(), saving=saving_plan(session, _today(), snap=snap))
+            out = glance(session, _today(), snap=snap, cover=cov)
+            services.audit(session, client=client, client_kind="key", tool="glance", args={}, rows=1, redaction=redaction)
+            return out
+
     @server.tool(name="paycheck_views", annotations=READ_ONLY)
     def paycheck_views_tool() -> dict:
         """Each paycheck split into its parts in a fixed order (housing, bills, the card payment, pay-later and

@@ -1,9 +1,9 @@
 // The shell, offline: the app's own files are kept so the page opens on the phone without the server;
 // every call to the server itself goes to the network, never to a cache, so no figure is ever stale.
-const SHELL = "fa-shell-v1";
+const SHELL = "fa-shell-v2";
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(SHELL).then((cache) => cache.addAll(["/", "/favicon.svg", "/icon.svg", "/manifest.webmanifest"]).catch(() => undefined)));
+  event.waitUntil(caches.open(SHELL).then((cache) => cache.addAll(["/", "/favicon.svg", "/icon.svg", "/icon-192.png", "/apple-touch-icon.png", "/manifest.webmanifest"]).catch(() => undefined)));
   self.skipWaiting();
 });
 
@@ -29,4 +29,25 @@ self.addEventListener("fetch", (event) => {
       return response;
     }).catch(() => caches.match("/")));
   }
+});
+
+// Push from the app itself: show it, and open the page it points at when tapped.
+self.addEventListener("push", (event) => {
+  let data = { title: "FinancialAuthority", body: "", link: "/today", tag: "fa" };
+  try {
+    data = { ...data, ...(event.data ? event.data.json() : {}) };
+  } catch {
+    data.body = event.data ? event.data.text() : "";
+  }
+  event.waitUntil(self.registration.showNotification(data.title, { body: data.body, tag: data.tag, icon: "/icon-192.png", badge: "/icon-192.png", data: { link: data.link } }));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = new URL((event.notification.data && event.notification.data.link) || "/today", self.location.origin).href;
+  event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
+    const open = wins.find((w) => w.url.startsWith(self.location.origin));
+    if (open) return open.navigate(target).then((w) => (w || open).focus());
+    return self.clients.openWindow(target);
+  }));
 });

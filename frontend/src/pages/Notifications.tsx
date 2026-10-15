@@ -1,6 +1,7 @@
 // Settings › Notifications: where the morning brief goes. ntfy or Gotify, both free, both in BoxPilot's catalog.
 import { useEffect, useState } from "react";
 import { api, useApi } from "../api";
+import { ReminderSwitches, ShortcutRecipe, ThisDevice } from "../components/Reach";
 
 interface PushState {
   kind: "off" | "ntfy" | "gotify";
@@ -50,7 +51,9 @@ export function Notifications() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 820 }}>
       <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Notifications</h1>
-      <p style={{ margin: 0, color: "var(--ink-2)" }}>The morning brief on the phone, in the engine's own sentences, once a day from the hour you choose. Install ntfy or Gotify from BoxPilot's catalog, or use ntfy.sh with a topic of your own. Nothing else is sent; the app never emails anyone.</p>
+      <ThisDevice />
+      <ReminderSwitches />
+      <p style={{ margin: 0, color: "var(--ink-2)" }}>The morning brief and your reminders, in the engine's own sentences. The app can send them itself to this device, or through ntfy or Gotify below. Nothing is sent to anyone but you; the app never emails anyone without your approval.</p>
       {error && <div style={{ color: "var(--critical)" }}>{error.message}</div>}
       <section className="card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
@@ -84,11 +87,12 @@ export function Notifications() {
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <button className="btn dark" type="button" disabled={busy} onClick={save}>Save</button>
           <button className="btn" type="button" disabled={busy || !data?.configured} onClick={() => test("/api/v1/push/test")}>Send a test</button>
-          <button className="btn" type="button" disabled={busy || !data?.configured} onClick={() => test("/api/v1/push/brief")}>Send today's brief now</button>
+          <button className="btn" type="button" disabled={busy} onClick={() => test("/api/v1/push/brief")}>Send today's brief now</button>
           {note && <span style={{ fontSize: 13, color: "var(--ink-2)" }}>{note}</span>}
         </div>
         {data?.last_brief_day && <div style={{ fontSize: 12, color: "var(--muted)" }}>Last brief sent on {data.last_brief_day}.</div>}
       </section>
+      <ShortcutRecipe />
     </div>
   );
 }

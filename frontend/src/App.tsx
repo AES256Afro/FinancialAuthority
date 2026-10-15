@@ -1,39 +1,41 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useApi } from "./api";
 import { loadAppearance } from "./appearance";
 import { Shell } from "./components/Shell";
-import { Accounts } from "./pages/Accounts";
-import { Appearance } from "./pages/Appearance";
-import { Audit } from "./pages/Audit";
-import { Bills } from "./pages/Bills";
-import { Chat } from "./pages/Chat";
-import { Clients } from "./pages/Clients";
-import { Confirm } from "./pages/Confirm";
-import { Borrowing } from "./pages/Borrowing";
-import { Move } from "./pages/Move";
-import { CheckIn } from "./pages/CheckIn";
-import { CoverPage } from "./pages/CoverPage";
-import { Saving } from "./pages/Saving";
-import { Welcome } from "./pages/Welcome";
-import { Exports } from "./pages/Exports";
-import { Glossary } from "./pages/Glossary";
-import { Debts } from "./pages/Debts";
-import { Connectors } from "./pages/Connectors";
 import { Home } from "./pages/Home";
-import { Investments } from "./pages/Investments";
-import { Jobs } from "./pages/Jobs";
-import { Mail } from "./pages/Mail";
-import { Models } from "./pages/Models";
-import { Outlook } from "./pages/Outlook";
-import { Notifications } from "./pages/Notifications";
-import { Paystubs } from "./pages/Paystubs";
-import { Reports } from "./pages/Reports";
-import { SettingsIndex } from "./pages/Settings";
 import { SignIn } from "./pages/SignIn";
 import { Today } from "./pages/Today";
-import { Transactions } from "./pages/Transactions";
 import type { Me, Snapshot } from "./types";
+
+// Pages load when first opened, so the app opens fast on a phone; Home and Today come with the first load.
+const Accounts = lazy(() => import("./pages/Accounts").then((m) => ({ default: m.Accounts })));
+const Appearance = lazy(() => import("./pages/Appearance").then((m) => ({ default: m.Appearance })));
+const Audit = lazy(() => import("./pages/Audit").then((m) => ({ default: m.Audit })));
+const Bills = lazy(() => import("./pages/Bills").then((m) => ({ default: m.Bills })));
+const Chat = lazy(() => import("./pages/Chat").then((m) => ({ default: m.Chat })));
+const Clients = lazy(() => import("./pages/Clients").then((m) => ({ default: m.Clients })));
+const Confirm = lazy(() => import("./pages/Confirm").then((m) => ({ default: m.Confirm })));
+const Borrowing = lazy(() => import("./pages/Borrowing").then((m) => ({ default: m.Borrowing })));
+const Move = lazy(() => import("./pages/Move").then((m) => ({ default: m.Move })));
+const CheckIn = lazy(() => import("./pages/CheckIn").then((m) => ({ default: m.CheckIn })));
+const CoverPage = lazy(() => import("./pages/CoverPage").then((m) => ({ default: m.CoverPage })));
+const Saving = lazy(() => import("./pages/Saving").then((m) => ({ default: m.Saving })));
+const Welcome = lazy(() => import("./pages/Welcome").then((m) => ({ default: m.Welcome })));
+const Exports = lazy(() => import("./pages/Exports").then((m) => ({ default: m.Exports })));
+const Glossary = lazy(() => import("./pages/Glossary").then((m) => ({ default: m.Glossary })));
+const Debts = lazy(() => import("./pages/Debts").then((m) => ({ default: m.Debts })));
+const Connectors = lazy(() => import("./pages/Connectors").then((m) => ({ default: m.Connectors })));
+const Investments = lazy(() => import("./pages/Investments").then((m) => ({ default: m.Investments })));
+const Jobs = lazy(() => import("./pages/Jobs").then((m) => ({ default: m.Jobs })));
+const Mail = lazy(() => import("./pages/Mail").then((m) => ({ default: m.Mail })));
+const Models = lazy(() => import("./pages/Models").then((m) => ({ default: m.Models })));
+const Outlook = lazy(() => import("./pages/Outlook").then((m) => ({ default: m.Outlook })));
+const Notifications = lazy(() => import("./pages/Notifications").then((m) => ({ default: m.Notifications })));
+const Paystubs = lazy(() => import("./pages/Paystubs").then((m) => ({ default: m.Paystubs })));
+const Reports = lazy(() => import("./pages/Reports").then((m) => ({ default: m.Reports })));
+const SettingsIndex = lazy(() => import("./pages/Settings").then((m) => ({ default: m.SettingsIndex })));
+const Transactions = lazy(() => import("./pages/Transactions").then((m) => ({ default: m.Transactions })));
 
 function Loading({ text }: { text: string }) {
   return <div style={{ padding: 24, color: "var(--muted)" }}>{text}</div>;
@@ -59,6 +61,7 @@ export default function App() {
 
   return (
     <Shell snapshot={snap}>
+      <Suspense fallback={<Loading text="Opening…" />}>
       <Routes>
         <Route path="/" element={body((s) => <Home snapshot={s} />)} />
         <Route path="/today" element={body((s) => <Today snapshot={s} />)} />
@@ -91,6 +94,7 @@ export default function App() {
         <Route path="/settings/audit" element={<Audit />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
     </Shell>
   );
 }
