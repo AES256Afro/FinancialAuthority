@@ -14,6 +14,7 @@ from ..connectors.plaid import PlaidConnector, PlaidError
 from ..connectors.teller import TellerConnector
 from ..db import get_session
 from ..models import Account, BankLink
+from ..store import get_setting, set_setting
 
 router = APIRouter(prefix="/api/v1/banks", tags=["banks"])
 
@@ -115,11 +116,26 @@ def plaid_link_token(body: LinkTokenIn | None = None, session: Session = Depends
         from ..connectors.banks import link_token as token_of
 
         access_token = token_of(link)
+    purpose = body.purpose if body and body.purpose in ("bank", "investments") else "bank"
+    uri = api.redirect_uri(settings.public_url)
+    oauth = {"ok": uri is not None, "uri": uri}
     try:
-        purpose = body.purpose if body and body.purpose in ("bank", "investments") else "bank"
-        return {"link_token": api.link_token(public_url=settings.public_url, access_token=access_token, purpose=purpose), "environment": bank_state(session, "plaid")["environment"]}
+        token = api.link_token(public_url=settings.public_url, access_token=access_token, purpose=purpose)
+        if uri:
+            set_setting(session, "banks.plaid", {**(get_setting(session, "banks.plaid", {}) or {}), "redirect_ok": True, "redirect_uri": uri})
     except PlaidError as error:
-        raise HTTPException(502, str(error)) from error
+        if uri and "redirect uri" in str(error).lower():
+            # The URI is not registered in the Plaid dashboard yet. Banks that sign in without OAuth can still
+            # connect, so the token is made without it, and the next steps say what to register.
+            set_setting(session, "banks.plaid", {**(get_setting(session, "banks.plaid", {}) or {}), "redirect_ok": False, "redirect_uri": uri})
+            oauth = {"ok": False, "uri": uri, "note": f"Plaid does not know {uri} yet. Register it in the Plaid dashboard (Team Settings, API, Allowed redirect URIs) and banks that sign in with OAuth, Capital One among them, can connect; until then only banks without OAuth can."}
+            try:
+                token = api.link_token(public_url=settings.public_url, access_token=access_token, purpose=purpose, redirect=False)
+            except PlaidError as again:
+                raise HTTPException(502, str(again)) from again
+        else:
+            raise HTTPException(502, str(error)) from error
+    return {"link_token": token, "environment": bank_state(session, "plaid")["environment"], "oauth_redirect": oauth}
 
 
 @router.post("/plaid/exchange")
