@@ -104,10 +104,34 @@ def row_hash(r: dict, repeat: int = 0) -> str:
     return sha256(("rocketmoney|" + "|".join(row_key(r)) + f"|{repeat}").encode()).hexdigest()
 
 
+def _live_accounts_by_last4(session: Session) -> dict[str, Account]:
+    """The accounts a live connector holds, by the last four digits the bank gave them, so an export's history
+    lands on the same account rather than beside it."""
+    from .. import crypto
+
+    out: dict[str, Account] = {}
+    for a in session.exec(select(Account).where(Account.active == True, Account.connector != "rocketmoney")).all():  # noqa: E712
+        if not a.last4_enc:
+            continue
+        try:
+            last4 = crypto.decrypt(a.last4_enc) if crypto.is_encrypted(a.last4_enc) else a.last4_enc
+        except Exception:  # noqa: BLE001 - a key that cannot be read is just no match
+            continue
+        if last4:
+            out.setdefault(last4, a)
+    return out
+
+
 def _account_for(session: Session, r: dict, cache: dict[tuple, Account]) -> Account:
     key = (r["institution"], r["account_name"], r["account_number"])
     if key in cache:
         return cache[key]
+    if "__live__" not in cache:
+        cache["__live__"] = _live_accounts_by_last4(session)  # type: ignore[assignment]
+    live = cache["__live__"].get(r["account_number"])  # type: ignore[union-attr]
+    if live is not None and (not r["institution"] or not live.institution or r["institution"].lower().split()[0] in live.institution.lower()):
+        cache[key] = live
+        return live
     row = session.exec(
         select(Account).where(Account.connector == "rocketmoney", Account.institution == r["institution"], Account.name == r["account_name"], Account.external_id == r["account_number"])
     ).first()
@@ -119,15 +143,23 @@ def _account_for(session: Session, r: dict, cache: dict[tuple, Account]) -> Acco
     return row
 
 
+MERGE_DAYS = 3  # an export's date and a connector's can differ by posting; within this many days they are one
+
+
 def import_rows(session: Session, rows: list[dict], source_file: str = "upload.csv") -> SyncResult:
     """Insert what is new. A key repeated within one file is a real repeat purchase; the same key already in
-    the ledger is overlap between exports and is skipped."""
+    the ledger is overlap between exports and is skipped; a row a live connector already holds on the same
+    account, same amount within three days, is the same transaction seen twice and is merged, not added."""
     existing = set(session.exec(select(Transaction.row_hash)).all())
     rules = rules_for(session)
     cache: dict[tuple, Account] = {}
     seen_in_file: dict[tuple, int] = {}
-    inserted = duplicates = 0
+    inserted = duplicates = merged = 0
     accounts_before = len(session.exec(select(Account.id)).all())
+    # What the live connectors hold, by account and amount, each row claimable once.
+    live_rows: dict[tuple[int, str], list[list]] = {}
+    for t in session.exec(select(Transaction).where(Transaction.source != "rocketmoney")).all():
+        live_rows.setdefault((t.account_id, f"{t.amount:.2f}"), []).append([t.date, t.id, False])
     for r in rows:
         k = row_key(r)
         repeat = seen_in_file.get(k, 0)
@@ -137,6 +169,14 @@ def import_rows(session: Session, rows: list[dict], source_file: str = "upload.c
             duplicates += 1
             continue
         account = _account_for(session, r, cache)
+        if account.connector != "rocketmoney":
+            twins = live_rows.get((account.id, f"{r['amount']:.2f}"), [])
+            twin = next((x for x in sorted(twins, key=lambda x: abs((x[0] - r["date"]).days)) if not x[2] and abs((x[0] - r["date"]).days) <= MERGE_DAYS), None)
+            if twin is not None:
+                twin[2] = True
+                merged += 1
+                existing.add(h)
+                continue
         row = Transaction(
             account_id=account.id, date=r["date"], posted_date=r["original_date"], merchant=r["merchant"], raw_name=r["name"], description=r["description"],
             amount=r["amount"], category=r["category"], note=r["note"],
@@ -149,7 +189,8 @@ def import_rows(session: Session, rows: list[dict], source_file: str = "upload.c
         inserted += 1
     session.commit()
     accounts_after = len(session.exec(select(Account.id)).all())
-    return SyncResult(ok=True, summary=f"{inserted} new, {duplicates} already known", inserted=inserted, duplicates=duplicates, accounts=accounts_after - accounts_before, at=utcnow())
+    summary = f"{inserted} new, {duplicates} already known" + (f", {merged} already held by the bank link" if merged else "")
+    return SyncResult(ok=True, summary=summary, inserted=inserted, duplicates=duplicates, accounts=accounts_after - accounts_before, details={"merged": merged}, at=utcnow())
 
 
 def export_csv(session: Session) -> str:
