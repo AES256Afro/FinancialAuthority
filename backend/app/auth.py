@@ -229,9 +229,34 @@ def logout(response: Response) -> dict:
     return {"ok": True}
 
 
+def note_public_sighting(request: Request, session: Session) -> None:
+    """A signed-in page load that arrived at the published address is proof from outside that the address
+    answers, which the self-check cannot get from inside the container (a tailnet only answers its peers)."""
+    if not settings.public_url:
+        return
+    from datetime import datetime
+    from urllib.parse import urlparse
+
+    from .store import get_setting, set_setting
+
+    wanted = (urlparse(settings.public_url).hostname or "").lower()
+    seen_host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "").split(",")[0].strip().lower()
+    if not wanted or seen_host.rsplit(":", 1)[0].strip("[]") != wanted:
+        return
+    sighting = get_setting(session, "public.last_seen", {}) or {}
+    now = utcnow()
+    try:
+        if sighting.get("at") and (now - datetime.fromisoformat(sighting["at"])).total_seconds() < 600:
+            return
+    except ValueError:
+        pass
+    set_setting(session, "public.last_seen", {"at": now.isoformat(), "host": seen_host})
+
+
 @router.get("/me")
 def me(request: Request, session: Session = Depends(get_session)) -> dict:
     principal = principal_from_request(request, session)
     if principal is None:
         raise HTTPException(401, "Not signed in")
+    note_public_sighting(request, session)
     return {"kind": principal.kind, "name": principal.name, "scopes": sorted(principal.scopes), "auth_enabled": auth_enabled()}

@@ -37,7 +37,7 @@ def run_detection(session: Session, today: date, lookback_days: int = 400) -> di
             series = RecurringSeries(
                 merchant_key=f["merchant_key"], merchant=f["merchant"], category=f["category"], cadence=f["cadence"], typical_amount=f["typical_amount"],
                 latest_amount=f["latest_amount"], charges_seen=f["charges_seen"], first_seen=f["first_seen"], last_date=f["last_date"], next_expected=f["next_expected"],
-                active=f["active"], kind=f["kind"],
+                active=f["active"], kind=f["kind"], suggested_kind=f.get("suggested_kind", ""),
             )
             session.add(series)
             session.flush()
@@ -47,6 +47,8 @@ def run_detection(session: Session, today: date, lookback_days: int = 400) -> di
             series.latest_amount, series.charges_seen, series.last_date, series.next_expected, series.active = f["latest_amount"], f["charges_seen"], f["last_date"], f["next_expected"], f["active"]
             if f["kind"] == "income":
                 series.kind = "income"
+            if not series.confirmed:
+                series.suggested_kind = f.get("suggested_kind", "")
             session.add(series)
             updated += 1
         if not series.confirmed:

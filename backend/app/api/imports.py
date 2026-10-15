@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlmodel import Session
 
 from .. import auth
-from ..connectors.files import detect, import_holdings, import_rows, parse_csv_rows, parse_ofx, sniff_holdings_csv
+from ..connectors.files import detect, import_bills, import_holdings, import_rows, parse_bills_rows, parse_csv_rows, parse_ofx, sniff_holdings_csv
 from ..db import get_session
 from ..models import Account
 from .routes import today
@@ -50,6 +50,12 @@ async def import_file(
 ) -> dict:
     text = await _text(file)
     found = detect(text)
+    if found["kind"] == "bills":
+        bill_rows = parse_bills_rows(text, found["mapping"])
+        if not bill_rows:
+            raise HTTPException(400, "No rows with a name and an amount were found; check the columns in the preview")
+        landed = import_bills(session, bill_rows, source_file=file.filename or "upload")
+        return {"ok": True, "summary": landed.summary, "inserted": landed.inserted, "duplicates": 0, "accounts_created": 0, "account_id": None, "bills": landed.details, "detection": {}}
     if found["kind"] == "ofx":
         parsed = parse_ofx(text)
         rows = parsed["rows"]

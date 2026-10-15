@@ -36,3 +36,14 @@ def test_inactive_series_hidden_unless_asked():
     rows = rows_for("Old Gym", 30.0, 30, 5, date(2025, 10, 1))
     assert detect(rows, as_of) == []
     assert detect(rows, as_of, include_inactive=True)[0]["active"] is False
+
+
+def test_suggested_kind_follows_the_category():
+    from app.engine.recurring import suggest_kind
+
+    assert suggest_kind("Rent") == "bill" and suggest_kind("Loan Payment") == "bill" and suggest_kind("Electricity") == "bill" and suggest_kind("Gas & Electric") == "bill"
+    assert suggest_kind("Streaming") == "subscription" and suggest_kind("Entertainment", "Streamflix") == "subscription"
+    assert suggest_kind("Groceries") == "ignored" and suggest_kind("Gas") == "ignored" and suggest_kind("Dining & Drinks") == "ignored"
+    assert suggest_kind("Income", income=True) == "income" and suggest_kind("") == ""
+    found = detect(rows_for("Streamflix", 15.99, 30, 6, date(2026, 4, 20), "Streaming"), date(2026, 10, 14))
+    assert found[0]["suggested_kind"] == "subscription"

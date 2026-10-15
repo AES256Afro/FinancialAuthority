@@ -48,6 +48,17 @@ class EnrollIn(BaseModel):
     institution: str = ""
 
 
+def detect_after(session: Session, result) -> dict:  # noqa: ANN001
+    """New rows may complete a recurring series: run detection now, so a freshly linked bank shows its
+    bills and paychecks on the next screen instead of after the six-hourly job."""
+    if not result.inserted:
+        return {}
+    from ..jobs.detect import run_detection
+    from .routes import today
+
+    return run_detection(session, today())
+
+
 def plaid() -> PlaidConnector:
     return CONNECTORS["plaid"]  # type: ignore[return-value]
 
@@ -165,8 +176,9 @@ def plaid_exchange(body: ExchangeIn, session: Session = Depends(get_session), _:
     except crypto.DataKeyMissing as error:
         raise HTTPException(409, str(error)) from error
     result = plaid().sync(session, link_id=link.id)
+    detection = detect_after(session, result)
     session.refresh(link)
-    return {"link": link_out(session, link), "sync": {"ok": result.ok, "summary": result.summary, "inserted": result.inserted}}
+    return {"link": link_out(session, link), "sync": {"ok": result.ok, "summary": result.summary, "inserted": result.inserted}, "detection": detection}
 
 
 @router.post("/teller/enroll")
@@ -178,8 +190,9 @@ def teller_enroll(body: EnrollIn, session: Session = Depends(get_session), _: au
     except crypto.DataKeyMissing as error:
         raise HTTPException(409, str(error)) from error
     result = teller().sync(session, link_id=link.id)
+    detection = detect_after(session, result)
     session.refresh(link)
-    return {"link": link_out(session, link), "sync": {"ok": result.ok, "summary": result.summary, "inserted": result.inserted}}
+    return {"link": link_out(session, link), "sync": {"ok": result.ok, "summary": result.summary, "inserted": result.inserted}, "detection": detection}
 
 
 @router.post("/{link_id}/sync")
@@ -188,8 +201,9 @@ def sync_link(link_id: int, session: Session = Depends(get_session), _: auth.Pri
     if link is None or not link.active:
         raise HTTPException(404, "No such link")
     result = CONNECTORS[link.provider].sync(session, link_id=link.id)
+    detection = detect_after(session, result)
     session.refresh(link)
-    return {"ok": result.ok, "summary": result.summary, "inserted": result.inserted, "details": result.details, "link": link_out(session, link)}
+    return {"ok": result.ok, "summary": result.summary, "inserted": result.inserted, "details": result.details, "link": link_out(session, link), "detection": detection}
 
 
 @router.delete("/{link_id}")

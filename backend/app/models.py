@@ -77,6 +77,7 @@ class RecurringSeries(SQLModel, table=True):
     active: bool = True
     kind: str = "unknown"  # unknown | bill | subscription | income | advance | installment | ignored
     confirmed: bool = False
+    suggested_kind: str = ""  # what the category says it is; a default for the owner's tap, never a fact
 
 
 class Income(SQLModel, table=True):

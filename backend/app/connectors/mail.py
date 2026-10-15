@@ -75,6 +75,9 @@ def handle_message(session: Session, account: MailAccount, folder: str, uid: int
         status = "applied" if outcome.get("imported") else "rejected"
         session.add(ExtractedFact(kind="export", message_ref_id=ref.id, fields=json.dumps({"inserted": outcome.get("imported", 0)}), confidence=1.0, status=status, excerpt=outcome.get("note", ""), produced_by=produced_by, resolved_at=utcnow()))
         return outcome
+    if kind == "upcoming_bills":
+        outcome.update(upcoming_bills_facts(session, ref, parsed, today, produced_by))
+        return outcome
     # A PDF attachment that reads like a paystub becomes a paystub fact whatever the subject said.
     stub_fact = paystub_from_attachments(session, ref, parsed, today, produced_by)
     if stub_fact and kind in ("none", "paystub", "statement"):
@@ -100,6 +103,38 @@ def handle_message(session: Session, account: MailAccount, folder: str, uid: int
     session.add(ExtractedFact(kind=kind, message_ref_id=ref.id, fields=json.dumps(fields), confidence=confidence, status=status, excerpt=excerpt_for(parsed.text, fields), produced_by=produced_by, resolved_at=utcnow() if status == "auto" else None))
     outcome["fact"] = status
     return outcome
+
+
+def upcoming_bills_facts(session: Session, ref: MessageRef, parsed: Parsed, today: date, produced_by: str) -> dict:
+    """Rocket Money's weekly list: one pending bill fact per charge it names, or an auto fact when a bill on the
+    register already says the same. With nothing parsed, the message stays an informational fact."""
+    from ..engine.recurring import merchant_key
+    from ..models import Bill
+    from ..parsers.rocketmoney_bills import parse_upcoming_bills
+
+    ref_date = parsed.date.date() if parsed.date else today
+    charges = parse_upcoming_bills(parsed.text, ref_date)
+    base = {"sender": parsed.sender, "sender_name": parsed.sender_name, "subject": parsed.subject[:200], "source": "rocketmoney-upcoming"}
+    if parsed.date:
+        base["message_date"] = parsed.date.date().isoformat()
+    if not charges:
+        session.add(ExtractedFact(kind="upcoming_bills", message_ref_id=ref.id, fields=json.dumps(base), confidence=0.5, status="auto", excerpt=clean(parsed.text, 200), produced_by=produced_by, resolved_at=utcnow()))
+        return {"fact": "auto", "charges": 0}
+    bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
+    pending = known = 0
+    for charge in charges:
+        key = merchant_key(charge["name"])
+        match = next((b for b in bills if merchant_key(b.name) == key or merchant_key(b.name).startswith(key) or key.startswith(merchant_key(b.name))), None)
+        same = match is not None and abs(match.amount - charge["amount"]) < 0.01 and match.due_day == min(charge["due_date"].day, 28)
+        fields = {**base, "name": charge["name"], "amount": charge["amount"], "due_date": charge["due_date"].isoformat()}
+        excerpt = f"{charge['name']} · {charge['due_date'].strftime('%A, %B %d')} · ${charge['amount']:,.2f}"
+        session.add(ExtractedFact(kind="bill_due", message_ref_id=ref.id, fields=json.dumps(fields), confidence=0.85, status="auto" if same else "pending", excerpt=excerpt,
+                                  produced_by=f"{produced_by}+parser:rocketmoney_bills", applied_to=f"bill:{match.id}" if same else "", resolved_at=utcnow() if same else None))
+        if same:
+            known += 1
+        else:
+            pending += 1
+    return {"fact": "pending" if pending else "auto", "charges": len(charges), "pending": pending, "already_known": known}
 
 
 def paystub_from_attachments(session: Session, ref: MessageRef, parsed: Parsed, today: date, produced_by: str) -> bool:

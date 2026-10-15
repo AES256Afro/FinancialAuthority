@@ -104,6 +104,7 @@ def self_check() -> str:
         for l in session.exec(select(BankLink).where(BankLink.active == True)).all():  # noqa: E712
             sources.append({"kind": l.provider, "name": l.institution, "last_ok": l.last_sync_at.isoformat() if l.last_sync_at and not l.last_error else None, "error": l.last_error or ("needs a new sign-in" if l.needs_login else "")})
         reachable = None
+        seen_outside = None
         if settings.public_url:
             try:
                 import httpx
@@ -111,9 +112,16 @@ def self_check() -> str:
                 reachable = httpx.get(settings.public_url.rstrip("/") + "/api/health", timeout=8.0).status_code == 200
             except Exception:  # noqa: BLE001 - unreachable is an answer
                 reachable = False
+            sighting = get_setting(session, "public.last_seen", {}) or {}
+            try:
+                if sighting.get("at") and (utcnow() - datetime.fromisoformat(sighting["at"])).total_seconds() < 86400:
+                    seen_outside = sighting["at"]
+            except ValueError:
+                seen_outside = None
         problems = [f"{s['name']}: {s['error']}" for s in sources if s["error"]]
-        if reachable is False:
-            problems.append("the public address does not answer")
+        if reachable is False and seen_outside is None:
+            # From inside the container a tailnet-served address never answers; a browser reaching it does.
+            problems.append("the public address did not answer, and no browser has reached it in the last day")
         if stale:
             problems.append(f"stale balances: {', '.join(stale)}")
         if usage.free < 2e9:
@@ -123,6 +131,7 @@ def self_check() -> str:
             "free_gb": round(usage.free / 1e9, 2),
             "db_mb": round(db_bytes / 1e6, 2),
             "last_transaction": last_tx.isoformat() if last_tx else None,
+            "public_address": {"answers_from_inside": reachable, "last_seen_from_outside": seen_outside},
             "stale_accounts": stale,
             "connectors": sorted(CONNECTORS),
             "sources": sources,
@@ -144,7 +153,7 @@ def import_watch() -> str:
             if stamp in processed:
                 continue
             text = path.read_text(encoding="utf-8-sig", errors="replace")
-            from ..connectors.files import detect, import_rows, parse_csv_rows, parse_ofx
+            from ..connectors.files import detect, import_bills, import_rows, parse_bills_rows, parse_csv_rows, parse_ofx
             from ..connectors.rocketmoney import parse_csv as parse_rocketmoney
 
             if path.suffix.lower() == ".csv" and parse_rocketmoney(text, path.name) is not None:
@@ -156,6 +165,8 @@ def import_watch() -> str:
                     rows = parsed["rows"]
                     name = f"{parsed['vendor']} {parsed['account_type'] or 'account'}".strip() if parsed["vendor"] else path.stem
                     result = import_rows(session, rows, source_file=path.name, account_name=name, institution=parsed["vendor"]) if rows else None
+                elif found["kind"] == "bills":
+                    result = import_bills(session, parse_bills_rows(text, found["mapping"]), source_file=path.name)
                 else:
                     rows = parse_csv_rows(text) if found["ready"] else []
                     result = import_rows(session, rows, source_file=path.name, account_name=path.stem) if rows else None
@@ -226,6 +237,7 @@ def bank_sync() -> str:
     from ..models import BankLink
 
     notes: list[str] = []
+    inserted = 0
     with session_scope() as session:
         links = session.exec(select(BankLink).where(BankLink.active == True)).all()  # noqa: E712
         if not links:
@@ -233,6 +245,9 @@ def bank_sync() -> str:
         for link in links:
             result = CONNECTORS[link.provider].sync(session, link_id=link.id)
             notes.append(result.summary)
+            inserted += result.inserted
+    if inserted:
+        notes.append(detect_recurring())  # new rows may complete a series; the owner should not wait six hours
     return "; ".join(notes)
 
 

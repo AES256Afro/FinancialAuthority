@@ -1,3 +1,4 @@
+import json
 from datetime import date
 from email.message import EmailMessage
 
@@ -169,3 +170,44 @@ def test_mail_api_and_fact_confirmation(owner: TestClient, monkeypatch):
     past_due = owner.get("/api/v1/facts").json()["facts"][0]
     assert owner.post(f"/api/v1/facts/{past_due['id']}/reject").json()["ok"]
     assert owner.get("/api/v1/facts").json()["pending"] == 0
+
+
+def test_rocket_money_upcoming_bills_become_one_fact_per_charge(owner: TestClient):
+    """The weekly list names each charge, its day and its amount; each becomes a pending bill fact the owner
+    confirms with one tap, and one that matches a bill on the register already is noted without a tap."""
+    from app.connectors.mail import handle_message
+    from app.parsers.rocketmoney_bills import parse_upcoming_bills
+
+    text = (
+        "Hi Owner, you have 3 recurring charges coming up in the next 7 days.\n\n"
+        "\u034f \ufeff \u034f\n\n"
+        "Heads up Owner...\n\nYou have 3 recurring charges coming up within the next 7 days.\n\n"
+        "Example Water Utility\n\nMonday, October 12\n\n$61.40\n\n"
+        "Streamflix\n\nThursday, October 15\n\n$15.99\n\n"
+        "Example Gym\n\nSaturday, October 17\n\n$29.00\n\n"
+        "Open Rocket Money\n\nLooking to lower your bills?\n\nLower my bills\n"
+    )
+    charges = parse_upcoming_bills(text, date(2026, 10, 9))
+    assert [(c["name"], c["due_date"].isoformat(), c["amount"]) for c in charges] == [("Example Water Utility", "2026-10-12", 61.4), ("Streamflix", "2026-10-15", 15.99), ("Example Gym", "2026-10-17", 29.0)]
+    assert parse_upcoming_bills("Thanks for being with us. Open Rocket Money", date(2026, 10, 9)) == []
+    with Session(engine) as session:
+        account = add_account(session)
+        session.add(Bill(name="Streamflix", kind="subscription", amount=15.99, amount_mode="fixed", cadence="monthly", due_day=15, autopay=True))
+        session.commit()
+        parsed = parse_message(raw("Rocket Money <hello@email.rocketmoney.example>", "This week's upcoming bills", text))
+        outcome = handle_message(session, account, "INBOX", 9001, parsed, TODAY)
+        session.commit()
+        assert outcome["kind"] == "upcoming_bills" and outcome["charges"] == 3 and outcome["pending"] == 2 and outcome["already_known"] == 1
+        facts = session.exec(select(ExtractedFact).where(ExtractedFact.kind == "bill_due")).all()
+        water = next(f for f in facts if "Water" in f.fields)
+        known = next(f for f in facts if "Streamflix" in f.fields)
+        assert water.status == "pending" and json.loads(water.fields)["due_date"] == "2026-10-12" and json.loads(water.fields)["amount"] == 61.4
+        assert "Ignore" not in water.excerpt and "Example Water Utility" in water.excerpt
+        assert known.status == "auto" and known.applied_to.startswith("bill:")
+        water_id = water.id
+    assert owner.post(f"/api/v1/facts/{water_id}/confirm", json={"apply": True}).status_code == 200
+    with Session(engine) as session:
+        fact = session.get(ExtractedFact, water_id)
+        assert fact.applied_to.startswith("bill:") and fact.status != "pending"
+    bills = {b["name"]: b for b in owner.get("/api/v1/bills").json()["bills"]}
+    assert bills["Example Water Utility"]["due_day"] == 12 and bills["Example Water Utility"]["amount"] == 61.4

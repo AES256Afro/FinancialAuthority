@@ -14,6 +14,8 @@ function FactCard({ f, onDone }: { f: FactRow; onDone: () => void }) {
   const [due, setDue] = useState(f.fields.due_date ? String(f.fields.due_date) : "");
   const [error, setError] = useState<string | null>(null);
   const sender = f.message?.sender_name || String(f.fields.sender_name || "");
+  const who = String(f.fields.name || "") || sender;
+  const via = f.fields.name && sender && String(f.fields.name) !== sender ? sender : "";
 
   async function act(path: "confirm" | "reject") {
     setBusy(true);
@@ -32,8 +34,8 @@ function FactCard({ f, onDone }: { f: FactRow; onDone: () => void }) {
     <div className="card" style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 8, borderColor: f.kind === "past_due" ? "var(--critical)" : undefined }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
         <div>
-          <strong style={{ fontSize: 15 }}>{FACT_LABEL[f.kind] ?? f.kind}{sender ? ` · ${sender}` : ""}</strong>
-          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{f.message?.subject}{f.message?.date ? ` · ${shortDate(f.message.date.slice(0, 10))}` : ""} · from mail · {Math.round(f.confidence * 100)}% sure</div>
+          <strong style={{ fontSize: 15 }}>{FACT_LABEL[f.kind] ?? f.kind}{who ? ` · ${who}` : ""}</strong>
+          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{f.message?.subject}{f.message?.date ? ` · ${shortDate(f.message.date.slice(0, 10))}` : ""} · from mail{via ? ` via ${via}` : ""} · {Math.round(f.confidence * 100)}% sure</div>
         </div>
         {f.fields.amount !== undefined && <strong className="num" style={{ fontSize: 18 }}>{money(Number(f.fields.amount), { cents: true })}</strong>}
       </div>
@@ -63,6 +65,8 @@ function Row({ s, onDone }: { s: SeriesRow; onDone: () => void }) {
   const [autopay, setAutopay] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const isIncome = s.kind === "income";
+  const hint = s.suggested_kind && s.suggested_kind !== "income" ? s.suggested_kind : "";
+  const HINT: Record<string, string> = { bill: "Looks like a bill", subscription: "Looks like a subscription", ignored: "Looks like regular spending, not a bill" };
 
   async function classify(kind: string) {
     setBusy(true);
@@ -88,7 +92,7 @@ function Row({ s, onDone }: { s: SeriesRow; onDone: () => void }) {
         </div>
         <strong className="num" style={{ fontSize: 18 }}>{isIncome ? money(s.typical_amount, { sign: true }) : money(s.typical_amount, { cents: true })}</strong>
       </div>
-      <div style={{ fontSize: 12, color: "var(--muted)" }}>Found in the ledger. Nothing from mail is involved yet; this is what the transactions say.</div>
+      <div style={{ fontSize: 12, color: "var(--muted)" }}>Found in the ledger. {hint ? `${HINT[hint]}${s.category ? ` (${s.category})` : ""}; the dark button is that guess. ` : ""}Nothing from mail is involved yet; this is what the transactions say.</div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         {isIncome ? (
           <>
@@ -97,10 +101,10 @@ function Row({ s, onDone }: { s: SeriesRow; onDone: () => void }) {
           </>
         ) : (
           <>
-            <button className="btn dark" type="button" disabled={busy} onClick={() => classify("bill")}>Bill</button>
-            <button className="btn" type="button" disabled={busy} onClick={() => classify("subscription")}>Subscription</button>
+            <button className={hint === "subscription" || hint === "ignored" ? "btn" : "btn dark"} type="button" disabled={busy} onClick={() => classify("bill")}>Bill</button>
+            <button className={hint === "subscription" ? "btn dark" : "btn"} type="button" disabled={busy} onClick={() => classify("subscription")}>Subscription</button>
             <button className="btn" type="button" disabled={busy} onClick={() => classify("installment")}>Installment plan</button>
-            <button className="btn" type="button" disabled={busy} onClick={() => classify("ignored")}>Ignore</button>
+            <button className={hint === "ignored" ? "btn dark" : "btn"} type="button" disabled={busy} onClick={() => classify("ignored")}>Ignore</button>
             <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, marginLeft: "auto" }}>
               <input type="checkbox" checked={autopay} onChange={(e) => setAutopay(e.target.checked)} />
               autopay

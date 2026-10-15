@@ -173,7 +173,7 @@ def export_csv(session: Session) -> str:
 class RocketMoneyConnector(Connector):
     id = "rocketmoney"
     title = "Rocket Money"
-    yields = "Transactions and accounts from the CSV export; years of history for backfill."
+    yields = "Transactions and accounts from the CSV export, years of history for backfill; the weekly upcoming-bills email, read from the mailbox, keeps the bill schedule."
     settings_schema = []
 
     def sync(self, session: Session, text: str = "", source_file: str = "upload.csv", **_: object) -> SyncResult:
