@@ -58,3 +58,26 @@ def test_export_matches_rocket_money_columns():
         assert "Rent" in text and "-2240.00" in text
         again = parse_csv(text, "roundtrip.csv")
         assert again is not None and len(again) == 5
+
+
+def test_an_export_lands_on_the_bank_links_account_and_merges_what_it_already_holds():
+    """The same transaction seen through the bank link and the export lands once: the export's history goes
+    on the live account the last four digits name, and a row the link already holds, same amount within three
+    days, is merged rather than added. Older history the link never saw is added on that same account."""
+    from app.connectors.banks import upsert_account
+
+    with Session(engine) as session:
+        live = upsert_account(session, provider="plaid", external_id="acc-1", name="Checking", institution="Example Bank", kind="checking", balance=500.0, last4="1234")
+        session.add(Transaction(account_id=live.id, date=date(2026, 10, 3), merchant="Rent Llc", raw_name="RENT LLC", description="CHECK 101", amount=1295.0, category="Rent", source="plaid", source_ref="p1", row_hash="plaid-rent"))
+        session.add(Transaction(account_id=live.id, date=date(2026, 10, 2), merchant="Employer Payroll", raw_name="EMPLOYER PAYROLL", description="ACH DEPOSIT", amount=-2240.0, category="Income", is_income=True, source="plaid", source_ref="p2", row_hash="plaid-pay"))
+        session.commit()
+        text = HEADER + ROWS + "2024-10-03,2024-10-03,Cash,360 Checking,1234,Example Bank,RENT LLC,Rent,1295.00,CHECK 77,Rent,,,,\n"
+        result = import_rows(session, parse_csv(text, "export.csv"), "export.csv")
+        # the payroll and the rent merge; the card payment and the old rent land on the live account; the coffee rows need the export's own card account
+        assert result.details["merged"] == 2 and result.inserted == 4 and result.accounts == 1 and "already held by the bank link" in result.summary
+        rows = session.exec(select(Transaction).where(Transaction.account_id == live.id)).all()
+        assert len(rows) == 4 and sum(1 for t in rows if t.source == "rocketmoney") == 2
+        own = session.exec(select(Account).where(Account.connector == "rocketmoney")).all()
+        assert [a.name for a in own] == ["Rewards"]
+        again = import_rows(session, parse_csv(text, "export.csv"), "export.csv")
+        assert again.inserted == 0 and again.duplicates == 4 and again.details["merged"] == 2  # the overlap merges again rather than landing
