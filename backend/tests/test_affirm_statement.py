@@ -132,9 +132,11 @@ def test_the_statement_lands_as_plans_with_balances(owner: TestClient):
     with Session(engine) as session:
         # a plan the ledger built from payments, without an ID, takes the statement's
         session.add(InstallmentPlan(provider="Affirm", merchant="Affirm", total=0.0, installment=320.22, count=3, remaining=1, next_date=date(2026, 10, 23), cadence_days=30))
+        session.add(InstallmentPlan(provider="Affirm", merchant="Affirm", total=0.0, installment=99.99, count=3, remaining=2, next_date=date(2026, 10, 23), cadence_days=30))  # a guess the statement does not list
         session.commit()
         out = apply_affirm_statement(session, parse_affirm_statement(STATEMENT), TODAY)
-        assert out["created"] == 1 and out["updated"] == 1 and out["retired"] == 0 and out["total_closing"] == 2780.96
+        assert out["created"] == 1 and out["updated"] == 1 and out["retired"] == 0 and out["typed_retired"] == 1 and out["total_closing"] == 2780.96
+        assert session.exec(select(InstallmentPlan).where(InstallmentPlan.installment == 99.99)).one().active is False
         plans = {p.loan_id: p for p in session.exec(select(InstallmentPlan)).all()}
         big = plans["BBBB-2222"]
         assert big.merchant == "Example Computers" and big.balance == 2582.78 and big.apr == 31.48 and big.next_date == date(2026, 10, 23) and big.remaining == 9 and big.interest_paid == 74.29 and big.loan_amount == 3260.38

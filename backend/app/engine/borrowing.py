@@ -560,12 +560,20 @@ def apply_affirm_statement(session: Session, parsed: dict, today: date, *, sourc
             plan.pay_from_account_id = pay_from_account_id
         session.add(plan)
         by_id[loan["loan_id"]] = plan
+    # The statement lists every active loan, so an Affirm plan typed from payments that matches none of them is
+    # a guess the statement has overtaken: it is retired, and the statement's loans stand in its place.
+    unlisted = 0
+    for p in plans:
+        if p.provider.lower() == "affirm" and not p.loan_id and p.active:
+            p.active, p.remaining = False, 0
+            session.add(p)
+            unlisted += 1
     stored = get_setting(session, "affirm", {}) or {}
     if parsed.get("period_end") and parsed.get("period_end") >= str(stored.get("period_end", "")):
         stored.update({"period_start": parsed.get("period_start"), "period_end": parsed.get("period_end"), "interest_period": parsed.get("interest_period"), "interest_ytd": parsed.get("interest_ytd"), "total_closing": parsed.get("total_closing"), "source": source, "at": today.isoformat()})
         set_setting(session, "affirm", stored)
     session.commit()
-    return {"created": created, "updated": updated, "retired": retired, "loans": len(parsed["loans"]), "period_end": parsed.get("period_end"), "interest_period": parsed.get("interest_period"), "interest_ytd": parsed.get("interest_ytd"), "total_closing": parsed.get("total_closing")}
+    return {"created": created, "updated": updated, "retired": retired, "typed_retired": unlisted, "loans": len(parsed["loans"]), "period_end": parsed.get("period_end"), "interest_period": parsed.get("interest_period"), "interest_ytd": parsed.get("interest_ytd"), "total_closing": parsed.get("total_closing")}
 
 
 def set_setting_interest(session: Session, loan_id: str, period_end: date, amount: float) -> bool:
