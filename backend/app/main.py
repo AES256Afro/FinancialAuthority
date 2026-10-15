@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import auth, oauth
+from .security import SecurityMiddleware
 from .api import appearance, approvals, banks, borrowing, exports, goals, guide, imports, investments, ledger_rules, llm, mail, planned, projections, push, registers, routes, scenarios, tools
 from .config import settings
 from .db import init_db, session_scope
@@ -53,6 +54,7 @@ async def lifespan(app: FastAPI):
 _docs = {} if not auth.auth_enabled() else {"docs_url": None, "redoc_url": None, "openapi_url": None}
 app = FastAPI(title="FinancialAuthority", version=__version__, lifespan=lifespan, **_docs)
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(SecurityMiddleware)
 app.include_router(auth.router)
 app.include_router(routes.router)
 app.include_router(registers.router)

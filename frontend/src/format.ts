@@ -42,3 +42,9 @@ export function ordinal(n: number): string {
   const tail = n % 100 >= 11 && n % 100 <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th";
   return `${n}${tail}`;
 }
+
+export function monthYear(iso: string | null): string {
+  if (!iso) return "not within six years";
+  const d = parseIso(iso);
+  return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}

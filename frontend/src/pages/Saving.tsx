@@ -4,16 +4,10 @@
 import { useEffect, useState } from "react";
 import { api, useApi } from "../api";
 import { Why } from "../components/Status";
-import { money, monthDay, shortDate } from "../format";
+import { money, monthDay, monthYear, shortDate } from "../format";
 import type { Saving as SavingData } from "../guide";
 import { palette } from "../looks";
 import { getPrefs } from "../prefs";
-
-function monthYear(iso: string | null): string {
-  if (!iso) return "not within six years";
-  const d = new Date(`${iso}T12:00:00`);
-  return d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
-}
 
 function Ladder({ s, etas }: { s: SavingData; etas: (string | null)[] }) {
   const c = palette(getPrefs().look);

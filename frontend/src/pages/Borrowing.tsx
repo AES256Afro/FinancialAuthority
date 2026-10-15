@@ -234,6 +234,7 @@ export function Borrowing() {
       <section className="grid grid-cols-1 xl:grid-cols-2" style={{ gap: 16, alignItems: "start" }}>
         <div className="card" style={{ padding: "16px 20px" }}>
           <div className="lab" style={{ marginBottom: 6 }}>By app</div>
+          <div style={{ overflowX: "auto" }}>
           <table className="ledger">
             <thead><tr><th>App</th><th style={{ textAlign: "right" }}>Advances</th><th style={{ textAlign: "right" }}>Advanced</th><th style={{ textAlign: "right" }}>Fees</th><th>Cost</th></tr></thead>
             <tbody>
@@ -249,10 +250,12 @@ export function Borrowing() {
               {d.providers.length === 0 && <tr><td colSpan={5} style={{ color: "var(--muted)" }}>No advance app in the ledger's last {d.window_days} days.</td></tr>}
             </tbody>
           </table>
+          </div>
           {d.cost.tips_90d > 0 && <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 6 }}>Tips and membership charges with no advance behind them: {money(d.cost.tips_90d)}, counted in the fees.</div>}
         </div>
         <div className="card" style={{ padding: "16px 20px" }} id="installments">
           <div className="lab" style={{ marginBottom: 6 }}>Pay-later plans</div>
+          <div style={{ overflowX: "auto" }}>
           <table className="ledger">
             <thead><tr><th>Stream</th><th style={{ textAlign: "right" }}>Each</th><th>Next</th><th>Payments left</th></tr></thead>
             <tbody>
@@ -260,6 +263,7 @@ export function Borrowing() {
               {active.length === 0 && <tr><td colSpan={4} style={{ color: "var(--muted)" }}>No installment lender in the ledger's last {d.window_days} days.</td></tr>}
             </tbody>
           </table>
+          </div>
           <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 6 }}>The lender's app shows how many payments are left on each plan; with that, the windows see when it ends and the freed money moves on. Interest on a plan is the lender's own figure and is not guessed here.</div>
         </div>
       </section>
@@ -270,6 +274,7 @@ export function Borrowing() {
             <strong>Pay-later loans, from the lender's own figures</strong>
             <span style={{ fontSize: 12, color: "var(--muted)" }}>{money(d.loans_left_to_pay)} left to pay{d.statement?.period_end ? ` as of the statement to ${shortDate(d.statement.period_end)}` : ""}{d.loans_finance_charge > 0 ? ` · ${money(d.loans_finance_charge)} of finance charges over their lives` : ""}</span>
           </div>
+          <div style={{ overflowX: "auto" }}>
           <table className="ledger" style={{ fontSize: 13 }}>
             <thead><tr><th>Loan</th><th style={{ textAlign: "right" }}>Borrowed</th><th style={{ textAlign: "right" }}>Owed</th><th style={{ textAlign: "right" }}>Rate</th><th style={{ textAlign: "right" }}>Interest so far</th><th style={{ textAlign: "right" }}>Each</th><th>Next</th></tr></thead>
             <tbody>
@@ -286,6 +291,7 @@ export function Borrowing() {
               ))}
             </tbody>
           </table>
+          </div>
           <StatementUpload onDone={reload} />
           <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Affirm's monthly Loans Statement PDF, from Manage on affirm.com, is the lender's own register: upload it and every loan lands with its balance, rate and interest. The confirmation email for each new loan does the same with the exact schedule once a mailbox is connected.</div>
         </section>
@@ -324,7 +330,7 @@ export function Borrowing() {
         </ol>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", fontSize: 13, borderTop: "1px solid var(--surface-2)", paddingTop: 8 }}>
           <span>The card balance of <strong>{money(d.cost.card_balance)}</strong> is held back from</span>
-          <select className="input" value={d.settings.cards_pay_from} disabled={saving} onChange={(e) => setCards(e.target.value)} aria-label="Which checks pay the card" style={{ minHeight: 36 }}>
+          <select className="input" value={d.settings.cards_pay_from} disabled={saving} onChange={(e) => setCards(e.target.value)} aria-label="Which checks pay the card" style={{ minHeight: 36, maxWidth: "100%", minWidth: 0 }}>
             <option value="auto">the next two checks, half each (or its minimum on its due day, when the Debts page knows one)</option>
             <option value="split">the next two checks, half each</option>
             <option value="next">the next check</option>

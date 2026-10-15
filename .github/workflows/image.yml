@@ -10,6 +10,8 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"  # weekly: the audit runs again and :edge is rebuilt on any base-image fix
 
 jobs:
   test:
@@ -23,6 +25,14 @@ jobs:
         working-directory: backend
       - run: uv run pytest -q
         working-directory: backend
+      - name: Audit the Python dependencies
+        run: |
+          uv export --frozen --no-dev --no-hashes --no-emit-project -o requirements.txt
+          uvx pip-audit -r requirements.txt --progress-spinner off
+        working-directory: backend
+      - name: No secret in a committed file
+        run: |
+          ! git grep -nI -E '(FA_(PASSWORD|SESSION_SECRET|DATA_KEY)=[^$ ]{6,})|(-----BEGIN [A-Z ]*PRIVATE KEY-----$)|(fa_[A-Za-z0-9]{32,})' -- ':!*.md' ':!backend/tests/*'
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -31,6 +41,9 @@ jobs:
       - run: npm ci
         working-directory: frontend
       - run: npm test
+        working-directory: frontend
+      - name: Audit the npm dependencies
+        run: npm audit --omit=dev --audit-level=high
         working-directory: frontend
       - run: npm run build
         working-directory: frontend

@@ -17,6 +17,7 @@ import { CoverPage } from "./pages/CoverPage";
 import { Saving } from "./pages/Saving";
 import { Welcome } from "./pages/Welcome";
 import { Exports } from "./pages/Exports";
+import { Glossary } from "./pages/Glossary";
 import { Debts } from "./pages/Debts";
 import { Connectors } from "./pages/Connectors";
 import { Home } from "./pages/Home";
@@ -74,6 +75,7 @@ export default function App() {
         <Route path="/checkin" element={<CheckIn />} />
         <Route path="/welcome" element={<Welcome />} />
         <Route path="/exports" element={<Exports />} />
+        <Route path="/glossary" element={<Glossary />} />
         <Route path="/accounts" element={<Accounts />} />
         <Route path="/investments" element={<Investments />} />
         <Route path="/outlook" element={<Outlook />} />
