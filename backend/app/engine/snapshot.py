@@ -28,18 +28,23 @@ def usual_pace(session: Session, today: date, bill_names: set[str]) -> dict:
     kinds = {a.id: a.kind for a in session.exec(select(Account)).all()}
     names = {n.lower() for n in bill_names}
     total = cash_total = card_total = 0.0
+    by_account: dict[int, float] = {}
     counted = 0
     for t in rows:
         if not t.is_spending or t.amount <= 0 or t.category in OBLIGATION_CATEGORIES or t.merchant.lower() in names:
             continue
         total += t.amount
+        by_account[t.account_id] = by_account.get(t.account_id, 0.0) + t.amount
         if kinds.get(t.account_id) == "card":
             card_total += t.amount
         else:
             cash_total += t.amount
         counted += 1
     per_day = total / PACE_DAYS if counted else 0.0
-    return {"per_day": _money(per_day), "per_day_cash": _money(cash_total / PACE_DAYS if counted else 0.0), "per_day_card": _money(card_total / PACE_DAYS if counted else 0.0), "per_window": _money(per_day * 14), "basis_days": PACE_DAYS, "transactions": counted}
+    return {
+        "per_day": _money(per_day), "per_day_cash": _money(cash_total / PACE_DAYS if counted else 0.0), "per_day_card": _money(card_total / PACE_DAYS if counted else 0.0),
+        "per_day_by_account": {k: _money(v / PACE_DAYS) for k, v in by_account.items()}, "per_window": _money(per_day * 14), "basis_days": PACE_DAYS, "transactions": counted,
+    }
 
 
 def _money(v: float) -> float:
@@ -106,7 +111,7 @@ def finance_snapshot(session: Session, today: date) -> dict:
     pace = usual_pace(session, today, {b.name for b in bills})
     by_id = {a.id: a for a in accounts}
     assembled = assemble(bills=bills, plans=plans, advances=advances, today=today, accounts=by_id, paydays=paydays, card_mode=card_mode, debts=debts, planned=planned_to_cards(session, today),
-                         extra=pending_installment_events(pending_streams, today) + planned_rows, card_pace_per_day=pace["per_day_card"])
+                         extra=pending_installment_events(pending_streams, today) + planned_rows, card_pace_by_account=pace["per_day_by_account"])
     events, display_events, card_bills, payoffs = assembled["math"], assembled["display"], assembled["card_bills"], assembled["payoffs"]
     windows_split = split_windows(events, today, next_payday, following_payday, paydays[2])
     shown = split_windows(display_events, today, next_payday, following_payday, paydays[2])

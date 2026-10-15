@@ -22,6 +22,7 @@ def _setup(session: Session) -> tuple[Account, Account]:
     session.add(chk)
     session.flush()
     card = upsert_account(session, provider="demo", external_id="cc:card", name="Everyday Card", institution="Example Bank", kind="card", balance=1000.0, credit_limit=1650.0)
+    upsert_account(session, provider="demo", external_id="cc:old", name="Old Store Card", institution="Example Retail", kind="card", balance=None)  # idle: nothing rides it
     session.add(Income(name="Example Staffing", cadence="semimonthly", expected_net=2200.0, expected_net_end=2000.0, next_date=date(2026, 10, 30)))
     set_setting(session, "cards", {"pay_from": "mid"})  # the card is paid in full from the 15th check
     # eight weeks of everyday spending: $20 a day on the card, $10 a day from checking
@@ -50,6 +51,8 @@ def test_a_card_charged_bill_rides_the_card_payment(owner: TestClient):
     assert payoff["date"] == "2026-11-13" and payoff["parts"]["balance"] == 1000.0 and payoff["parts"]["bills"] == 80.0 and payoff["parts"]["spend"] == 20.0 * 29
     assert payoff["amount"] == round(1000.0 + 80.0 + 580.0, 2)
     assert not any(e["kind"] == "card_payment" for e in snap["windows"][0]["bills"]["items"])  # the end-of-month check does not pay the card
+    assert len([e for e in snap["card_payments"] if e["date"] == "2026-11-13"]) == 1  # the idle card pays nothing
+    assert snap["windows"][0]["set_aside"]["total"] == 0.0  # the card payment is not set aside from the previous check
     assert snap["safe_to_spend"]["parts"]["due_before_payday"] == 0.0 and snap["usual_pace"]["per_day_cash"] == 10.0
     assert snap["projection"][1]["at_pace"] == round(snap["projection"][0]["at_pace"] - 10.0, 2)  # the daily line spends only what leaves checking
     rent = next(e for e in snap["window"]["items"] if e["name"] == "Example Apartments")
