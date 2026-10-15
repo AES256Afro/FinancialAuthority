@@ -93,8 +93,11 @@ def finance_snapshot(session: Session, today: date) -> dict:
     approvals_waiting = len(session.exec(select(Approval.id).where(Approval.status == "pending")).all())
 
     events = build_events(bills, plans, advances, today)
+    from .planned import open_planned, planned_events, planned_out, planned_to_cards
+
     card_mode = (get_setting(session, "cards", {}) or {}).get("pay_from", "auto")
-    events = sorted(events + card_events([a for a in accounts if a.kind == "card"], paydays[:4], card_mode, today, debts) + pending_installment_events(pending_streams, today), key=lambda e: e["date"])
+    planned_rows = planned_events(session, today)
+    events = sorted(events + card_events([a for a in accounts if a.kind == "card"], paydays[:4], card_mode, today, debts, planned_to_cards(session, today)) + pending_installment_events(pending_streams, today) + planned_rows, key=lambda e: e["date"])
     windows_split = split_windows(events, today, next_payday, following_payday, paydays[2])
     before, window, next_window, advances_due = windows_split["before"], windows_split["window"], windows_split["next_window"], windows_split["advances_due"]
 
@@ -183,6 +186,7 @@ def finance_snapshot(session: Session, today: date) -> dict:
         "payments": payments,
         "paystubs": paystubs,
         "borrowing": borrowing,
+        "planned": [planned_out(p) for p in open_planned(session, today)],
         "accounts": [
             {"id": a.id, "name": a.name, "institution": a.institution, "kind": a.kind, "balance": a.balance, "balance_at": a.balance_at.isoformat() if a.balance_at else None, "connector": a.connector}
             for a in accounts

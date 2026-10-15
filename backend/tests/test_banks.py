@@ -91,7 +91,7 @@ def test_plaid_settings_link_exchange_sync_cursor_and_removal(owner: TestClient)
         link = linked["link"]
         assert link["provider"] == "plaid" and link["institution"] == "Example Bank" and link["last_error"] == ""
         assert linked["sync"]["ok"] and linked["sync"]["inserted"] == 3  # t3 is pending and skipped; t1, t2, t4 land
-        assert {a["name"]: (a["kind"], a["balance"]) for a in link["accounts"]} == {"Everyday Checking": ("checking", 312.45), "Rainy Day": ("savings", 1500.0), "Rewards Card": ("card", 842.1)}
+        assert {a["name"]: (a["kind"], a["balance"]) for a in link["accounts"]} == {"Everyday Checking": ("checking", 300.0), "Rainy Day": ("savings", 1500.0), "Rewards Card": ("card", 842.1)}  # a spending account holds its available balance; a card owes its current one
 
         with Session(engine) as session:
             row = session.exec(select(BankLink)).one()

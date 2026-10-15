@@ -96,8 +96,18 @@ def net_worth(session: Session, today: date) -> dict:
         return {"id": a.id, "name": a.name, "institution": a.institution, "kind": a.kind, "balance": a.balance, "balance_at": a.balance_at.isoformat() if a.balance_at else None, "connector": a.connector, "source": f"account:{a.id}"}
 
     assets = [account_out(a) for a in accounts if a.kind in ASSET_KINDS]
-    owed = [{"id": d.id, "name": d.name, "kind": d.kind, "balance": d.balance, "apr": d.apr, "minimum": d.minimum, "source": f"debt:{d.id}"} for d in debts]
-    owed += [{**account_out(a), "apr": None, "minimum": None} for a in accounts if a.kind in DEBT_KINDS and a.id not in linked and a.balance]
+    by_id = {a.id: a for a in accounts}
+
+    def debt_out(d: Debt) -> dict:
+        limit = d.credit_limit or (by_id[d.account_id].credit_limit if d.account_id in by_id else None)
+        return {
+            "id": d.id, "name": d.name, "kind": d.kind, "balance": d.balance, "apr": d.apr, "minimum": d.minimum, "source": f"debt:{d.id}", "account_id": d.account_id,
+            "statement_day": d.statement_day, "due_day": d.due_day, "pay_in_full": d.pay_in_full, "credit_limit": limit,
+            "utilisation": round(d.balance / limit, 4) if limit else None, "interest_month_if_carried": _money(d.balance * d.apr / 100.0 / 12.0) if d.apr else 0.0,
+        }
+
+    owed = [debt_out(d) for d in debts]
+    owed += [{**account_out(a), "apr": None, "minimum": None, "credit_limit": a.credit_limit, "utilisation": round((a.balance or 0.0) / a.credit_limit, 4) if a.credit_limit else None} for a in accounts if a.kind in DEBT_KINDS and a.id not in linked and a.balance]
     owed += [{"id": p.id, "name": f"{p.provider} · {p.merchant}".strip(" ·"), "kind": "bnpl", "balance": _money(p.installment * p.remaining), "apr": 0.0, "minimum": p.installment, "source": f"plan:{p.id}"} for p in plans if p.remaining > 0]
     owed += [{"id": a.id, "name": f"{a.provider} advance", "kind": "advance", "balance": _money(a.amount + a.fee), "apr": None, "minimum": None, "source": f"advance:{a.id}"} for a in advances]
     assets_total = sum((a["balance"] or 0.0) for a in assets)

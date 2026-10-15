@@ -28,7 +28,8 @@ class Account(SQLModel, table=True):
     last4_enc: str = ""
     balance: float | None = None
     balance_at: dt.datetime | None = None
-    spendable: bool | None = None  # None means by kind: checking and cash are for spending, savings is kept
+    spendable: bool | None = None
+    credit_limit: float | None = None  # a card's line, when the bank says  # None means by kind: checking and cash are for spending, savings is kept
     connector: str = "manual"
     external_id: str = Field(default="", index=True)
     active: bool = True
@@ -139,7 +140,24 @@ class Debt(SQLModel, table=True):
     due_day: int | None = None
     account_id: int | None = Field(default=None, foreign_key="accounts.id")
     pay_in_full: bool = False
+    credit_limit: float | None = None  # a card's line, from the bank when it says, else typed
     active: bool = True
+
+
+class PlannedPayment(SQLModel, table=True):
+    """Money the owner says is leaving before the ledger sees it; settles itself when the transaction posts."""
+
+    __tablename__ = "planned_payments"
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    amount: float
+    date: dt.date = Field(index=True)
+    kind: str = "other"  # card_payment | bill | transfer | other
+    to_account_id: int | None = Field(default=None, foreign_key="accounts.id")
+    note: str = ""
+    done: bool = Field(default=False, index=True)
+    transaction_id: int | None = Field(default=None, foreign_key="transactions.id")
+    created_at: dt.datetime = Field(default_factory=utcnow)
 
 
 class InstallmentPlan(SQLModel, table=True):

@@ -129,6 +129,41 @@ def accounts_overview(session: Session = Depends(get_session), principal: auth.P
     return out
 
 
+class DebtIn(BaseModel):
+    apr: float | None = None
+    minimum: float | None = None
+    statement_day: int | None = None
+    due_day: int | None = None
+    credit_limit: float | None = None
+    pay_in_full: bool | None = None
+    name: str | None = None
+
+
+@router.put("/debts/{debt_id}")
+def update_debt(debt_id: int, body: DebtIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    """The card's terms are the owner's to type: its APR, its line, the statement and due days, whether it is
+    paid in full. The balance follows the account."""
+    from ..models import Debt
+
+    debt = session.get(Debt, debt_id)
+    if debt is None:
+        raise HTTPException(404, "No such debt")
+    for field, value in body.model_dump(exclude_unset=True).items():
+        if value is None:
+            continue
+        if field in ("statement_day", "due_day"):
+            value = max(1, min(31, int(value)))
+        if field in ("apr", "minimum", "credit_limit"):
+            value = max(0.0, float(value))
+        setattr(debt, field, value)
+    session.add(debt)
+    session.commit()
+    from ..llm.reviewer import mark_pending
+
+    mark_pending(session, f"debt terms changed: {debt.name}")
+    return debt_mountain(session, today())
+
+
 @router.get("/debts")
 def debts_overview(session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
     out = debt_mountain(session, today())

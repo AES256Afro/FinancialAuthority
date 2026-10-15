@@ -96,7 +96,7 @@ def tx_hash(provider: str, tx_id: str) -> str:
     return sha256(f"{provider}:{tx_id}".encode()).hexdigest()
 
 
-def upsert_account(session: Session, *, provider: str, external_id: str, name: str, institution: str, kind: str, balance: float | None, last4: str = "", subtype: str = "") -> Account:
+def upsert_account(session: Session, *, provider: str, external_id: str, name: str, institution: str, kind: str, balance: float | None, last4: str = "", subtype: str = "", credit_limit: float | None = None) -> Account:
     row = session.exec(select(Account).where(Account.connector == provider, Account.external_id == external_id)).first()
     if row is None:
         row = Account(name=name or "Account", institution=institution, kind=kind, connector=provider, external_id=external_id)
@@ -114,11 +114,32 @@ def upsert_account(session: Session, *, provider: str, external_id: str, name: s
     if balance is not None:
         row.balance = round(float(balance), 2)
         row.balance_at = utcnow()
+    if credit_limit is not None:
+        row.credit_limit = round(float(credit_limit), 2)
     row.active = True
     session.flush()
     if balance is not None:
         record_balance(session, row, float(balance), utcnow().date(), commit=False)
+    if kind == "card":
+        sync_card_debt(session, row)
     return row
+
+
+def sync_card_debt(session: Session, account: Account) -> None:
+    """Every card account has a debt row with it: the balance follows the account; the APR, the statement day,
+    the due day and whether it is paid in full are the owner's to type, the line is the bank's when it says."""
+    from ..models import Debt
+
+    debt = session.exec(select(Debt).where(Debt.account_id == account.id)).first()
+    if debt is None:
+        debt = Debt(name=account.name, kind="card", balance=float(account.balance or 0.0), account_id=account.id, credit_limit=account.credit_limit)
+    else:
+        debt.balance = float(account.balance or 0.0)
+        if debt.credit_limit is None and account.credit_limit:
+            debt.credit_limit = account.credit_limit
+        debt.active = account.active
+    session.add(debt)
+    session.flush()
 
 
 def record_balance(session: Session, account: Account, balance: float, when: date, *, commit: bool = True) -> None:

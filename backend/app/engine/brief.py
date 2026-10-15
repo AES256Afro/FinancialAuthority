@@ -37,6 +37,8 @@ def build_brief(snap: dict) -> list[dict]:
     adv = snap["advances"]
     if adv["total"] > 0:
         items.append({"severity": "info", "text": f"{len(adv['items'])} advance{'s' if len(adv['items']) != 1 else ''} repay {money(adv['total'])} as the paycheck lands.", "link": "/"})
+    for p in snap.get("planned") or []:
+        items.append({"severity": "info", "text": f"Planned: {money(p['amount'])} to {p['name']} on {when(p['date'])}; counted until it posts.", "link": "/bills#planned"})
     borrowing = snap.get("borrowing") or {}
     if borrowing.get("since_payday", {}).get("advances"):
         sp = borrowing["since_payday"]
