@@ -85,6 +85,7 @@ function MailboxForm({ presets, onSaved }: { presets: Record<string, Preset>; on
           <code style={{ display: "block", padding: "6px 8px", background: "var(--surface)", borderRadius: 6, overflowX: "auto", whiteSpace: "nowrap" }}>docker compose run --rm bridge init</code>
           <div><strong>2. Start it for good.</strong> It keeps the sign-in across restarts and backups.</div>
           <code style={{ display: "block", padding: "6px 8px", background: "var(--surface)", borderRadius: 6, overflowX: "auto", whiteSpace: "nowrap" }}>docker compose --profile bridge up -d bridge</code>
+          <div><strong>3. Only the username and password come from its screen.</strong> It also shows 127.0.0.1 and 1143; leave host and port as they are here (either is understood).</div>
         </div>
       )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>

@@ -56,6 +56,8 @@ def explain_error(host: str, error: Exception) -> str:
             return "The Bridge is not running on the server yet: it needs your one sign-in there (the two commands are under Mailboxes on Connectors), then Sync now."
         if isinstance(error, (ConnectionRefusedError, TimeoutError)):
             return "The Bridge is not answering. It may still be starting; if this stays, start it again on the server (the command is under Mailboxes on Connectors)."
+    if host in ("127.0.0.1", "localhost", "::1") and isinstance(error, ConnectionRefusedError):
+        return "Nothing answers at 127.0.0.1 from inside the app. For Proton, the host is bridge: the Bridge's own screen says 127.0.0.1 because it speaks from inside its container."
     if isinstance(error, imaplib.IMAP4.error) and re.search(r"auth|login|credential|password|invalid", str(error), re.IGNORECASE):
         if host == "bridge":
             return "The Bridge refused the sign-in. Use the username and password the Bridge printed with info, not the Proton account password."

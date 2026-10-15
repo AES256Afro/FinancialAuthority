@@ -227,3 +227,16 @@ def test_the_bridge_sidecar_answers_on_the_standard_ports_and_errors_read_plainl
     assert explain_error("bridge", socket.gaierror(-2, "Name or service not known")).startswith("The Bridge is not running")
     assert "not the Proton account password" in explain_error("bridge", imaplib.IMAP4.error("AUTHENTICATIONFAILED Invalid credentials"))
     assert explain_error("imap.example.test", RuntimeError("boom")) == "RuntimeError: boom"
+
+
+def test_a_proton_mailbox_given_the_bridges_own_loopback_means_the_sidecar(owner: TestClient, monkeypatch):
+    from app.api import mail as mail_api
+    from app.connectors.mail import explain_error
+
+    monkeypatch.setattr(mail_api, "in_container", lambda: True)
+    assert mail_api.mailbox_host("proton", "127.0.0.1") == "bridge" and mail_api.mailbox_host("imap", "127.0.0.1") == "127.0.0.1"
+    made = owner.post("/api/v1/mail/accounts", json={"kind": "proton", "label": "Proton", "host": "127.0.0.1", "port": 1143, "username": "owner@example.test", "password": "bridge-pass"}).json()
+    assert made["host"] == "bridge"
+    monkeypatch.setattr(mail_api, "in_container", lambda: False)  # outside a container, the loopback is the loopback
+    assert mail_api.mailbox_host("proton", "127.0.0.1") == "127.0.0.1"
+    assert "the host is bridge" in explain_error("127.0.0.1", ConnectionRefusedError(111, "Connection refused"))

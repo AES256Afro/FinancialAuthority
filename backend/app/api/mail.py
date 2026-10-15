@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import json
 from datetime import date, datetime, timezone
 
@@ -26,6 +28,21 @@ PRESETS = {
     "gmail": {"host": "imap.gmail.com", "port": 993, "use_ssl": True, "starttls": False, "smtp_host": "smtp.gmail.com", "smtp_port": 465, "smtp_ssl": True, "smtp_starttls": False, "help": "Gmail with an app password (Google Account › Security › 2-Step Verification › App passwords)."},
     "imap": {"host": "", "port": 993, "use_ssl": True, "starttls": False, "smtp_host": "", "smtp_port": 0, "smtp_ssl": False, "smtp_starttls": True, "help": "Any mailbox over IMAP."},
 }
+
+
+LOOPBACK = ("127.0.0.1", "localhost", "::1")
+
+
+def in_container() -> bool:
+    return Path("/.dockerenv").exists()
+
+
+def mailbox_host(kind: str, host: str) -> str:
+    """The Bridge's info screen prints 127.0.0.1, which is right from inside the Bridge's own container. From the
+    app's container the Bridge is the sidecar named bridge, so a Proton mailbox given a loopback host means it."""
+    if kind == "proton" and host in LOOPBACK and in_container():
+        return "bridge"
+    return host
 
 
 def mail_connector() -> MailConnector:
@@ -75,7 +92,7 @@ def create_account(body: MailAccountIn, session: Session = Depends(get_session),
     preset = PRESETS[kind]
     if not body.username or not body.password:
         raise HTTPException(400, "A mailbox needs a username and a password")
-    host = body.host or preset["host"]
+    host = mailbox_host(kind, body.host or preset["host"])
     if not host:
         raise HTTPException(400, "An IMAP host is needed")
     try:
@@ -107,6 +124,8 @@ def update_account(account_id: int, body: MailAccountIn, session: Session = Depe
             account.password_enc = crypto.encrypt(value)
         elif field == "kind" and value not in PRESETS:
             raise HTTPException(400, "kind must be proton, gmail or imap")
+        elif field == "host":
+            account.host = mailbox_host(body.kind or account.kind, value)
         else:
             setattr(account, field, value)
     session.add(account)
@@ -147,7 +166,7 @@ def test_mailbox(body: TestIn, session: Session = Depends(get_session), _: auth.
         host, port, username, password, use_ssl, starttls = account.host, account.port, account.username, account_password(account), account.use_ssl, account.starttls
     else:
         preset = PRESETS.get(body.kind or "imap", PRESETS["imap"])
-        host, port = body.host or preset["host"], body.port or preset["port"]
+        host, port = mailbox_host(body.kind or "imap", body.host or preset["host"]), body.port or preset["port"]
         username, password = body.username or "", body.password or ""
         use_ssl = body.use_ssl if body.use_ssl is not None else preset["use_ssl"]
         starttls = body.starttls if body.starttls is not None else preset["starttls"]
