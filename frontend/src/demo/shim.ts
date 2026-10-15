@@ -173,6 +173,10 @@ async function write(path: string, method: string, body: unknown): Promise<Respo
   if (base === "/api/v1/mail/accounts/test") return json({ ok: false, error: "The demo reaches no mailbox." });
   if (base.startsWith("/api/v1/imports/")) return json({ detail: "The demo imports nothing. The live app reads the file, shows its first rows and imports them under an account." }, 400);
   if (base.startsWith("/api/v1/banks/plaid/link_token")) return json({ detail: "The demo has no Plaid keys. The live app opens the bank's own login here." }, 409);
+  if (/^\/api\/v1\/(banks\/(plaid|teller)\/settings|mail\/accounts|push|models\/secrets)/.test(base)) {
+    flash("This is the demo: keys are not saved here.");
+    return json({ detail: "This is the demo, so nothing you paste here is saved anywhere. Paste keys only in your own FinancialAuthority, on its Settings › Connectors page." }, 409);
+  }
   flash("In the demo, changes are not kept.");
   return json({ ok: true });
 }
