@@ -3,6 +3,12 @@ import { useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { PurchaseCheck } from "../components/PurchaseCheck";
 import { Goals } from "../components/Goals";
+import { CoverPanel, coverSummary } from "../components/Cover";
+import { OneThing } from "../components/OneThing";
+import { StatusPill, Why } from "../components/Status";
+import { useApi } from "../api";
+import type { Cover, Saving } from "../guide";
+import { FirstRunBanner } from "./Welcome";
 import { NextStepsCard } from "../components/NextSteps";
 import { Watchlist } from "../components/Watchlist";
 import { money, shortDate } from "../format";
@@ -13,12 +19,16 @@ const DOT = { info: "var(--paycheck)", warning: "var(--warning)", critical: "var
 export function Today({ snapshot }: { snapshot: Snapshot }) {
   const s = snapshot;
   const { hash } = useLocation();
+  const cover = useApi<Cover>("/api/v1/cover");
+  const saving = useApi<Saving>("/api/v1/saving");
   useEffect(() => {
     // A next-step or an outlook link lands on one card of this page.
     if (hash) window.setTimeout(() => document.getElementById(hash.slice(1))?.scrollIntoView({ block: "start", behavior: "smooth" }), 150);
   }, [hash]);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 640 }}>
+      <FirstRunBanner />
+      <OneThing />
       <section className="card" style={{ padding: "18px 18px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ fontSize: 13, color: "var(--ink-2)", fontWeight: 700 }}>Safe to spend through {shortDate(s.safe_to_spend.through)}</div>
         <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
@@ -29,7 +39,40 @@ export function Today({ snapshot }: { snapshot: Snapshot }) {
           Advances take {money(s.advances.total)} first, then {s.window.items.length} bills, then {money(s.set_aside.total)} set aside for the window after. Buffer {money(s.buffer)} kept.
           {s.usual_pace.per_day > 0 ? ` Your usual pace is ${money(s.usual_pace.per_day)} a day.` : ""}
         </div>
+        <Why text={s.why?.safe_to_spend} />
       </section>
+
+      {cover.data && (
+        <section id="cover" className="card" style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <strong style={{ fontSize: 14 }}>Cover</strong>
+            <StatusPill status={cover.data.counts.crit ? "crit" : cover.data.counts.warn ? "warn" : "good"}>{coverSummary(cover.data)}</StatusPill>
+            <Link to="/cover" style={{ marginLeft: "auto", fontSize: 13 }}>The sheet</Link>
+          </div>
+          <CoverPanel cover={cover.data} mode="gauges" onTicked={cover.reload} />
+        </section>
+      )}
+
+      {saving.data && saving.data.next_rung && (
+        <section className="card" style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+            <strong style={{ fontSize: 14 }}>Saving · rung {saving.data.next_rung.n}</strong>
+            <span style={{ fontSize: 13, color: "var(--ink-2)" }}>{saving.data.next_rung.name}</span>
+            <Link to="/saving" style={{ marginLeft: "auto", fontSize: 13 }}>The ladder</Link>
+          </div>
+          <div style={{ height: 10, borderRadius: 5, background: "var(--surface-2)", overflow: "hidden" }} role="img" aria-label={`${money(saving.data.balance)} of ${money(saving.data.next_rung.target)}`}>
+            <div style={{ width: `${Math.round(saving.data.next_rung.progress * 100)}%`, height: "100%", background: "var(--saving, #eda100)" }} />
+          </div>
+          <div className="num" style={{ fontSize: 13, color: "var(--ink-2)" }}>
+            {money(saving.data.balance)} of {money(saving.data.next_rung.target)}{saving.data.next_rung.eta ? ` · ${shortDate(saving.data.next_rung.eta)} at ${saving.data.share_used}% of each check` : ""}{saving.data.chosen ? "" : " (the suggested share; choose yours on Saving)"}
+          </div>
+        </section>
+      )}
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <Link to="/checkin" className="btn" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Weekly check-in</Link>
+        <Link to="/welcome" className="btn" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Setup steps</Link>
+      </div>
 
       <section className="card" style={{ padding: "4px 16px 6px" }}>
         {s.brief.map((b, i) => (

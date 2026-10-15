@@ -10,6 +10,10 @@ import { Clients } from "./pages/Clients";
 import { Confirm } from "./pages/Confirm";
 import { Borrowing } from "./pages/Borrowing";
 import { Move } from "./pages/Move";
+import { CheckIn } from "./pages/CheckIn";
+import { CoverPage } from "./pages/CoverPage";
+import { Saving } from "./pages/Saving";
+import { Welcome } from "./pages/Welcome";
 import { Debts } from "./pages/Debts";
 import { Connectors } from "./pages/Connectors";
 import { Home } from "./pages/Home";
@@ -59,6 +63,10 @@ export default function App() {
         <Route path="/debts" element={<Debts />} />
         <Route path="/borrowing" element={<Borrowing />} />
         <Route path="/move" element={<Move />} />
+        <Route path="/cover" element={<CoverPage />} />
+        <Route path="/saving" element={<Saving />} />
+        <Route path="/checkin" element={<CheckIn />} />
+        <Route path="/welcome" element={<Welcome />} />
         <Route path="/accounts" element={<Accounts />} />
         <Route path="/investments" element={<Investments />} />
         <Route path="/outlook" element={<Outlook />} />

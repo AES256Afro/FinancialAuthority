@@ -131,6 +131,7 @@ export interface CalendarWeek {
 }
 
 export interface Snapshot {
+  why?: Record<string, string>;
   version: string;
   as_of: string;
   windows: Window[];

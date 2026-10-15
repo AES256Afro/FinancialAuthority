@@ -253,4 +253,7 @@ def finance_snapshot(session: Session, today: date) -> dict:
         "not_advice": "Computed by the engine from the registers above. Not financial advice.",
     }
     snap["brief"] = build_brief(snap)
+    from .explain import why_all
+
+    snap["why"] = why_all(snap)
     return snap
