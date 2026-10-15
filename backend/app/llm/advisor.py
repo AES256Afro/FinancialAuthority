@@ -21,7 +21,7 @@ from ..store import get_setting
 from .citations import engine_numbers, unverified
 from .providers import Event, Provider, ToolSpec
 
-CHAT_TOOLS = ["finance_snapshot", "accounts_list", "transactions_search", "spending_summary", "debts_list", "borrowing", "investments_list", "outlook", "where_to_put", "purchase_check", "billing_dates_suggest", "watchlist", "recurring_list", "bills_list", "payments_list", "paystubs_list", "brief_today", "next_steps", "mail_search", "mail_read", "mail_attachment", "facts_pending", "jobs_status"]
+CHAT_TOOLS = ["finance_snapshot", "accounts_list", "transactions_search", "spending_summary", "debts_list", "borrowing", "scenario_run", "readiness", "investments_list", "outlook", "where_to_put", "purchase_check", "billing_dates_suggest", "watchlist", "recurring_list", "bills_list", "payments_list", "paystubs_list", "brief_today", "next_steps", "mail_search", "mail_read", "mail_attachment", "facts_pending", "jobs_status"]
 MAX_ROUNDS = 6
 MAX_TOOL_CHARS = 14000
 

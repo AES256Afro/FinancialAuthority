@@ -152,10 +152,16 @@ def import_watch() -> str:
             stamp = (str(path.relative_to(settings.import_root)), int(path.stat().st_mtime))
             if stamp in processed:
                 continue
+            from ..engine.borrowing import statement_fact_from_file
             from ..engine.paystubs import paystub_fact_from_file
 
-            fact = paystub_fact_from_file(session, path.read_bytes(), path.name, _today(), "import-folder")
-            taken.append(f"{path.name}: {'a paystub, on Needs you to confirm' if fact else 'not read as a paystub'}")
+            data = path.read_bytes()
+            applied = statement_fact_from_file(session, data, path.name, _today(), "import-folder")
+            if applied:
+                taken.append(f"{path.name}: an Affirm statement, {applied['loans']} loans landed")
+            else:
+                fact = paystub_fact_from_file(session, data, path.name, _today(), "import-folder")
+                taken.append(f"{path.name}: {'a paystub, on Needs you to confirm' if fact else 'not read as a paystub or a statement'}")
             processed.add(stamp)
         for path in sorted(list(settings.import_root.glob("*.csv")) + list(settings.import_root.glob("*.ofx")) + list(settings.import_root.glob("*.qfx")) + list(settings.import_root.glob("*.qbo"))):
             stamp = (path.name, int(path.stat().st_mtime))

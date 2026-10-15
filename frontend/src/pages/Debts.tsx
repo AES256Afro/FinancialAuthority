@@ -1,6 +1,7 @@
 // Debts: the mountain. Every balance as a slice of the whole, the minimums due each month, the interest the
 // month costs, and the two classic orders. The engine computed all of it; this page draws it.
 import React, { useState } from "react";
+import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { money } from "../format";
 
@@ -18,6 +19,8 @@ interface DebtItem {
   statement_day?: number | null;
   due_day?: number | null;
   pay_in_full?: boolean;
+  finance_charge?: number;
+  ends?: string;
 }
 
 function Terms({ d, onSaved }: { d: DebtItem; onSaved: () => void }) {
@@ -119,6 +122,12 @@ export function Debts() {
             </div>
           </section>
 
+          {data.items.some((d) => d.kind === "bnpl") && (
+            <section className="card" style={{ padding: 14, display: "flex", gap: 22, flexWrap: "wrap", alignItems: "baseline" }}>
+              <div><div className="lab">Pay-later plans, still to pay</div><div className="num" style={{ fontSize: 22, fontWeight: 800 }}>{money(data.items.filter((d) => d.kind === "bnpl").reduce((t, d) => t + (d.balance ?? 0), 0))}</div></div>
+              <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{data.items.filter((d) => d.kind === "bnpl").length} plans · the lender's own schedule where the confirmation email was read, else the payments left you entered · <Link to="/borrowing#loans">see each loan</Link></div>
+            </section>
+          )}
           <section className="card" style={{ padding: "6px 14px", overflowX: "auto" }}>
             <table className="ledger">
               <thead><tr><th>Debt</th><th>Kind</th><th style={{ textAlign: "right" }}>Balance</th><th style={{ textAlign: "right" }}>APR</th><th style={{ textAlign: "right" }}>Minimum</th><th style={{ textAlign: "right" }}>Share</th></tr></thead>
@@ -126,7 +135,7 @@ export function Debts() {
                 {data.items.map((d) => (
                   <React.Fragment key={d.source}>
                     <tr>
-                      <td><strong>{d.name}</strong>{d.credit_limit ? <div style={{ fontSize: 11, color: "var(--muted)" }}>line {money(d.credit_limit)}{d.statement_day ? ` · statement day ${d.statement_day}` : ""}{d.due_day ? ` · due day ${d.due_day}` : ""}</div> : null}</td>
+                      <td><strong>{d.name}</strong>{d.credit_limit ? <div style={{ fontSize: 11, color: "var(--muted)" }}>line {money(d.credit_limit)}{d.statement_day ? ` · statement day ${d.statement_day}` : ""}{d.due_day ? ` · due day ${d.due_day}` : ""}</div> : null}{d.kind === "bnpl" ? <div style={{ fontSize: 11, color: "var(--muted)" }}>{d.ends ? `ends ${d.ends}` : ""}{d.finance_charge ? ` · ${money(d.finance_charge)} finance charge over its life` : " · 0% as far as the ledger shows"}</div> : null}</td>
                       <td style={{ color: "var(--ink-2)" }}>{KIND_WORD[d.kind] ?? d.kind}</td>
                       <td className="num" style={{ textAlign: "right" }}>{money(d.balance ?? 0)}</td>
                       <td className="num" style={{ textAlign: "right", color: "var(--ink-2)" }}>{d.apr !== null && d.apr !== undefined ? `${d.apr}%` : "—"}</td>

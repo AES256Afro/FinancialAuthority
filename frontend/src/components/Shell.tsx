@@ -1,5 +1,5 @@
 // The app shell: a rail on wide screens, tabs on a phone, and the header with the payday chip.
-import { BarChart3, BellDot, Clock, FileText, Landmark, List, Mail, MessageSquare, Mountain, Receipt, Repeat, Settings, Telescope, TrendingUp, Waves } from "lucide-react";
+import { BarChart3, BellDot, Clock, FileText, Landmark, List, Mail, MessageSquare, Mountain, Receipt, Repeat, Settings, Telescope, TrendingUp, Truck, Waves } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { DEMO } from "../demo/shim";
@@ -39,6 +39,7 @@ export function Shell({ children, snapshot, title }: { children: ReactNode; snap
     { to: "/paystubs", label: "Paystubs", icon: FileText, phone: false },
     { to: "/debts", label: "Debts", icon: Mountain, phone: false },
     { to: "/borrowing", label: "Borrowing", icon: Repeat, phone: false },
+    { to: "/move", label: "Move", icon: Truck, phone: false },
     { to: "/accounts", label: "Accounts", icon: Landmark, phone: false },
     { to: "/investments", label: "Investing", icon: TrendingUp, phone: false },
     { to: "/outlook", label: "Outlook", icon: Telescope, phone: false },

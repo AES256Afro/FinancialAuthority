@@ -144,6 +144,16 @@ class Debt(SQLModel, table=True):
     active: bool = True
 
 
+class Scenario(SQLModel, table=True):
+    """A what-if the owner saved to compare dates: its name and its spec, nothing from the registers."""
+
+    __tablename__ = "scenarios"
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    spec: str = "{}"  # JSON
+    created_at: dt.datetime = Field(default_factory=utcnow)
+
+
 class PlannedPayment(SQLModel, table=True):
     """Money the owner says is leaving before the ledger sees it; settles itself when the transaction posts."""
 
@@ -177,6 +187,11 @@ class InstallmentPlan(SQLModel, table=True):
     schedule: str = "[]"  # JSON [{date, amount, principal, interest}] from the lender's confirmation, when there is one
     finance_charge: float = 0.0  # what the loan costs over its life, the lender's figure
     loan_amount: float | None = None
+    balance: float | None = None  # what is still owed, from the lender's statement when there is one
+    apr: float | None = None  # the lender's rate for this loan
+    balance_at: dt.date | None = None  # the statement period the balance is from
+    pay_from_account_id: int | None = Field(default=None, foreign_key="accounts.id")  # the account the payments come out of; a card means they ride that card
+    interest_paid: float = 0.0  # interest charged so far, as the lender's statements add it up
 
 
 class Advance(SQLModel, table=True):

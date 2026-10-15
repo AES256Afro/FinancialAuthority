@@ -13,6 +13,7 @@ from datetime import date, timedelta
 from sqlmodel import Session, select
 
 from ..models import Account, Advance, Bill, InstallmentPlan, RecurringSeries, Rule, Transaction
+from ..store import get_setting, set_setting
 from .cadence import next_paydays
 from .projections import NOT_ADVICE
 
@@ -351,12 +352,14 @@ def borrowing_overview(session: Session, today: date) -> dict:
         upcoming = sched[len(sched) - p.remaining:] if sched and p.remaining else []
         loans.append({
             "id": p.id, "provider": p.provider, "merchant": p.merchant, "loan_id": p.loan_id, "loan_amount": p.loan_amount, "total": p.total, "finance_charge": p.finance_charge, "installment": p.installment,
+            "balance": p.balance, "balance_at": p.balance_at.isoformat() if p.balance_at else None, "apr": p.apr, "interest_paid": p.interest_paid, "pay_from_account_id": p.pay_from_account_id,
             "count": p.count, "remaining": p.remaining, "next_date": p.next_date.isoformat(), "ends": (upcoming[-1]["date"] if upcoming else (p.next_date + timedelta(days=p.cadence_days * max(0, p.remaining - 1))).isoformat()),
             "left_to_pay": _money(sum(r["amount"] for r in upcoming) if upcoming else p.installment * p.remaining), "interest_left": _money(sum(r.get("interest", 0.0) for r in upcoming)) if upcoming else None, "from_lender": bool(sched),
         })
     loans.sort(key=lambda l: l["next_date"])
     installment_interest = _money(sum(l["finance_charge"] for l in loans))
-    left_to_pay = _money(sum(l["left_to_pay"] for l in loans))
+    left_to_pay = _money(sum((l.get("balance") or l["left_to_pay"]) for l in loans))
+    statement = get_setting(session, "affirm", {}) or {}
 
     cards = [a for a in session.exec(select(Account).where(Account.active == True, Account.kind == "card")).all()]  # noqa: E712
     card_balance = _money(sum((a.balance or 0.0) for a in cards))
@@ -381,6 +384,11 @@ def borrowing_overview(session: Session, today: date) -> dict:
 
     fees_month = _money(fees * 30.0 / WINDOW_DAYS)
     fees_year = _money(fees_month * 12)
+    affirm_stmt = get_setting(session, "affirm", {}) or {}
+    interest_month = _money(float(affirm_stmt.get("interest_period") or 0.0))
+    if interest_month:
+        fees_month = _money(fees_month + interest_month)
+        fees_year = _money(fees_year + interest_month * 12)
     becomes = None
     if fees_month > 0:
         from .projections import paychecks_per_year
@@ -418,13 +426,14 @@ def borrowing_overview(session: Session, today: date) -> dict:
     sources = sorted({src for p in pairs for src in p["sources"]} | {src for s in streams for src in s["sources"]} | {f"account:{a.id}" for a in cards})
     return {
         "as_of": today.isoformat(), "window_days": WINDOW_DAYS,
-        "cost": {"fees_90d": _money(fees), "fees_month": fees_month, "fees_year": fees_year, "advanced_90d": _money(advanced), "advances_90d": len(pairs), "tips_90d": _money(sum(t["amount"] for t in tips)), "installments_month": installments_month, "card_balance": card_balance, "card_interest_month": card_interest_month},
+        "cost": {"fees_90d": _money(fees), "fees_month": fees_month, "fees_year": fees_year, "advanced_90d": _money(advanced), "advances_90d": len(pairs), "tips_90d": _money(sum(t["amount"] for t in tips)), "installments_month": installments_month, "card_balance": card_balance, "card_interest_month": card_interest_month,
+                 "affirm_interest_month": interest_month, "affirm_interest_ytd": float(affirm_stmt.get("interest_ytd") or 0.0)},
         "credit": credit,
         "providers": providers, "outstanding": [{**{k: (v.isoformat() if isinstance(v, date) else v) for k, v in p.items()}} for p in outstanding], "outstanding_total": _money(sum(p["amount"] for p in outstanding)),
         "cycle": cycle, "typical_per_period": typical_period, "next_payday": next_payday.isoformat() if next_payday else None,
         "unresolved": [{**{k: (v.isoformat() if isinstance(v, date) else v) for k, v in p.items()}} for p in unresolved], "unresolved_total": _money(sum(p["amount"] for p in unresolved)),
         "advances": [{**{k: (v.isoformat() if isinstance(v, date) else v) for k, v in p.items()}} for p in sorted(pairs, key=lambda p: p["taken_on"], reverse=True)],
-        "installments": installments, "loans": loans, "loans_left_to_pay": left_to_pay, "loans_finance_charge": installment_interest, "becomes": becomes, "steps": steps, "sources": sources,
+        "installments": installments, "loans": loans, "loans_left_to_pay": left_to_pay, "loans_finance_charge": installment_interest, "statement": statement, "becomes": becomes, "steps": steps, "sources": sources,
         "not_advice": NOT_ADVICE + " What an advance costs is its fee over the days it is out; what a plan costs needs the lender's own figures, which only you can enter.",
     }
 
@@ -503,3 +512,81 @@ def refresh_plan_progress(session: Session, today: date) -> int:
     if changed:
         session.commit()
     return changed
+
+
+def apply_affirm_statement(session: Session, parsed: dict, today: date, *, source: str = "statement", pay_from_account_id: int | None = None) -> dict:
+    """Affirm's monthly statement into the register: each loan by its ID with its merchant, amount, APR, closing
+    balance, next payment and status; the period's interest added to each loan's interest paid; a closed loan
+    retired. A plan the ledger built from payments is matched by its installment amount and takes the ID."""
+    import math
+
+    period_end = date.fromisoformat(parsed["period_end"]) if parsed.get("period_end") else today
+    plans = session.exec(select(InstallmentPlan)).all()
+    by_id = {p.loan_id: p for p in plans if p.loan_id}
+    created = updated = retired = 0
+    for loan in parsed["loans"]:
+        plan = by_id.get(loan["loan_id"])
+        if plan is None and loan.get("payment_amount"):
+            plan = next((p for p in plans if not p.loan_id and p.provider.lower() == "affirm" and abs(p.installment - loan["payment_amount"]) < 0.05), None)
+        if plan is None:
+            if loan["status"] != "active":
+                continue
+            plan = InstallmentPlan(provider="Affirm", merchant=loan["merchant"], total=loan["amount"], installment=loan.get("payment_amount") or 0.0, count=0, remaining=0, next_date=today, cadence_days=30, loan_id=loan["loan_id"])
+            created += 1
+        else:
+            updated += 1
+        plan.loan_id = loan["loan_id"]
+        plan.merchant = loan["merchant"] or plan.merchant
+        plan.loan_amount = loan["amount"]
+        plan.apr = loan.get("apr")
+        installment = loan.get("payment_amount") or plan.installment
+        plan.installment = installment or plan.installment
+        plan.balance, plan.balance_at = loan["closing_balance"], period_end
+        plan.active = loan["status"] == "active" and loan["closing_balance"] > 0
+        if not plan.active:
+            retired += 1
+            plan.remaining = 0
+        else:
+            if loan.get("payment_due"):
+                plan.next_date = date.fromisoformat(loan["payment_due"])
+            if plan.installment and (plan.schedule in ("", "[]")):
+                plan.remaining = max(1, math.ceil(loan["closing_balance"] / plan.installment))  # at least this many at the current payment; interest can add one
+                plan.count = max(plan.count, plan.remaining + sum(1 for t in parsed.get("transactions", []) if t["loan_id"] == loan["loan_id"] and t["description"].lower() == "payment"))
+        if loan["loan_id"] in parsed.get("interest", {}):
+            seen = set_setting_interest(session, loan["loan_id"], period_end, parsed["interest"][loan["loan_id"]])
+            if seen:
+                plan.interest_paid = round(plan.interest_paid + parsed["interest"][loan["loan_id"]], 2)
+        if pay_from_account_id and not plan.pay_from_account_id:
+            plan.pay_from_account_id = pay_from_account_id
+        session.add(plan)
+        by_id[loan["loan_id"]] = plan
+    stored = get_setting(session, "affirm", {}) or {}
+    if parsed.get("period_end") and parsed.get("period_end") >= str(stored.get("period_end", "")):
+        stored.update({"period_start": parsed.get("period_start"), "period_end": parsed.get("period_end"), "interest_period": parsed.get("interest_period"), "interest_ytd": parsed.get("interest_ytd"), "total_closing": parsed.get("total_closing"), "source": source, "at": today.isoformat()})
+        set_setting(session, "affirm", stored)
+    session.commit()
+    return {"created": created, "updated": updated, "retired": retired, "loans": len(parsed["loans"]), "period_end": parsed.get("period_end"), "interest_period": parsed.get("interest_period"), "interest_ytd": parsed.get("interest_ytd"), "total_closing": parsed.get("total_closing")}
+
+
+def set_setting_interest(session: Session, loan_id: str, period_end: date, amount: float) -> bool:
+    """Interest for a period is added once per loan and period, however many times the statement is read."""
+    seen = get_setting(session, "affirm.interest_seen", {}) or {}
+    key = f"{loan_id}:{period_end.isoformat()}"
+    if key in seen:
+        return False
+    seen[key] = amount
+    set_setting(session, "affirm.interest_seen", seen)
+    return True
+
+
+def statement_fact_from_file(session: Session, data: bytes, filename: str, today: date, source: str) -> dict | None:
+    """An Affirm statement PDF handed over as a file: read and applied at once. The statement is the lender's own
+    register, not a claim about the owner, so it lands without a confirmation and says what it changed."""
+    from ..parsers.affirm_statement import parse_affirm_statement
+    from ..parsers.paystub import pdf_text
+
+    text = pdf_text(data) if filename.lower().endswith(".pdf") else data.decode("utf-8", errors="replace")
+    parsed = parse_affirm_statement(text)
+    if not parsed:
+        return None
+    return apply_affirm_statement(session, parsed, today, source=source)

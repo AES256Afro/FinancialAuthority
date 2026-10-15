@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlmodel import Session
 
@@ -83,6 +83,20 @@ def make_plan(body: PlanIn, session: Session = Depends(get_session), _: auth.Pri
     session.refresh(plan)
     mark_pending(session, f"installment plan set: {what}")
     return {"ok": True, "plan": {"id": plan.id, "provider": plan.provider, "installment": plan.installment, "remaining": plan.remaining, "next_date": plan.next_date.isoformat(), "ends": (plan.next_date + timedelta(days=plan.cadence_days * max(0, plan.remaining - 1))).isoformat()}}
+
+
+@router.post("/statement")
+async def import_statement(file: UploadFile = File(...), session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    """Affirm's monthly statement PDF, the lender's own register of every loan: read and applied at once."""
+    from ..engine.borrowing import statement_fact_from_file
+
+    raw = await file.read()
+    if len(raw) > 50 * 1024 * 1024:
+        raise HTTPException(413, "That file is over 50 MB")
+    out = statement_fact_from_file(session, raw, file.filename or "statement.pdf", today(), "upload")
+    if out is None:
+        raise HTTPException(400, "That file does not read like an Affirm loans statement. The reader looks for the Loans Summary table.")
+    return {"ok": True, **out}
 
 
 @router.put("/settings")

@@ -108,7 +108,9 @@ def net_worth(session: Session, today: date) -> dict:
 
     owed = [debt_out(d) for d in debts]
     owed += [{**account_out(a), "apr": None, "minimum": None, "credit_limit": a.credit_limit, "utilisation": round((a.balance or 0.0) / a.credit_limit, 4) if a.credit_limit else None} for a in accounts if a.kind in DEBT_KINDS and a.id not in linked and a.balance]
-    owed += [{"id": p.id, "name": f"{p.provider} · {p.merchant}".strip(" ·"), "kind": "bnpl", "balance": _money(p.installment * p.remaining), "apr": 0.0, "minimum": p.installment, "source": f"plan:{p.id}"} for p in plans if p.remaining > 0]
+    owed += [{"id": p.id, "name": (f"{p.provider} · {p.merchant}" if p.merchant and p.merchant.lower() != p.provider.lower() else p.provider) + (f" · {p.remaining} of {p.count} left" if not p.balance else ""), "kind": "bnpl",
+              "balance": _money(p.balance) if p.balance else _money(p.installment * p.remaining), "apr": p.apr if p.apr is not None else 0.0, "minimum": p.installment, "source": f"plan:{p.id}", "finance_charge": p.finance_charge, "interest_paid": p.interest_paid,
+              "ends": (p.next_date + timedelta(days=p.cadence_days * max(0, p.remaining - 1))).isoformat(), "balance_at": p.balance_at.isoformat() if p.balance_at else None, "loan_id": p.loan_id} for p in plans if p.remaining > 0 or (p.balance or 0) > 0]
     owed += [{"id": a.id, "name": f"{a.provider} advance", "kind": "advance", "balance": _money(a.amount + a.fee), "apr": None, "minimum": None, "source": f"advance:{a.id}"} for a in advances]
     assets_total = sum((a["balance"] or 0.0) for a in assets)
     debts_total = sum((d["balance"] or 0.0) for d in owed)

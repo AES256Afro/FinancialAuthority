@@ -61,12 +61,12 @@ def line_of(category: str, kind: str) -> str:
     return "utilities"
 
 
-def build_events(bills: list[Bill], plans: list[InstallmentPlan], advances: list[Advance], today: date, *, due_days: dict[int, int] | None = None, accounts: dict[int, Account] | None = None) -> list[dict]:
+def build_events(bills: list[Bill], plans: list[InstallmentPlan], advances: list[Advance], today: date, *, due_days: dict[int, int] | None = None, accounts: dict[int, Account] | None = None, horizon_days: int = HORIZON_DAYS) -> list[dict]:
     """Every dated obligation for the horizon. `due_days` overrides a bill's due day (the optimiser's what-if).
     A bill charged to a card (its paying account is a card) is marked so: it does not leave checking on its
     due date; it rides the card payment it is paid from."""
     events: list[dict] = []
-    horizon = today + timedelta(days=HORIZON_DAYS)
+    horizon = today + timedelta(days=horizon_days)
     for b in bills:
         due_day = (due_days or {}).get(b.id, b.due_day)
         d = next_due(due_day, today)
@@ -77,18 +77,20 @@ def build_events(bills: list[Bill], plans: list[InstallmentPlan], advances: list
             events.append({"date": d, "window_date": window_date(d, paid_from), "name": b.name, "amount": _money(b.amount), "kind": b.kind, "autopay": b.autopay, "source": f"bill:{b.id}", "line": line_of(b.category, b.kind), "bill_id": b.id, "paid_from": paid_from, "from_kind": from_kind, "from_account_id": b.pay_from_account_id})
             d = next_due(due_day, d + timedelta(days=1))
     for p in plans:
+        payer = (accounts or {}).get(getattr(p, "pay_from_account_id", None)) if getattr(p, "pay_from_account_id", None) else None
+        plan_kind = "card" if payer is not None and payer.kind == "card" else "cash"
         schedule = _schedule_of(p)
         if schedule:
             upcoming = [s for s in schedule if date.fromisoformat(s["date"]) >= today][-max(0, p.remaining):] if p.remaining else []
             for i, s in enumerate(upcoming):
                 when = date.fromisoformat(s["date"])
-                if when > today + timedelta(days=90):
+                if when > today + timedelta(days=max(90, horizon_days)):
                     break
-                events.append({"date": when, "name": f"{p.merchant or p.provider} {p.count - len(upcoming) + i + 1} of {p.count}", "amount": _money(s["amount"]), "kind": "installment", "autopay": True, "source": f"plan:{p.id}", "line": "debt", "interest": s.get("interest", 0.0)})
+                events.append({"date": when, "window_date": when, "name": f"{p.merchant or p.provider} {p.count - len(upcoming) + i + 1} of {p.count}", "amount": _money(s["amount"]), "kind": "installment", "autopay": True, "source": f"plan:{p.id}", "line": "debt", "interest": s.get("interest", 0.0), "from_kind": plan_kind, "from_account_id": getattr(p, "pay_from_account_id", None)})
             continue
         d, left = p.next_date, p.remaining
-        while left > 0 and d <= today + timedelta(days=90):
-            events.append({"date": d, "name": f"{p.merchant} {p.count - left + 1} of {p.count}", "amount": _money(p.installment), "kind": "installment", "autopay": True, "source": f"plan:{p.id}", "line": "debt"})
+        while left > 0 and d <= today + timedelta(days=max(90, horizon_days)):
+            events.append({"date": d, "window_date": d, "name": f"{p.merchant} {p.count - left + 1} of {p.count}", "amount": _money(p.installment), "kind": "installment", "autopay": True, "source": f"plan:{p.id}", "line": "debt", "from_kind": plan_kind, "from_account_id": getattr(p, "pay_from_account_id", None)})
             d, left = d + timedelta(days=p.cadence_days), left - 1
     for a in advances:
         events.append({"date": a.repay_date, "name": f"{a.provider} repays", "amount": _money(a.amount + a.fee), "kind": "advance", "autopay": True, "source": f"advance:{a.id}", "line": "debt"})
@@ -127,11 +129,11 @@ def card_events(cards: list[Account], paydays: list[date], mode: str, today: dat
     return events
 
 
-def pending_installment_events(series_rows: list, today: date) -> list[dict]:
+def pending_installment_events(series_rows: list, today: date, horizon_days: int = HORIZON_DAYS) -> list[dict]:
     """A pay-later stream the ledger found and the owner has not named yet still charges on its day: it is
     counted at its last amount, marked pending, until the payments left are set and it becomes a plan."""
     events: list[dict] = []
-    horizon = today + timedelta(days=HORIZON_DAYS)
+    horizon = today + timedelta(days=horizon_days)
     for s in series_rows:
         if s.confirmed or not s.active or getattr(s, "suggested_kind", "") != "installment":
             continue
@@ -145,7 +147,7 @@ def pending_installment_events(series_rows: list, today: date) -> list[dict]:
     return events
 
 
-def card_payoffs(cards: list[Account], paydays: list[date], mode: str, today: date, debts: list | None, planned: dict[int, float] | None, card_bills: list[dict], card_pace_by_account: dict[int, float] | None) -> list[dict]:
+def card_payoffs(cards: list[Account], paydays: list[date], mode: str, today: date, debts: list | None, planned: dict[int, float] | None, card_bills: list[dict], card_pace_by_account: dict[int, float] | None, horizon_days: int = HORIZON_DAYS) -> list[dict]:
     """The card payments across the horizon, as the owner pays the card. Each carries what the card holds by
     then: its share of today's balance, the bills charged to it since the last payment, and the usual card
     spend over those days. A planned payment already counted nets off the balance. A card the owner carries
@@ -153,7 +155,7 @@ def card_payoffs(cards: list[Account], paydays: list[date], mode: str, today: da
     events: list[dict] = []
     if not paydays or mode == "off":
         return events
-    horizon = today + timedelta(days=HORIZON_DAYS)
+    horizon = today + timedelta(days=horizon_days)
     for a in cards:
         balance = max(0.0, float(a.balance or 0.0) - float((planned or {}).get(a.id, 0.0)))
         debt = next((d for d in (debts or []) if (getattr(d, "account_id", None) == a.id) or (d.name or "").strip().lower() == (a.name or "").strip().lower()), None)
@@ -184,15 +186,15 @@ def card_payoffs(cards: list[Account], paydays: list[date], mode: str, today: da
     return events
 
 
-def assemble(*, bills: list[Bill], plans: list[InstallmentPlan], advances: list[Advance], today: date, accounts: dict[int, Account], paydays: list[date], card_mode: str, debts: list | None, planned: dict[int, float] | None, extra: list[dict], card_pace_by_account: dict[int, float] | None, due_days: dict[int, int] | None = None) -> dict:
+def assemble(*, bills: list[Bill], plans: list[InstallmentPlan], advances: list[Advance], today: date, accounts: dict[int, Account], paydays: list[date], card_mode: str, debts: list | None, planned: dict[int, float] | None, extra: list[dict], card_pace_by_account: dict[int, float] | None, due_days: dict[int, int] | None = None, horizon_days: int = HORIZON_DAYS) -> dict:
     """Everything the windows and the daily path count, with the card done right. `math` is what leaves
     checking: cash bills, plans, advances, planned payments and the card payments. `display` adds the bills
     that ride the card, marked via_card, so the picture still names them."""
-    events = build_events(bills, plans, advances, today, due_days=due_days, accounts=accounts) + extra
+    events = build_events(bills, plans, advances, today, due_days=due_days, accounts=accounts, horizon_days=horizon_days) + extra
     card_bills = [e for e in events if e.get("from_kind") == "card"]
     cash = [e for e in events if e.get("from_kind") != "card"]
     cards = [a for a in accounts.values() if a.kind == "card" and a.active]
-    payoffs = card_payoffs(cards, paydays, card_mode, today, debts, planned, card_bills, card_pace_by_account)
+    payoffs = card_payoffs(cards, paydays, card_mode, today, debts, planned, card_bills, card_pace_by_account, horizon_days=horizon_days)
     for e in card_bills:
         e["via_card"] = True
     math = sorted(cash + payoffs, key=lambda e: e["date"])
@@ -234,10 +236,15 @@ def split_windows(events: list[dict], today: date, next_payday: date, following_
     return {"before": before, "window": window, "next_window": next_window, "advances_due": advances_due, "set_aside": set_aside_of(next_window)}
 
 
-def project(today: date, *, cash: float, buffer: float, expected_net: float, pay_dates: set[date], set_aside: float, events: list[dict], per_day: float, days: int = 60, pay_amounts: dict[date, float] | None = None) -> list[dict]:
+def project(today: date, *, cash: float, buffer: float, expected_net: float, pay_dates: set[date], set_aside: float, events: list[dict], per_day: float, days: int = 60, pay_amounts: dict[date, float] | None = None, reserved_for: set | None = None) -> list[dict]:
     """A daily path: `available` is cash minus the buffer minus what is reserved, if nothing else is spent;
-    `at_pace` also spends the usual everyday amount each day, which is the honest line."""
-    following_payday = sorted(pay_dates)[1] if len(pay_dates) > 1 else today + timedelta(days=28)
+    `at_pace` also spends the usual everyday amount each day, which is the honest line. The next check sets
+    aside what the window after it needs (`set_aside`); that reserve is spent only by the bills it was set
+    aside for (`reserved_for`, their sources and dates) and whatever is left of it is free again at the check
+    after. Anything else that lands, a deposit or a new bill, comes out of what is available."""
+    ordered = sorted(pay_dates)
+    following_payday = ordered[1] if len(ordered) > 1 else today + timedelta(days=28)
+    released_on = ordered[2] if len(ordered) > 2 else following_payday + timedelta(days=14)
     by_day: dict[date, list[dict]] = {}
     for e in events:
         by_day.setdefault(e["date"], []).append(e)
@@ -245,14 +252,17 @@ def project(today: date, *, cash: float, buffer: float, expected_net: float, pay
     out = []
     for i in range(days):
         d = today + timedelta(days=i)
+        if d == released_on:
+            reserved = 0.0
         if d in pay_dates:
             paid = (pay_amounts or {}).get(d, expected_net)
             if paid:
                 balance += paid
-                reserved = set_aside
+                if d == ordered[0] and set_aside:
+                    reserved = set_aside
         for e in by_day.get(d, []):
             balance -= e["amount"]
-            if d >= following_payday and reserved:
+            if reserved and following_payday <= d < released_on and (reserved_for is None or (e.get("source"), d) in reserved_for):
                 reserved = max(0.0, reserved - e["amount"])
         if i > 0:
             spent += per_day
