@@ -117,10 +117,16 @@ interface WhereOption {
   action: string;
   link: string;
   exists: boolean;
+  milestones: { year: number; after_tax: number }[];
 }
 
 interface Where {
   amount_per_paycheck: number;
+  take_home_per_paycheck: number;
+  percent: number | null;
+  basis: { kind: string; per_paycheck: number | null; note: string } | null;
+  milestone_years: number[];
+  paychecks_per_year?: number;
   years: number;
   scenario: string;
   rate: number;
@@ -131,24 +137,46 @@ interface Where {
 }
 
 function WhereToPut({ retireIn }: { retireIn: number | null }) {
+  const [mode, setMode] = useState<"dollars" | "percent">("dollars");
   const [amount, setAmount] = useState("50");
+  const [percent, setPercent] = useState("20");
+  const [basis, setBasis] = useState<"net" | "gross">("net");
   const [years, setYears] = useState(retireIn ? String(retireIn) : "10");
   const [scenario, setScenario] = useState("mid");
-  const [asked, setAsked] = useState({ amount: "50", years: retireIn ? String(retireIn) : "10", scenario: "mid" });
-  const { data, error } = useApi<Where>(`/api/v1/projections/where?amount=${encodeURIComponent(asked.amount || "0")}&years=${asked.years}&scenario=${asked.scenario}`);
+  const [asked, setAsked] = useState({ mode: "dollars" as "dollars" | "percent", amount: "50", percent: "20", basis: "net" as "net" | "gross", years: retireIn ? String(retireIn) : "10", scenario: "mid" });
+  const query = asked.mode === "percent" ? `percent=${encodeURIComponent(asked.percent || "0")}&basis=${asked.basis}` : `amount=${encodeURIComponent(asked.amount || "0")}`;
+  const { data, error } = useApi<Where>(`/api/v1/projections/where?${query}&years=${asked.years}&scenario=${asked.scenario}`);
   const best = data?.options[0]?.after_tax ?? 1;
   return (
     <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          setAsked({ amount, years, scenario });
+          setAsked({ mode, amount, percent, basis, years, scenario });
         }}
         style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}
       >
         <strong style={{ fontSize: 15 }}>If I put</strong>
-        <input className="input num" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: 90 }} aria-label="Dollars a paycheck" />
-        <span style={{ fontSize: 14 }}>a paycheck somewhere for</span>
+        <select className="input" value={mode} onChange={(e) => setMode(e.target.value as "dollars" | "percent")} aria-label="Dollars or a share of the paycheck" style={{ minHeight: 38 }}>
+          <option value="dollars">dollars</option>
+          <option value="percent">a share of my pay</option>
+        </select>
+        {mode === "dollars" ? (
+          <>
+            <input className="input num" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: 90 }} aria-label="Dollars a paycheck" />
+            <span style={{ fontSize: 14 }}>a paycheck somewhere for</span>
+          </>
+        ) : (
+          <>
+            <input className="input num" inputMode="decimal" value={percent} onChange={(e) => setPercent(e.target.value)} style={{ width: 70 }} aria-label="Percent of the paycheck" />
+            <span style={{ fontSize: 14 }}>% of my</span>
+            <select className="input" value={basis} onChange={(e) => setBasis(e.target.value as "net" | "gross")} aria-label="Take-home or gross pay" style={{ minHeight: 38 }}>
+              <option value="net">take-home pay</option>
+              <option value="gross">gross pay</option>
+            </select>
+            <span style={{ fontSize: 14 }}>each paycheck somewhere for</span>
+          </>
+        )}
         <select className="input" value={years} onChange={(e) => setYears(e.target.value)} aria-label="Years" style={{ minHeight: 38 }}>
           {[1, 3, 5, 10, 15, 20, 25, 30, ...(retireIn && ![1, 3, 5, 10, 15, 20, 25, 30].includes(retireIn) ? [retireIn] : [])].sort((a, b) => a - b).map((y) => <option key={y} value={y}>{y} years{retireIn === y ? " (retirement)" : ""}</option>)}
         </select>
@@ -165,6 +193,13 @@ function WhereToPut({ retireIn }: { retireIn: number | null }) {
       {data && (
         <>
           <div style={{ fontSize: 13, color: "var(--ink-2)" }}>{data.summary}</div>
+          {data.basis && (
+            <div style={{ fontSize: 12, color: data.basis.per_paycheck === null ? "var(--warning)" : "var(--ink-2)" }}>
+              {data.basis.per_paycheck === null
+                ? <>{data.basis.note}. <Link to="/confirm">Needs you</Link> · <Link to="/paystubs">Paystubs</Link></>
+                : <>Your {data.basis.kind === "gross" ? "gross" : "take-home"} pay on file is {money(data.basis.per_paycheck, { cents: true })} a paycheck ({data.basis.note}), {data.paychecks_per_year ?? 24} paychecks a year{data.basis.kind === "gross" ? `; ${money(data.take_home_per_paycheck)} of take-home for the after-tax places` : ""}.</>}
+            </div>
+          )}
           <style>{`.where-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 10px; align-items: start; } @media (max-width: 640px) { .where-row { grid-template-columns: 28px minmax(0, 1fr); } .where-row > a { grid-column: 2; justify-self: start; } }`}</style>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {data.options.map((o) => (
@@ -189,6 +224,21 @@ function WhereToPut({ retireIn }: { retireIn: number | null }) {
               </div>
             ))}
           </div>
+          {(data.milestone_years?.length ?? 0) > 1 && (
+            <div style={{ overflowX: "auto" }}>
+              <table className="ledger" style={{ fontSize: 12 }}>
+                <thead><tr><th>Kept after tax</th>{(data.milestone_years ?? []).map((y) => <th key={y} style={{ textAlign: "right" }}>after {y} {y === 1 ? "year" : "years"}</th>)}</tr></thead>
+                <tbody>
+                  {data.options.map((o) => (
+                    <tr key={o.id}>
+                      <td style={{ fontWeight: o.rank === 1 ? 800 : 500 }}>{o.name}</td>
+                      {(o.milestones ?? []).map((m) => <td key={m.year} className="num" style={{ textAlign: "right", fontWeight: o.rank === 1 ? 800 : 500 }}>{money(m.after_tax)}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
           <div style={{ fontSize: 11, color: "var(--muted)" }}>{data.not_advice}</div>
         </>
       )}

@@ -115,7 +115,13 @@ def paystub_out(p: Paystub) -> dict:
 
 def paystubs_overview(session: Session, limit: int = 8) -> dict:
     rows = session.exec(select(Paystub).order_by(Paystub.pay_date.desc()).limit(limit)).all()
-    out = [paystub_out(p) for p in rows]
+    out = []
+    for p in rows:
+        row = paystub_out(p)
+        usual = expected_net(session, p.pay_date)  # judged afresh, by position of the month, against what is known now
+        if usual is not None:
+            row["expected_net"], row["difference"] = usual, round(p.net - usual, 2)
+        out.append(row)
     last = out[0] if out else None
     short = [p for p in out[:2] if p["difference"] is not None and p["difference"] < -TOLERANCE]
     return {"recent": out, "last": last, "short": short}

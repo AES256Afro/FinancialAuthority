@@ -76,7 +76,9 @@ async function get(path: string): Promise<Response> {
   if (base === "/api/v1/projections/where") {
     const amounts = [25, 50, 75, 100, 150, 200, 300, 500];
     const years = [5, 10, 20, 25, 30];
-    const wantAmount = Number(params.get("amount") ?? 50);
+    // A share of the paycheck: the demo household takes home 2,240 a check; the nearest captured amount answers.
+    const wantAmount = params.has("percent") ? (Number(params.get("percent") ?? 0) / 100) * 2240 : Number(params.get("amount") ?? 50);
+    if (params.has("percent")) flash("In the demo, the comparison uses the nearest captured amount.");
     const wantYears = Number(params.get("years") ?? 10);
     const amount = amounts.reduce((a, b) => (Math.abs(b - wantAmount) < Math.abs(a - wantAmount) ? b : a));
     const year = years.reduce((a, b) => (Math.abs(b - wantYears) < Math.abs(a - wantYears) ? b : a));

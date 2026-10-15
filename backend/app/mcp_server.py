@@ -354,8 +354,8 @@ def build_server() -> MCPServer:
             return out
 
     @server.tool(name="where_to_put", annotations=READ_ONLY)
-    def where_to_put_tool(amount_per_paycheck: float, years: int | None = None, scenario: str = "mid") -> dict:
-        """The same take-home dollars a paycheck sent to each place the owner could send them (a savings
+    def where_to_put_tool(amount_per_paycheck: float = 0.0, years: int | None = None, scenario: str = "mid", percent_of_paycheck: float | None = None, basis: str = "net") -> dict:
+        """The same money a paycheck, as dollars or as a share of the paycheck on file, sent to each place the owner could send it (a savings
         account, the 401(k) with its match and tax treatment, a Roth IRA, a brokerage account, an HSA when
         there is one, or paying down each debt at its APR), carried to the horizon under the owner's
         assumptions: what each comes to, what is kept after tax, whether it is guaranteed and reachable, and
@@ -363,16 +363,18 @@ def build_server() -> MCPServer:
         assumptions; never call it a recommendation.
 
         Args:
-            amount_per_paycheck: Dollars a paycheck, as take-home money.
+            amount_per_paycheck: Dollars a paycheck, as take-home money. Ignored when percent_of_paycheck is given.
             years: The horizon in years; the retirement year if set, else ten.
             scenario: low, mid or high return.
+            percent_of_paycheck: A share of the paycheck on file, 0 to 100, instead of dollars. The result names the paycheck figure it used and every milestone year.
+            basis: What the share is of: net (take-home, the default) or gross (from the last stubs; a pre-tax account then takes the whole share before tax).
         """
         from .engine.where_to_put import where_to_put
 
         client, redaction = _caller()
         with session_scope() as session:
-            out = where_to_put(session, _today(), max(0.0, min(float(amount_per_paycheck), 100_000.0)), years=years, scenario=scenario if scenario in ("low", "mid", "high") else "mid")
-            services.audit(session, client=client, client_kind="key", tool="where_to_put", args={"amount": amount_per_paycheck}, rows=len(out["options"]), redaction=redaction)
+            out = where_to_put(session, _today(), max(0.0, min(float(amount_per_paycheck or 0.0), 100_000.0)), years=years, scenario=scenario if scenario in ("low", "mid", "high") else "mid", percent=percent_of_paycheck, basis=basis if basis in ("net", "gross") else "net")
+            services.audit(session, client=client, client_kind="key", tool="where_to_put", args={"amount": amount_per_paycheck, "percent": percent_of_paycheck, "basis": basis}, rows=len(out["options"]), redaction=redaction)
             return out
 
     @server.tool(name="brief_today", annotations=READ_ONLY)
