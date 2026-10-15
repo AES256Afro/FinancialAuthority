@@ -33,6 +33,7 @@ interface Moves {
   plan: Step[];
   plan_low: number;
   movable: number;
+  caveats?: string[];
   drafts_only: string;
   not_advice: string;
 }
@@ -74,6 +75,7 @@ export function DateMoves({ refreshKey }: { refreshKey?: number }) {
         <strong style={{ fontSize: 14 }}>Dates that could move</strong>
         {data && <span style={{ fontSize: 12, color: "var(--ink-2)" }}>The sixty-day low point is {money(data.baseline.low)} on {shortDate(data.baseline.low_date)}. Each change is judged alone.</span>}
       </div>
+      {data?.caveats && data.caveats.length > 0 && <div style={{ fontSize: 12, color: "var(--warning)", fontWeight: 600 }}>{data.caveats.join(" ")}</div>}
       {error && <div style={{ fontSize: 13, color: "var(--critical)" }}>{error.message}</div>}
       {data && data.suggestions.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)" }}>{data.movable === 0 ? "No bill is marked movable yet. Mark the ones whose biller allows a date change." : "No move lifts the low point by a dollar or more; the dates are already as good as they get."}</div>}
       {data && data.plan.length > 0 && (

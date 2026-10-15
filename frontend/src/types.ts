@@ -135,7 +135,8 @@ export interface Snapshot {
   accounts: AccountRow[];
   cash: number;
   buffer: number;
-  next_paycheck: { date: string; days: number; amount: number; source: string | null };
+  next_paycheck: { date: string; days: number; amount: number; source: string | null; known?: boolean };
+  caveats?: string[];
   due_before_payday: { total: number; items: Event[] };
   advances: { total: number; items: Event[] };
   window: { start: string; end: string; total: number; items: Event[] };

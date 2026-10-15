@@ -60,7 +60,7 @@ export function MissionControl({ snapshot }: ViewProps) {
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: "-0.01em" }}>Mission control</h1>
         <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{shortDate(s.as_of)} · what the app did, what it watches, what it wants from you</div>
         <div style={{ flexGrow: 1 }} />
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 800, padding: "5px 12px", borderRadius: 999, background: "var(--paycheck-soft)", color: "var(--paycheck-ink)" }}><span className="sw" style={{ background: "var(--paycheck)", margin: 0 }} />T minus {s.next_paycheck.days} days to payday</div>
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 800, padding: "5px 12px", borderRadius: 999, background: "var(--paycheck-soft)", color: "var(--paycheck-ink)" }}><span className="sw" style={{ background: "var(--paycheck)", margin: 0 }} />{s.next_paycheck.known === false ? "No payday on file" : `T minus ${s.next_paycheck.days} days to payday`}</div>
       </div>
       <section className="grid grid-cols-2 xl:grid-cols-4" style={{ gap: 12 }}>
         <Tile label="Safe to spend" border="var(--safe)"><Big value={money(s.safe_to_spend.amount)} sub={`through ${shortDate(s.safe_to_spend.through)} · buffer ${money(s.buffer)} kept`} /></Tile>

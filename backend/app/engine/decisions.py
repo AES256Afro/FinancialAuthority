@@ -7,9 +7,9 @@ from datetime import date, timedelta
 
 from sqlmodel import Session, select
 
-from ..models import Account, Advance, Bill, Income, InstallmentPlan
+from ..models import Account, Advance, Bill, Income, InstallmentPlan, RecurringSeries
 from ..store import get_setting
-from .projection import build_events, low_point, project, split_windows
+from .projection import build_events, low_point, project, projection_caveats, split_windows
 from .snapshot import CASH_KINDS, finance_snapshot, usual_pace
 
 NOT_ADVICE = "Computed by the engine from the registers and the projection. Not financial advice."
@@ -100,6 +100,7 @@ def purchase_check(session: Session, today: date, amount: float, *, on: date | N
         "first_ok_date": first_ok,
         "low_point": {"date": low["date"], "at_pace": low["value"]},
         "low_point_before": low_point([p for p in projection if date.fromisoformat(p["date"]) >= on] or projection),
+        "caveats": snap["caveats"],
         "fits_safe_to_spend": amount <= safe["amount"],
         "safe_to_spend": safe,
         "horizon": horizon_end.isoformat(),
@@ -124,6 +125,8 @@ def billing_date_suggestions(session: Session, today: date) -> dict:
     plans = session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all()  # noqa: E712
     advances = session.exec(select(Advance).where(Advance.repaid == False)).all()  # noqa: E712
     pace = usual_pace(session, today, {b.name for b in bills})
+    unnamed = len(session.exec(select(RecurringSeries.id).where(RecurringSeries.confirmed == False, RecurringSeries.active == True)).all())  # noqa: E712
+    caveats = projection_caveats(has_income=bool(upcoming), bills=len(bills), unnamed=unnamed)
 
     def low_for(due_days: dict[int, int]) -> dict:
         events = build_events(bills, plans, advances, today, due_days=due_days)
@@ -184,6 +187,7 @@ def billing_date_suggestions(session: Session, today: date) -> dict:
         "plan_low": round(current, 2),
         "movable": sum(1 for b in bills if b.movable),
         "sources": ["snapshot:projection", *(s["source"] for s in suggestions)],
+        "caveats": caveats,
         "drafts_only": "The app drafts the request; it never sends anything. Copy it to the biller yourself, or approve a send once sending exists.",
         "not_advice": NOT_ADVICE,
     }

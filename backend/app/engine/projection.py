@@ -99,3 +99,17 @@ def project(today: date, *, cash: float, buffer: float, expected_net: float, pay
 def low_point(projection: list[dict], key: str = "at_pace") -> dict:
     low = min(projection, key=lambda p: p[key])
     return {"date": low["date"], "value": low[key]}
+
+
+def projection_caveats(*, has_income: bool, bills: int, unnamed: int) -> list[str]:
+    """What the projection does not know, said next to every figure it still produces. A payday that is not on
+    file is never invented: the windows are anchored two weeks out so the arithmetic has a frame, and the
+    caveat says so."""
+    out: list[str] = []
+    if not has_income:
+        out.append("No paycheck is on file, so no income is counted and the windows are anchored two weeks out; name your paycheck on Needs you.")
+    if bills == 0:
+        out.append("No bills are on the register yet, so none are counted.")
+    if unnamed:
+        out.append(f"{unnamed} recurring charge{'s' if unnamed != 1 else ''} in the ledger {'are' if unnamed != 1 else 'is'} unnamed and not counted until named.")
+    return out

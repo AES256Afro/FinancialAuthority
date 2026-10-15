@@ -63,7 +63,7 @@ export function River({ snapshot }: ViewProps) {
       <section style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "stretch" }}>
         <div className="card" style={{ flex: "1 1 520px", padding: "16px 20px", display: "flex", flexDirection: "column" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 6 }}>
-            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>This paycheck · {shortDate(s.next_paycheck.date)} · {daysWord(s.next_paycheck.days)}</h2>
+            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>{s.next_paycheck.known === false ? "No paycheck on file yet" : `This paycheck · ${shortDate(s.next_paycheck.date)} · ${daysWord(s.next_paycheck.days)}`}</h2>
             <span style={{ fontSize: 12, color: "var(--muted)" }}>every line names its source</span>
           </div>
           <div className="row"><span>Paycheck lands</span><div className="bar" style={{ width: "100%", background: "var(--paycheck)" }} /><strong className="num" style={{ textAlign: "right" }}>{money(pay, { sign: true })}</strong></div>

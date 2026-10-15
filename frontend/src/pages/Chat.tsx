@@ -47,7 +47,7 @@ function EngineTable({ s }: { s: Snapshot }) {
       <div className="lab" style={{ marginBottom: 6 }}>The engine's table · as of {shortDate(s.as_of)}</div>
       <Row label="Cash now" value={money(s.cash)} />
       <Row label={`Due before payday (${s.due_before_payday.items.length})`} value={money(s.due_before_payday.total)} tone="var(--bill)" />
-      <Row label={`Payday ${shortDate(s.next_paycheck.date)}`} value={money(s.next_paycheck.amount)} tone="var(--paycheck)" />
+      <Row label={s.next_paycheck.known === false ? "Payday (none on file)" : `Payday ${shortDate(s.next_paycheck.date)}`} value={money(s.next_paycheck.amount)} tone="var(--paycheck)" />
       <Row label={`Advances repay (${s.advances.items.length})`} value={money(s.advances.total)} tone="var(--debt)" />
       <Row label={`Window bills (${s.window.items.length})`} value={money(s.window.total)} tone="var(--bill)" />
       <Row label="Set aside for the next window" value={money(s.set_aside.total)} />
