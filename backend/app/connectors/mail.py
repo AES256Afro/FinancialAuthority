@@ -46,6 +46,23 @@ def default_fetch(url: str) -> bytes:
             return b"".join(chunks)
 
 
+def explain_error(host: str, error: Exception) -> str:
+    """A mailbox failure in plain words where the cause is known; the raw error otherwise."""
+    import imaplib
+    import socket
+
+    if host == "bridge":
+        if isinstance(error, socket.gaierror):
+            return "The Bridge is not running on the server yet: it needs your one sign-in there (the two commands are under Mailboxes on Connectors), then Sync now."
+        if isinstance(error, (ConnectionRefusedError, TimeoutError)):
+            return "The Bridge is not answering. It may still be starting; if this stays, start it again on the server (the command is under Mailboxes on Connectors)."
+    if isinstance(error, imaplib.IMAP4.error) and re.search(r"auth|login|credential|password|invalid", str(error), re.IGNORECASE):
+        if host == "bridge":
+            return "The Bridge refused the sign-in. Use the username and password the Bridge printed with info, not the Proton account password."
+        return "The mail server refused the sign-in. Check the username and the app password."
+    return f"{type(error).__name__}: {error}"[:300]
+
+
 def uid_key(account_id: int, folder: str) -> str:
     return f"mail.{account_id}.{folder}.last_uid"
 
@@ -225,7 +242,7 @@ class MailConnector(Connector):
                 notes.append(f"{account.label}: {new} new, {facts} facts")
             except Exception as error:  # noqa: BLE001
                 ok = False
-                account.last_error = f"{type(error).__name__}: {error}"[:300]
+                account.last_error = explain_error(account.host, error)[:300]
                 notes.append(f"{account.label}: {account.last_error}")
                 log.warning("mail sync failed for %s: %s", account.label, error)
             session.add(account)

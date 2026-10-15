@@ -58,7 +58,9 @@ def next_steps(session: Session, today: date) -> dict:
     if not mailboxes:
         steps.append(_step("mail-connect", "info", "Connect a mailbox so bills, statements and paystubs read themselves.", "Add a mailbox", "/settings/connectors#mail", "mail"))
     for m in mailboxes:
-        if m.last_error:
+        if m.last_error and m.host == "bridge" and m.last_error.startswith("The Bridge is not running"):
+            steps.append(_step(f"bridge-signin-{m.id}", "warning", "Proton Mail waits on the Bridge: sign in to it once on the server, with your Proton password and code, then paste the password it prints. The commands are under Mailboxes.", "Connectors", "/settings/connectors#mail", f"mailbox:{m.id}"))
+        elif m.last_error:
             steps.append(_step(f"mail-error-{m.id}", "warning", f"{m.label} could not be read: {m.last_error[:90]}", "Fix the mailbox", "/settings/connectors#mail", f"mailbox:{m.id}"))
 
     investments = session.exec(select(Account).where(Account.active == True, Account.kind == "investment")).all()  # noqa: E712
