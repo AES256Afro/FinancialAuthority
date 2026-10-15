@@ -2,6 +2,7 @@
 // the vendor's window; the app receives a token and reads with it. Nothing here ever asks for a bank password.
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { api, useApi } from "../api";
 import { loadScript, openPlaidLink, resumePlaidLink } from "../plaid";
 
@@ -17,7 +18,7 @@ interface LinkRow {
 
 interface BanksOut {
   providers: {
-    plaid: { configured: boolean; environment: string; client_id: string; secret_set: boolean };
+    plaid: { configured: boolean; environment: string; client_id: string; secret_set: boolean; keys?: { result: string; message: string; environment: string } | null };
     teller: { configured: boolean; environment: string; application_id: string; certificate_set: boolean; private_key_set: boolean };
   };
   links: LinkRow[];
@@ -182,6 +183,12 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
             <span style={{ fontSize: 12, color: p?.configured ? "var(--safe)" : "var(--muted)", fontWeight: 700 }}>{p?.configured ? `ready · ${p.environment}` : "not set up"}</span>
           </div>
           <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Free developer account at dashboard.plaid.com; the Trial plan gives ten bank logins, and removing one does not free its slot. Paste the client id and the secret here, never into a chat.</div>
+          {p?.keys && (
+            <div style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, color: p.keys.result === "ok" ? "var(--safe)" : "var(--warning)" }}>
+              {p.keys.result === "ok" ? <CheckCircle2 size={14} style={{ flexShrink: 0, marginTop: 1 }} /> : <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />}
+              <span><strong>{p.keys.result === "ok" ? "Keys accepted" : "Keys refused"}</strong> · {p.keys.message}</span>
+            </div>
+          )}
           <Field label="Client id"><input className="input" value={plaid.client_id} onChange={(e) => setPlaid({ ...plaid, client_id: e.target.value })} placeholder={p?.client_id || ""} autoComplete="off" /></Field>
           <Field label={`Secret · ${p?.secret_set ? "set" : "not set"}`}><input className="input" type="password" value={plaid.secret} onChange={(e) => setPlaid({ ...plaid, secret: e.target.value })} placeholder={p?.secret_set ? "Paste a new one to replace it" : "Paste the secret"} autoComplete="new-password" /></Field>
           <Field label="Environment">

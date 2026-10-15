@@ -38,7 +38,8 @@ class PlaidError(RuntimeError):
 class PlaidClient:
     def __init__(self, client_id: str, secret: str, environment: str, client_factory: ClientFactory | None = None) -> None:
         self.client_id, self.secret = client_id, secret
-        self.host = HOSTS.get(environment, HOSTS["sandbox"])
+        self.environment = environment if environment in HOSTS else "sandbox"
+        self.host = HOSTS[self.environment]
         self.client_factory = client_factory or (lambda: httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)))
 
     def post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -52,6 +53,25 @@ class PlaidClient:
         if response.status_code >= 400 or data.get("error_code"):
             raise PlaidError(str(data.get("error_code") or response.status_code), str(data.get("display_message") or data.get("error_message") or "Plaid refused the request"))
         return data
+
+    def check_keys(self) -> dict[str, str]:
+        """Whether the keys fit the chosen environment. Plaid issues one secret per environment under the same
+        client id, so the usual slip is the sandbox secret with the environment set to production; the check
+        names that, instead of leaving a bare "invalid keys"."""
+        try:
+            self.post("/link/token/create", {"user": {"client_user_id": "owner"}, "client_name": "FinancialAuthority", "products": ["transactions"], "country_codes": ["US"], "language": "en"})
+            return {"result": "ok", "message": f"Plaid accepts the keys for {self.environment}."}
+        except PlaidError as error:
+            if error.code != "INVALID_API_KEYS":
+                return {"result": "error", "message": str(error)[:200]}
+        other = "sandbox" if self.environment == "production" else "production"
+        try:
+            PlaidClient(self.client_id, self.secret, other, self.client_factory).post("/link/token/create", {"user": {"client_user_id": "owner"}, "client_name": "FinancialAuthority", "products": ["transactions"], "country_codes": ["US"], "language": "en"})
+        except PlaidError:
+            return {"result": "invalid", "message": "Plaid does not accept this client id and secret in either environment. Copy both again from the Plaid dashboard (Developers, Keys)."}
+        if self.environment == "production":
+            return {"result": "sandbox_secret", "message": "The secret pasted is the sandbox one, and the environment is set to production. Paste the production secret from the Plaid dashboard (Developers, Keys), or set the environment back to sandbox for test banks. Production also needs Plaid's go-ahead for production access."}
+        return {"result": "production_secret", "message": "The secret pasted is the production one, and the environment is set to sandbox. Set the environment to production, or paste the sandbox secret for test banks."}
 
     @staticmethod
     def redirect_uri(public_url: str) -> str | None:
