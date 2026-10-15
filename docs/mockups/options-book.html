@@ -1,0 +1,830 @@
+<title>FinancialAuthority Options Book</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700;800&family=Source+Sans+3:wght@400;600;700&family=JetBrains+Mono:wght@400;600&family=Libre+Baskerville:wght@400;700&family=VT323&family=Orbitron:wght@600;800&family=Patrick+Hand&family=Nunito:wght@400;700;800&display=swap">
+<style>
+/* Layout: one column of sections, each a grid of option cards; a pick bar fixed at the bottom tallies what the owner chose. */
+:root{
+  --bg:#f6f4ef; --surface:#ffffff; --surface-2:#efece4; --fg:#141518; --fg2:#4e5058; --muted:#85878f; --hair:#e4e1da;
+  --c-pay:#2a78d6; --c-bill:#eb6834; --c-safe:#1baf7a; --c-debt:#4a3aa7; --c-buf:#c3c2b7;
+  --good:#1a8f63; --warn:#b4780c; --crit:#c9433a; --good-bg:#e4f5ec; --warn-bg:#faf0d6; --crit-bg:#fae3e1;
+  --display:"Bricolage Grotesque","Segoe UI",system-ui,sans-serif; --body:"Source Sans 3","Segoe UI",system-ui,sans-serif; --mono:"JetBrains Mono",Consolas,"Courier New",monospace;
+  --radius:12px;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#121417; --surface:#1b1e24; --surface-2:#22262e; --fg:#f2f2ee; --fg2:#b9bcc6; --muted:#8a8d96; --hair:#2a2e36;
+  --c-pay:#3987e5; --c-bill:#d95926; --c-safe:#199e70; --c-debt:#9085e9; --c-buf:#4a505b;
+  --good:#3cc28e; --warn:#e0a52a; --crit:#e2645a; --good-bg:#153226; --warn-bg:#332a12; --crit-bg:#3a1c1a; color-scheme:dark } }
+:root[data-theme="dark"]{
+  --bg:#121417; --surface:#1b1e24; --surface-2:#22262e; --fg:#f2f2ee; --fg2:#b9bcc6; --muted:#8a8d96; --hair:#2a2e36;
+  --c-pay:#3987e5; --c-bill:#d95926; --c-safe:#199e70; --c-debt:#9085e9; --c-buf:#4a505b;
+  --good:#3cc28e; --warn:#e0a52a; --crit:#e2645a; --good-bg:#153226; --warn-bg:#332a12; --crit-bg:#3a1c1a; color-scheme:dark }
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:16px;line-height:1.5;margin:0;padding-block:0 96px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0;line-height:1.15}
+h1{font-size:clamp(28px,4vw,40px);font-weight:800}
+h2{font-size:clamp(22px,3vw,28px);font-weight:700}
+h3{font-size:17px;font-weight:700}
+p{margin:0}
+a{color:inherit}
+.wrap{max-width:1100px;margin:0 auto}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.lede{color:var(--fg2);max-width:70ch}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+header.top{padding-block:28px 12px;display:grid;gap:10px}
+nav.jump{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);border-bottom:1px solid var(--hair);margin:0 calc(-1 * max(16px,env(safe-area-inset-left,0px))) 0 calc(-1 * max(16px,env(safe-area-inset-right,0px)));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+nav.jump .wrap{display:flex;gap:4px;overflow-x:auto;padding-block:8px;scrollbar-width:none}
+nav.jump a{white-space:nowrap;text-decoration:none;font-size:13px;font-weight:600;color:var(--fg2);padding:6px 10px;border-radius:999px}
+nav.jump a:hover,nav.jump a:focus-visible{background:var(--surface-2);color:var(--fg);outline:none}
+section{padding-block:36px 8px;border-top:1px solid var(--hair);display:grid;gap:14px;scroll-margin-top:56px}
+section:first-of-type{border-top:0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:14px;margin-top:6px}
+.grid.wide{grid-template-columns:repeat(auto-fit,minmax(min(100%,480px),1fr))}
+.opt{background:var(--surface);border:1px solid var(--hair);border-radius:var(--radius);padding:14px;display:grid;gap:10px;align-content:start;min-width:0}
+.opt.picked{outline:2px solid var(--c-safe);outline-offset:-1px}
+.opt-head{display:flex;justify-content:space-between;gap:10px;align-items:start}
+.opt-head .sub{font-size:12px;color:var(--muted)}
+.pick{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--fg2);cursor:pointer;white-space:nowrap;padding:4px 8px;border:1px solid var(--hair);border-radius:999px;background:var(--surface-2)}
+.pick input{accent-color:var(--c-safe);margin:0}
+.note{font-size:14px;color:var(--fg2)}
+.lives{font-size:12px;color:var(--muted);font-family:var(--mono)}
+.fig{min-width:0;overflow-x:auto}
+.fig svg{display:block;max-width:100%;height:auto}
+svg .lbl{font-family:var(--body);font-size:12px;font-weight:600;fill:var(--fg)}
+svg .sub{font-family:var(--body);font-size:11px;fill:var(--fg2)}
+svg .tick{font-family:var(--mono);font-size:10.5px;fill:var(--muted)}
+svg .val{font-family:var(--mono);font-size:11px;font-weight:600;fill:var(--fg)}
+svg .grid{stroke:var(--hair);stroke-width:1}
+svg .conn{stroke:var(--muted);stroke-width:1;stroke-dasharray:3 3}
+svg .thread{stroke:var(--hair);stroke-width:3;stroke-linecap:round}
+svg .ink{stroke:var(--fg);stroke-width:1.5;fill:none}
+svg .ink-dash{stroke:var(--fg2);stroke-width:1.5;fill:none;stroke-dasharray:4 3}
+.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--fg2)}
+.legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px;background:var(--sw)}
+.status{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;padding:3px 8px;border-radius:999px}
+.status.good{background:var(--good-bg);color:var(--good)}
+.status.warn{background:var(--warn-bg);color:var(--warn)}
+.status.crit{background:var(--crit-bg);color:var(--crit)}
+table.t{border-collapse:collapse;width:100%;font-size:14px}
+table.t th,table.t td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--hair);vertical-align:top}
+table.t th{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+table.t td.num,table.t th.num{text-align:right}
+.tablewrap{overflow-x:auto;background:var(--surface);border:1px solid var(--hair);border-radius:var(--radius)}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-size:12px;padding:3px 8px;border-radius:999px;background:var(--surface-2);color:var(--fg2);border:1px solid var(--hair)}
+.chip.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.callout{background:var(--surface-2);border-left:4px solid var(--c-pay);padding:10px 14px;border-radius:8px;font-size:14px;color:var(--fg2)}
+ul.plain{margin:0;padding-left:18px;color:var(--fg2);font-size:14px;display:grid;gap:4px}
+/* cover gauges */
+.acct{display:grid;gap:8px;overflow-x:clip;padding:12px;border:1px solid var(--hair);border-radius:10px;background:var(--surface)}
+.acct .row{display:flex;justify-content:space-between;gap:8px;align-items:baseline;flex-wrap:wrap}
+.acct .name{font-weight:700}
+.gauge{position:relative;height:14px;margin-top:16px;border-radius:7px;background:var(--surface-2);overflow:visible}
+.gauge .fill{position:absolute;inset:0 auto 0 0;border-radius:7px;background:var(--c-safe)}
+.gauge .fill.short{background:var(--crit)}
+.gauge .mark{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--fg)}
+.gauge .mark::after{content:attr(data-l);position:absolute;top:-16px;left:-2px;font-size:10px;font-family:var(--mono);color:var(--fg2);white-space:nowrap}
+.gauge .mark.r::after{left:auto;right:-2px}
+.acct .why{font-size:12px;color:var(--muted)}
+/* ladder */
+.ladder{display:grid;gap:6px}
+.rung{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;font-size:13px}
+.rung .bar{height:22px;border-radius:6px;background:var(--surface-2);position:relative;overflow:hidden}
+.rung .bar i{position:absolute;inset:0 auto 0 0;background:var(--c-pay);border-radius:6px}
+.rung .bar b{position:absolute;left:8px;top:2px;font-weight:600;font-size:12px;color:var(--fg)}
+.rung.here .bar{outline:2px solid var(--c-safe)}
+/* settings mock */
+.settings{display:grid;gap:10px}
+.sec-row{display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--hair);border-radius:8px;background:var(--surface);font-size:14px}
+.handle{font-family:var(--mono);color:var(--muted);cursor:grab;letter-spacing:-2px}
+.sel{font:inherit;font-size:13px;padding:4px 8px;border-radius:6px;border:1px solid var(--hair);background:var(--surface-2);color:var(--fg)}
+.sw{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--fg2)}
+.sw i{width:18px;height:18px;border-radius:5px;display:inline-block;border:1px solid var(--hair)}
+.inp{font:inherit;font-size:14px;padding:6px 10px;border-radius:6px;border:1px solid var(--hair);background:var(--surface);color:var(--fg);min-width:0;width:100%}
+/* export template previews */
+.page{width:100%;max-width:300px;aspect-ratio:3/4;max-width:100%;border:1px solid var(--hair);border-radius:6px;overflow:hidden;padding:12px;display:grid;gap:7px;align-content:start;font-size:9px;line-height:1.3;position:relative;background:#fff;color:#1a1a1a;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.page .ph{font-weight:700;font-size:12px}
+.page .pm{font-size:8px;opacity:.7}
+.page .kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+.page .kpi div{padding:5px;border:1px solid rgba(0,0,0,.12);border-radius:4px}
+.page .kpi b{display:block;font-size:11px}
+.page .bars{display:grid;gap:3px}
+.page .bars div{display:grid;grid-template-columns:38px 1fr 26px;gap:4px;align-items:center}
+.page .bars i{display:block;height:6px;border-radius:3px;background:#555}
+.page .bars em{font-style:normal;text-align:right}
+.page table{border-collapse:collapse;width:100%;font-size:8.5px}
+.page td{padding:2px 0;border-bottom:1px solid rgba(0,0,0,.1)}
+.page td:last-child{text-align:right}
+.page .foot{font-size:7px;opacity:.6;margin-top:auto}
+.page .mascot{position:absolute;width:52px;height:auto}
+.page .mascot.sm{width:22px}
+/* template looks */
+.tpl-ledger{font-family:"Libre Baskerville",Georgia,serif;background:#fffdf8}
+.tpl-ledger .ph{font-size:13px;letter-spacing:.02em;border-bottom:2px solid #1a1a1a;padding-bottom:3px}
+.tpl-ledger .kpi div{border:0;border-top:1px solid #1a1a1a;border-radius:0}
+.tpl-ledger .bars i{background:#1a1a1a}
+.tpl-board{font-family:var(--body);background:#fff}
+.tpl-board .ph{color:#163a66}
+.tpl-board .kpi div{border-top:3px solid #2a78d6;border-radius:4px}
+.tpl-board .kpi div:nth-child(2){border-top-color:#eb6834}.tpl-board .kpi div:nth-child(3){border-top-color:#1baf7a}
+.tpl-board .bars div:nth-child(1) i{background:#2a78d6}.tpl-board .bars div:nth-child(2) i{background:#eb6834}.tpl-board .bars div:nth-child(3) i{background:#4a3aa7}.tpl-board .bars div:nth-child(4) i{background:#1baf7a}
+.tpl-blueprint{font-family:var(--mono);background:#0f2b4c;color:#dbe7f5;background-image:linear-gradient(rgba(255,255,255,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.07) 1px,transparent 1px);background-size:12px 12px;border-color:#0f2b4c}
+.tpl-blueprint .ph{font-size:11px;letter-spacing:.08em;text-transform:uppercase;border:1px solid #9fc3ea;padding:3px 5px;display:inline-block}
+.tpl-blueprint .kpi div{border:1px solid #9fc3ea;border-radius:0;background:rgba(15,43,76,.8)}
+.tpl-blueprint .bars i{background:#9fc3ea;border-radius:0;height:5px}
+.tpl-blueprint td{border-bottom:1px dashed #5d84ad}
+.tpl-blueprint .pm,.tpl-blueprint .foot{color:#9fc3ea;opacity:1}
+.tpl-terminal{font-family:"VT323",var(--mono);background:#0b0f0a;color:#f2b134;font-size:12px;line-height:1.15;border-color:#0b0f0a;background-image:repeating-linear-gradient(0deg,rgba(0,0,0,.25) 0 1px,transparent 1px 3px)}
+.tpl-terminal .ph{font-size:15px;font-weight:400}
+.tpl-terminal .ph::before{content:"> "}
+.tpl-terminal .kpi div{border:1px solid #7a5a1a;border-radius:0}
+.tpl-terminal .bars i{background:#f2b134;border-radius:0;height:7px;box-shadow:0 0 6px #f2b134}
+.tpl-terminal td{border-bottom:1px solid #3b2f0d}
+.tpl-terminal .pm,.tpl-terminal .foot{opacity:.8}
+.tpl-receipt{font-family:var(--mono);background:#fbfaf3;text-align:center;font-size:8.5px;border-color:#ddd}
+.tpl-receipt .ph{font-size:11px;letter-spacing:.2em;text-transform:uppercase}
+.tpl-receipt .ph::before,.tpl-receipt .ph::after{content:" * "}
+.tpl-receipt .kpi{display:block;border-top:1px dashed #777;border-bottom:1px dashed #777;padding:3px 0}
+.tpl-receipt .kpi div{border:0;display:flex;justify-content:space-between;padding:1px 0}
+.tpl-receipt .kpi b{font-size:9px}
+.tpl-receipt .bars{display:none}
+.tpl-receipt table{font-size:8px}
+.tpl-receipt td{border:0;text-align:left}
+.tpl-receipt::after{content:"";position:absolute;left:0;right:0;bottom:0;height:8px;background:linear-gradient(135deg,transparent 50%,var(--surface) 50%) 0 0/8px 8px,linear-gradient(45deg,transparent 50%,var(--surface) 50%) 0 0/8px 8px}
+.tpl-synth{font-family:"Orbitron",var(--display);background:linear-gradient(#160b2e,#2a0f4a 60%,#3a1260);color:#f3e9ff;border-color:#160b2e}
+.tpl-synth .ph{font-size:11px;letter-spacing:.1em;color:#ff5fd2;text-shadow:0 0 8px #ff5fd2}
+.tpl-synth .pm,.tpl-synth .foot{font-family:var(--body);color:#8fe9ff;opacity:1}
+.tpl-synth .kpi div{border:1px solid #8fe9ff;border-radius:0;background:rgba(0,0,0,.25)}
+.tpl-synth .bars i{background:linear-gradient(90deg,#ff5fd2,#8fe9ff);border-radius:0}
+.tpl-synth table{font-family:var(--body)}
+.tpl-synth td{border-bottom:1px solid rgba(143,233,255,.35)}
+.tpl-synth::after{content:"";position:absolute;left:0;right:0;bottom:0;height:34px;background-image:linear-gradient(rgba(255,95,210,.5) 1px,transparent 1px),linear-gradient(90deg,rgba(255,95,210,.5) 1px,transparent 1px);background-size:100% 8px,24px 100%;transform:perspective(60px) rotateX(55deg);transform-origin:bottom;opacity:.7;pointer-events:none}
+.tpl-forest{font-family:"Nunito",var(--body);background:#eef3e4;color:#2f3b2d;border-color:#d6e0c6}
+.tpl-forest .ph{font-family:"Patrick Hand",cursive;font-size:15px;font-weight:400;color:#3f6b3a}
+.tpl-forest .kpi div{border:0;background:#fff;border-radius:10px;box-shadow:0 1px 0 #cdd9bd}
+.tpl-forest .bars i{background:#7fb069;border-radius:4px;height:7px}
+.tpl-forest .bars div:nth-child(2) i{background:#b5c689}.tpl-forest .bars div:nth-child(3) i{background:#d9a066}.tpl-forest .bars div:nth-child(4) i{background:#8fb8a8}
+.tpl-forest td{border-bottom:1px solid #d6e0c6}
+.tpl-kitties{font-family:"Nunito",var(--body);background:#fff6ea;color:#3a2e2a;border-color:#f0dcc8}
+.tpl-kitties .ph{font-family:"Patrick Hand",cursive;font-size:15px;font-weight:400;color:#2a2422;padding-right:60px}
+.tpl-kitties .kpi div{border:1.5px solid #2a2422;border-radius:10px;background:#fffdf9}
+.tpl-kitties .bars i{background:#f0c95c;border-radius:4px;height:7px}
+.tpl-kitties .bars div:nth-child(2) i{background:#2a2422}.tpl-kitties .bars div:nth-child(3) i{background:#e3a0a8}.tpl-kitties .bars div:nth-child(4) i{background:#9bbcd0}
+.tpl-kitties td{border-bottom:1px dotted #c9b8a6}
+.tpl-kitties td:first-child::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:#2a2422;margin-right:5px;box-shadow:-3px -3px 0 -1.5px #2a2422,3px -3px 0 -1.5px #2a2422}
+.tpl-meadow{font-family:"Nunito",var(--body);background:linear-gradient(#dcefff,#fff9e8 55%,#e6f0cf);color:#3b3a33;border-color:#d8e3cf}
+.tpl-meadow .ph{font-family:"Patrick Hand",cursive;font-size:15px;font-weight:400;color:#5a4a2e}
+.tpl-meadow .kpi div{border:0;background:rgba(255,255,255,.75);border-radius:14px}
+.tpl-meadow .bars i{background:#a7c957;border-radius:6px;height:8px}
+.tpl-meadow .bars div:nth-child(2) i{background:#f2cc8f}.tpl-meadow .bars div:nth-child(3) i{background:#81b29a}.tpl-meadow .bars div:nth-child(4) i{background:#e07a5f}
+.tpl-meadow td{border-bottom:1px solid rgba(90,74,46,.2)}
+.tpl-dossier{font-family:var(--body);background:#fff;color:#111;font-size:8.5px}
+.tpl-dossier .ph{font-size:11px;text-transform:uppercase;letter-spacing:.06em;display:flex;justify-content:space-between}
+.tpl-dossier .ph::after{content:"ENGINE 1.4 · 2026-10-15";font-family:var(--mono);font-size:7px;font-weight:400;border:1px solid #111;padding:1px 3px;align-self:center}
+.tpl-dossier .kpi{display:none}
+.tpl-dossier .bars{display:none}
+.tpl-dossier table{font-family:var(--mono);font-size:8px}
+.tpl-dossier td{border-bottom:1px solid #999}
+.tpl-dossier .refs{font-family:var(--mono);font-size:7px;color:#333;display:grid;gap:1px}
+/* milestones */
+.ms{display:grid;gap:10px}
+.ms .m{display:grid;grid-template-columns:auto 1fr;gap:12px;padding:12px 14px;background:var(--surface);border:1px solid var(--hair);border-radius:10px;align-items:start}
+.ms .tag{font-family:var(--mono);font-weight:600;font-size:13px;padding:3px 8px;border-radius:6px;background:var(--surface-2);white-space:nowrap}
+.ms .when{font-size:12px;color:var(--muted);font-family:var(--mono)}
+/* pick bar */
+.pickbar{position:fixed;left:0;right:0;bottom:0;z-index:9;background:var(--surface);border-top:1px solid var(--hair);padding-top:10px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.pickbar .wrap{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.pickbar .count{font-weight:700}
+.btn{font:inherit;font-weight:700;font-size:14px;padding:8px 14px;border-radius:8px;border:1px solid var(--fg);background:var(--fg);color:var(--bg);cursor:pointer}
+.btn.quiet{background:transparent;color:var(--fg)}
+.btn:focus-visible{outline:2px solid var(--c-pay);outline-offset:2px}
+.pickbar .msg{font-size:13px;color:var(--fg2)}
+.pickbar textarea{width:100%;min-height:90px;font:12px var(--mono);border:1px solid var(--hair);border-radius:8px;background:var(--surface-2);color:var(--fg);padding:8px}
+@media (prefers-reduced-motion:no-preference){ .opt{transition:outline-color .15s} }
+@media (max-width:640px){ .sec-row{grid-template-columns:auto 1fr;grid-auto-rows:auto} .sec-row .sel,.sec-row .sw{grid-column:2} }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="kitty" viewBox="0 0 100 110">
+    <path d="M74 86 C 92 80, 92 60, 80 56" fill="none" stroke="#1d1b1b" stroke-width="7" stroke-linecap="round"/>
+    <ellipse cx="50" cy="82" rx="27" ry="20" fill="#1d1b1b"/>
+    <polygon points="28,36 34,8 49,30" fill="#1d1b1b"/><polygon points="72,36 66,8 51,30" fill="#1d1b1b"/>
+    <polygon points="34,31 36,17 43,28" fill="#e3a0a8"/><polygon points="66,31 64,17 57,28" fill="#e3a0a8"/>
+    <circle cx="50" cy="48" r="25" fill="#1d1b1b"/>
+    <ellipse cx="40" cy="48" rx="7" ry="8" fill="#f0c95c"/><ellipse cx="60" cy="48" rx="7" ry="8" fill="#f0c95c"/>
+    <ellipse cx="40.5" cy="49" rx="3" ry="5.5" fill="#1d1b1b"/><ellipse cx="60.5" cy="49" rx="3" ry="5.5" fill="#1d1b1b"/>
+    <circle cx="42.5" cy="45" r="1.8" fill="#fff"/><circle cx="62.5" cy="45" r="1.8" fill="#fff"/>
+    <polygon points="47,57 53,57 50,61" fill="#e3a0a8"/>
+    <path d="M22 56 L36 58 M22 62 L36 61 M78 56 L64 58 M78 62 L64 61" stroke="#9a9790" stroke-width="1.2"/>
+    <ellipse cx="38" cy="100" rx="8" ry="4" fill="#1d1b1b"/><ellipse cx="62" cy="100" rx="8" ry="4" fill="#1d1b1b"/>
+  </symbol>
+  <symbol id="spirit" viewBox="0 0 120 130">
+    <ellipse cx="40" cy="26" rx="7" ry="20" fill="#7f8f88" transform="rotate(-12 40 26)"/>
+    <ellipse cx="80" cy="26" rx="7" ry="20" fill="#7f8f88" transform="rotate(12 80 26)"/>
+    <ellipse cx="60" cy="78" rx="46" ry="50" fill="#7f8f88"/>
+    <ellipse cx="60" cy="92" rx="32" ry="30" fill="#ece9d8"/>
+    <path d="M44 84 l6 -5 l6 5 M60 84 l6 -5 l6 5 M38 98 l6 -5 l6 5 M54 98 l6 -5 l6 5 M70 98 l6 -5 l6 5" fill="none" stroke="#9aa59e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="44" cy="58" r="6" fill="#fff"/><circle cx="76" cy="58" r="6" fill="#fff"/>
+    <circle cx="45" cy="58" r="3" fill="#1d1b1b"/><circle cx="77" cy="58" r="3" fill="#1d1b1b"/>
+    <polygon points="56,66 64,66 60,71" fill="#2f2f2f"/>
+    <path d="M20 62 L40 65 M20 70 L40 69 M100 62 L80 65 M100 70 L80 69" stroke="#5f6a65" stroke-width="1.5"/>
+    <path d="M60 30 C 70 10, 92 8, 96 20 C 84 20, 72 26, 62 36 Z" fill="#6aa868"/>
+    <path d="M62 34 C 72 24, 82 20, 94 18" fill="none" stroke="#3f7a44" stroke-width="1.5"/>
+  </symbol>
+  <symbol id="soot" viewBox="0 0 40 40">
+    <path d="M20 4 V9 M20 36 V31 M4 20 H9 M36 20 H31 M8 8 L12 12 M32 8 L28 12 M8 32 L12 28 M32 32 L28 28" stroke="#1d1b1b" stroke-width="2" stroke-linecap="round" fill="none"/>
+    <circle cx="20" cy="20" r="12" fill="#1d1b1b"/>
+    <circle cx="16" cy="19" r="3.2" fill="#fff"/><circle cx="24" cy="19" r="3.2" fill="#fff"/>
+    <circle cx="16.5" cy="19.5" r="1.4" fill="#1d1b1b"/><circle cx="24.5" cy="19.5" r="1.4" fill="#1d1b1b"/>
+  </symbol>
+  <symbol id="acorn" viewBox="0 0 40 50">
+    <ellipse cx="20" cy="30" rx="11" ry="15" fill="#b97a3c"/>
+    <path d="M6 22 Q20 10 34 22 Q20 28 6 22 Z" fill="#6e4a26"/>
+    <rect x="18.5" y="6" width="3" height="8" rx="1.5" fill="#6e4a26"/>
+  </symbol>
+</svg>
+
+<header class="top wrap">
+  <div class="eyebrow">FinancialAuthority · options book · 2026-10-15 · every figure is the synthetic household</div>
+  <h1>The next layer, drawn before it is built</h1>
+  <p class="lede">What exists, what you asked for, and more than one way to do each of them. Tick <strong>Pick</strong> on anything you want. The bar at the bottom turns your picks into text you paste back to me, and the roadmap follows that.</p>
+</header>
+
+<nav class="jump" aria-label="Sections"><div class="wrap">
+  <a href="#stands">Where it stands</a><a href="#cover">Cover</a><a href="#checks">Paychecks</a><a href="#saving">Saving</a><a href="#guide">Guide</a><a href="#yours">Make it yours</a><a href="#exports">Exports</a><a href="#others">What others do</a><a href="#harden">Hardening</a><a href="#reach">Reach</a><a href="#milestones">Milestones</a>
+</div></nav>
+
+<main class="wrap">
+
+<section id="stands">
+  <div class="eyebrow">1 · Where it stands</div>
+  <h2>What you asked for, against what is already there</h2>
+  <div class="tablewrap"><table class="t">
+    <thead><tr><th>You asked</th><th>Today</th><th>The gap this book fills</th></tr></thead>
+    <tbody>
+      <tr><td>How much I need in each account so every bill is covered</td><td>Safe to spend, due before payday, what each check pays. Nothing per account.</td><td><strong>Cover</strong>: a new engine result, per account, by date. Section 2.</td></tr>
+      <tr><td>More ways to see how each paycheck is applied; the ribbon</td><td>Eight home views; one "where it goes" flow; the by-check table.</td><td>Six paycheck pictures, switchable per section, the ribbon among them. Section 3.</td></tr>
+      <tr><td>A suggestive savings section</td><td>Goals with a per-paycheck pace; where-to-put by percent.</td><td><strong>Saving</strong>: the ladder, the set-aside suggestion, the rollover when a debt ends. Section 4.</td></tr>
+      <tr><td>Hold hands, guide</td><td>Next steps, the brief, sources on every figure.</td><td>First run, the one thing today, streaks, "why this number". Section 5.</td></tr>
+      <tr><td>Change order, colour, branding; freedom per section</td><td>View and look, kept per device.</td><td>Order, show-as, colour roles with the validator, name and mark. Section 6.</td></tr>
+      <tr><td>Export to many forms with templates</td><td>One CSV, Rocket Money's shape.</td><td>Ten formats, ten templates on three axes, an editor. Section 7.</td></tr>
+      <tr><td>Reminders elsewhere, watch, iPhone and iPad</td><td>ntfy or Gotify push for the brief.</td><td>Installable app, web push, watch mirror, Shortcuts; then native. Section 10.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="cover">
+  <div class="eyebrow">2 · Cover</div>
+  <h2>How much each account needs, and by when</h2>
+  <p class="lede">One engine result, <span class="num">accounts.cover</span>: for every account, what leaves it before each of the next two paydays, what it holds, and the difference. The app never moves money; it says what you would move, with the rows behind the number. Three ways to show the same result.</p>
+  <div class="grid">
+    <div class="opt" data-pick="cover-gauges" data-title="Cover as gauges per account">
+      <div class="opt-head"><div><h3>Gauges, one per account</h3><div class="sub">The at-a-glance one</div></div><label class="pick"><input type="checkbox"> Pick</label></div>
+      <div class="acct">
+        <div class="row"><span class="name">Checking ····2201</span><span class="status good">● Covered · $921 over</span></div>
+        <div class="gauge"><div class="fill" style="width:100%"></div><div class="mark r" data-l="needs $1,489 by Oct 29" style="left:62%"></div></div>
+        <div class="row num" style="font-size:13px"><span>has $2,410</span><span>then rent $1,450 from the Oct 30 check</span></div>
+        <div class="why">bills $509 · card payment $980 before its statement day</div>
+      </div>
+      <div class="acct">
+        <div class="row"><span class="name">Blue card ····7731</span><span class="status warn">▲ Pay $980 by Oct 22</span></div>
+        <div class="gauge"><div class="fill short" style="width:59%"></div><div class="mark r" data-l="line $1,650" style="left:100%"></div></div>
+        <div class="why">59% of the line; the statement cuts on the 23rd and that is what the bureau sees</div>
+      </div>
+      <div class="acct">
+        <div class="row"><span class="name">Savings ····2202</span><span class="status crit">■ Short $380 of the first rung</span></div>
+        <div class="gauge"><div class="fill short" style="width:24%"></div><div class="mark r" data-l="rung 1 · $500" style="left:100%"></div></div>
+        <div class="why">$190 from each of the next two checks lands it on Nov 13</div>
+      </div>
+      <p class="note">Status always carries an icon and a word, never colour alone. Tap any figure for its rows.</p>
+      <div class="lives">lives: a tile on every home view · Accounts page · tool accounts.cover</div>
+    </div>
+    <div class="opt" data-pick="cover-sheet" data-title="Cover as a transfer sheet">
+      <div class="opt-head"><div><h3>The sheet</h3><div class="sub">What to move, in order, this payday</div></div><label class="pick"><input type="checkbox"> Pick</label></div>
+      <div class="tablewrap"><table class="t">
+        <thead><tr><th>When</th><th>Do</th><th class="num">Amount</th><th>So that</th></tr></thead>
+        <tbody>
+          <tr><td class="num">Oct 22</td><td>Pay Blue card from checking</td><td class="num">$980</td><td>statement reports 0% used</td></tr>
+          <tr><td class="num">Oct 30</td><td>Rent from checking</td><td class="num">$1,450</td><td>due the 2nd</td></tr>
+          <tr><td class="num">Oct 30</td><td>Checking to savings</td><td class="num">$190</td><td>rung 1 by Nov 13</td></tr>
+          <tr><td class="num">Nov 13</td><td>Leave in checking</td><td class="num">$410</td><td>Orange card pay-later charges land</td></tr>
+        </tbody>
+      </table></div>
+      <p class="note">A checklist you tick off on payday. Ticked items are remembered; an untouched one shows up in the brief. The engine writes the rows; you do the moving.</p>
+      <div class="lives">lives: Today page on payday · the brief · printable in any export template</div>
+    </div>
+    <div class="opt" data-pick="cover-columns" data-title="Cover as needs-vs-has columns">
+      <div class="opt-head"><div><h3>Needs against has, by window</h3><div class="sub">The comparison one</div></div><label class="pick"><input type="checkbox"> Pick</label></div>
+      <div class="fig" id="fig-cover-cols"></div>
+      <div class="legend"><span style="--sw:var(--c-bill)">needs before Oct 30</span><span style="--sw:var(--c-debt)">needs before Nov 13</span><span style="--sw:var(--c-safe)">has now</span></div>
+      <p class="note">Two windows side by side per account, so a shortfall that only appears in the second window is visible two weeks early.</p>
+      <div class="lives">lives: Accounts page · Move page readiness</div>
+    </div>
+  </div>
+</section>
+
+<section id="checks">
+  <div class="eyebrow">3 · Paychecks</div>
+  <h2>Six ways to see what a check does</h2>
+  <p class="lede">All six draw from <span class="num">paycheck.plan</span> and <span class="num">cashflow.forecast</span>, the same rows the by-check table shows now. Each becomes a registered picture; any section that shows a paycheck gets a "show as" menu, and the home views take the one you chose. Colours stay in the validated palette: bills orange, debt purple, kept blue, yours green, set-aside grey.</p>
+  <div class="grid wide">
+    <div class="opt" data-pick="pc-ribbon" data-title="Ribbon (one check split into its parts)">
+      <div class="opt-head"><div><h3>The ribbon</h3><div class="sub">One check, split into where it goes</div></div><label class="pick"><input type="checkbox"> Pick</label></div>
+      <div class="fig" id="fig-ribbon"></div>
+      <p class="note">The one you remembered. Width is dollars. Hover a band for its bills; a second level opens "bills" into each biller. Two checks side by side when a window spans both.</p>
+    </div>
+    <div class="opt" data-pick="pc-strips" data-title="Strips over time (ten checks with the trend of what is left)">
+      <div class="opt-head"><div><h3>Strips over time</h3><div class="sub">Ten checks, the trend of what is left</div></div><label class="pick"><input type="checkbox"> Pick</label></div>
+      <div class="fig" id="fig-strips"></div>
+      <p class="note">Past checks solid, projected ones faded. The solid line is the net; the dashed line is what the check had to cover. The gap between them is yours, and the trend of that gap is the whole story.</p>
+    </div>
+    <div class="opt" data-pick="pc-waterfall" data-title="Waterfall (net down to safe, step by step)">
+      <div class="opt-head"><div><h3>The waterfall</h3><div class="sub">Net down to safe, step by step</div></div><label class="pick"><input type="checkbox"> Pick</label></div>
+      <div class="fig" id="fig-waterfall"></div>
+      <p class="note">Reads left to right like a receipt. Good for "why is safe to spend that number": every step is a row you can open.</p>
+    </div>
+    <div class="opt" data-pick="pc-stream" data-title="Stream (months of obligations as flowing bands)">
+      <div class="opt-head"><div><h3>The stream</h3><div class="sub">Six months, the bands widen and narrow</div></div><label class="pick"><input type="checkbox"> Pick</label></div>
+      <div class="fig" id="fig-stream"></div>
+      <p class="note">When a pay-later plan ends, its band thins and the green widens. The shape shows the direction without a single number.</p>
+    </div>
+    <div class="opt" data-pick="pc-rings" data-title="Rings (one donut per check)">
+      <div class="opt-head"><div><h3>Rings</h3><div class="sub">One ring per check, yours in the middle</div></div><label class="pick"><input type="checkbox"> Pick</label></div>
+      <div class="fig" id="fig-rings"></div>
+      <p class="note">Small multiples. Four checks in a row make the mid and end rhythm obvious: the mid check carries the card, the end check carries rent.</p>
+    </div>
+    <div class="opt" data-pick="pc-beads" data-title="Beads (bills as beads on the thread between paydays)">
+      <div class="opt-head"><div><h3>Beads on a thread</h3><div class="sub">Between two paydays, when each bill lands</div></div><label class="pick"><input type="checkbox"> Pick</label></div>
+      <div class="fig" id="fig-beads"></div>
+      <p class="note">Size is dollars, position is the day. The bead you can slide is a due date you can change; the engine's date-move check runs as you drag.</p>
+    </div>
+  </div>
+  <div class="callout">Agency: these are not eight new home views. They are six pictures of one result, and any place a paycheck appears (home, Bills, Move, Borrowing, the exports) offers the menu. A view is then a layout of sections, and each section remembers its picture.</div>
+</section>
+
+<section id="saving">
+  <div class="eyebrow">4 · Saving</div>
+  <h2>The ladder, the set-aside, the rollover</h2>
+  <p class="lede">A section for someone who has never saved or who watched others never save. Rungs instead of a vague "emergency fund"; a set-aside the engine suggests from what is actually left; and the moment a debt ends, its payment keeps going, into saving, unless you say otherwise.</p>
+  <div class="grid">
+    <div class="opt" data-pick="sv-ladder" data-title="Saving ladder (rungs from $500 to six months)">
+      <div class="opt-head"><div><h3>The ladder</h3><div class="sub">Five rungs, computed from your bills</div></div><label class="pick"><input type="checkbox"> Pick</label></div>
+      <div class="ladder">
+        <div class="rung here"><div class="bar" style="width:22%"><i style="width:24%"></i><b>1 · A starter · $500</b></div><span class="num" style="font-size:12px">$120 · Nov 13 at $190 a check</span></div>
+        <div class="rung"><div class="bar" style="width:38%"><b>2 · One pay period of must-pays · $1,959</b></div><span class="num" style="font-size:12px">Mar 2027</span></div>
+        <div class="rung"><div class="bar" style="width:56%"><b>3 · One month · $4,500</b></div><span class="num" style="font-size:12px">Oct 2027</span></div>
+        <div class="rung"><div class="bar" style="width:78%"><b>4 · Three months · $13,500</b></div><span class="num" style="font-size:12px">2029</span></div>
+        <div class="rung"><div class="bar" style="width:100%"><b>5 · Six months · $27,000</b></div><span class="num" style="font-size:12px">2031</span></div>
+      </div>
+      <p class="note">Rung 2 is the engine's own figure: the must-pays of one window. Dates come from the set-aside you choose below; they move as you drag it.</p>
+      <div class="lives">lives: Saving page · a tile on home · tool saving.ladder</div>
+    </div>
+    <div class="opt" data-pick="sv-setaside" data-title="Set-aside suggestion (a share of what is left, per check)">
+      <div class="opt-head"><div><h3>The set-aside</h3><div class="sub">A share of what is truly left</div></div><label class="pick"><input type="checkbox"> Pick</label></div>
+      <div style="display:grid;gap:8px">
+        <div class="row" style="display:flex;justify-content:space-between;font-size:14px"><span>Oct 30 check leaves</span><span class="num">$701</span></div>
+        <label style="font-size:13px;color:var(--fg2)">Keep <strong id="share-v">25%</strong> of it <input id="share" type="range" min="0" max="60" value="25" style="width:100%;accent-color:var(--c-pay)"></label>
+        <div style="display:flex;justify-content:space-between;font-size:14px"><span>goes to savings on payday</span><strong class="num" id="share-amt">$175</strong></div>
+        <div style="display:flex;justify-content:space-between;font-size:14px"><span>rung 1 lands</span><strong class="num" id="share-when">Nov 13</strong></div>
+      </div>
+      <p class="note">Suggested, never automatic. Three presets: gentle 10%, steady 25%, hard 50%. The purchase check already knows the set-aside, so "can I buy this" stays honest.</p>
+      <div class="lives">lives: Saving page · Paycheck setup · the brief on payday</div>
+    </div>
+    <div class="opt" data-pick="sv-rollover" data-title="Rollover (a finished debt's payment keeps going, into saving)">
+      <div class="opt-head"><div><h3>The rollover</h3><div class="sub">When a plan ends, the payment keeps going</div></div><label class="pick"><input type="checkbox"> Pick</label></div>
+      <div class="fig" id="fig-rollover"></div>
+      <p class="note">The $410 a check that went to pay-later ends in February. The engine proposes it rolls into the ladder from March, and shows rung 2 landing in May instead of October. One tap keeps it, one tap frees it.</p>
+      <div class="lives">lives: Borrowing page "becomes" · Saving page · Debts</div>
+    </div>
+  </div>
+</section>
+
+<section id="guide">
+  <div class="eyebrow">5 · Guide</div>
+  <h2>Hold the hand without holding the wallet</h2>
+  <div class="grid">
+    <div class="opt" data-pick="gd-firstrun" data-title="First run in five screens">
+      <div class="opt-head"><div><h3>First run, five screens</h3><div class="sub">For someone who has never looked</div></div><label class="pick"><input type="checkbox"> Pick</label></div>
+      <ol style="margin:0;padding-left:20px;font-size:14px;color:var(--fg2);display:grid;gap:4px">
+        <li>When are you paid? (the cadence, two taps)</li><li>Connect a bank or drop a file (either is fine)</li><li>Name the bills it found (one list, swipe to keep or drop)</li><li>Which check pays which bill (a drag per bill)</li><li>Your first picture (the view picker, with your own numbers in each thumbnail)</li>
+      </ol>
+      <p class="note">Nothing is asked twice; every screen can be skipped and reopened from Next steps.</p>
+    </div>
+    <div class="opt" data-pick="gd-onething" data-title="The one thing today, with streaks">
+      <div class="opt-head"><div><h3>The one thing today</h3><div class="sub">Plus streaks that mean something</div></div><label class="pick"><input type="checkbox"> Pick</label></div>
+      <div class="acct">
+        <div class="row"><span class="name">Today · Wed Oct 15</span><span class="status good">● On track</span></div>
+        <p style="font-size:15px"><strong>Pay the Blue card $980 before Oct 22.</strong> After that, nothing until payday.</p>
+        <div class="chips"><span class="chip on">31 days without an advance</span><span class="chip on">6 bills on time in a row</span><span class="chip">rung 1 in 29 days</span></div>
+      </div>
+      <p class="note">The brief already lists everything; this picks the single action with the biggest effect and says why. Streaks are computed from the ledger, so they cannot be gamed by tapping.</p>
+    </div>
+    <div class="opt" data-pick="gd-why" data-title="Why this number, on every figure">
+      <div class="opt-head"><div><h3>"Why this number"</h3><div class="sub">On every figure, in plain words</div></div><label class="pick"><input type="checkbox"> Pick</label></div>
+      <div class="callout" style="border-left-color:var(--c-safe)"><strong>Safe to spend $810</strong><br>Your Oct 15 check was $3,120. Before the next payday, $980 goes to the card, $410 to pay-later, $420 to bills, $300 is set aside for rent, $200 to savings. What is left is $810. <span style="color:var(--muted)">Rows: 6 · Not financial advice.</span></div>
+      <p class="note">The sources already exist on every result. This is a plain-language sentence generated by the engine, not a model, so it is always true.</p>
+    </div>
+    <div class="opt" data-pick="gd-weekly" data-title="Weekly check-in in five taps">
+      <div class="opt-head"><div><h3>The weekly check-in</h3><div class="sub">Five taps on a Sunday</div></div><label class="pick"><input type="checkbox"> Pick</label></div>
+      <ul class="plain"><li>Anything unexpected this week? (the three largest new charges, keep or flag)</li><li>Still paying for these? (one subscription a week)</li><li>The card: paid before the statement? (yes, or a reminder)</li><li>Savings moved? (yes, or the sheet)</li><li>Next week's one thing</li></ul>
+      <p class="note">Ends with a single sentence of where you stand against last week. Sent as a push if you want it, never as an email without approval.</p>
+    </div>
+  </div>
+</section>
+
+<section id="yours">
+  <div class="eyebrow">6 · Make it yours</div>
+  <h2>Order, picture, colour, name</h2>
+  <p class="lede">Settings › Appearance grows from "pick a view, pick a look" into a page where a view is yours to arrange. Everything below is a mockup; the controls here do nothing.</p>
+  <div class="grid wide">
+    <div class="opt" data-pick="my-arrange" data-title="Arrange sections: order, show-as, hide">
+      <div class="opt-head"><div><h3>Arrange</h3><div class="sub">Drag the order, choose each section's picture</div></div><label class="pick"><input type="checkbox"> Pick</label></div>
+      <div class="settings">
+        <div class="sec-row"><span class="handle">⋮⋮</span><span>Safe to spend</span><select class="sel" aria-label="Show safe to spend as"><option>Hero number</option><option>Waterfall</option><option>Gauge</option></select><span class="sw">shown</span></div>
+        <div class="sec-row"><span class="handle">⋮⋮</span><span>This paycheck</span><select class="sel" aria-label="Show this paycheck as"><option>Ribbon</option><option>Strips over time</option><option>Rings</option><option>Beads</option><option>Table</option></select><span class="sw">shown</span></div>
+        <div class="sec-row"><span class="handle">⋮⋮</span><span>Cover</span><select class="sel" aria-label="Show cover as"><option>Gauges</option><option>Sheet</option><option>Columns</option></select><span class="sw">shown</span></div>
+        <div class="sec-row"><span class="handle">⋮⋮</span><span>Sixty days</span><select class="sel" aria-label="Show sixty days as"><option>The River</option><option>Month grid</option><option>Stream</option></select><span class="sw">shown</span></div>
+        <div class="sec-row" style="opacity:.6"><span class="handle">⋮⋮</span><span>Borrowing</span><select class="sel" aria-label="Show borrowing as"><option>Cycle</option><option>Cost tiles</option></select><span class="sw">hidden</span></div>
+      </div>
+      <p class="note">A view becomes a saved arrangement with a name. The eight views that exist become eight presets you can start from. Kept on the server now, not per device, so the phone and the desktop agree.</p>
+    </div>
+    <div class="opt" data-pick="my-colour" data-title="Colour roles with the validator, plus name and mark">
+      <div class="opt-head"><div><h3>Colour, type, name</h3><div class="sub">Roles, not a free-for-all</div></div><label class="pick"><input type="checkbox"> Pick</label></div>
+      <div class="settings">
+        <div style="display:flex;gap:14px;flex-wrap:wrap">
+          <span class="sw"><i style="background:var(--c-pay)"></i>paycheck</span><span class="sw"><i style="background:var(--c-bill)"></i>bills</span><span class="sw"><i style="background:var(--c-safe)"></i>yours</span><span class="sw"><i style="background:var(--c-debt)"></i>debt</span><span class="sw"><i style="background:var(--c-buf)"></i>set-aside</span>
+        </div>
+        <div class="chips"><span class="chip on">validator: passes in light</span><span class="chip on">passes in dark</span><span class="chip">colour-blind pairs ≥ 8</span></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><label style="font-size:12px;color:var(--muted)">Name<input class="inp" value="Our house" aria-label="App name"></label><label style="font-size:12px;color:var(--muted)">Mark<input class="inp" value="upload a PNG or SVG" aria-label="App mark" readonly></label></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--fg2)"><span>Type size: <strong>regular</strong> · larger · largest</span><span>Density: <strong>comfortable</strong> · compact</span><span>Numbers: <strong>shown</strong> · quiet (pictures first, tap for figures)</span></div>
+      </div>
+      <p class="note">You pick any colour for a role; the validator from the data-viz rules runs on the spot and says pass or fail for light and dark, with the fix. Status colours stay reserved and always ship with an icon and a word. The name and the mark appear in the rail, the tab, the brief and every export.</p>
+    </div>
+  </div>
+</section>
+
+<section id="exports">
+  <div class="eyebrow">7 · Exports</div>
+  <h2>Ten formats, ten templates, three axes</h2>
+  <p class="lede">Every export is produced by the engine from the same results the screens show, carries its sources and the not-advice line, is written to the audit, and is served only inside a session. The data formats are plain; the report formats take a template.</p>
+  <div class="tablewrap"><table class="t">
+    <thead><tr><th>Format</th><th>For</th><th>How (free, open)</th><th>Template</th></tr></thead>
+    <tbody>
+      <tr><td>CSV</td><td>Any register, or everything as a zip</td><td>standard library</td><td>no</td></tr>
+      <tr><td>JSON</td><td>Everything, the exit; also what a model reads</td><td>standard library</td><td>no</td></tr>
+      <tr><td>ICS calendar</td><td>Paydays, due dates, advance repayments, a feed your phone subscribes to</td><td>standard library, a read-only tokened URL</td><td>no</td></tr>
+      <tr><td>Beancount / Ledger</td><td>Plain-text accounting for the open-source crowd</td><td>a writer in the engine</td><td>no</td></tr>
+      <tr><td>QIF / OFX</td><td>GnuCash and the older tools</td><td>a writer in the engine</td><td>no</td></tr>
+      <tr><td>Markdown</td><td>Notes apps, Obsidian, a paste into chat</td><td>a renderer per template</td><td>yes</td></tr>
+      <tr><td>HTML, one file</td><td>Open anywhere; print to PDF from the browser</td><td>a renderer per template, styles inlined</td><td>yes</td></tr>
+      <tr><td>PDF</td><td>Send, file, print</td><td>fpdf2 (MIT)</td><td>yes</td></tr>
+      <tr><td>DOCX</td><td>Word, Pages, Google Docs</td><td>python-docx (MIT)</td><td>yes</td></tr>
+      <tr><td>XLSX</td><td>A workbook with one sheet per register, formulas for the totals</td><td>openpyxl (MIT)</td><td>partly: colours and the cover sheet</td></tr>
+    </tbody>
+  </table></div>
+  <div class="callout">A template is three independent choices: a <strong>layout</strong> (the ten below), a <strong>palette</strong> (any look, or your own roles once they pass the validator), and a <strong>mascot set</strong> (none, kitties, forest, sprites). Plus which <strong>sections</strong> and in what order: cover, this check, bills by check, debts, borrowing, saving, accounts, transactions, your notes. Any combination can be saved under a name; the CSS of a layout is editable for the brave, with the tokens listed.</div>
+  <div class="grid" id="templates"></div>
+  <p class="note">The creatures are ours, drawn in that spirit: kitties, a round forest spirit, dust sprites, acorns. No people anywhere in a template.</p>
+</section>
+
+<section id="others">
+  <div class="eyebrow">8 · What others do</div>
+  <h2>Borrowed with credit, rebuilt on the engine</h2>
+  <div class="tablewrap"><table class="t">
+    <thead><tr><th>Service</th><th>What it does well</th><th>What we take</th><th>Where it lands</th></tr></thead>
+    <tbody>
+      <tr><td>YNAB</td><td>Envelopes; "age of money"</td><td>Age of money as a tile: how many days the money you spend today has sat in your accounts</td><td>Cover · Envelopes view</td></tr>
+      <tr><td>Monarch</td><td>The Sankey cash-flow; net worth over time</td><td>The ribbon; a net-worth line with debts below the axis</td><td>Paychecks · Accounts</td></tr>
+      <tr><td>Copilot</td><td>Category rings and a spending pace line against last month</td><td>The pace line in Reports, with the same-day marker</td><td>Reports</td></tr>
+      <tr><td>Rocket Money</td><td>Recurring detection; a calendar of upcoming charges</td><td>Already in; the calendar becomes the ICS feed</td><td>Bills · Exports</td></tr>
+      <tr><td>Actual Budget (open source)</td><td>Budget by month, carry-over, local-first</td><td>Carry-over per bill envelope; the import of its file</td><td>Envelopes · Connectors</td></tr>
+      <tr><td>Firefly III (open source)</td><td>Piggy banks, rules, bills with ranges</td><td>Rung-style piggy banks; a bill's expected range, not a single figure</td><td>Saving · Bills</td></tr>
+      <tr><td>Tiller</td><td>Spreadsheet-first</td><td>The XLSX export with live formulas and a monthly tab</td><td>Exports</td></tr>
+      <tr><td>Empower</td><td>Net worth and a retirement fan chart</td><td>The fan on the Outlook: three bands, not one line</td><td>Outlook</td></tr>
+      <tr><td>Credit Karma</td><td>Score factors with a "what if you paid X"</td><td>Utilisation on the statement day, per card, with the date to pay by</td><td>Cover · Debts</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="harden">
+  <div class="eyebrow">9 · Hardening</div>
+  <h2>Security and bug sweep, one milestone, written down</h2>
+  <div class="grid">
+    <div class="opt" data-pick="hd-security" data-title="Security sweep">
+      <div class="opt-head"><div><h3>Security</h3><div class="sub">Verify from outside, not from the code</div></div><label class="pick"><input type="checkbox"> Pick</label></div>
+      <ul class="plain">
+        <li>Session cookie: Secure, HttpOnly, SameSite strict; the CSRF header on every write; a sign-in rate limit and lockout, tested from another machine</li>
+        <li>Security headers: a content-security policy, frame denial, referrer and permissions policies; checked by a test that fetches the live page</li>
+        <li>OAuth: token lifetimes, refresh rotation, PKCE required, revoke-all; a client at every scope tried against every tool (M9.11)</li>
+        <li>Exports: session only, no-store, the redaction level applied, one audit row each; a test that an export never contains a secret</li>
+        <li>Uploads and parsers: size limits, malformed PDF and CSV fuzzing, a timeout per document</li>
+        <li>Secrets in logs: a job run end to end, then the log grepped for every FA_ value, in CI</li>
+        <li>Dependency audit in CI (pip-audit, npm audit); the image rebuilt on a base-image fix</li>
+        <li>Backups: encrypted, restored to a clean container and compared (M9.8); the key rotation drill (M9.9)</li>
+      </ul>
+    </div>
+    <div class="opt" data-pick="hd-bugs" data-title="Bug sweep">
+      <div class="opt-head"><div><h3>Bugs and readability</h3><div class="sub">Every screen, three widths, three states</div></div><label class="pick"><input type="checkbox"> Pick</label></div>
+      <ul class="plain">
+        <li>Every page at phone, tablet and desktop width with empty, loading and error states, screenshotted from the fixture and kept as golden images</li>
+        <li>Every view against the fixture in light and dark, the palette validator run on each</li>
+        <li>Number formatting: one function, cents only where cents matter, thousands separators everywhere</li>
+        <li>Dates at the edges: month-end on a weekend, the 31st, daylight-saving days, the year boundary</li>
+        <li>Keyboard reach on every control, focus visible, reduced motion honoured</li>
+        <li>A glossary of the twenty words the app uses, linked from the first use on each page</li>
+        <li>Copy pass: every sentence says what the thing does; no jargon that a first-time saver would not know</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="reach">
+  <div class="eyebrow">10 · Reach</div>
+  <h2>Reminders where you are; the phone, the tablet, the wrist</h2>
+  <div class="grid">
+    <div class="opt" data-pick="rc-pwa" data-title="Installable app with web push (free, iOS 16.4+)">
+      <div class="opt-head"><div><h3>Installable, with push</h3><div class="sub">Free, this month</div></div><label class="pick"><input type="checkbox"> Pick</label></div>
+      <ul class="plain">
+        <li>Add to Home Screen on iPhone and iPad: icon, full screen, the Today page as the start</li>
+        <li>Web push from the app itself (iOS 16.4 and later), no ntfy needed; ntfy and Gotify stay as options</li>
+        <li>The Apple Watch shows every iPhone notification: the brief, the one thing, "pay the card by Oct 22"</li>
+        <li>Reminders before due dates, on payday, and when a statement day is near, each a switch</li>
+        <li>Email reminders only through the approval gate, as the rules require</li>
+        <li>Siri Shortcuts: "what is safe to spend" over the REST with a read key; a widget through the Shortcuts app</li>
+        <li>The ICS feed: paydays and due dates in the phone's own calendar</li>
+      </ul>
+      <p class="note">This is M7.5 finished plus push. Everything in it is free and runs on BigBox.</p>
+    </div>
+    <div class="opt" data-pick="rc-native" data-title="Native iPhone, iPad and Watch app (SwiftUI)">
+      <div class="opt-head"><div><h3>Native iPhone, iPad, Watch</h3><div class="sub">Feasible; one cost to decide</div></div><label class="pick"><input type="checkbox"> Pick</label></div>
+      <ul class="plain">
+        <li>One SwiftUI app for iPhone and iPad; a watch app with a complication: safe to spend, days to payday, the one thing</li>
+        <li>Home-screen widgets: safe to spend, cover, the next bill; Lock Screen widgets on the phone</li>
+        <li>Reads the same REST through an OAuth client with the read scope; approvals stay in the web app, so the phone app can never send</li>
+        <li>Nothing stored on the device but the token; Face ID to open</li>
+      </ul>
+      <p class="note"><strong>The cost.</strong> Running it on your own devices from Xcode is free but needs a Mac and a re-sign every seven days. TestFlight or the App Store needs the Apple Developer Program, $99 a year, which is the only paid thing in this whole book. The web app above gets most of the way without it. Android later from the same REST.</p>
+    </div>
+  </div>
+</section>
+
+<section id="milestones">
+  <div class="eyebrow">11 · Milestones</div>
+  <h2>Proposed order, after M9 and M10</h2>
+  <p class="lede">M9 (proven on real money) and M10 (the move) stay open; their remaining items are yours (the Bridge sign-in, the window checked by hand, the apartment figures). These run alongside, in this order, each with a "done when" the fixture can prove.</p>
+  <div class="ms">
+    <div class="m"><span class="tag">M11</span><div><strong>Cover and Saving.</strong> <span class="when">about a week</span><br><span class="note">The accounts.cover result with its three pictures and the payday sheet; the ladder, the set-aside suggestion and the rollover; the one thing today with streaks; "why this number" on every figure. Done when the sheet for a fixture payday matches a hand calculation and every number on the Saving page has sources.</span></div></div>
+    <div class="m"><span class="tag">M12</span><div><strong>Pictures and arrangement.</strong> <span class="when">about a week and a half</span><br><span class="note">The six paycheck pictures as registered components with hover and a table twin; "show as" on every section; arrange, order and hide with saved arrangements on the server; colour roles with the validator; name and mark; type size, density and quiet numbers. Done when the eight views are presets of the arranger and a new arrangement needs no code.</span></div></div>
+    <div class="m"><span class="tag">M13</span><div><strong>Exports.</strong> <span class="when">about a week and a half</span><br><span class="note">The ten formats; the ten layouts on three axes with the section list; the editor; the ICS feed; an audit row per export and the secret-free test. Done when every template renders the fixture in every report format and a Beancount file balances.</span></div></div>
+    <div class="m"><span class="tag">M14</span><div><strong>Hardening sweep.</strong> <span class="when">about a week</span><br><span class="note">Section 9 in full, each item a test or a drill with a record. Done when the list is ticked from outside the box, not from inside the code.</span></div></div>
+    <div class="m"><span class="tag">M15</span><div><strong>Reach.</strong> <span class="when">about a week</span><br><span class="note">Installable with web push, the reminder switches, watch mirror, Shortcuts, the first-run guide and the weekly check-in. Done when the brief arrives on the watch with no third-party app.</span></div></div>
+    <div class="m"><span class="tag">M16</span><div><strong>Native iPhone, iPad and Watch.</strong> <span class="when">about three weeks, after M15, your call on the cost</span><br><span class="note">SwiftUI app, widgets, complication, read scope only. Done when the watch complication shows the same safe-to-spend as the web app within a minute of a sync.</span></div></div>
+  </div>
+  <p class="note">If you want one thing first: M11. It answers the question you asked twice, and the ladder is the part a first-time saver needs most.</p>
+</section>
+
+</main>
+
+<div class="pickbar" role="region" aria-label="Your picks"><div class="wrap">
+  <span class="count" id="pick-count">0 picked</span>
+  <button class="btn" id="copy-btn" type="button">Copy my picks</button>
+  <button class="btn quiet" id="clear-btn" type="button">Clear</button>
+  <span class="msg" id="pick-msg">Tick Pick on anything above, then copy and paste the text to me.</span>
+  <textarea id="pick-text" hidden aria-label="Your picks as text" readonly></textarea>
+</div></div>
+
+<script>
+(function(){
+  "use strict";
+  var NS="http://www.w3.org/2000/svg";
+  function fmt(n){ return "$"+Math.round(n).toLocaleString("en-US"); }
+  function svg(w,h){ var s=document.createElementNS(NS,"svg"); s.setAttribute("viewBox","0 0 "+w+" "+h); s.setAttribute("width","100%"); s.setAttribute("role","img"); return s; }
+  function el(name,attrs,text){ var e=document.createElementNS(NS,name); for(var k in attrs){ if(Object.prototype.hasOwnProperty.call(attrs,k)) e.setAttribute(k,attrs[k]); } if(text!=null) e.textContent=text; return e; }
+  var ROLE={rent:"var(--c-bill)",bills:"var(--c-bill)",card:"var(--c-debt)",later:"var(--c-debt)",aside:"var(--c-buf)",save:"var(--c-pay)",yours:"var(--c-safe)"};
+  var NAMES={rent:"rent",bills:"bills",card:"card payment",later:"pay-later",aside:"set aside",save:"saving",yours:"yours"};
+
+  var CHECKS=[
+    {label:"Aug 15",net:3120,rent:0,card:940,bills:420,later:410,aside:300,save:150},
+    {label:"Aug 29",net:2860,rent:1450,card:0,bills:510,later:0,aside:0,save:150},
+    {label:"Sep 15",net:3120,rent:0,card:1010,bills:420,later:410,aside:300,save:150},
+    {label:"Sep 30",net:2860,rent:1450,card:0,bills:510,later:0,aside:0,save:150},
+    {label:"Oct 15",net:3120,rent:0,card:980,bills:420,later:410,aside:300,save:200},
+    {label:"Oct 30",net:2860,rent:1450,card:0,bills:509,later:0,aside:0,save:200,future:true},
+    {label:"Nov 13",net:3120,rent:0,card:960,bills:420,later:410,aside:300,save:200,future:true},
+    {label:"Nov 30",net:2860,rent:1450,card:0,bills:510,later:0,aside:0,save:200,future:true},
+    {label:"Dec 15",net:3120,rent:0,card:900,bills:420,later:410,aside:300,save:250,future:true},
+    {label:"Dec 31",net:2860,rent:1450,card:0,bills:510,later:0,aside:0,save:250,future:true}
+  ];
+  var KEYS=["rent","card","bills","later","aside","save"];
+  function yoursOf(c){ var s=0; KEYS.forEach(function(k){ s+=c[k]; }); return c.net-s; }
+  function segsOf(c){ var out=[]; KEYS.forEach(function(k){ if(c[k]>0) out.push([k,c[k]]); }); out.push(["yours",yoursOf(c)]); return out; }
+  function legend(host,keys){ var d=document.createElement("div"); d.className="legend"; keys.forEach(function(k){ var s=document.createElement("span"); s.style.setProperty("--sw",ROLE[k]); s.textContent=NAMES[k]; d.appendChild(s); }); host.parentNode.insertBefore(d,host.nextSibling); }
+
+  /* 2 · cover columns */
+  (function(){
+    var host=document.getElementById("fig-cover-cols"); if(!host) return;
+    var W=640,H=220,padL=46,padT=18,padB=36; var s=svg(W,H);
+    var accts=[{n:"Checking",has:2410,w1:1489,w2:2159},{n:"Blue card",has:0,w1:980,w2:0},{n:"Orange card",has:0,w1:0,w2:410},{n:"Savings",has:120,w1:190,w2:190}];
+    var max=2600; var y=function(v){ return padT+(H-padT-padB)*(1-v/max); };
+    [1000,2000].forEach(function(g){ s.appendChild(el("line",{x1:padL,x2:W-8,y1:y(g),y2:y(g),"class":"grid"})); s.appendChild(el("text",{x:padL-6,y:y(g)+4,"class":"tick","text-anchor":"end"},fmt(g))); });
+    var gw=(W-padL-8)/accts.length, bw=28;
+    accts.forEach(function(a,i){ var x0=padL+i*gw+gw/2-bw*1.6;
+      var bars=[[a.w1,"var(--c-bill)"],[a.w2,"var(--c-debt)"],[a.has,"var(--c-safe)"]];
+      bars.forEach(function(b,j){ var x=x0+j*(bw+4); if(b[0]>0){ s.appendChild(el("rect",{x:x,y:y(b[0]),width:bw,height:y(0)-y(b[0]),rx:3,style:"fill:"+b[1]})); s.appendChild(el("text",{x:x+bw/2,y:y(b[0])-4,"class":"val","text-anchor":"middle"},fmt(b[0]))); } else { s.appendChild(el("line",{x1:x,x2:x+bw,y1:y(0),y2:y(0),style:"stroke:var(--muted);stroke-width:2"})); } });
+      s.appendChild(el("text",{x:x0+bw*1.5+4,y:H-16,"class":"lbl","text-anchor":"middle"},a.n));
+    });
+    s.appendChild(el("line",{x1:padL,x2:W-8,y1:y(0),y2:y(0),style:"stroke:var(--fg2);stroke-width:1"}));
+    host.appendChild(s);
+  })();
+
+  /* 3 · ribbon */
+  (function(){
+    var host=document.getElementById("fig-ribbon"); if(!host) return;
+    var c=CHECKS[4]; var items=segsOf(c).map(function(p){ return {k:p[0],v:p[1],label:NAMES[p[0]]}; });
+    items[2].sub="power $190 · phone $95 · insurance $71 · streaming $64";
+    var W=640,H=250,nw=14,gap=8,padT=24,padB=8; var s=svg(W,H);
+    var avail=H-padT-padB-gap*(items.length-1); var scale=avail/c.net;
+    var srcH=c.net*scale, srcY=padT+((H-padT-padB)-srcH)/2;
+    s.appendChild(el("rect",{x:0,y:srcY,width:nw,height:srcH,rx:3,style:"fill:var(--c-pay)"}));
+    s.appendChild(el("text",{x:nw+6,y:srcY-8,"class":"lbl"},"Oct 15 check · "+fmt(c.net)+" net"));
+    var ySrc=srcY,yT=padT,x1=W-190,xm=(nw+x1)/2;
+    items.forEach(function(it){ var h=it.v*scale;
+      var d="M "+nw+" "+ySrc+" C "+xm+" "+ySrc+", "+xm+" "+yT+", "+x1+" "+yT+" L "+x1+" "+(yT+h)+" C "+xm+" "+(yT+h)+", "+xm+" "+(ySrc+h)+", "+nw+" "+(ySrc+h)+" Z";
+      s.appendChild(el("path",{d:d,style:"fill:"+ROLE[it.k]+";opacity:.5"}));
+      s.appendChild(el("rect",{x:x1,y:yT,width:nw,height:h,rx:3,style:"fill:"+ROLE[it.k]}));
+      s.appendChild(el("text",{x:x1+nw+8,y:yT+h/2+4,"class":"lbl"},it.label+"  "+fmt(it.v)));
+      if(it.sub) s.appendChild(el("text",{x:x1+nw+8,y:yT+h/2+16,"class":"sub"},it.sub));
+      ySrc+=h; yT+=h+gap; });
+    host.appendChild(s);
+  })();
+
+  /* 3 · strips */
+  (function(){
+    var host=document.getElementById("fig-strips"); if(!host) return;
+    var W=680,H=260,padL=46,padR=10,padT=30,padB=30; var s=svg(W,H); var max=3400;
+    var cw=(W-padL-padR)/CHECKS.length, bw=cw*0.6; var y=function(v){ return padT+(H-padT-padB)*(1-v/max); };
+    [1000,2000,3000].forEach(function(g){ s.appendChild(el("line",{x1:padL,x2:W-padR,y1:y(g),y2:y(g),"class":"grid"})); s.appendChild(el("text",{x:padL-6,y:y(g)+4,"class":"tick","text-anchor":"end"},fmt(g))); });
+    var netPts=[],needPts=[];
+    CHECKS.forEach(function(c,i){ var x=padL+i*cw+(cw-bw)/2, acc=0; var segs=segsOf(c);
+      segs.forEach(function(p,j){ var v=p[1]; var top=y(acc+v), hgt=Math.max(y(acc)-top-2,0); s.appendChild(el("rect",{x:x,y:top,width:bw,height:hgt,rx:j===segs.length-1?3:0,style:"fill:"+ROLE[p[0]]+(c.future?";opacity:.5":"")})); acc+=v; });
+      var need=c.net-yoursOf(c); netPts.push([x+bw/2,y(c.net)]); needPts.push([x+bw/2,y(need)]);
+      s.appendChild(el("text",{x:x+bw/2,y:y(c.net)-6,"class":"val","text-anchor":"middle"},fmt(yoursOf(c))));
+      s.appendChild(el("text",{x:x+bw/2,y:H-10,"class":"tick","text-anchor":"middle"},c.label));
+    });
+    var line=function(pts,cls){ var d=pts.map(function(p,i){ return (i?"L ":"M ")+p[0]+" "+p[1]; }).join(" "); s.appendChild(el("path",{d:d,"class":cls})); };
+    line(netPts,"ink"); line(needPts,"ink-dash");
+    s.appendChild(el("text",{x:W-padR,y:padT-14,"class":"sub","text-anchor":"end"},"solid: net · dashed: what it had to cover · number: yours"));
+    host.appendChild(s); legend(host,["rent","card","bills","later","aside","save","yours"]);
+  })();
+
+  /* 3 · waterfall */
+  (function(){
+    var host=document.getElementById("fig-waterfall"); if(!host) return;
+    var steps=[{label:"Net",v:3120},{label:"Card",v:980,k:"card",sub:"before Oct 23"},{label:"Pay-later",v:410,k:"later"},{label:"Bills",v:420,k:"bills",sub:"4 billers"},{label:"Set aside",v:300,k:"aside",sub:"for rent"},{label:"Saving",v:200,k:"save"},{label:"Safe",v:810,k:"safe",sub:"through Oct 29"}];
+    var W=680,H=240,padL=46,padT=22,padB=40; var s=svg(W,H); var n=steps.length, cw=(W-padL-10)/n, bw=cw*0.58, max=3300;
+    var y=function(v){ return padT+(H-padT-padB)*(1-v/max); }; var level=0;
+    [1000,2000,3000].forEach(function(g){ s.appendChild(el("line",{x1:padL,x2:W-10,y1:y(g),y2:y(g),"class":"grid"})); s.appendChild(el("text",{x:padL-6,y:y(g)+4,"class":"tick","text-anchor":"end"},fmt(g))); });
+    steps.forEach(function(st,i){ var x=padL+i*cw+(cw-bw)/2, top,bot,fill;
+      if(i===0){ top=st.v; bot=0; level=st.v; fill="var(--c-pay)"; }
+      else if(st.k==="safe"){ top=level; bot=0; fill="var(--c-safe)"; }
+      else { top=level; bot=level-st.v; level=bot; fill=ROLE[st.k]; }
+      s.appendChild(el("rect",{x:x,y:y(top),width:bw,height:Math.max(y(bot)-y(top),1),rx:3,style:"fill:"+fill}));
+      if(i>0 && st.k!=="safe") s.appendChild(el("line",{x1:x-cw*0.42,x2:x,y1:y(top),y2:y(top),"class":"conn"}));
+      s.appendChild(el("text",{x:x+bw/2,y:y(top)-6,"class":"val","text-anchor":"middle"},(i===0||st.k==="safe"?"":"−")+fmt(st.v)));
+      s.appendChild(el("text",{x:x+bw/2,y:H-22,"class":"tick","text-anchor":"middle"},st.label));
+      if(st.sub) s.appendChild(el("text",{x:x+bw/2,y:H-9,"class":"sub","text-anchor":"middle"},st.sub));
+    });
+    host.appendChild(s);
+  })();
+
+  /* 3 · stream */
+  (function(){
+    var host=document.getElementById("fig-stream"); if(!host) return;
+    var months=["Aug","Sep","Oct","Nov","Dec","Jan"];
+    var series=[
+      {k:"rent",label:"rent",vals:[1450,1450,1450,1450,1450,1450]},
+      {k:"card",label:"card",vals:[940,1010,980,960,900,860]},
+      {k:"bills",label:"bills",vals:[930,930,929,930,930,930]},
+      {k:"later",label:"pay-later",vals:[410,410,410,410,410,205]},
+      {k:"aside",label:"set aside",vals:[300,300,300,300,300,300]},
+      {k:"save",label:"saving",vals:[300,300,400,400,500,700]},
+      {k:"yours",label:"yours",vals:[1650,1580,1511,1530,1490,1535]}
+    ];
+    var W=680,H=240,padL=46,padR=70,padT=16,padB=28; var s=svg(W,H); var n=months.length;
+    var totals=months.map(function(_,i){ return series.reduce(function(a,sr){ return a+sr.vals[i]; },0); }); var max=Math.max.apply(null,totals)*1.04;
+    var x=function(i){ return padL+(W-padL-padR)*i/(n-1); }; var y=function(v){ return padT+(H-padT-padB)*(1-v/max); };
+    function segs(pts){ var d=""; for(var i=1;i<pts.length;i++){ var a=pts[i-1],b=pts[i],mx=(a[0]+b[0])/2; d+=" C "+mx+" "+a[1]+", "+mx+" "+b[1]+", "+b[0]+" "+b[1]; } return d; }
+    function area(top,bottom){ var b=bottom.slice().reverse(); return "M "+top[0][0]+" "+top[0][1]+segs(top)+" L "+b[0][0]+" "+b[0][1]+segs(b)+" Z"; }
+    [2000,4000,6000].forEach(function(g){ s.appendChild(el("line",{x1:padL,x2:W-padR,y1:y(g),y2:y(g),"class":"grid"})); s.appendChild(el("text",{x:padL-6,y:y(g)+4,"class":"tick","text-anchor":"end"},fmt(g))); });
+    var base=months.map(function(){ return 0; });
+    series.forEach(function(sr){ var top=base.map(function(b,i){ return b+sr.vals[i]; });
+      var tp=top.map(function(v,i){ return [x(i),y(v)]; }), bp=base.map(function(v,i){ return [x(i),y(v)]; });
+      s.appendChild(el("path",{d:area(tp,bp),style:"fill:"+ROLE[sr.k]+";opacity:.85;stroke:var(--surface);stroke-width:2"}));
+      var i=n-1; s.appendChild(el("text",{x:x(i)+6,y:(y(top[i])+y(base[i]))/2+4,"class":"sub"},sr.label));
+      base=top; });
+    months.forEach(function(m,i){ s.appendChild(el("text",{x:x(i),y:H-8,"class":"tick","text-anchor":"middle"},m)); });
+    host.appendChild(s);
+  })();
+
+  /* 3 · rings */
+  (function(){
+    var host=document.getElementById("fig-rings"); if(!host) return;
+    var W=680,H=190; var s=svg(W,H); var r=60, ir=38;
+    function arc(cx,cy,R,IR,a0,a1){ var large=(a1-a0)>Math.PI?1:0; var p=function(rr,a){ return [cx+rr*Math.cos(a),cy+rr*Math.sin(a)]; };
+      var A=p(R,a0),B=p(R,a1),C=p(IR,a1),D=p(IR,a0);
+      return "M "+A[0]+" "+A[1]+" A "+R+" "+R+" 0 "+large+" 1 "+B[0]+" "+B[1]+" L "+C[0]+" "+C[1]+" A "+IR+" "+IR+" 0 "+large+" 0 "+D[0]+" "+D[1]+" Z"; }
+    CHECKS.slice(4,8).forEach(function(c,i){ var cx=85+i*170, cy=88, a=-Math.PI/2;
+      segsOf(c).forEach(function(p){ var ang=p[1]/c.net*2*Math.PI; s.appendChild(el("path",{d:arc(cx,cy,r,ir,a,a+ang-0.001),style:"fill:"+ROLE[p[0]]+";stroke:var(--surface);stroke-width:2"+(c.future?";opacity:.6":"")})); a+=ang; });
+      s.appendChild(el("text",{x:cx,y:cy-2,"class":"val","text-anchor":"middle"},fmt(yoursOf(c))));
+      s.appendChild(el("text",{x:cx,y:cy+12,"class":"sub","text-anchor":"middle"},"yours"));
+      s.appendChild(el("text",{x:cx,y:cy+r+22,"class":"lbl","text-anchor":"middle"},c.label+(c.future?" · projected":"")));
+    });
+    host.appendChild(s); legend(host,["rent","card","bills","later","aside","save","yours"]);
+  })();
+
+  /* 3 · beads */
+  (function(){
+    var host=document.getElementById("fig-beads"); if(!host) return;
+    var W=680,H=160,padL=60,padR=60; var s=svg(W,H); var days=15; var x=function(d){ return padL+(W-padL-padR)*d/days; }; var yl=86;
+    s.appendChild(el("line",{x1:padL,x2:W-padR,y1:yl,y2:yl,"class":"thread"}));
+    [[0,"Oct 15 · $3,120"],[15,"Oct 30 · $2,860"]].forEach(function(p){ s.appendChild(el("rect",{x:x(p[0])-7,y:yl-7,width:14,height:14,rx:3,transform:"rotate(45 "+x(p[0])+" "+yl+")",style:"fill:var(--c-pay)"})); s.appendChild(el("text",{x:x(p[0]),y:yl+36,"class":"lbl","text-anchor":"middle"},p[1])); });
+    var items=[{d:2,l:"phone",v:95,k:"bills"},{d:4,l:"streaming",v:64,k:"bills"},{d:7,l:"card",v:980,k:"card"},{d:9,l:"insurance",v:71,k:"bills"},{d:11,l:"power",v:190,k:"bills"},{d:13,l:"pay-later",v:410,k:"later"}];
+    items.forEach(function(it,i){ var r=6+Math.sqrt(it.v)/2.4; s.appendChild(el("circle",{cx:x(it.d),cy:yl,r:r,style:"fill:"+ROLE[it.k]+";stroke:var(--surface);stroke-width:2"}));
+      var up=i%2===0; s.appendChild(el("text",{x:x(it.d),y:up?yl-r-14:yl+r+14,"class":"sub","text-anchor":"middle"},it.l)); s.appendChild(el("text",{x:x(it.d),y:up?yl-r-3:yl+r+25,"class":"val","text-anchor":"middle"},fmt(it.v))); });
+    host.appendChild(s);
+  })();
+
+  /* 4 · set-aside slider */
+  (function(){
+    var sl=document.getElementById("share"); if(!sl) return;
+    var left=701, need=380;
+    function upd(){ var pct=+sl.value, amt=Math.round(left*pct/100); document.getElementById("share-v").textContent=pct+"%"; document.getElementById("share-amt").textContent=fmt(amt);
+      var when="never at this share"; if(amt>0){ var checks=Math.ceil(need/amt); var dates=["Oct 30","Nov 13","Nov 30","Dec 15","Dec 31","Jan 15","Jan 30","Feb 13","Feb 27","Mar 13","Mar 31","Apr 15"]; when=checks<=dates.length?dates[checks-1]:"after "+dates[dates.length-1]; }
+      document.getElementById("share-when").textContent=when; }
+    sl.addEventListener("input",upd); upd();
+  })();
+
+  /* 4 · rollover */
+  (function(){
+    var host=document.getElementById("fig-rollover"); if(!host) return;
+    var W=640,H=120,padL=16,padR=16; var s=svg(W,H); var months=["Nov","Dec","Jan","Feb","Mar","Apr","May","Jun","Jul"]; var n=months.length;
+    var x=function(i){ return padL+(W-padL-padR)*i/n; }; var cw=(W-padL-padR)/n;
+    months.forEach(function(m,i){ var later=i<4; s.appendChild(el("rect",{x:x(i)+2,y:38,width:cw-4,height:30,rx:4,style:"fill:"+(later?"var(--c-debt)":"var(--c-pay)")})); s.appendChild(el("text",{x:x(i)+cw/2,y:58,"class":"val","text-anchor":"middle",style:"fill:#fff"},"$410")); s.appendChild(el("text",{x:x(i)+cw/2,y:88,"class":"tick","text-anchor":"middle"},m)); });
+    s.appendChild(el("text",{x:x(0)+2,y:24,"class":"lbl"},"pay-later, from the mid check"));
+    s.appendChild(el("text",{x:x(4)+2,y:24,"class":"lbl"},"the same $410, into the ladder"));
+    s.appendChild(el("line",{x1:x(4),x2:x(4),y1:30,y2:76,style:"stroke:var(--fg);stroke-width:1.5;stroke-dasharray:3 3"}));
+    s.appendChild(el("text",{x:x(4)+cw*2.6,y:110,"class":"sub","text-anchor":"middle"},"rung 2 lands in May instead of October"));
+    host.appendChild(s);
+  })();
+
+  /* 7 · export templates */
+  (function(){
+    var host=document.getElementById("templates"); if(!host) return;
+    var T=[
+      {id:"ledger",name:"Ledger",sub:"Professional · tables first · serif",cls:"tpl-ledger"},
+      {id:"board",name:"Boardroom",sub:"Professional · tiles and charts",cls:"tpl-board"},
+      {id:"dossier",name:"Dossier",sub:"Engineered · dense · references, no charts",cls:"tpl-dossier",refs:true},
+      {id:"blueprint",name:"Blueprint",sub:"Engineered · grid paper · monospace",cls:"tpl-blueprint"},
+      {id:"terminal",name:"Terminal",sub:"Retro · amber phosphor",cls:"tpl-terminal"},
+      {id:"receipt",name:"Receipt",sub:"Retro · thermal paper · no charts",cls:"tpl-receipt"},
+      {id:"synth",name:"Horizon",sub:"Modern retro · neon grid",cls:"tpl-synth"},
+      {id:"forest",name:"Forest",sub:"Cute · the round forest spirit and sprites",cls:"tpl-forest",mascot:"spirit",extra:"soot"},
+      {id:"kitties",name:"Black Kitties",sub:"Cute · two kitties, paw bullets",cls:"tpl-kitties",mascot:"kitty",extra:"kitty2"},
+      {id:"meadow",name:"Meadow",sub:"Cute · acorns and sprites on a watercolour sky",cls:"tpl-meadow",mascot:"acorn",extra:"soot"}
+    ];
+    function page(t){
+      var h='<div class="ph">Paycheck plan · Oct 30</div><div class="pm">Example household · engine 1.4 · sources on every line · not financial advice</div>';
+      h+='<div class="kpi"><div><b>$810</b>safe to spend</div><div><b>$1,489</b>due before payday</div><div><b>$120</b>savings, rung 1</div></div>';
+      h+='<div class="bars"><div><span>rent</span><i style="width:100%"></i><em>1,450</em></div><div><span>card</span><i style="width:68%"></i><em>980</em></div><div><span>pay-later</span><i style="width:28%"></i><em>410</em></div><div><span>saving</span><i style="width:14%"></i><em>200</em></div></div>';
+      h+='<table><tr><td>Rent · Oct 30 check</td><td>1,450.00</td></tr><tr><td>Blue card · by Oct 22</td><td>980.00</td></tr><tr><td>Power · Oct 26</td><td>190.00</td></tr><tr><td>Phone · Oct 17</td><td>95.00</td></tr></table>';
+      if(t.refs) h+='<div class="refs"><span>[1] paycheck.plan 2026-10-15 · rows 6</span><span>[2] bills: 4 series, confirmed</span><span>[3] accounts.cover: 3 accounts</span></div>';
+      h+='<div class="foot">FinancialAuthority · the numbers are the engine\'s; a model only explains them.</div>';
+      if(t.mascot==="spirit") h+='<svg class="mascot" style="right:8px;bottom:14px;width:48px"><use href="#spirit"/></svg><svg class="mascot sm" style="left:10px;bottom:16px"><use href="#soot"/></svg><svg class="mascot sm" style="left:34px;bottom:12px;width:16px"><use href="#soot"/></svg>';
+      if(t.mascot==="kitty") h+='<svg class="mascot" style="right:8px;top:4px;width:40px"><use href="#kitty"/></svg><svg class="mascot" style="right:42px;top:10px;width:30px;transform:scaleX(-1)"><use href="#kitty"/></svg>';
+      if(t.mascot==="acorn") h+='<svg class="mascot sm" style="right:10px;top:10px"><use href="#acorn"/></svg><svg class="mascot sm" style="right:30px;top:16px;width:16px"><use href="#acorn"/></svg><svg class="mascot sm" style="right:12px;bottom:14px"><use href="#soot"/></svg>';
+      return h;
+    }
+    T.forEach(function(t){ var d=document.createElement("div"); d.className="opt"; d.setAttribute("data-pick","tpl-"+t.id); d.setAttribute("data-title","Template: "+t.name);
+      d.innerHTML='<div class="opt-head"><div><h3>'+t.name+'</h3><div class="sub">'+t.sub+'</div></div><label class="pick"><input type="checkbox"> Pick</label></div><div class="page '+t.cls+'">'+page(t)+'</div>';
+      host.appendChild(d); });
+  })();
+
+  /* picks */
+  (function(){
+    var KEY="fa-options-picks"; var saved={};
+    try{ saved=JSON.parse(localStorage.getItem(KEY)||"{}")||{}; }catch(e){ saved={}; }
+    var opts=Array.prototype.slice.call(document.querySelectorAll(".opt[data-pick]"));
+    var count=document.getElementById("pick-count"), msg=document.getElementById("pick-msg"), ta=document.getElementById("pick-text");
+    function text(){ var lines=opts.filter(function(o){ return o.classList.contains("picked"); }).map(function(o){ return "- "+o.getAttribute("data-pick")+" · "+o.getAttribute("data-title"); }); return lines.length?"Picks from the options book (2026-10-15):\n"+lines.join("\n"):""; }
+    function render(){ var n=opts.filter(function(o){ return o.classList.contains("picked"); }).length; count.textContent=n+" picked"; ta.value=text(); try{ var st={}; opts.forEach(function(o){ if(o.classList.contains("picked")) st[o.getAttribute("data-pick")]=1; }); localStorage.setItem(KEY,JSON.stringify(st)); }catch(e){} }
+    opts.forEach(function(o){ var cb=o.querySelector(".pick input"); if(!cb) return; cb.id="pick-"+o.getAttribute("data-pick"); if(saved[o.getAttribute("data-pick")]){ cb.checked=true; o.classList.add("picked"); }
+      cb.addEventListener("change",function(){ o.classList.toggle("picked",cb.checked); render(); }); });
+    document.getElementById("copy-btn").addEventListener("click",function(){ var t=text(); if(!t){ msg.textContent="Nothing picked yet."; return; }
+      var done=function(){ msg.textContent="Copied. Paste it to me in the chat."; ta.hidden=true; };
+      var fallback=function(){ ta.hidden=false; ta.focus(); ta.select(); msg.textContent="Select the text below and copy it."; };
+      if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(done,fallback); } else { fallback(); } });
+    document.getElementById("clear-btn").addEventListener("click",function(){ opts.forEach(function(o){ var cb=o.querySelector(".pick input"); if(cb) cb.checked=false; o.classList.remove("picked"); }); ta.hidden=true; msg.textContent="Cleared."; render(); });
+    render();
+  })();
+})();
+</script>
