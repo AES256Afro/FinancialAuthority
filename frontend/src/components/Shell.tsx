@@ -1,5 +1,5 @@
 // The app shell: a rail on wide screens, tabs on a phone, and the header with the payday chip.
-import { BarChart3, BellDot, Clock, Download, FileText, Gauge, Landmark, List, Mail, MessageSquare, Mountain, PiggyBank, Receipt, Repeat, Settings, Telescope, TrendingUp, Truck, Waves } from "lucide-react";
+import { BarChart3, BellDot, BookOpen, Clock, Download, FileText, Gauge, Landmark, List, Mail, MessageSquare, Mountain, PiggyBank, Receipt, Repeat, Settings, Telescope, TrendingUp, Truck, Waves } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { brandMark, brandName, useAppearance } from "../appearance";
@@ -81,6 +81,7 @@ export function Shell({ children, snapshot, title }: { children: ReactNode; snap
           {title && <h1 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>{title}</h1>}
           <div style={{ flexGrow: 1 }} />
           <div style={{ fontSize: 12, color: "var(--muted)" }}>{snapshot ? `${snapshot.accounts.length} accounts` : ""}</div>
+          <Link to="/glossary" aria-label="The words the app uses" title="The words the app uses" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--ink-2)" }}><BookOpen size={15} aria-hidden="true" />Words</Link>
         </header>
         <NextStepsStrip />
         {children}

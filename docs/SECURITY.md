@@ -62,4 +62,27 @@ Secrets never reach logs; the frontend receives only "set" or "not set" for any 
 
 ## Dependency audit
 
-CI builds the image on every push; a dependency audit step (pip-audit, npm audit) is M8.3's next piece.
+CI runs pip-audit over the locked Python dependencies and `npm audit --omit=dev --audit-level=high` over the frontend on every push and every Monday, and the weekly run rebuilds `:edge` so a base-image fix lands without a code change. A grep in the same job fails the build if a committed file holds an `FA_` secret, a PEM private key or an API key. 2026-10-15: both audits clean.
+
+## The hardening sweep (M14), 2026-10-15
+
+Each line is a test in `backend/tests/test_hardening.py` or `test_exports.py`, or a check run against the app from outside.
+
+| Control | How it is held | Checked |
+|---|---|---|
+| Security headers | `app/security.py`, plain ASGI: nosniff, no referrer, `X-Frame-Options: DENY`, a permissions policy, HSTS over https; the pages get a content-security policy (scripts from the app and Plaid Link only, no plugins, no outside forms, no framing); the OAuth consent page gets its own, whose form rule allows the client's https or local callback | test, and `curl -I` against BigBox |
+| Body ceiling | requests over 60 MB refused with 413 before the body is read; each upload route still refuses over 50 MB | test |
+| Malformed uploads | empty, truncated, binary and script-laden files to every upload route answer under 500 | test |
+| Session cookie | HttpOnly, SameSite=Lax, Secure whenever the request came over https; writes need the app's own header | test |
+| Sign-in | lockout after repeated failures per address | test (existing); not re-run against the live box, since it would lock the owner's own address out |
+| Secrets in logs | the jobs run with a mailbox password and a Plaid secret on file; neither, nor any `FA_` secret, appears in the logs or the job records | test |
+| Secrets in exports | every one of the twelve export formats is scanned for the same secrets and for any encrypted blob | test |
+| Exports | owner session only (an API key gets 403), `Cache-Control: no-store`, an audit row each | test |
+| The calendar feed | the one unauthenticated route: a 256-bit token stored hashed, replaced or revoked in one tap, amounts off by default, sixty requests an hour per address | test, and PLAN section 12 |
+| Appearance | colours checked against the palette rules before they are kept; a mark must be a real PNG, JPEG, WebP or a plain SVG (scripts, handlers and outside links refused), under 300 KB | test |
+| Report stylesheets | styling only: imports, urls, scripts and bindings refused; previews render in a sandboxed frame with no scripts | test |
+| Every page at three widths | phone, tablet and desktop, no sideways scroll, no console error: 29 routes | browser pass, 2026-10-15 |
+| Dates at the edges | the 31st in February and in a leap year, a year turning over, semi-monthly paydays on a weekend, rent on the 1st paid from the check before | test |
+| Keyboard reach | a visible focus ring on every control; status always carries an icon and a word | CSS and review |
+| Plain words | a glossary of the twenty-two words the app uses, linked from every page's header | page |
+

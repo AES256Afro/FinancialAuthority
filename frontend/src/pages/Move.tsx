@@ -204,11 +204,11 @@ export function Move() {
             <select className="input" value={overlap} onChange={(e) => setOverlap(e.target.value)}><option value="0">no overlap</option><option value="1">one more month</option><option value="2">two more months</option></select>
           </label>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))", gap: 12 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <span className="lab">One-off costs</span>
             {oneOffs.map((o, i) => (
-              <div key={i} style={{ display: "flex", gap: 6 }}>
+              <div key={i} style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 <input className="input" value={o.name} onChange={(e) => setOneOffs(oneOffs.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} style={{ flex: "1 1 120px" }} placeholder="what" />
                 <input className="input num" value={o.amount} onChange={(e) => setOneOffs(oneOffs.map((x, j) => (j === i ? { ...x, amount: e.target.value } : x)))} inputMode="decimal" style={{ width: 90 }} placeholder="amount" />
                 <input className="input" type="date" value={o.date} onChange={(e) => setOneOffs(oneOffs.map((x, j) => (j === i ? { ...x, date: e.target.value } : x)))} style={{ width: 150 }} title="blank means the move date" />
@@ -219,7 +219,7 @@ export function Move() {
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <span className="lab">Bills that start with the move (a month)</span>
             {recurring.map((r, i) => (
-              <div key={i} style={{ display: "flex", gap: 6 }}>
+              <div key={i} style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 <input className="input" value={r.name} onChange={(e) => setRecurring(recurring.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} style={{ flex: "1 1 120px" }} placeholder="what" />
                 <input className="input num" value={r.amount} onChange={(e) => setRecurring(recurring.map((x, j) => (j === i ? { ...x, amount: e.target.value } : x)))} inputMode="decimal" style={{ width: 90 }} placeholder="amount" />
                 <input className="input num" value={r.due_day} onChange={(e) => setRecurring(recurring.map((x, j) => (j === i ? { ...x, due_day: e.target.value } : x)))} inputMode="numeric" style={{ width: 64 }} placeholder="day" />
