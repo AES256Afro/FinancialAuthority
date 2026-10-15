@@ -103,6 +103,10 @@ def test_sync_files_borrowing_retires_the_fake_bill_and_queues_streams(owner: Te
         assert len(card_rows) == 1 and card_rows[0]["amount"] == 600.0 and card_rows[0]["date"] == "2026-10-30"
         assert not any(e["kind"] == "card_payment" for e in snap["due_before_payday"]["items"])
         assert snap["safe_to_spend"]["parts"]["advances_on_payday"] == 150.0
+        # the queued Affirm stream is counted on its day at its last amount, marked pending, with a caveat that says so
+        pending_rows = [e for e in snap["due_before_payday"]["items"] + snap["window"]["items"] if e.get("pending")]
+        assert len(pending_rows) == 1 and pending_rows[0]["amount"] == 248.79 and pending_rows[0]["date"] == "2026-10-22" and pending_rows[0]["source"].startswith("series:")
+        assert any(c.startswith("1 pay-later stream is counted") for c in snap["caveats"]) and not any("unnamed and not counted" in c for c in snap["caveats"])
         over = borrowing_overview(session, TODAY)
     assert over["cost"]["fees_90d"] == 40.99 and over["cost"]["advances_90d"] == 3 and over["outstanding_total"] == 150.0
     assert {p["provider"] for p in over["providers"]} == {"Earnin", "Dave"} and next(p for p in over["providers"] if p["provider"] == "Earnin")["annual_rate"] > 1.0

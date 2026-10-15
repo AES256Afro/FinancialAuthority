@@ -10,7 +10,7 @@ from sqlmodel import Session, select
 from ..models import Account, Advance, Bill, Income, InstallmentPlan, RecurringSeries
 from ..store import get_setting
 from .cadence import next_paydays, payday_position
-from .projection import build_events, card_events, cash_of, low_point, project, projection_caveats, split_windows
+from .projection import build_events, card_events, cash_of, low_point, pending_installment_events, project, projection_caveats, split_windows
 from .snapshot import finance_snapshot, usual_pace
 
 NOT_ADVICE = "Computed by the engine from the registers and the projection. Not financial advice."
@@ -138,8 +138,10 @@ def billing_date_suggestions(session: Session, today: date) -> dict:
     plans = session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all()  # noqa: E712
     advances = session.exec(select(Advance).where(Advance.repaid == False)).all()  # noqa: E712
     pace = usual_pace(session, today, {b.name for b in bills})
-    unnamed = len(session.exec(select(RecurringSeries.id).where(RecurringSeries.confirmed == False, RecurringSeries.active == True)).all())  # noqa: E712
-    caveats = projection_caveats(has_income=bool(upcoming), bills=len(bills), unnamed=unnamed)
+    unconfirmed_rows = session.exec(select(RecurringSeries).where(RecurringSeries.confirmed == False, RecurringSeries.active == True)).all()  # noqa: E712
+    pending_streams = [r for r in unconfirmed_rows if r.suggested_kind == "installment"]
+    caveats = projection_caveats(has_income=bool(upcoming), bills=len(bills), unnamed=len(unconfirmed_rows) - len(pending_streams), pending_installments=len(pending_streams))
+    pending_rows = pending_installment_events(pending_streams, today)
 
     from ..models import Debt
 
@@ -147,7 +149,7 @@ def billing_date_suggestions(session: Session, today: date) -> dict:
     card_rows = card_events([a for a in accounts if a.kind == "card"], paydays[:4], card_mode, today, session.exec(select(Debt).where(Debt.active == True)).all())  # noqa: E712
 
     def low_for(due_days: dict[int, int]) -> dict:
-        events = sorted(build_events(bills, plans, advances, today, due_days=due_days) + card_rows, key=lambda e: e["date"])
+        events = sorted(build_events(bills, plans, advances, today, due_days=due_days) + card_rows + pending_rows, key=lambda e: e["date"])
         windows = split_windows(events, today, next_payday, following, paydays[2])
         path = project(today, cash=cash, buffer=buffer, expected_net=expected_net, pay_dates=pay_dates, set_aside=windows["set_aside"], events=events, per_day=pace["per_day"], pay_amounts=pay_amounts)
         return low_point(path)
