@@ -66,6 +66,8 @@ The Bridge runs as a sidecar of the app on BigBox and needs the owner to sign in
 2. `docker compose --profile bridge up -d bridge` starts it for good.
 3. On Connectors › Mailboxes: remove the Proton row and add it again with the username and password `info` printed (not the Proton password). Host `bridge` and port 143 are already filled: the Bridge's screen says 1143, which inside the server is 143, and the app accepts either.
 
+Run `init` only once: a second run makes a new keychain key. To see the username and password again, stop the sidecar (`docker compose --profile bridge stop bridge`), open the same screen with `docker compose run --rm --entrypoint protonmail-bridge bridge --cli`, type `info`, `exit`, and repeat step 2.
+
 Until step 1 is done the mailbox shows "The Bridge is not running on the server yet". The Bridge's screen also prints host 127.0.0.1; that is the Bridge speaking from inside its own container, and the app takes it to mean `bridge`. The sidecar is built from `deploy/bridge/Dockerfile`, the community image plus `libfido2`, because the Bridge updates itself and its newer releases need that library. The sign-in survives restarts and is included in backups.
 
 ### 6. A public address (M3.3)
