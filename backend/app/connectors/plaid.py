@@ -209,11 +209,15 @@ class PlaidConnector(Connector):
         for a in got.get("accounts", []):
             balances = a.get("balances") or {}
             current = balances.get("current")
+            available = balances.get("available")
             kind = account_kind(str(a.get("type") or ""), a.get("subtype"))
+            # What can be spent is the available balance (holds and pending debits already out); a card owes its current balance.
+            balance = available if (kind in ("checking", "savings", "cash") and available is not None) else current
+            limit = balances.get("limit")
             accounts[a["account_id"]] = upsert_account(
                 session, provider="plaid", external_id=a["account_id"], name=str(a.get("name") or a.get("official_name") or "Account"), institution=institution,
-                kind=kind, balance=float(current) if current is not None else None, last4=str(a.get("mask") or ""),
-                subtype=investment_subtype(a.get("subtype")) if kind == "investment" else "",
+                kind=kind, balance=float(balance) if balance is not None else None, last4=str(a.get("mask") or ""),
+                subtype=investment_subtype(a.get("subtype")) if kind == "investment" else "", credit_limit=float(limit) if (limit is not None and kind == "card") else None,
             )
         if any(a.kind == "investment" for a in accounts.values()):
             self.sync_holdings(session, api, token, accounts)

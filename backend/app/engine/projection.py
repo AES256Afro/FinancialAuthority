@@ -83,7 +83,7 @@ def build_events(bills: list[Bill], plans: list[InstallmentPlan], advances: list
     return events
 
 
-def card_events(cards: list[Account], paydays: list[date], mode: str, today: date, debts: list | None = None) -> list[dict]:
+def card_events(cards: list[Account], paydays: list[date], mode: str, today: date, debts: list | None = None, planned: dict[int, float] | None = None) -> list[dict]:
     """What the card takes from the coming checks. "auto" (the default) reserves the minimum on its due day
     when a debt row knows it, and otherwise the whole balance split across the next two checks; "split",
     "next", "mid" and "end" reserve the whole balance as the owner pays it; "minimum" only the minimum; "off"
@@ -92,7 +92,7 @@ def card_events(cards: list[Account], paydays: list[date], mode: str, today: dat
     if not paydays or mode == "off":
         return events
     for a in cards:
-        balance = float(a.balance or 0.0)
+        balance = float(a.balance or 0.0) - float((planned or {}).get(a.id, 0.0))  # a payment already planned is not held back twice
         if balance <= 0:
             continue
         debt = next((d for d in (debts or []) if (getattr(d, "account_id", None) == a.id) or (d.name or "").strip().lower() == (a.name or "").strip().lower()), None)

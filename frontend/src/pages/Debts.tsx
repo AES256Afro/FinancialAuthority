@@ -1,6 +1,7 @@
 // Debts: the mountain. Every balance as a slice of the whole, the minimums due each month, the interest the
 // month costs, and the two classic orders. The engine computed all of it; this page draws it.
-import { useApi } from "../api";
+import React, { useState } from "react";
+import { api, useApi } from "../api";
 import { money } from "../format";
 
 interface DebtItem {
@@ -12,6 +13,46 @@ interface DebtItem {
   minimum: number | null;
   share: number;
   source: string;
+  credit_limit?: number | null;
+  utilisation?: number | null;
+  statement_day?: number | null;
+  due_day?: number | null;
+  pay_in_full?: boolean;
+}
+
+function Terms({ d, onSaved }: { d: DebtItem; onSaved: () => void }) {
+  const [apr, setApr] = useState(d.apr !== null && d.apr !== undefined ? String(d.apr) : "");
+  const [limit, setLimit] = useState(d.credit_limit ? String(d.credit_limit) : "");
+  const [statement, setStatement] = useState(d.statement_day ? String(d.statement_day) : "");
+  const [due, setDue] = useState(d.due_day ? String(d.due_day) : "");
+  const [minimum, setMinimum] = useState(d.minimum ? String(d.minimum) : "");
+  const [full, setFull] = useState(Boolean(d.pay_in_full));
+  const [busy, setBusy] = useState(false);
+  async function save() {
+    setBusy(true);
+    try {
+      await api(`/api/v1/debts/${d.id}`, { method: "PUT", body: JSON.stringify({ apr: apr ? Number(apr) : undefined, credit_limit: limit ? Number(limit) : undefined, statement_day: statement ? Number(statement) : undefined, due_day: due ? Number(due) : undefined, minimum: minimum ? Number(minimum) : undefined, pay_in_full: full }) });
+      onSaved();
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <tr>
+      <td colSpan={6} style={{ paddingTop: 0 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", fontSize: 12 }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 2 }}><span className="lab">APR %</span><input className="input num" style={{ width: 80 }} value={apr} onChange={(e) => setApr(e.target.value)} inputMode="decimal" /></label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 2 }}><span className="lab">Line</span><input className="input num" style={{ width: 90 }} value={limit} onChange={(e) => setLimit(e.target.value)} inputMode="decimal" /></label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 2 }}><span className="lab">Statement day</span><input className="input num" style={{ width: 70 }} value={statement} onChange={(e) => setStatement(e.target.value)} inputMode="numeric" /></label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 2 }}><span className="lab">Due day</span><input className="input num" style={{ width: 70 }} value={due} onChange={(e) => setDue(e.target.value)} inputMode="numeric" /></label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 2 }}><span className="lab">Minimum</span><input className="input num" style={{ width: 80 }} value={minimum} onChange={(e) => setMinimum(e.target.value)} inputMode="decimal" /></label>
+          <label style={{ display: "inline-flex", gap: 6, alignItems: "center", paddingBottom: 8 }}><input type="checkbox" checked={full} onChange={(e) => setFull(e.target.checked)} />paid in full each month</label>
+          <button className="btn dark" type="button" disabled={busy} onClick={save}>Save terms</button>
+          {d.utilisation !== null && d.utilisation !== undefined && <span style={{ color: d.utilisation > 0.3 ? "var(--critical)" : "var(--safe-ink)", fontWeight: 700 }}>{(d.utilisation * 100).toFixed(0)}% of the line in use</span>}
+        </div>
+      </td>
+    </tr>
+  );
 }
 
 interface Mountain {
@@ -57,7 +98,7 @@ function MountainChart({ items, total }: { items: DebtItem[]; total: number }) {
 }
 
 export function Debts() {
-  const { data, error } = useApi<Mountain>("/api/v1/debts");
+  const { data, error, reload } = useApi<Mountain>("/api/v1/debts");
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 980 }}>
       <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Debts</h1>
@@ -83,14 +124,17 @@ export function Debts() {
               <thead><tr><th>Debt</th><th>Kind</th><th style={{ textAlign: "right" }}>Balance</th><th style={{ textAlign: "right" }}>APR</th><th style={{ textAlign: "right" }}>Minimum</th><th style={{ textAlign: "right" }}>Share</th></tr></thead>
               <tbody>
                 {data.items.map((d) => (
-                  <tr key={d.source}>
-                    <td><strong>{d.name}</strong></td>
-                    <td style={{ color: "var(--ink-2)" }}>{KIND_WORD[d.kind] ?? d.kind}</td>
-                    <td className="num" style={{ textAlign: "right" }}>{money(d.balance ?? 0)}</td>
-                    <td className="num" style={{ textAlign: "right", color: "var(--ink-2)" }}>{d.apr !== null && d.apr !== undefined ? `${d.apr}%` : "—"}</td>
-                    <td className="num" style={{ textAlign: "right", color: "var(--ink-2)" }}>{d.minimum ? money(d.minimum) : "—"}</td>
-                    <td className="num" style={{ textAlign: "right", color: "var(--muted)" }}>{(d.share * 100).toFixed(0)}%</td>
-                  </tr>
+                  <React.Fragment key={d.source}>
+                    <tr>
+                      <td><strong>{d.name}</strong>{d.credit_limit ? <div style={{ fontSize: 11, color: "var(--muted)" }}>line {money(d.credit_limit)}{d.statement_day ? ` · statement day ${d.statement_day}` : ""}{d.due_day ? ` · due day ${d.due_day}` : ""}</div> : null}</td>
+                      <td style={{ color: "var(--ink-2)" }}>{KIND_WORD[d.kind] ?? d.kind}</td>
+                      <td className="num" style={{ textAlign: "right" }}>{money(d.balance ?? 0)}</td>
+                      <td className="num" style={{ textAlign: "right", color: "var(--ink-2)" }}>{d.apr !== null && d.apr !== undefined ? `${d.apr}%` : "—"}</td>
+                      <td className="num" style={{ textAlign: "right", color: "var(--ink-2)" }}>{d.minimum ? money(d.minimum) : "—"}</td>
+                      <td className="num" style={{ textAlign: "right", color: "var(--muted)" }}>{(d.share * 100).toFixed(0)}%</td>
+                    </tr>
+                    {d.source.startsWith("debt:") && (d.kind === "card" || d.kind === "loan") && <Terms key={`${d.source}-${d.apr}-${d.credit_limit}-${d.statement_day}-${d.due_day}-${d.minimum}-${String(d.pay_in_full)}`} d={d} onSaved={reload} />}
+                  </React.Fragment>
                 ))}
                 {data.items.length === 0 && <tr><td colSpan={6} style={{ color: "var(--muted)" }}>No debts on record. Cards, loans, installment plans and advances appear here as they are confirmed.</td></tr>}
               </tbody>

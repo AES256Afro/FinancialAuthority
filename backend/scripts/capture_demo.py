@@ -47,7 +47,7 @@ GETS = [
     "/api/v1/facts?status=pending", "/api/v1/incomes", "/api/v1/payments", "/api/v1/paystubs", "/api/v1/mail/accounts", "/api/v1/mail/presets",
     "/api/v1/mail/messages?limit=200", "/api/v1/connectors", "/api/v1/banks", "/api/v1/keys", "/api/v1/oauth/clients", "/api/v1/jobs", "/api/v1/models",
     "/api/v1/rules", "/api/v1/push", "/api/v1/reviews?limit=3", "/api/v1/approvals?status=all&limit=30", "/api/v1/goals", "/api/v1/watchlist",
-    "/api/v1/bills/suggestions", "/api/v1/debts", "/api/v1/borrowing", "/api/v1/accounts/overview", "/api/v1/audit?limit=300", "/api/v1/investments", "/api/v1/ledger/rules", "/api/v1/next_steps", "/api/v1/projections", *[f"/api/v1/projections/where?amount={x}&years={y}&scenario={sc}" for x in (25, 50, 75, 100, 150, 200, 300, 500) for y in (5, 10, 20, 25, 30) for sc in ("low", "mid", "high")],
+    "/api/v1/bills/suggestions", "/api/v1/debts", "/api/v1/borrowing", "/api/v1/planned", "/api/v1/accounts/overview", "/api/v1/audit?limit=300", "/api/v1/investments", "/api/v1/ledger/rules", "/api/v1/next_steps", "/api/v1/projections", *[f"/api/v1/projections/where?amount={x}&years={y}&scenario={sc}" for x in (25, 50, 75, 100, 150, 200, 300, 500) for y in (5, 10, 20, 25, 30) for sc in ("low", "mid", "high")],
     *[f"/api/v1/reports/spending?months={m}&by={b}" for m in (3, 6, 12, 24) for b in ("category", "merchant")],
 ]
 

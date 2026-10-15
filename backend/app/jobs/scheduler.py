@@ -257,6 +257,11 @@ def bank_sync() -> str:
             result = CONNECTORS[link.provider].sync(session, link_id=link.id)
             notes.append(result.summary)
             inserted += result.inserted
+        from ..engine.planned import settle_planned
+
+        settled = settle_planned(session, _today())
+        if settled:
+            notes.append(f"{settled} planned payment{'s' if settled != 1 else ''} posted")
     if inserted:
         notes.append(detect_recurring())  # new rows may complete a series; the owner should not wait six hours
     return "; ".join(notes)

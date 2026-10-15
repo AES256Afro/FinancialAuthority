@@ -145,8 +145,10 @@ def billing_date_suggestions(session: Session, today: date) -> dict:
 
     from ..models import Debt
 
+    from .planned import planned_events, planned_to_cards
+
     card_mode = (get_setting(session, "cards", {}) or {}).get("pay_from", "auto")
-    card_rows = card_events([a for a in accounts if a.kind == "card"], paydays[:4], card_mode, today, session.exec(select(Debt).where(Debt.active == True)).all())  # noqa: E712
+    card_rows = card_events([a for a in accounts if a.kind == "card"], paydays[:4], card_mode, today, session.exec(select(Debt).where(Debt.active == True)).all(), planned_to_cards(session, today)) + planned_events(session, today)  # noqa: E712
 
     def low_for(due_days: dict[int, int]) -> dict:
         events = sorted(build_events(bills, plans, advances, today, due_days=due_days) + card_rows + pending_rows, key=lambda e: e["date"])

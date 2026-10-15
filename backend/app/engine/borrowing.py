@@ -334,6 +334,24 @@ def borrowing_overview(session: Session, today: date) -> dict:
 
     cards = [a for a in session.exec(select(Account).where(Account.active == True, Account.kind == "card")).all()]  # noqa: E712
     card_balance = _money(sum((a.balance or 0.0) for a in cards))
+    from ..models import Debt
+    from .projection import next_due
+
+    debts = session.exec(select(Debt).where(Debt.active == True, Debt.kind == "card")).all()  # noqa: E712
+    credit: list[dict] = []
+    for a in cards:
+        debt = next((d for d in debts if d.account_id == a.id), None)
+        limit = (debt.credit_limit if debt and debt.credit_limit else None) or a.credit_limit
+        balance = float(a.balance or 0.0)
+        statement = next_due(int(debt.statement_day), today) if debt and debt.statement_day else None
+        due = next_due(int(debt.due_day), today) if debt and debt.due_day else None
+        credit.append({
+            "account_id": a.id, "debt_id": debt.id if debt else None, "name": a.name, "balance": _money(balance), "credit_limit": limit, "utilisation": round(balance / limit, 4) if limit else None,
+            "apr": debt.apr if debt else None, "pay_in_full": debt.pay_in_full if debt else None, "statement_day": debt.statement_day if debt else None, "next_statement": statement.isoformat() if statement else None,
+            "due_day": debt.due_day if debt else None, "next_due": due.isoformat() if due else None,
+            "interest_month_if_carried": _money(balance * (debt.apr if debt else 0.0) / 100.0 / 12.0),
+        })
+    card_interest_month = _money(sum(c["interest_month_if_carried"] for c in credit if not c["pay_in_full"]))
 
     fees_month = _money(fees * 30.0 / WINDOW_DAYS)
     fees_year = _money(fees_month * 12)
@@ -359,14 +377,23 @@ def borrowing_overview(session: Session, today: date) -> dict:
         steps.append({"n": len(steps) + 1, "text": f"{len(unknown)} installment stream{'s' if len(unknown) != 1 else ''} ({', '.join(sorted({i['provider'] for i in unknown}))}) {'are' if len(unknown) != 1 else 'is'} not on the register as plans with an end date, so the windows cannot see when they stop. Enter the payments left on each; the lender's app shows it.", "action": "Below", "link": "/borrowing#installments"})
     if installments_month > 0:
         steps.append({"n": len(steps) + 1, "text": f"Installments take about ${installments_month:,.0f} a month. As each plan ends, that payment is free; the engine moves it to the next plan or the goal when you say so.", "action": "Plans", "link": "/borrowing#installments"})
-    if card_balance > 0:
-        steps.append({"n": len(steps) + 1, "text": f"The card carries ${card_balance:,.0f}. Paid in full from the next checks, it costs nothing; carried, its APR applies. Enter the card's APR and limit on the Debts page and the cost and the utilisation show here.", "action": "Debts", "link": "/debts"})
+    for c in credit:
+        if c["balance"] <= 0:
+            continue
+        if c["credit_limit"] and c["apr"] is not None:
+            use = f"{c['utilisation'] * 100:.0f}% of its ${c['credit_limit']:,.0f} line" if c["utilisation"] is not None else "its line"
+            closes = f" The statement closes on {date.fromisoformat(c['next_statement']).strftime('%b %d')}; what is owed that day is what gets reported, so a balance paid before it reports low use." if c["next_statement"] else ""
+            carried = f" Carried a month at {c['apr']:g}% it costs ${c['interest_month_if_carried']:,.0f}." if not c["pay_in_full"] else ""
+            steps.append({"n": len(steps) + 1, "text": f"{c['name']} is at {use}.{closes}{carried}", "action": "Debts", "link": "/debts"})
+        else:
+            steps.append({"n": len(steps) + 1, "text": f"{c['name']} carries ${c['balance']:,.0f}. Paid in full from the next checks, it costs nothing; carried, its APR applies. Enter the card's APR, line and statement day on the Debts page and the cost and the use show here.", "action": "Debts", "link": "/debts"})
     steps.append({"n": len(steps) + 1, "text": "Credit: advance apps and pay-in-four plans do not build it, and a missed Affirm payment can hurt it. What moves a score is every card and loan payment on time, and the card balance kept well under its limit at statement time.", "action": "Accounts", "link": "/accounts"})
 
     sources = sorted({src for p in pairs for src in p["sources"]} | {src for s in streams for src in s["sources"]} | {f"account:{a.id}" for a in cards})
     return {
         "as_of": today.isoformat(), "window_days": WINDOW_DAYS,
-        "cost": {"fees_90d": _money(fees), "fees_month": fees_month, "fees_year": fees_year, "advanced_90d": _money(advanced), "advances_90d": len(pairs), "tips_90d": _money(sum(t["amount"] for t in tips)), "installments_month": installments_month, "card_balance": card_balance, "card_interest_month": None},
+        "cost": {"fees_90d": _money(fees), "fees_month": fees_month, "fees_year": fees_year, "advanced_90d": _money(advanced), "advances_90d": len(pairs), "tips_90d": _money(sum(t["amount"] for t in tips)), "installments_month": installments_month, "card_balance": card_balance, "card_interest_month": card_interest_month},
+        "credit": credit,
         "providers": providers, "outstanding": [{**{k: (v.isoformat() if isinstance(v, date) else v) for k, v in p.items()}} for p in outstanding], "outstanding_total": _money(sum(p["amount"] for p in outstanding)),
         "cycle": cycle, "typical_per_period": typical_period, "next_payday": next_payday.isoformat() if next_payday else None,
         "advances": [{**{k: (v.isoformat() if isinstance(v, date) else v) for k, v in p.items()}} for p in sorted(pairs, key=lambda p: p["taken_on"], reverse=True)],

@@ -49,7 +49,8 @@ interface Stream {
 interface Borrowing {
   as_of: string;
   window_days: number;
-  cost: { fees_90d: number; fees_month: number; fees_year: number; advanced_90d: number; advances_90d: number; tips_90d: number; installments_month: number; card_balance: number };
+  cost: { fees_90d: number; fees_month: number; fees_year: number; advanced_90d: number; advances_90d: number; tips_90d: number; installments_month: number; card_balance: number; card_interest_month: number | null };
+  credit: { account_id: number; debt_id: number | null; name: string; balance: number; credit_limit: number | null; utilisation: number | null; apr: number | null; pay_in_full: boolean | null; next_statement: string | null; next_due: string | null; interest_month_if_carried: number }[];
   providers: Provider[];
   outstanding: { provider: string; amount: number; taken_on: string; repay_date: string }[];
   outstanding_total: number;
@@ -231,6 +232,32 @@ export function Borrowing() {
           <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 6 }}>The lender's app shows how many payments are left on each plan; with that, the windows see when it ends and the freed money moves on. Interest on a plan is the lender's own figure and is not guessed here.</div>
         </div>
       </section>
+
+      {d.credit.length > 0 && (
+        <section className="card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}><strong>Credit: the card and its line</strong><span style={{ fontSize: 12, color: "var(--muted)" }}>what gets reported is the balance on the statement day</span></div>
+          {d.credit.map((c) => (
+            <div key={c.account_id} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap", fontSize: 13 }}>
+                <strong>{c.name}</strong>
+                <span className="num">{money(c.balance)}{c.credit_limit ? ` of ${money(c.credit_limit)}` : ""}</span>
+                {c.utilisation !== null && <span style={{ fontWeight: 800, color: c.utilisation > 0.3 ? "var(--critical)" : "var(--safe-ink)" }}>{(c.utilisation * 100).toFixed(0)}% in use</span>}
+                {c.apr !== null && c.apr !== undefined && <span style={{ color: "var(--ink-2)" }}>{c.apr}% APR{c.pay_in_full ? ", paid in full" : `, ${money(c.interest_month_if_carried)} a month if carried`}</span>}
+                {c.next_statement && <span style={{ color: "var(--ink-2)" }}>statement closes {shortDate(c.next_statement)}</span>}
+                {c.next_due && <span style={{ color: "var(--ink-2)" }}>due {shortDate(c.next_due)}</span>}
+                {!c.credit_limit && <Link to="/debts" style={{ fontSize: 12 }}>enter the line and APR →</Link>}
+              </div>
+              {c.credit_limit && (
+                <div style={{ position: "relative", height: 12, background: "var(--surface-2)", borderRadius: 4, overflow: "hidden" }} title={`${money(c.balance)} of a ${money(c.credit_limit)} line`}>
+                  <div style={{ width: `${Math.min(100, ((c.utilisation ?? 0) * 100))}%`, height: "100%", background: (c.utilisation ?? 0) > 0.3 ? "var(--critical)" : "var(--safe)" }} />
+                  <div style={{ position: "absolute", left: "30%", top: 0, bottom: 0, width: 2, background: "var(--ink)" }} title="30% of the line" />
+                </div>
+              )}
+            </div>
+          ))}
+          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>The mark is 30% of the line. Scores weigh the share of the line in use on the day the statement closes, and whether every payment is on time; a balance paid before the statement closes reports as low use. Advances and pay-later plans do not report; a missed payment on them can.</div>
+        </section>
+      )}
 
       <section className="card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}><strong>The way out, in order</strong><span style={{ fontSize: 12, color: "var(--muted)" }}>each step is a figure from the ledger and the place to act on it</span></div>
