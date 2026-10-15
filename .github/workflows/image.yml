@@ -87,3 +87,21 @@ jobs:
           build-args: VERSION=${{ github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      # The Bridge sidecar: the community image plus libfido2, which newer Bridge releases load after they update
+      # themselves. Published beside the app so a catalog install runs the same thing the hand-run copy does.
+      - id: bridge
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/aes256afro/financialauthority-bridge
+          tags: |
+            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: deploy/bridge
+          push: true
+          tags: ${{ steps.bridge.outputs.tags }}
+          labels: ${{ steps.bridge.outputs.labels }}
+          cache-from: type=gha,scope=bridge
+          cache-to: type=gha,mode=max,scope=bridge
