@@ -83,7 +83,8 @@ def test_plaid_settings_link_exchange_sync_cursor_and_removal(owner: TestClient)
             assert raw.startswith("fa1:") and bank_settings(session, "plaid")["secret"] == "s3cret-value-77"
 
         token = owner.post("/api/v1/banks/plaid/link_token", json={}).json()
-        assert token == {"link_token": "link-sandbox-123", "environment": "sandbox"}
+        assert token["link_token"] == "link-sandbox-123" and token["environment"] == "sandbox"
+        assert token["oauth_redirect"] == {"ok": False, "uri": None}  # no https address yet, so no OAuth redirect
         assert fake.requests[-1][1]["products"] == ["transactions"] and fake.requests[-1][1]["user"]["client_user_id"] == "owner"
 
         linked = owner.post("/api/v1/banks/plaid/exchange", json={"public_token": "public-sandbox-xyz", "institution": "Example Bank"}).json()
@@ -201,3 +202,38 @@ def test_bank_secrets_are_never_listed_and_connectors_are_registered(owner: Test
     with Session(engine) as session:
         s = bank_settings(session, "teller")
         assert s["application_id"] == "app_124" and s["certificate"].startswith("-----BEGIN CERTIFICATE")
+
+
+def test_link_token_falls_back_when_the_redirect_uri_is_not_registered(owner: TestClient, monkeypatch):
+    """An OAuth redirect URI Plaid does not know yet must not block banks that sign in without OAuth."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "public_url", "https://money.example.test")
+    seen: list[dict] = []
+    registered = {"ok": False}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        seen.append(body)
+        if request.url.path != "/link/token/create":
+            return httpx.Response(404, json={"error_code": "NOT_FOUND"})
+        if "redirect_uri" in body and not registered["ok"]:
+            return httpx.Response(400, json={"error_type": "INVALID_REQUEST", "error_code": "INVALID_FIELD", "error_message": "OAuth redirect URI must be configured in the developer dashboard."})
+        return httpx.Response(200, json={"link_token": "link-sandbox-ok"})
+
+    CONNECTORS["plaid"].client_factory = lambda: httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        owner.put("/api/v1/banks/plaid/settings", json={"client_id": "cid", "secret": "s3cret-value-77", "environment": "sandbox"})
+        made = owner.post("/api/v1/banks/plaid/link_token", json={}).json()
+        assert made["link_token"] == "link-sandbox-ok" and made["oauth_redirect"]["ok"] is False
+        assert made["oauth_redirect"]["uri"] == "https://money.example.test/settings/connectors" and "Register it" in made["oauth_redirect"]["note"]
+        assert "redirect_uri" in seen[-2] and "redirect_uri" not in seen[-1]  # tried with it, then without
+        steps = {s["id"]: s for s in owner.get("/api/v1/next_steps").json()["steps"]}
+        assert "plaid-redirect" in steps and "money.example.test/settings/connectors" in steps["plaid-redirect"]["text"]
+        assert "plaid-sandbox" in steps  # sandbox reaches test banks only; production needs Plaid's go-ahead
+        registered["ok"] = True
+        again = owner.post("/api/v1/banks/plaid/link_token", json={}).json()
+        assert again["oauth_redirect"]["ok"] is True and "redirect_uri" in seen[-1]
+        assert "plaid-redirect" not in {s["id"] for s in owner.get("/api/v1/next_steps").json()["steps"]}
+    finally:
+        CONNECTORS["plaid"].client_factory = None

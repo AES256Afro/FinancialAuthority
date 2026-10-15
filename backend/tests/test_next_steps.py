@@ -29,8 +29,8 @@ def test_needs_follow_the_state(owner: TestClient):
         session.add(BankLink(provider="plaid", external_id="item-1", institution="Example Bank", accounts="acc-1", active=True, needs_login=True))
         session.add(BankLink(provider="teller", external_id="enr-1", institution="Example Credit Union", active=True, last_error="enrollment.disconnected"))
         session.add(MailAccount(label="Proton", kind="proton", host="bridge", port=1143, username="owner@example.test", password_enc="", last_error="LOGIN failed"))
-        session.add(Account(name="Work 401(k)", institution="Example Retirement Co", kind="investment", subtype="401k", connector="manual", external_id="manual:401k", balance=24810.55, balance_at=datetime.now(timezone.utc) - timedelta(days=60)))
-        session.add(Account(name="Roth IRA", institution="Example Brokerage", kind="investment", subtype="roth_ira", connector="plaid", external_id="acc-1", balance=6120.0, balance_at=datetime.now(timezone.utc) - timedelta(days=40)))
+        session.add(Account(name="Work 401(k)", institution="Example Retirement Co", kind="investment", subtype="401k", connector="manual", external_id="manual:401k", balance=24810.55, balance_at=datetime.combine(TODAY, datetime.min.time(), tzinfo=timezone.utc) - timedelta(days=60)))
+        session.add(Account(name="Roth IRA", institution="Example Brokerage", kind="investment", subtype="roth_ira", connector="plaid", external_id="acc-1", balance=6120.0, balance_at=datetime.combine(TODAY, datetime.min.time(), tzinfo=timezone.utc) - timedelta(days=40)))
         session.commit()
         out = next_steps(session, TODAY)
     ids = {s["id"]: s for s in out["steps"]}

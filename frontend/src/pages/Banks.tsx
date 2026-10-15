@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, useApi } from "../api";
-import { loadScript, openPlaidLink } from "../plaid";
+import { loadScript, openPlaidLink, resumePlaidLink } from "../plaid";
 
 interface LinkRow {
   id: number;
@@ -52,6 +52,16 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
       sync(Number(wanted.sync)).then(() => setParams({}, { replace: true }));
     }
   }, [wanted.sync, data]);  // eslint-disable-line react-hooks/exhaustive-deps
+  const resumed = useRef(false);
+  useEffect(() => {
+    // An OAuth bank sent the browser back here mid-sign-in: Plaid Link reopens and finishes with the same token.
+    if (resumed.current) return;
+    resumed.current = true;
+    resumePlaidLink({ onDone: (m) => { setNote(m); reload(); onChanged?.(); setParams({}, { replace: true }); }, onExit: () => setParams({}, { replace: true }) })
+      .then((did) => { if (did) setBusy("plaid-connect"); })
+      .catch((e) => setNote((e as Error).message))
+      .finally(() => setBusy(null));
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
   const highlight = (on: boolean) => (on ? { outline: "3px solid var(--warning)", outlineOffset: 2 } : {});
 
   async function savePlaid() {
@@ -86,7 +96,7 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
     setBusy("plaid-connect");
     setNote(null);
     try {
-      await openPlaidLink({ purpose, linkId, onDone: (m) => { setNote(m); reload(); onChanged?.(); }, onExit: () => setBusy(null) });
+      await openPlaidLink({ purpose, linkId, onNote: (m) => setNote(m), onDone: (m) => { setNote(m); reload(); onChanged?.(); }, onExit: () => setBusy(null) });
     } catch (e) {
       setNote((e as Error).message);
     } finally {

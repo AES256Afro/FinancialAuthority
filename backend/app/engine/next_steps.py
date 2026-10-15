@@ -39,6 +39,11 @@ def next_steps(session: Session, today: date) -> dict:
     banks = get_setting(session, "banks.secrets", {}) or {}
     plaid_ready = bool((banks.get("plaid") or {}).get("client_id") and (banks.get("plaid") or {}).get("secret"))
     teller_ready = bool((banks.get("teller") or {}).get("application_id"))
+    plaid_state = get_setting(session, "banks.plaid", {}) or {}
+    if plaid_ready and (banks.get("plaid") or {}).get("environment", "sandbox") in ("", "sandbox"):
+        steps.append(_step("plaid-sandbox", "info", "Plaid is in its sandbox, which reaches test banks only. For your real bank, ask Plaid's dashboard for production access on the Trial plan, then set the environment to production and paste the production secret.", "Connectors", "/settings/connectors#banks", "banks"))
+    if plaid_ready and plaid_state.get("redirect_ok") is False and plaid_state.get("redirect_uri"):
+        steps.append(_step("plaid-redirect", "warning", f"Register {plaid_state['redirect_uri']} as an allowed redirect URI in the Plaid dashboard (Team Settings, API), or banks that sign in with OAuth, Capital One among them, cannot connect.", "Then connect", "/settings/connectors?connect=plaid", "banks"))
     if not links:
         if plaid_ready or teller_ready:
             via = "Plaid" if plaid_ready else "Teller"

@@ -53,10 +53,17 @@ class PlaidClient:
             raise PlaidError(str(data.get("error_code") or response.status_code), str(data.get("display_message") or data.get("error_message") or "Plaid refused the request"))
         return data
 
-    def link_token(self, *, public_url: str, access_token: str | None = None, purpose: str = "bank") -> str:
+    @staticmethod
+    def redirect_uri(public_url: str) -> str | None:
+        """Where an OAuth bank sends the browser back: the Connectors page at the published https address.
+        Plaid accepts it only once it is registered in the Plaid dashboard."""
+        return public_url.rstrip("/") + "/settings/connectors" if public_url.startswith("https://") else None
+
+    def link_token(self, *, public_url: str, access_token: str | None = None, purpose: str = "bank", redirect: bool = True) -> str:
         """A Link token. `purpose` "bank" asks for transactions with investments optional; "investments" asks for
         the investments product first (a 401(k), an IRA, a brokerage account), with transactions optional, so
-        a retirement vendor that has no transactions still links."""
+        a retirement vendor that has no transactions still links. `redirect` False leaves the OAuth redirect
+        URI out, which lets banks that sign in without OAuth connect before the URI is registered."""
         body: dict[str, Any] = {
             "client_name": "FinancialAuthority", "language": "en", "country_codes": ["US"], "user": {"client_user_id": "owner"},
         }
@@ -69,8 +76,9 @@ class PlaidClient:
             body["products"] = ["transactions"]
             body["optional_products"] = ["investments"]
             body["transactions"] = {"days_requested": 730}
-        if public_url.startswith("https://"):
-            body["redirect_uri"] = public_url.rstrip("/") + "/settings/connectors"
+        uri = self.redirect_uri(public_url) if redirect else None
+        if uri:
+            body["redirect_uri"] = uri
         return str(self.post("/link/token/create", body)["link_token"])
 
     def exchange(self, public_token: str) -> tuple[str, str]:

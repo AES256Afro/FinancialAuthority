@@ -93,7 +93,7 @@ export function Investments() {
     setBusy(true);
     setNote(null);
     try {
-      await openPlaidLink({ purpose: "investments", onDone: (m) => { setNote(m); reload(); }, onExit: () => setBusy(false) });
+      await openPlaidLink({ purpose: "investments", onNote: (m) => setNote(m), onDone: (m) => { setNote(m); reload(); }, onExit: () => setBusy(false) });
     } catch (e) {
       setNote((e as Error).message);
     } finally {
