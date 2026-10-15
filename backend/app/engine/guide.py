@@ -73,7 +73,12 @@ def one_thing(session: Session, today: date, *, snap: dict, cover: dict | None =
     """The single most useful action today, and the next two, each with why and where."""
     cands: list[tuple[int, dict]] = []
     for p in snap["payments"]["past_due"]:
-        cands.append((0, {"text": f"Pay {p['name']} {_usd(p['amount'])}; it was due {_short(p['due_date'])}.", "why": "A past-due bill costs a late fee and can reach the credit report at thirty days.", "link": "/bills", "source": p["source"], "amount": p["amount"], "date": p["due_date"]}))
+        age = (today - date.fromisoformat(p["due_date"])).days
+        if age <= 14:
+            cands.append((0, {"text": f"Pay {p['name']} {_usd(p['amount'])}; it was due {_short(p['due_date'])}.", "why": "A past-due bill costs a late fee and can reach the credit report at thirty days.", "link": "/bills", "source": p["source"], "amount": p["amount"], "date": p["due_date"]}))
+        else:
+            # An old miss is more often a payment the ledger did not match (another card, another name) than an unpaid bill.
+            cands.append((4, {"text": f"Check {p['name']}: no payment of {_usd(p['amount'])} seen since it was due {_short(p['due_date'])}.", "why": "If it was paid from an account the app does not see, or under another name, mark it paid on Bills; if not, it is past due.", "link": "/bills", "source": p["source"], "amount": p["amount"], "date": p["due_date"]}))
     if cover:
         for row in cover["sheet"]:
             if row["done"] or row["date"] > (today + timedelta(days=3)).isoformat():

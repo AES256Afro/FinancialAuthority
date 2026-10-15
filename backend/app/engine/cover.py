@@ -169,21 +169,25 @@ def account_cover(session: Session, today: date, *, saving: dict | None = None) 
                                  "debt_id": debt.id if debt else None})
             payer = accounts.get(default_id).name if default_id in accounts else "checking"
             early_due = status != "good" and pay_by is not None and pay_by >= today and to_target > 0
-            early_done = False
+            # The statement shows the balance after the payments that land before it. What it still needs to be
+            # under the target goes early; that money then comes off the first payment after the statement.
+            after = next((e for e in mine_pay if statement and e["date"] >= statement), None) if early_due else None
+            covered = after is not None and to_target >= after["amount"] - 0.5
+            if early_due:
+                tail = (f"; it also covers the {_usd(after['amount'])} due {_short(after['date'])}" if covered else f"; it comes off the {_short(after['date'])} payment") if after else ""
+                sheet.append({"kind": "pay", "date": pay_by.isoformat(), "action": f"Pay {a.name} from {payer}", "amount": _money(to_target), "from": payer, "to": a.name,
+                              "so_that": f"the statement on {_short(statement)} reports under {int(UTILISATION_TARGET * 100)}% used{tail}", "source": f"account:{a.id}:early"})
             for e in mine_pay:
                 if e["date"] > p2:
                     continue
-                if early_due and not early_done and pay_by < e["date"]:
-                    amount = max(to_target, e["amount"])
-                    sheet.append({"kind": "pay", "date": pay_by.isoformat(), "action": f"Pay {a.name} from {payer}", "amount": _money(amount), "from": payer, "to": a.name,
-                                  "so_that": f"the statement on {_short(statement)} reports under {int(UTILISATION_TARGET * 100)}% used; it also covers the {_usd(e['amount'])} due {_short(e['date'])}", "source": e.get("source", "")})
-                    early_done = True
+                if after is not None and e is after:
+                    if covered:
+                        continue
+                    sheet.append({"kind": "pay", "date": e["date"].isoformat(), "action": f"Pay {a.name} from {payer}", "amount": _money(e["amount"] - to_target), "from": payer, "to": a.name,
+                                  "so_that": f"the rest of the card payment, {_usd(e['amount'])} in all", "source": e.get("source", "")})
                     continue
                 sheet.append({"kind": "pay", "date": e["date"].isoformat(), "action": f"Pay {a.name} from {payer}", "amount": e["amount"], "from": payer, "to": a.name,
                               "so_that": "the card is paid as the plan counts it", "source": e.get("source", "")})
-            if early_due and not early_done:
-                sheet.append({"kind": "pay", "date": pay_by.isoformat(), "action": f"Pay {a.name} from {payer}", "amount": _money(to_target), "from": payer, "to": a.name,
-                              "so_that": f"the statement on {_short(statement)} reports under {int(UTILISATION_TARGET * 100)}% used", "source": f"account:{a.id}"})
         elif a.kind in ("savings",) or (a.kind == "cash" and not is_spendable(a)):
             rung = saving.get("next_rung") if saving else None
             target = rung["target"] if rung else None
@@ -191,7 +195,8 @@ def account_cover(session: Session, today: date, *, saving: dict | None = None) 
             share_total = saving.get("balance", has) if saving else has
             short = max(0.0, (target or 0.0) - share_total) if target else 0.0
             status = "good" if not target or short <= 0 else ("warn" if share_total > 0 else "crit")
-            headline = f"Rung {rung['n']} reached" if rung and short <= 0 else (f"{_usd(short)} short of rung {rung['n']} ({rung['name'].lower()})" + (f"; {_short(date.fromisoformat(rung['eta']))} at the chosen share" if rung.get("eta") else "") if rung else "Kept, not spent")
+            share_word = "your share" if (saving or {}).get("chosen") else "the suggested share"
+            headline = f"Rung {rung['n']} reached" if rung and short <= 0 else (f"{_usd(short)} short of rung {rung['n']} ({rung['name'].lower()})" + (f"; {_short(date.fromisoformat(rung['eta']))} at {share_word}" if rung.get("eta") else "") if rung else "Kept, not spent")
             out_accounts.append({**base, "role": "save", "status": status, "headline": headline, "rung": rung, "short": _money(short)})
         else:
             out_accounts.append({**base, "role": "other", "status": "good", "headline": "Not counted in the paycheck plan"})
@@ -203,7 +208,7 @@ def account_cover(session: Session, today: date, *, saving: dict | None = None) 
         save_to = next((a for a in out_accounts if a["role"] == "save"), None)
         if first and first.get("keep", 0) > 0 and save_to:
             sheet.append({"kind": "move", "date": p1.isoformat(), "action": f"Move to {save_to['name']}", "amount": first["keep"], "from": deposit.name, "to": save_to["name"],
-                          "so_that": f"{(saving or {}).get('share') or (saving or {}).get('suggested')}% of what the {_short(p1)} check leaves goes to the ladder", "source": "saving:share"})
+                          "so_that": f"{(saving or {}).get('share_used')}% of what the {_short(p1)} check leaves goes to the ladder" + ("" if (saving or {}).get("chosen") else " (the suggested share; choose yours on Saving)"), "source": "saving:share"})
         aside = next((w for w in (saving or {}).get("windows", []) if w.get("start") == p1.isoformat()), None)
         if aside and aside.get("set_aside", 0) > 0:
             sheet.append({"kind": "keep", "date": p1.isoformat(), "action": f"Leave in {deposit.name}", "amount": aside["set_aside"], "from": None, "to": deposit.name,
