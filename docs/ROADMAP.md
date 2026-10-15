@@ -156,3 +156,23 @@ Order: the owner's keys and the catalog install first (nothing else is real with
 ## Suggested first two weeks
 
 M0 in full, with M0.1 first because everything after it is faster with a shell on BigBox. Then M1.1 (SimpleFIN) the day the setup token arrives, and M1.2 and M1.5 (the two ports from `MCPManagement`) so three years of history and the recurring series are in by day ten, then M1.6 so the next paycheck is known. Nothing in that fortnight needs a model.
+
+## M10 — The move (proposed 2026-10-15)
+
+A move is the first decision the owner wants the engine to answer with dates and dollars: a new rent from a date, an overlap month, a deposit and fees, against the real checks. Two tracks, each with evidence; the milestone closes when a dated verdict page says a move on a chosen date passes, and the owner has reconciled one window by hand first.
+
+**The app**
+
+- ☐ **M10.1 Scenario engine.** A what-if overlaid on the real registers without touching them: one-off costs with dates, a rent change from a date, recurring additions (insurance, parking). Returns the low point and its date, the first date the move passes, each check's load with the scenario, the advances the current pace would force, and the monthly change against today. Pure function with a golden test on the household and a property test (a scenario with no entries equals the plain projection); `scenario` tool and REST route; "Plan a move" on Outlook with the scenario drawn against the real line; saved, named scenarios to compare dates.
+- ☐ **M10.2 Readiness, computed.** The things that have to be true, each with its current value and the date the projection meets it: a buffer of one pay period's advances; no advance for two pay periods; the card under 30% of its line on the statement day; which pay-later plans end before the date; the rent-to-gross ratio from the paystubs, the figure a landlord uses. Shown as a checklist that turns green item by item; never a recommendation.
+- ☐ **M10.3 The mailbox connected.** The Proton Bridge sign-in (an owner step), so Affirm plans and Rocket Money's bill list fill themselves; the scenario is only as good as the registers.
+- ☐ **M10.4 One window reconciled by hand** (M9.4), and the November 13 card payment compared with the engine's projection of it, before the verdict is trusted.
+- ☐ **M10.5 The verdict page.** For the chosen date: passes or not, the first date that passes, what has to be true, with sources on every figure.
+
+**The money, in the order the engine shows it**
+
+1. No new advance from the next check; the typical period's advances kept unspent instead. The fees stop the same month.
+2. The card paid before each statement day, so utilisation reports low.
+3. The plans ending this month end; the freed payments go to the buffer, not to new plans.
+4. The buffer raised to one pay period's advances, then to the deposit and first month.
+5. The scenario run with the apartment's real figures, and the date chosen from the first that passes.
