@@ -177,3 +177,24 @@ def test_the_first_run_follows_the_registers(owner: TestClient):
     assert next(s for s in marked["steps"] if s["id"] == "checks")["done"]
     assert owner.put("/api/v1/firstrun", json={"dismissed": True}).json()["show"] is False
     assert owner.put("/api/v1/firstrun", json={"mark": "nope"}).status_code == 400
+
+
+def test_the_early_payment_comes_off_the_first_payment_after_the_statement():
+    with Session(engine) as session:
+        seed(session)
+        card = session.exec(select(Account).where(Account.name == "Rewards Card")).one()
+        card.credit_limit = 3000.0
+        session.add(card)
+        debt = session.exec(select(Debt).where(Debt.account_id == card.id)).one()
+        debt.minimum = 0.0  # a card paid in full: the payment splits across the next two checks
+        session.add(debt)
+        session.commit()
+        _snap, _sv, cov = _all(session)
+    c = next(a for a in cov["accounts"] if a["name"] == "Rewards Card")
+    before, after = c["payments"][0], c["payments"][1]
+    assert before["date"] < c["statement_on"] <= after["date"] and 0 < c["to_target"] < after["amount"]
+    rows = {r["date"]: r for r in cov["sheet"] if r["to"] == "Rewards Card"}
+    assert rows[c["pay_by"]]["amount"] == c["to_target"]
+    # the payment before the statement is untouched; the one after it is smaller by what went early
+    assert rows[before["date"]]["amount"] == before["amount"]
+    assert round(rows[after["date"]]["amount"] + c["to_target"], 2) == after["amount"]
