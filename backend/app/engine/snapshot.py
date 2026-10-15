@@ -121,6 +121,21 @@ def finance_snapshot(session: Session, today: date) -> dict:
 
     due_before = sum(e["amount"] for e in windows_split["before"])  # what leaves checking; a bill riding the card is listed but not summed here
     window_total = sum(e["amount"] for e in windows_split["window"])
+    # Due before payday, in its parts: what is already sent, the pay-later plans, the bills and subscriptions,
+    # and what the next check carries instead, so one figure never looks like it holds the rent.
+    group_words = {"planned": "Already sent", "card_payment": "Card payment", "installment": "Pay-later plans", "advance": "Advances", "subscription": "Subscriptions", "bill": "Bills"}
+    grouped: dict[str, dict] = {}
+    for e in windows_split["before"]:
+        key = "planned" if e.get("planned") else (e["kind"] if e["kind"] in group_words else "bill")
+        g = grouped.setdefault(key, {"key": key, "label": group_words[key], "total": 0.0, "count": 0, "names": []})
+        g["total"] += e["amount"]
+        g["count"] += 1
+        g["names"].append(e["name"])
+    due_groups = sorted(({**g, "total": _money(g["total"]), "names": g["names"][:4]} for g in grouped.values()), key=lambda g: -g["total"])
+    next_check = {
+        "start": next_payday.isoformat(), "total": _money(window_total), "position": payday_position(next_payday) if cadence == "semimonthly" else "",
+        "top": [{"name": e["name"], "amount": e["amount"], "date": e["date"].isoformat()} for e in sorted(windows_split["window"], key=lambda e: -e["amount"])[:3]],
+    }
     set_aside = windows_split["set_aside"]
     advances_total = sum(e["amount"] for e in advances_due)
     # Safe to spend, until payday: what is in checking, less what is due before payday, the advances, the buffer,
@@ -219,7 +234,7 @@ def finance_snapshot(session: Session, today: date) -> dict:
         "next_paycheck": {"date": next_payday.isoformat(), "days": (next_payday - today).days, "amount": _money(expected_net), "source": f"income:{next_pay[1].id}" if next_pay else None, "known": next_pay is not None, "cadence": cadence},
         "paydays": [{"date": d.isoformat(), "amount": _money(net_for(d))} for d in paydays[:4]],
         "caveats": caveats,
-        "due_before_payday": {"total": _money(due_before), "items": [{**e, "date": e["date"].isoformat()} for e in before]},
+        "due_before_payday": {"total": _money(due_before), "items": [{**e, "date": e["date"].isoformat()} for e in before], "groups": due_groups, "next_check": next_check},
         "advances": {"total": _money(advances_total), "items": [{**e, "date": e["date"].isoformat()} for e in advances_due]},
         "window": {"start": next_payday.isoformat(), "end": (following_payday - timedelta(days=1)).isoformat(), "total": _money(window_total), "items": [{**e, "date": e["date"].isoformat()} for e in window]},
         "set_aside": {"total": _money(set_aside), "items": [{**e, "date": e["date"].isoformat()} for e in next_window]},

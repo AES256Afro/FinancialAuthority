@@ -64,7 +64,7 @@ export function MissionControl({ snapshot }: ViewProps) {
       </div>
       <section className="grid grid-cols-2 xl:grid-cols-4" style={{ gap: 12 }}>
         <Tile label="Safe to spend" border="var(--safe)"><Big value={money(s.safe_to_spend.amount)} sub={`through ${shortDate(s.safe_to_spend.through)} · buffer ${money(s.buffer)} kept`} /></Tile>
-        <Tile label="Clears before payday"><Big value={money(soon)} sub={s.due_before_payday.items.map((e) => e.name).join(", ") || "nothing"} /></Tile>
+        <Tile label="Clears before payday"><Big value={money(soon)} sub={s.due_before_payday.groups && s.due_before_payday.groups.length > 0 ? s.due_before_payday.groups.map((g) => `${g.label.toLowerCase()} ${money(g.total)}`).join(" · ") : s.due_before_payday.items.map((e) => e.name).join(", ") || "nothing"} /></Tile>
         <Tile label="Past due" border={s.pending.past_due ? "var(--critical)" : undefined}><Big value={String(s.pending.past_due)} sub={s.payments.late.length ? `${s.payments.late.length} not matched yet` : "none unmatched"} /></Tile>
         <Tile label="Waiting for you" border={waiting ? "var(--warning)" : undefined}><Big value={String(waiting)} sub={`${s.pending.confirmations} to confirm · ${s.pending.approvals} to approve`} /></Tile>
       </section>

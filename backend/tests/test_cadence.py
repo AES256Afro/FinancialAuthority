@@ -85,6 +85,10 @@ def test_rent_paid_from_the_end_of_month_check_is_not_due_before_payday(owner: T
     assert [p["date"] for p in snap["paydays"]] == ["2026-10-30", "2026-11-13", "2026-11-30", "2026-12-15"]
     assert [p["amount"] for p in snap["paydays"]] == [2000.0, 2200.0, 2000.0, 2200.0]
     assert {e["name"] for e in snap["due_before_payday"]["items"]} == {"Example Internet"}  # rent rides the end-of-month check; the power bill is due after payday
+    groups = {g["key"]: g for g in snap["due_before_payday"]["groups"]}
+    assert list(groups) == ["bill"] and groups["bill"]["total"] == 80.0 and groups["bill"]["names"] == ["Example Internet"]
+    nxt = snap["due_before_payday"]["next_check"]
+    assert nxt["position"] == "end" and nxt["start"] == "2026-10-30" and nxt["top"][0]["name"] == "Example Apartments" and nxt["total"] == 1620.0
     window = {e["name"]: e["date"] for e in snap["window"]["items"]}
     assert window["Example Apartments"] == "2026-11-01" and window["Example Power"] == "2026-10-31" and snap["window"]["end"] == "2026-11-12"
     assert snap["windows"][1]["start"] == "2026-11-13" and snap["windows"][0]["paycheck"] == 2000.0 and snap["windows"][1]["paycheck"] == 2200.0  # each window shows its own check
