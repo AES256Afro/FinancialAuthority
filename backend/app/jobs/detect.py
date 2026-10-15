@@ -90,7 +90,37 @@ def run_detection(session: Session, today: date, lookback_days: int = 400) -> di
                         linked += 1
                         break
     session.commit()
-    return {"found": len(found), "created": created, "updated": updated, "linked": linked}
+    filled = fill_paying_accounts(session)
+    return {"found": len(found), "created": created, "updated": updated, "linked": linked, "paying_accounts_filled": filled}
+
+
+def account_for_series(session: Session, series: RecurringSeries) -> int | None:
+    """The account the series' charges come out of, by the charges themselves: a subscription on the card is
+    paid by the card."""
+    from collections import Counter
+
+    rows = session.exec(select(Transaction.account_id).where(Transaction.merchant == series.merchant)).all()
+    if not rows:
+        rows = [t.account_id for t in session.exec(select(Transaction)).all() if merchant_key(t.merchant) == series.merchant_key]
+    return Counter(rows).most_common(1)[0][0] if rows else None
+
+
+def fill_paying_accounts(session: Session) -> int:
+    """Every bill with a series and no paying account on file takes the account its charges come out of."""
+    filled = 0
+    series_by_id = {s.id: s for s in session.exec(select(RecurringSeries)).all()}
+    for b in session.exec(select(Bill).where(Bill.active == True, Bill.pay_from_account_id == None)).all():  # noqa: E711, E712
+        series = series_by_id.get(b.series_id) if b.series_id else None
+        if series is None:
+            continue
+        account_id = account_for_series(session, series)
+        if account_id is not None:
+            b.pay_from_account_id = account_id
+            session.add(b)
+            filled += 1
+    if filled:
+        session.commit()
+    return filled
 
 
 def _is_income_row(r: dict) -> bool:

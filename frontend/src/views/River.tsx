@@ -37,7 +37,7 @@ export function River({ snapshot }: ViewProps) {
             {s.safe_to_spend.version === "v0" && <span style={{ color: "var(--muted)" }}> First-cut arithmetic; the full engine lands in M5.</span>}
           </div>
         </div>
-        <Tile label="Due before payday" value={money(s.due_before_payday.total)} sub={before.length ? `${before.map((e) => e.name).slice(0, 2).join(", ")} · ${shortDate(before[0].date)}` : "Nothing before payday"} />
+        <Tile label="Due before payday" value={money(s.due_before_payday.total)} sub={before.length ? `${before.filter((e) => !e.via_card).map((e) => e.name).slice(0, 2).join(", ") || "only card-charged items"} · ${shortDate(before[0].date)}${s.on_card && s.on_card.total > 0 ? ` · ${money(s.on_card.total)} rides the card` : ""}` : "Nothing before payday"} />
         <Tile label="Cash to spend" value={money(s.cash)} sub={`${s.accounts.filter((a) => ["checking", "savings", "cash"].includes(a.kind)).length} accounts`} />
         <Link to="/confirm" style={{ textDecoration: "none", color: "inherit", display: "contents" }}>
           <Tile label="Needs you" value={String(s.pending.confirmations + s.pending.approvals)} sub={`${s.pending.confirmations} to confirm, ${s.pending.approvals} to approve`} />
@@ -80,7 +80,7 @@ export function River({ snapshot }: ViewProps) {
             {s.window.items.map((e, i) => (
               <div key={`${e.source}-${i}`} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
                 <span className="sw" style={{ background: e.kind === "installment" ? "var(--debt)" : "var(--bill)" }} />
-                <span style={{ flexGrow: 1 }}>{e.name} <span style={{ color: "var(--muted)" }}>· {shortDate(e.date)}{e.autopay ? " · autopay" : ""}</span></span>
+                <span style={{ flexGrow: 1 }}>{e.name} <span style={{ color: "var(--muted)" }}>· {shortDate(e.date)}{e.autopay ? " · autopay" : ""}{e.via_card ? " · on the card" : ""}{e.planned ? " · planned" : ""}{e.pending ? " · payments left not set" : ""}</span></span>
                 <strong className="num">{money(e.amount)}</strong>
               </div>
             ))}

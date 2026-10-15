@@ -23,6 +23,10 @@ export interface Event {
   bill_id?: number;
   paid_from?: string;
   pending?: boolean;
+  planned?: boolean;
+  via_card?: boolean;
+  from_kind?: "card" | "cash";
+  parts?: { balance: number; bills: number; spend: number };
 }
 
 export interface PaymentRow {
@@ -141,6 +145,8 @@ export interface Snapshot {
   paydays?: { date: string; amount: number }[];
   cash_all?: number;
   savings?: number;
+  on_card?: { total: number; items: Event[]; paid_on: string | null };
+  card_payments?: Event[];
   caveats?: string[];
   due_before_payday: { total: number; items: Event[] };
   advances: { total: number; items: Event[] };

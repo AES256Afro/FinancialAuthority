@@ -61,16 +61,20 @@ def line_of(category: str, kind: str) -> str:
     return "utilities"
 
 
-def build_events(bills: list[Bill], plans: list[InstallmentPlan], advances: list[Advance], today: date, *, due_days: dict[int, int] | None = None) -> list[dict]:
-    """Every dated obligation for the horizon. `due_days` overrides a bill's due day (the optimiser's what-if)."""
+def build_events(bills: list[Bill], plans: list[InstallmentPlan], advances: list[Advance], today: date, *, due_days: dict[int, int] | None = None, accounts: dict[int, Account] | None = None) -> list[dict]:
+    """Every dated obligation for the horizon. `due_days` overrides a bill's due day (the optimiser's what-if).
+    A bill charged to a card (its paying account is a card) is marked so: it does not leave checking on its
+    due date; it rides the card payment it is paid from."""
     events: list[dict] = []
     horizon = today + timedelta(days=HORIZON_DAYS)
     for b in bills:
         due_day = (due_days or {}).get(b.id, b.due_day)
         d = next_due(due_day, today)
         paid_from = getattr(b, "paid_from", "due") or "due"
+        payer = (accounts or {}).get(b.pay_from_account_id) if b.pay_from_account_id else None
+        from_kind = "card" if payer is not None and payer.kind == "card" else "cash"
         while d <= horizon:
-            events.append({"date": d, "window_date": window_date(d, paid_from), "name": b.name, "amount": _money(b.amount), "kind": b.kind, "autopay": b.autopay, "source": f"bill:{b.id}", "line": line_of(b.category, b.kind), "bill_id": b.id, "paid_from": paid_from})
+            events.append({"date": d, "window_date": window_date(d, paid_from), "name": b.name, "amount": _money(b.amount), "kind": b.kind, "autopay": b.autopay, "source": f"bill:{b.id}", "line": line_of(b.category, b.kind), "bill_id": b.id, "paid_from": paid_from, "from_kind": from_kind, "from_account_id": b.pay_from_account_id})
             d = next_due(due_day, d + timedelta(days=1))
     for p in plans:
         d, left = p.next_date, p.remaining
@@ -130,6 +134,58 @@ def pending_installment_events(series_rows: list, today: date) -> list[dict]:
             events.append({"date": d, "window_date": d, "name": f"{s.merchant} (payments left not set)", "amount": _money(s.typical_amount), "kind": "installment", "autopay": True, "source": f"series:{s.id}", "line": "debt", "paid_from": "due", "pending": True})
             d += timedelta(days=step)
     return events
+
+
+def card_payoffs(cards: list[Account], paydays: list[date], mode: str, today: date, debts: list | None, planned: dict[int, float] | None, card_bills: list[dict], card_pace_per_day: float) -> list[dict]:
+    """The card payments across the horizon, as the owner pays the card. Each carries what the card holds by
+    then: its share of today's balance, the bills charged to it since the last payment, and the usual card
+    spend over those days. A planned payment already counted nets off the balance. A card the owner carries
+    (a minimum on file, or the minimum mode) reserves its minimum on its due day instead."""
+    events: list[dict] = []
+    if not paydays or mode == "off":
+        return events
+    horizon = today + timedelta(days=HORIZON_DAYS)
+    for a in cards:
+        balance = max(0.0, float(a.balance or 0.0) - float((planned or {}).get(a.id, 0.0)))
+        debt = next((d for d in (debts or []) if (getattr(d, "account_id", None) == a.id) or (d.name or "").strip().lower() == (a.name or "").strip().lower()), None)
+        if mode == "minimum" or (mode == "auto" and debt is not None and (debt.minimum or 0) > 0):
+            if debt is None or not (debt.minimum or 0) or balance <= 0:
+                continue
+            due = next_due(int(debt.due_day or paydays[0].day), today)
+            events.append({"date": due, "window_date": due, "name": f"{a.name} minimum", "amount": _money(min(float(debt.minimum), balance)), "kind": "card_payment", "autopay": False, "source": f"debt:{debt.id}", "line": "debt", "paid_from": "due", "from_kind": "cash", "parts": {"balance": _money(min(float(debt.minimum), balance)), "bills": 0.0, "spend": 0.0}})
+            continue
+        dates = [d for d in paydays if today <= d <= horizon and (mode in ("split", "next", "auto") or payday_position(d) == mode)]
+        if not dates:
+            continue
+        mine = [e for e in card_bills if e.get("from_account_id") in (a.id, None)]
+        shares = [round(balance / 2, 2), round(balance - round(balance / 2, 2), 2)] if mode in ("split", "auto") and len(dates) > 1 else [balance]
+        prev = today
+        for i, d in enumerate(dates):
+            bills_part = sum(e["amount"] for e in mine if prev <= e["date"] < d)
+            spend_part = card_pace_per_day * (d - prev).days
+            balance_part = shares[i] if i < len(shares) else 0.0
+            amount = balance_part + bills_part + spend_part
+            if amount > 0.5:
+                events.append({"date": d, "window_date": d, "name": f"{a.name} payment", "amount": _money(amount), "kind": "card_payment", "autopay": False, "source": f"account:{a.id}", "line": "debt", "paid_from": mode, "from_kind": "cash",
+                               "parts": {"balance": _money(balance_part), "bills": _money(bills_part), "spend": _money(spend_part)}})
+            prev = d
+    return events
+
+
+def assemble(*, bills: list[Bill], plans: list[InstallmentPlan], advances: list[Advance], today: date, accounts: dict[int, Account], paydays: list[date], card_mode: str, debts: list | None, planned: dict[int, float] | None, extra: list[dict], card_pace_per_day: float, due_days: dict[int, int] | None = None) -> dict:
+    """Everything the windows and the daily path count, with the card done right. `math` is what leaves
+    checking: cash bills, plans, advances, planned payments and the card payments. `display` adds the bills
+    that ride the card, marked via_card, so the picture still names them."""
+    events = build_events(bills, plans, advances, today, due_days=due_days, accounts=accounts) + extra
+    card_bills = [e for e in events if e.get("from_kind") == "card"]
+    cash = [e for e in events if e.get("from_kind") != "card"]
+    cards = [a for a in accounts.values() if a.kind == "card" and a.active]
+    payoffs = card_payoffs(cards, paydays, card_mode, today, debts, planned, card_bills, card_pace_per_day)
+    for e in card_bills:
+        e["via_card"] = True
+    math = sorted(cash + payoffs, key=lambda e: e["date"])
+    display = sorted(cash + payoffs + card_bills, key=lambda e: e["date"])
+    return {"math": math, "display": display, "card_bills": card_bills, "payoffs": payoffs}
 
 
 def set_aside_of(items: list[dict]) -> float:

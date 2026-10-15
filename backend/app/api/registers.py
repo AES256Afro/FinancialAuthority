@@ -94,7 +94,9 @@ def classify(series_id: int, body: ClassifyIn, session: Session = Depends(get_se
     if body.kind in ("bill", "subscription"):
         due_day = body.due_day or series.next_expected.day
         cadence = series.cadence if series.cadence in ("weekly", "biweekly", "monthly", "quarterly", "yearly") else "monthly"
-        bill = Bill(name=name, kind=body.kind, amount=round(amount, 2), amount_mode="fixed", cadence=cadence, due_day=due_day, autopay=body.autopay or body.kind == "subscription", movable=body.movable,
+        from ..jobs.detect import account_for_series
+
+        bill = Bill(name=name, kind=body.kind, amount=round(amount, 2), amount_mode="fixed", cadence=cadence, due_day=due_day, autopay=body.autopay or body.kind == "subscription", movable=body.movable, pay_from_account_id=account_for_series(session, series),
                     move_window="1-28" if body.movable else "", category=series.category, series_id=series.id)
         session.add(bill)
         session.flush()
@@ -142,6 +144,7 @@ class BillIn(BaseModel):
     category: str | None = None
     active: bool | None = None
     paid_from: str | None = None  # due | mid | end
+    pay_from_account_id: int | None = None  # the account the bill is charged to; a card means it rides the card payment
 
 
 PAID_FROM = {"due", "mid", "end"}

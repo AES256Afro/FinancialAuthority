@@ -13,26 +13,33 @@ from sqlmodel import Session, select
 from ..models import Account, Advance, Approval, Bill, Debt, ExtractedFact, Income, InstallmentPlan, MessageRef, RecurringSeries, Transaction
 from ..store import get_setting
 from .cadence import next_paydays, payday_position
-from .projection import build_events, card_events, cash_of, line_of, next_due, pending_installment_events, project, projection_caveats, set_aside_of, split_windows, wdate  # noqa: F401
+from .projection import HORIZON_DAYS, assemble, build_events, card_events, cash_of, line_of, next_due, pending_installment_events, project, projection_caveats, set_aside_of, split_windows, wdate  # noqa: F401
 
 PACE_DAYS = 56
 OBLIGATION_CATEGORIES = {"Rent", "Loan Payment", "Credit Card Payment", "Fees & Charges", "Insurance", "Bills & Utilities", "Borrowing"}
 
 
 def usual_pace(session: Session, today: date, bill_names: set[str]) -> dict:
-    """Everyday spending per day over the last eight weeks: what is spent that is not a bill."""
+    """Everyday spending per day over the last eight weeks: what is spent that is not a bill. Split by what
+    pays it: spending from checking leaves checking that day; spending on a card accrues on the card until
+    the card is paid."""
     since = today - timedelta(days=PACE_DAYS)
     rows = session.exec(select(Transaction).where(Transaction.date >= since, Transaction.date < today)).all()
+    kinds = {a.id: a.kind for a in session.exec(select(Account)).all()}
     names = {n.lower() for n in bill_names}
-    total = 0.0
+    total = cash_total = card_total = 0.0
     counted = 0
     for t in rows:
         if not t.is_spending or t.amount <= 0 or t.category in OBLIGATION_CATEGORIES or t.merchant.lower() in names:
             continue
         total += t.amount
+        if kinds.get(t.account_id) == "card":
+            card_total += t.amount
+        else:
+            cash_total += t.amount
         counted += 1
     per_day = total / PACE_DAYS if counted else 0.0
-    return {"per_day": _money(per_day), "per_window": _money(per_day * 14), "basis_days": PACE_DAYS, "transactions": counted}
+    return {"per_day": _money(per_day), "per_day_cash": _money(cash_total / PACE_DAYS if counted else 0.0), "per_day_card": _money(card_total / PACE_DAYS if counted else 0.0), "per_window": _money(per_day * 14), "basis_days": PACE_DAYS, "transactions": counted}
 
 
 def _money(v: float) -> float:
@@ -92,17 +99,23 @@ def finance_snapshot(session: Session, today: date) -> dict:
     facts = _mail_facts(session, today)
     approvals_waiting = len(session.exec(select(Approval.id).where(Approval.status == "pending")).all())
 
-    events = build_events(bills, plans, advances, today)
     from .planned import open_planned, planned_events, planned_out, planned_to_cards
 
     card_mode = (get_setting(session, "cards", {}) or {}).get("pay_from", "auto")
     planned_rows = planned_events(session, today)
-    events = sorted(events + card_events([a for a in accounts if a.kind == "card"], paydays[:4], card_mode, today, debts, planned_to_cards(session, today)) + pending_installment_events(pending_streams, today) + planned_rows, key=lambda e: e["date"])
+    pace = usual_pace(session, today, {b.name for b in bills})
+    by_id = {a.id: a for a in accounts}
+    assembled = assemble(bills=bills, plans=plans, advances=advances, today=today, accounts=by_id, paydays=paydays, card_mode=card_mode, debts=debts, planned=planned_to_cards(session, today),
+                         extra=pending_installment_events(pending_streams, today) + planned_rows, card_pace_per_day=pace["per_day_card"])
+    events, display_events, card_bills, payoffs = assembled["math"], assembled["display"], assembled["card_bills"], assembled["payoffs"]
     windows_split = split_windows(events, today, next_payday, following_payday, paydays[2])
-    before, window, next_window, advances_due = windows_split["before"], windows_split["window"], windows_split["next_window"], windows_split["advances_due"]
+    shown = split_windows(display_events, today, next_payday, following_payday, paydays[2])
+    before, window, next_window, advances_due = shown["before"], shown["window"], shown["next_window"], windows_split["advances_due"]
+    first_payoff = payoffs[0] if payoffs else None
+    on_card = [e for e in card_bills if today <= e["date"] < (first_payoff["date"] if first_payoff else today + timedelta(days=HORIZON_DAYS))]
 
-    due_before = sum(e["amount"] for e in before)
-    window_total = sum(e["amount"] for e in window)
+    due_before = sum(e["amount"] for e in windows_split["before"])  # what leaves checking; a bill riding the card is listed but not summed here
+    window_total = sum(e["amount"] for e in windows_split["window"])
     set_aside = windows_split["set_aside"]
     advances_total = sum(e["amount"] for e in advances_due)
     # Safe to spend, until payday: what is in checking, less what is due before payday, the advances, the buffer,
@@ -114,10 +127,9 @@ def finance_snapshot(session: Session, today: date) -> dict:
 
     # A daily path for sixty days: `available` is cash minus the buffer minus what is reserved, if nothing
     # else is spent; `at_pace` also spends the usual everyday amount each day, which is the honest line.
-    pace = usual_pace(session, today, {b.name for b in bills})
     pay_dates = set(paydays[:4])
     pay_amounts = {d: net_for(d) for d in paydays[:4]}
-    projection = project(today, cash=cash, buffer=buffer, expected_net=expected_net, pay_dates=pay_dates, set_aside=set_aside, events=events, per_day=pace["per_day"], pay_amounts=pay_amounts)
+    projection = project(today, cash=cash, buffer=buffer, expected_net=expected_net, pay_dates=pay_dates, set_aside=set_aside, events=events, per_day=pace["per_day_cash"], pay_amounts=pay_amounts)
 
     # Four paycheck windows, each filled the same way: what the paycheck carries in, what leaves it, what is left.
     windows = []
@@ -140,6 +152,8 @@ def finance_snapshot(session: Session, today: date) -> dict:
             ok = running >= e["amount"]
             running -= e["amount"]
             funded_items.append({**e, "date": e["date"].isoformat(), "funded": ok})
+        funded_items += [{**e, "date": e["date"].isoformat(), "funded": True} for e in card_bills if start <= wdate(e) <= end]
+        funded_items.sort(key=lambda e: e["date"])
         aside_items = [{**e, "date": e["date"].isoformat(), "funded": running >= aside, "share": 0.5 if e["amount"] >= 500 else 1.0} for e in following]
         windows.append({
             "start": start.isoformat(), "end": end.isoformat(), "paycheck": _money(net_for(start)), "carried_in": _money(carried),
@@ -152,7 +166,7 @@ def finance_snapshot(session: Session, today: date) -> dict:
         carried = aside
 
     # The calendar: every event for sixty days, paydays included, and each week's low point at the usual pace.
-    calendar_events = [{**e, "date": e["date"].isoformat()} for e in events if today <= e["date"] <= today + timedelta(days=60)]
+    calendar_events = [{**e, "date": e["date"].isoformat()} for e in display_events if today <= e["date"] <= today + timedelta(days=60)]
     for pd in sorted(pay_dates):
         if today <= pd <= today + timedelta(days=60) and expected_net:
             calendar_events.append({"date": pd.isoformat(), "name": "Payday", "amount": _money(-expected_net), "kind": "paycheck", "autopay": True, "source": f"income:{next_pay[1].id}" if next_pay else "income"})
@@ -187,6 +201,8 @@ def finance_snapshot(session: Session, today: date) -> dict:
         "paystubs": paystubs,
         "borrowing": borrowing,
         "planned": [planned_out(p) for p in open_planned(session, today)],
+        "on_card": {"total": _money(sum(e["amount"] for e in on_card)), "items": [{**e, "date": e["date"].isoformat()} for e in on_card], "paid_on": first_payoff["date"].isoformat() if first_payoff else None},
+        "card_payments": [{**e, "date": e["date"].isoformat()} for e in payoffs],
         "accounts": [
             {"id": a.id, "name": a.name, "institution": a.institution, "kind": a.kind, "balance": a.balance, "balance_at": a.balance_at.isoformat() if a.balance_at else None, "connector": a.connector}
             for a in accounts
