@@ -59,11 +59,30 @@ def _token(s: dict[str, Any]) -> str:
     return ""
 
 
+def has_devices(session: Session) -> bool:
+    return bool(get_setting(session, "webpush.subs", []) or [])
+
+
 def send(session: Session, title: str, body: str, *, priority: str = "default", link: str | None = None, tags: list[str] | None = None, client: httpx.Client | None = None) -> dict[str, Any]:
-    """Deliver one notification. Returns what happened; never raises into a job."""
+    """Deliver one notification to every channel that is set up: ntfy or Gotify, and every device subscribed to
+    the app's own web push. Returns what happened; never raises into a job."""
+    from .webpush import send_all
+
+    devices = send_all(session, title, body, link=link if (link or "").startswith("/") else None, tag=(tags or ["fa"])[0]) if has_devices(session) else None
+    channel = _send_channel(session, title, body, priority=priority, link=link, tags=tags, client=client)
+    if channel.get("skipped") and devices is None:
+        return {"ok": False, "skipped": True, "reason": "push is off"}
+    ok = bool(channel.get("ok")) or bool(devices and devices.get("ok"))
+    detail = "" if ok else (channel.get("detail") or channel.get("reason") or (devices or {}).get("reason") or "")
+    return {"ok": ok, "skipped": False, "status": channel.get("status"), "detail": detail, "channel": channel, "devices": devices}
+
+
+def _send_channel(session: Session, title: str, body: str, *, priority: str = "default", link: str | None = None, tags: list[str] | None = None, client: httpx.Client | None = None) -> dict[str, Any]:
     s = push_settings(session)
     if s["kind"] == "off" or not s["url"]:
         return {"ok": False, "skipped": True, "reason": "push is off"}
+    if link and link.startswith("/"):
+        link = (settings.public_url or "").rstrip("/") + link if settings.public_url else None
     url = s["url"].rstrip("/")
     token = _token(s)
     try:
@@ -99,7 +118,7 @@ def brief_text(brief: list[dict]) -> str:
 def morning_brief_due(session: Session, now: datetime) -> bool:
     """True once per local day, from the chosen hour on, when push is configured."""
     s = push_settings(session)
-    if s["kind"] == "off" or not s["url"]:
+    if (s["kind"] == "off" or not s["url"]) and not has_devices(session):
         return False
     local = now.astimezone(ZoneInfo(settings.tz) if settings.tz else None)
     if local.hour < int(s["brief_hour"]):

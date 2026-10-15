@@ -300,6 +300,21 @@ def morning_brief() -> str:
 jobs.register("morning_brief", morning_brief, 600, "Send the brief to the phone once a day, from the chosen hour")
 
 
+def reminders() -> str:
+    """Bills due soon, payday, a card's statement day and the Sunday check-in, each once, from the chosen hour."""
+    from datetime import datetime, timezone
+
+    from ..api.routes import today
+    from ..engine.reminders import run
+
+    with session_scope() as session:
+        out = run(session, datetime.now(timezone.utc), today())
+        return f"sent {out['sent']}" + (f" ({out['reason']})" if out.get("reason") else "")
+
+
+jobs.register("reminders", reminders, 900, "Send the reminders you switched on, once each, from the chosen hour")
+
+
 def balance_history() -> str:
     """Today's balance of every account with one, so net worth and each investment have a line over time."""
     from ..connectors.banks import record_balance

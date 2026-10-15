@@ -84,7 +84,17 @@ In BoxPilot, the Cloudflare Tunnel app's **Tunnel** tab: **Connect** with a Clou
 
 Upload a paystub PDF on the Paystubs page, keep forwarding them to the Proton mailbox, or drop them into the `/imports/paystubs` share BoxPilot can publish on the LAN; each waits on Needs you for one tap. Tell the coding agent which payroll provider issues them, so the first parser is the right one.
 
-### 9. Push notifications (M6.3)
+### 9. The app on the phone, the tablet and the watch (M15)
+
+The app installs from Safari and sends its own notifications; no store, no ntfy, nothing paid.
+
+1. **iPhone and iPad** (iOS 16.4 or later): open the tailnet https address in Safari, tap Share, Add to Home Screen, Add. Open it from the Home Screen icon, sign in once, then Settings › Notifications › Turn on notifications here, and Allow.
+2. **Apple Watch**: nothing to do; it shows what the iPhone shows.
+3. **Reminders**: on the same page, choose which (a bill some days before, payday, a card's statement day, the Sunday check-in) and from what hour.
+4. **Siri, a widget, the watch face**: on Settings › Clients make a key with the read scope only, then follow "Ask Siri" on Settings › Notifications: one Shortcut that reads `/api/v1/glance` and speaks its sentence. Add it as a Shortcuts widget or a watch complication.
+5. **The calendar**: on Exports, make the calendar feed address and add it in the phone's Settings › Calendar › Accounts › Add Subscribed Calendar.
+
+### 9a. ntfy or Gotify, instead or as well (M6.3)
 
 Install ntfy or Gotify from BoxPilot's catalog and subscribe the phone to a topic, or use ntfy.sh with a long private topic name. Enter the server address, the topic and, if the server needs one, the token on Settings › Notifications, press Send a test, and the morning brief arrives from the chosen hour each day. Approvals for sends will arrive there too once sending exists (M4.5).
 

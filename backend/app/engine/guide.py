@@ -112,6 +112,27 @@ def one_thing(session: Session, today: date, *, snap: dict, cover: dict | None =
     return {"as_of": today.isoformat(), "thing": thing, "status": status, "others": [c[1] for c in cands[1:3]], "streaks": streaks(session, today, snap), "not_advice": NOT_ADVICE}
 
 
+def glance(session: Session, today: date, *, snap: dict, cover: dict) -> dict:
+    """The few figures a Siri Shortcut, a Home Screen widget or a watch shows, and one sentence to speak."""
+    thing = one_thing(session, today, snap=snap, cover=cover)
+    upcoming = [e for e in snap["calendar"]["events"] if e["date"] > today.isoformat() and e.get("kind") != "paycheck" and not e.get("via_card")]
+    nxt = upcoming[0] if upcoming else None
+    p = snap["next_paycheck"]
+    days = p["days"]
+    when = "today" if days == 0 else "tomorrow" if days == 1 else f"in {days} days"
+    status = "crit" if cover["counts"].get("crit") else "warn" if cover["counts"].get("warn") else "good"
+    safe = snap["safe_to_spend"]
+    text = f"Safe to spend {_usd(safe['amount'])}{' below zero' if safe['amount'] < 0 else ''} through {_short(safe['through'])}. "
+    text += f"Payday {when}, {_usd(p['amount'])}. " if p.get("known") else "No payday on file. "
+    text += thing["thing"]["text"]
+    return {
+        "as_of": today.isoformat(), "safe_to_spend": safe["amount"], "through": safe["through"], "payday": {"date": p["date"], "days": days, "amount": p["amount"]},
+        "next_bill": {"name": nxt["name"], "amount": nxt["amount"], "date": nxt["date"]} if nxt else None, "one_thing": thing["thing"]["text"], "status": status,
+        "cover": {"good": cover["counts"].get("good", 0), "watch": cover["counts"].get("warn", 0), "act": cover["counts"].get("crit", 0)},
+        "text": text, "not_advice": NOT_ADVICE,
+    }
+
+
 def week_key(d: date) -> str:
     iso = d.isocalendar()
     return f"{iso.year}-W{iso.week:02d}"
