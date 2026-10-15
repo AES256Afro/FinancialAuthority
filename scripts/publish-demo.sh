@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
-# Rebuild the static demo from the synthetic household and publish it to the demo site repositories, which
-# GitHub Pages serves at demo.aes256afro.com and cybercard.net. Nothing real is involved; each site repo
-# holds only the build and its CNAME.
+# Rebuild the static demo from the synthetic household and publish it to the demo site repository, which
+# GitHub Pages serves at demo.aes256afro.com. Nothing real is involved; the site repo holds only the build
+# and its CNAME.
 #
 #   scripts/publish-demo.sh            from the repository root, on a machine signed in to gh as the owner
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 sites=(
   "AES256Afro/financialauthority-demo demo.aes256afro.com"
-  "AES256Afro/financialauthority-demo-cybercard cybercard.net"
 )
 
 (cd "$root/backend" && uv run --quiet python scripts/capture_demo.py)

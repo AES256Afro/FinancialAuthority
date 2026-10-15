@@ -12,7 +12,7 @@ No figure is computed in the browser. Writes are acknowledged with a line in the
 
 ## On the owner's domain
 
-The same build is served by GitHub Pages from two public repositories that hold the built files only, never the app's source or any data: `AES256Afro/financialauthority-demo` at **https://demo.aes256afro.com** (a subdomain; the rest of aes256afro.com is untouched) and `AES256Afro/financialauthority-demo-cybercard` at **https://cybercard.net** (the whole site). A Pages site carries one custom domain, so each domain has its own site. The zones need, DNS only (grey cloud) so GitHub can issue the certificates: in aes256afro.com a CNAME `demo` → `aes256afro.github.io`; in cybercard.net four A records at the apex to GitHub Pages' addresses (185.199.108.153, 185.199.109.153, 185.199.110.153, 185.199.111.153) and a CNAME `www` → `aes256afro.github.io`, with the old forward to rustyschool.com removed. `https_enforced` is switched on once each resolves. `scripts/publish-demo.sh` rebuilds the demo and pushes it to both.
+The build is served by GitHub Pages from one public repository that holds the built files only, never the app's source or any data: `AES256Afro/financialauthority-demo` at **https://demo.aes256afro.com** (a subdomain; the rest of aes256afro.com is untouched). The zone needs a DNS-only (grey cloud) CNAME `demo` → `aes256afro.github.io` so GitHub can issue the certificate; `https_enforced` is switched on once it resolves. `scripts/publish-demo.sh` rebuilds the demo and pushes it there. Until 2026-10-15 a second copy was served at cybercard.net from `AES256Afro/financialauthority-demo-cybercard`; that domain is now BaselineWatch's home and the repo no longer carries it.
 
 ## Regenerating it
 
