@@ -1,5 +1,7 @@
+import { useEffect } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useApi } from "./api";
+import { loadAppearance } from "./appearance";
 import { Shell } from "./components/Shell";
 import { Accounts } from "./pages/Accounts";
 import { Appearance } from "./pages/Appearance";
@@ -38,6 +40,9 @@ function Loading({ text }: { text: string }) {
 export default function App() {
   const me = useApi<Me>("/api/auth/me");
   const snapshot = useApi<Snapshot>(me.data ? "/api/v1/snapshot" : null);
+  useEffect(() => {
+    if (me.data) loadAppearance();
+  }, [me.data]);
 
   if (me.loading) return <Loading text="Opening…" />;
   if (me.error && me.error.status === 401) return <SignIn onDone={me.reload} />;

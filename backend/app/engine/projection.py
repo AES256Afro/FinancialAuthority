@@ -74,7 +74,7 @@ def build_events(bills: list[Bill], plans: list[InstallmentPlan], advances: list
         payer = (accounts or {}).get(b.pay_from_account_id) if b.pay_from_account_id else None
         from_kind = "card" if payer is not None and payer.kind == "card" else "cash"
         while d <= horizon:
-            events.append({"date": d, "window_date": window_date(d, paid_from), "name": b.name, "amount": _money(b.amount), "kind": b.kind, "autopay": b.autopay, "source": f"bill:{b.id}", "line": line_of(b.category, b.kind), "bill_id": b.id, "paid_from": paid_from, "from_kind": from_kind, "from_account_id": b.pay_from_account_id})
+            events.append({"date": d, "window_date": window_date(d, paid_from), "name": b.name, "amount": _money(b.amount), "kind": b.kind, "autopay": b.autopay, "source": f"bill:{b.id}", "line": line_of(b.category, b.kind), "bill_id": b.id, "paid_from": paid_from, "from_kind": from_kind, "from_account_id": b.pay_from_account_id, "category": b.category or "", "movable": bool(b.movable), "due_day": due_day})
             d = next_due(due_day, d + timedelta(days=1))
     for p in plans:
         payer = (accounts or {}).get(getattr(p, "pay_from_account_id", None)) if getattr(p, "pay_from_account_id", None) else None
@@ -162,8 +162,11 @@ def card_payoffs(cards: list[Account], paydays: list[date], mode: str, today: da
         if mode == "minimum" or (mode == "auto" and debt is not None and (debt.minimum or 0) > 0):
             if debt is None or not (debt.minimum or 0) or balance <= 0:
                 continue
+            # A carried card owes its minimum every month, on its due day, for as long as the horizon runs.
             due = next_due(int(debt.due_day or paydays[0].day), today)
-            events.append({"date": due, "window_date": due, "name": f"{a.name} minimum", "amount": _money(min(float(debt.minimum), balance)), "kind": "card_payment", "autopay": False, "source": f"debt:{debt.id}", "line": "debt", "paid_from": "due", "from_kind": "cash", "parts": {"balance": _money(min(float(debt.minimum), balance)), "bills": 0.0, "spend": 0.0}})
+            while due <= horizon:
+                events.append({"date": due, "window_date": due, "name": f"{a.name} minimum", "amount": _money(min(float(debt.minimum), balance)), "kind": "card_payment", "autopay": False, "source": f"debt:{debt.id}", "line": "debt", "paid_from": "due", "from_kind": "cash", "parts": {"balance": _money(min(float(debt.minimum), balance)), "bills": 0.0, "spend": 0.0}})
+                due = next_due(int(debt.due_day or paydays[0].day), due + timedelta(days=1))
             continue
         dates = [d for d in paydays if today <= d <= horizon and (mode in ("split", "next", "auto") or payday_position(d) == mode)]
         if not dates:

@@ -110,9 +110,9 @@ def purchase_check(session: Session, today: date, amount: float, *, on: date | N
     }
 
 
-def billing_date_suggestions(session: Session, today: date) -> dict:
-    """For every movable bill, the due day that lifts the sixty-day low point the most, each change judged on
-    its own against the registers as they stand. A change that does not lift the low point is not offered."""
+def _low_finder(session: Session, today: date):
+    """The registers as they stand, and a function giving the sixty-day low point with some bills' due days
+    changed. Shared by the suggestions and by a single move checked from the paycheck pictures."""
     accounts = session.exec(select(Account).where(Account.active == True)).all()  # noqa: E712
     cash, _all_cash = cash_of(accounts)
     buffer = float(get_setting(session, "buffer", 200.0))
@@ -159,6 +159,35 @@ def billing_date_suggestions(session: Session, today: date) -> dict:
         path = project(today, cash=cash, buffer=buffer, expected_net=expected_net, pay_dates=pay_dates, set_aside=windows["set_aside"], events=events, per_day=pace["per_day_cash"], pay_amounts=pay_amounts, reserved_for={(e.get("source"), e["date"]) for e in windows["next_window"]})
         return low_point(path)
 
+    return low_for, bills, caveats
+
+
+def date_move_check(session: Session, today: date, bill_id: int, day: int) -> dict:
+    """What moving one bill's due day does to the sixty-day low point, with the draft request to the biller.
+    The app never moves anything; it drafts, and the owner asks."""
+    low_for, bills, caveats = _low_finder(session, today)
+    bill = next((b for b in bills if b.id == bill_id), None)
+    if bill is None:
+        raise KeyError(bill_id)
+    day = max(1, min(28, int(day)))
+    before = low_for({})
+    after = low_for({bill.id: day})
+    change = round(after["value"] - before["value"], 2)
+    return {
+        "bill_id": bill.id, "name": bill.name, "from_day": bill.due_day, "to_day": day, "movable": bool(bill.movable),
+        "low_before": before["value"], "low_before_date": before["date"], "low_after": after["value"], "low_after_date": after["date"], "change": change,
+        "verdict": "better" if change >= 1.0 else ("worse" if change <= -1.0 else "same"),
+        "instruction": f"Ask {bill.name} to move the due date from the {ordinal(bill.due_day)} to the {ordinal(day)}.",
+        "draft": (f"Hello,\n\nI would like to move my billing date from the {ordinal(bill.due_day)} of each month to the {ordinal(day)}, starting with the next cycle. "
+                  f"Please confirm the change and any one-time adjustment to the next bill.\n\nThank you."),
+        "source": f"bill:{bill.id}", "caveats": caveats, "not_advice": NOT_ADVICE,
+    }
+
+
+def billing_date_suggestions(session: Session, today: date) -> dict:
+    """For every movable bill, the due day that lifts the sixty-day low point the most, each change judged on
+    its own against the registers as they stand. A change that does not lift the low point is not offered."""
+    low_for, bills, caveats = _low_finder(session, today)
     baseline = low_for({})
     suggestions = []
     for b in bills:
