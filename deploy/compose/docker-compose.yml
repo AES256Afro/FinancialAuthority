@@ -24,3 +24,16 @@ services:
       - host.docker.internal:host-gateway
     security_opt:
       - no-new-privileges:true
+  bridge:
+    # Proton Mail Bridge, optional. Sign in once:  docker compose run --rm bridge init
+    # (login, your address, password and code; info prints the IMAP username and password; exit)
+    # then:  docker compose --profile bridge up -d bridge
+    # In the app: Connectors, Proton, host bridge, port 143, the username and password info printed.
+    build:
+      context: ../bridge
+    image: financialauthority-bridge:local
+    container_name: financialauthority-bridge
+    restart: unless-stopped
+    profiles: ["bridge"]
+    volumes:
+      - ./bridge:/root
