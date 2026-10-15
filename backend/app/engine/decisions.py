@@ -10,7 +10,7 @@ from sqlmodel import Session, select
 from ..models import Account, Advance, Bill, Income, InstallmentPlan, RecurringSeries
 from ..store import get_setting
 from .cadence import next_paydays, payday_position
-from .projection import build_events, card_events, cash_of, low_point, pending_installment_events, project, projection_caveats, split_windows
+from .projection import assemble, build_events, card_events, cash_of, low_point, pending_installment_events, project, projection_caveats, split_windows
 from .snapshot import finance_snapshot, usual_pace
 
 NOT_ADVICE = "Computed by the engine from the registers and the projection. Not financial advice."
@@ -148,12 +148,15 @@ def billing_date_suggestions(session: Session, today: date) -> dict:
     from .planned import planned_events, planned_to_cards
 
     card_mode = (get_setting(session, "cards", {}) or {}).get("pay_from", "auto")
-    card_rows = card_events([a for a in accounts if a.kind == "card"], paydays[:4], card_mode, today, session.exec(select(Debt).where(Debt.active == True)).all(), planned_to_cards(session, today)) + planned_events(session, today)  # noqa: E712
+    debts_rows = session.exec(select(Debt).where(Debt.active == True)).all()  # noqa: E712
+    planned_map = planned_to_cards(session, today)
+    extra = pending_rows + planned_events(session, today)
+    by_id = {a.id: a for a in accounts}
 
     def low_for(due_days: dict[int, int]) -> dict:
-        events = sorted(build_events(bills, plans, advances, today, due_days=due_days) + card_rows + pending_rows, key=lambda e: e["date"])
+        events = assemble(bills=bills, plans=plans, advances=advances, today=today, accounts=by_id, paydays=paydays, card_mode=card_mode, debts=debts_rows, planned=planned_map, extra=extra, card_pace_per_day=pace["per_day_card"], due_days=due_days)["math"]
         windows = split_windows(events, today, next_payday, following, paydays[2])
-        path = project(today, cash=cash, buffer=buffer, expected_net=expected_net, pay_dates=pay_dates, set_aside=windows["set_aside"], events=events, per_day=pace["per_day"], pay_amounts=pay_amounts)
+        path = project(today, cash=cash, buffer=buffer, expected_net=expected_net, pay_dates=pay_dates, set_aside=windows["set_aside"], events=events, per_day=pace["per_day_cash"], pay_amounts=pay_amounts)
         return low_point(path)
 
     baseline = low_for({})
