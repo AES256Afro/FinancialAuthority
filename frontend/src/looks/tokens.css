@@ -35,7 +35,7 @@
   --critical: #d03b3b;
   --critical-soft: #f8dada;
   --radius: 14px;
-  --font: Manrope, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font: 'Manrope Variable', Manrope, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 :root[data-look="dark"],
