@@ -29,16 +29,24 @@ def test_advances_pair_with_their_repayments_and_fees():
         (date(2026, 8, 31), -600.0, "Dave"), (date(2026, 9, 1), 225.0, "Dave"), (date(2026, 9, 2), 179.0, "Dave"), (date(2026, 9, 3), 64.93, "Dave"), (date(2026, 9, 4), 160.07, "Dave"),
         (date(2026, 10, 8), -150.0, "Earnin"),
     ])
-    out = pair_advances(rows, next_payday=date(2026, 10, 30))
+    rows += _rows([(date(2026, 7, 9), -150.0, "Earnin"), (date(2026, 7, 15), 161.99, "Earnin"), (date(2026, 5, 3), -500.0, "Dave"), (date(2026, 9, 1), -0.01, "Earnin")])
+    for i, r in enumerate(rows):
+        r["id"] = i + 1
+    out = pair_advances(rows, next_payday=date(2026, 10, 30), today=date(2026, 10, 15))
+    old_dave = next(p for p in out["pairs"] if p["provider"] == "Dave" and p["taken_on"] == date(2026, 5, 3))
+    assert old_dave["stale"] and not old_dave["repaid"]  # months with no repayment in sight: history, not money due
+    assert not any(p["amount"] < 5 for p in out["pairs"])  # a cent in is a verification deposit
+    july = next(p for p in out["pairs"] if p["provider"] == "Earnin" and p["taken_on"] == date(2026, 7, 9))
+    assert july["repaid"] and july["repay_date"] == date(2026, 7, 15)
     pairs = {(p["provider"], p["taken_on"].isoformat(), i): p for i, p in enumerate(out["pairs"])}
-    earnin = [p for p in out["pairs"] if p["provider"] == "Earnin" and p["repaid"]]
+    earnin = [p for p in out["pairs"] if p["provider"] == "Earnin" and p["repaid"] and p["taken_on"] == date(2026, 9, 17)]
     assert len(earnin) == 2 and all(p["fee"] == 11.99 and p["days"] == 13 and p["repay_date"] == date(2026, 9, 30) for p in earnin)
     dave_whole = next(p for p in out["pairs"] if p["provider"] == "Dave" and p["taken_on"] == date(2026, 9, 16))
     assert dave_whole["repaid"] and dave_whole["fee"] == 29.0 and dave_whole["days"] == 1
     dave_partial = next(p for p in out["pairs"] if p["provider"] == "Dave" and p["taken_on"] == date(2026, 8, 31))
     assert dave_partial["repaid"] and dave_partial["fee"] == 29.0 and dave_partial["repay_date"] == date(2026, 9, 4) and len(dave_partial["sources"]) == 5
-    out_still = next(p for p in out["pairs"] if not p["repaid"])
-    assert out_still["provider"] == "Earnin" and out_still["repay_date"] == date(2026, 10, 30) and out_still["fee"] == 0.0
+    out_still = next(p for p in out["pairs"] if not p["repaid"] and not p["stale"])
+    assert out_still["provider"] == "Earnin" and out_still["taken_on"] == date(2026, 10, 8) and out_still["repay_date"] == date(2026, 10, 30) and out_still["fee"] == 0.0
     assert [t["amount"] for t in out["tips"]] == [1.0] and out["unmatched_repayments"] == []
     assert pairs  # the dict is only here to show each pair is distinct
 
