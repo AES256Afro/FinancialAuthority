@@ -24,7 +24,7 @@ def series_out(s: RecurringSeries) -> dict:
     return {
         "id": s.id, "merchant": s.merchant, "category": s.category, "cadence": s.cadence, "typical_amount": s.typical_amount, "latest_amount": s.latest_amount,
         "charges_seen": s.charges_seen, "first_seen": s.first_seen.isoformat(), "last_date": s.last_date.isoformat(), "next_expected": s.next_expected.isoformat(),
-        "active": s.active, "kind": s.kind, "confirmed": s.confirmed,
+        "active": s.active, "kind": s.kind, "confirmed": s.confirmed, "suggested_kind": s.suggested_kind,
     }
 
 

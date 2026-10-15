@@ -183,7 +183,7 @@ export function Connectors() {
       <section id="import" className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
         <div>
           <strong>Import a file from any bank or vendor</strong>
-          <div style={{ fontSize: 13, color: "var(--ink-2)" }}>For a bank or a vendor with no live connection: download its CSV or OFX statement and bring it here. The app works out the columns, shows the first rows, and skips what the ledger already has. The same files can be dropped into the Imports folder.</div>
+          <div style={{ fontSize: 13, color: "var(--ink-2)" }}>For a bank or a vendor with no live connection: download its CSV or OFX statement and bring it here. The app works out the columns, shows the first rows, and skips what the ledger already has. A bills list (name, amount, how often, due day) lands on the Bills register the same way. The same files can be dropped into the Imports folder.</div>
         </div>
         <FileImport onDone={(summary) => setResult(summary)} />
       </section>

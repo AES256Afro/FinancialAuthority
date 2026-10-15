@@ -29,6 +29,28 @@ def _consistent(amounts: list[float]) -> bool:
     return sum(1 for a in amounts if abs(a - med) <= max(1.0, 0.15 * med)) >= 0.75 * len(amounts)
 
 
+BILL_WORDS = ("rent", "mortgage", "loan", "insurance", "electric", "utilities", "utility", "water", "sewer", "trash", "internet", "phone", "cable", "wireless", "cell", "tuition", "childcare", "child care", "daycare", "hoa", "property tax", "power", "heating")
+SUBSCRIPTION_WORDS = ("streaming", "music", "subscription", "software", "gym", "fitness", "membership", "news", "entertainment", "services", "games", "apps", "app store", "cloud", "storage")
+SPEND_WORDS = ("groceries", "grocery", "dining", "restaurant", "food", "shopping", "gas", "fuel", "transfer", "credit card payment", "financial", "atm", "travel", "transport", "pharmacy", "coffee", "general merchandise")
+
+
+def suggest_kind(category: str, merchant: str = "", income: bool = False) -> str:
+    """A default the owner can accept with one tap: what the category (Plaid's, Rocket Money's or a bank's)
+    says this series is. Empty when nothing is clear. Only the owner's confirmation makes it count."""
+    if income:
+        return "income"
+    text = f"{category} {merchant}".lower()
+    bill = any(w in text for w in BILL_WORDS)
+    subscription = any(w in text for w in SUBSCRIPTION_WORDS)
+    if any(w in text for w in SPEND_WORDS) and not bill and not subscription:
+        return "ignored"
+    if bill:
+        return "bill"
+    if subscription:
+        return "subscription"
+    return ""
+
+
 def detect(rows: list[dict], as_of: date, lookback_days: int = 400, include_inactive: bool = False, income: bool = False) -> list[dict]:
     """rows: dicts with date (date), merchant, amount (positive = money out), category.
 
@@ -74,10 +96,12 @@ def detect(rows: list[dict], as_of: date, lookback_days: int = 400, include_inac
             active = (as_of - dates[-1]).days <= med_gap * 1.5
             if not active and not include_inactive:
                 continue
+            category = Counter(r.get("category", "") for r in s).most_common(1)[0][0]
             found.append({
                 "merchant_key": key,
                 "merchant": s[-1]["merchant"],
-                "category": Counter(r.get("category", "") for r in s).most_common(1)[0][0],
+                "category": category,
+                "suggested_kind": suggest_kind(category, s[-1]["merchant"], income),
                 "cadence": name,
                 "typical_amount": round(typical, 2),
                 "latest_amount": round(s[-1]["amount"], 2),

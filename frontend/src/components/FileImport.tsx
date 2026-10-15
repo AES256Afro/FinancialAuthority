@@ -1,10 +1,23 @@
 // Import a file from any bank or vendor: a look at what it holds first, then the import under an account.
+// A bills list (name, amount, how often, due day) is told apart from transactions and lands on the Bills register.
 import { useState } from "react";
 import { api } from "../api";
 import { money, shortDate } from "../format";
 
+interface SampleRow {
+  date?: string;
+  amount?: number;
+  description?: string;
+  category?: string;
+  name?: string;
+  cadence?: string;
+  due_day?: number | null;
+  next_date?: string | null;
+  autopay?: boolean;
+}
+
 interface Preview {
-  kind: "csv" | "ofx";
+  kind: "csv" | "ofx" | "bills";
   filename: string;
   columns?: string[];
   mapping?: Record<string, string | null>;
@@ -13,7 +26,7 @@ interface Preview {
   account_type?: string;
   account_id?: string;
   total: number;
-  sample: { date: string; amount: number; description: string; category: string }[];
+  sample: SampleRow[];
   positions?: { name: string; ticker: string; value: number }[] | null;
   ready: boolean;
 }
@@ -76,24 +89,31 @@ export function FileImport({ onDone }: { onDone: (summary: string) => void }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <input className="input" type="file" accept=".csv,.ofx,.qfx,.qbo,text/csv,application/x-ofx" onChange={(e) => e.target.files?.[0] && look(e.target.files[0])} aria-label="File to import" />
-        <span style={{ fontSize: 12, color: "var(--muted)" }}>CSV from any bank or vendor's download page (Vanguard, Fidelity, Capital One, the credit union), or an OFX, QFX or QBO statement.</span>
+        <span style={{ fontSize: 12, color: "var(--muted)" }}>CSV from any bank or vendor's download page (Vanguard, Fidelity, Capital One, the credit union), or an OFX, QFX or QBO statement. Or a bills list: a sheet with a name, an amount, how often and the due day or next date, such as Rocket Money's recurring page copied out.</span>
       </div>
       {error && <div style={{ fontSize: 13, color: "var(--critical)" }}>{error}</div>}
       {preview && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8, borderTop: "1px solid var(--surface-2)", paddingTop: 8 }}>
           <div style={{ fontSize: 13 }}>
-            <strong>{preview.filename}</strong> · {preview.kind === "ofx" ? `a statement from ${preview.vendor || "a vendor"}` : "a CSV"} · {preview.total} rows
+            <strong>{preview.filename}</strong> · {preview.kind === "ofx" ? `a statement from ${preview.vendor || "a vendor"}` : preview.kind === "bills" ? "a bills list" : "a CSV"} · {preview.total} rows
             {preview.kind === "csv" && preview.mapping && (
               <span style={{ color: "var(--ink-2)" }}> · date in <code>{preview.mapping.date ?? "?"}</code>, amount in <code>{preview.mapping.amount ?? `${preview.mapping.debit ?? "?"} / ${preview.mapping.credit ?? "?"}`}</code>, description in <code>{preview.mapping.description ?? "?"}</code></span>
             )}
           </div>
           {!preview.ready && <div style={{ fontSize: 13, color: "var(--critical)" }}>No date and amount columns were found; this file cannot be imported as it is.</div>}
-          {preview.sample.length > 0 && (
+          {preview.kind === "bills" && preview.sample.length > 0 && (
             <table className="ledger" style={{ fontSize: 12 }}>
-              <thead><tr><th>Date</th><th>Description</th><th style={{ textAlign: "right" }}>Amount</th></tr></thead>
-              <tbody>{preview.sample.map((r, i) => <tr key={i}><td>{shortDate(r.date)}</td><td>{r.description}</td><td className="num" style={{ textAlign: "right" }}>{money(r.amount, { cents: true })}</td></tr>)}</tbody>
+              <thead><tr><th>Bill</th><th>Every</th><th>Due day</th><th>Autopay</th><th style={{ textAlign: "right" }}>Amount</th></tr></thead>
+              <tbody>{preview.sample.map((r, i) => <tr key={i}><td>{r.name}</td><td>{r.cadence}</td><td>{r.due_day ?? "? (skipped)"}</td><td>{r.autopay ? "yes" : "no"}</td><td className="num" style={{ textAlign: "right" }}>{money(r.amount ?? 0, { cents: true })}</td></tr>)}</tbody>
             </table>
           )}
+          {preview.kind !== "bills" && preview.sample.length > 0 && (
+            <table className="ledger" style={{ fontSize: 12 }}>
+              <thead><tr><th>Date</th><th>Description</th><th style={{ textAlign: "right" }}>Amount</th></tr></thead>
+              <tbody>{preview.sample.map((r, i) => <tr key={i}><td>{shortDate(r.date ?? "")}</td><td>{r.description}</td><td className="num" style={{ textAlign: "right" }}>{money(r.amount ?? 0, { cents: true })}</td></tr>)}</tbody>
+            </table>
+          )}
+          {preview.kind !== "bills" && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Into the account</span><input className="input" value={account} onChange={(e) => setAccount(e.target.value)} placeholder="Everyday Checking" /></label>
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">At</span><input className="input" value={institution} onChange={(e) => setInstitution(e.target.value)} placeholder="Example Bank" /></label>
@@ -102,9 +122,10 @@ export function FileImport({ onDone }: { onDone: (summary: string) => void }) {
               <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Signs in the file</span><select className="input" value={sign} onChange={(e) => setSign(e.target.value as "bank" | "ledger")}><option value="bank">money in is positive (most banks)</option><option value="ledger">money out is positive</option></select></label>
             )}
           </div>
+          )}
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button className="btn dark" type="button" disabled={busy || !preview.ready || !account.trim()} onClick={run}>{busy ? "Importing…" : "Import these rows"}</button>
-            <span style={{ fontSize: 12, color: "var(--muted) " }}>Rows already in the ledger are skipped; nothing is read from the vendor.</span>
+            <button className="btn dark" type="button" disabled={busy || !preview.ready || (preview.kind !== "bills" && !account.trim())} onClick={run}>{busy ? "Importing…" : preview.kind === "bills" ? "Put these bills on the register" : "Import these rows"}</button>
+            <span style={{ fontSize: 12, color: "var(--muted) " }}>{preview.kind === "bills" ? "A bill with the same name is updated, not doubled; a row without a due day is skipped." : "Rows already in the ledger are skipped; nothing is read from the vendor."}</span>
           </div>
         </div>
       )}

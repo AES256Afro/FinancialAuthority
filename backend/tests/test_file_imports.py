@@ -89,3 +89,28 @@ def test_import_routes_preview_import_dedupe_and_holdings(owner: TestClient):
         assert len(session.exec(select(Holding).where(Holding.account_id == plan_id)).all()) == 3  # EX0001 is a different id than file:extgt; both kept
     overview = owner.get("/api/v1/investments").json()
     assert next(i for i in overview["items"] if i["id"] == plan_id)["holdings"]
+
+
+BILLS_CSV = (
+    "Name,Amount,Frequency,Next Due,Autopay,Category\n"
+    "Example Internet,79.99,Monthly,2026-11-03,Yes,Internet\n"
+    "Example Streaming Co,15.99,monthly,11/15/2026,no,Streaming\n"
+    "Example Insurance,142.50,every 6 months,,no,Insurance\n"
+)
+
+
+def test_a_bills_list_lands_on_the_register(owner: TestClient):
+    """A sheet or export with a name, an amount and how often (Rocket Money's recurring page copied out, a
+    budgeting app, a spreadsheet) is a bills list, not transactions: each row becomes a bill with its due day."""
+    found = detect(BILLS_CSV)
+    assert found["kind"] == "bills" and found["ready"] and found["mapping"]["cadence"] == "Frequency" and found["mapping"]["next_date"] == "Next Due"
+    assert detect(BANK_CSV)["kind"] == "csv" and detect(DEBIT_CREDIT_CSV)["kind"] == "csv"  # bank exports still read as transactions
+    preview = owner.post("/api/v1/imports/preview", files={"file": ("bills.csv", io.BytesIO(BILLS_CSV.encode()), "text/csv")}).json()
+    assert preview["kind"] == "bills" and preview["total"] == 3 and preview["sample"][0]["name"] == "Example Internet" and preview["sample"][0]["due_day"] == 3
+    out = owner.post("/api/v1/imports/file", files={"file": ("bills.csv", io.BytesIO(BILLS_CSV.encode()), "text/csv")}).json()
+    assert out["inserted"] == 2 and "1 without a due day skipped" in out["summary"]
+    bills = {b["name"]: b for b in owner.get("/api/v1/bills").json()["bills"]}
+    assert bills["Example Internet"]["due_day"] == 3 and bills["Example Internet"]["autopay"] is True and bills["Example Internet"]["kind"] == "bill"
+    assert bills["Example Streaming Co"]["due_day"] == 15 and bills["Example Streaming Co"]["kind"] == "subscription"
+    again = owner.post("/api/v1/imports/file", files={"file": ("bills.csv", io.BytesIO(BILLS_CSV.encode()), "text/csv")}).json()
+    assert again["inserted"] == 0 and "2 updated" in again["summary"]

@@ -176,6 +176,7 @@ export interface SeriesRow {
   active: boolean;
   kind: string;
   confirmed: boolean;
+  suggested_kind: string;
 }
 
 export interface BillRow {

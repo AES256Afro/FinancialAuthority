@@ -1,6 +1,7 @@
 """Files from any bank or vendor: a CSV with its columns worked out, or an OFX/QFX statement. Transactions
-land in the ledger; a holdings file lands in an investment account. Nothing is read from the vendor itself;
-the owner downloaded the file and dropped it here."""
+land in the ledger; a holdings file lands in an investment account; a bills list (name, amount, how often,
+due day) lands on the bills register. Nothing is read from the vendor itself; the owner downloaded the file
+and dropped it here."""
 
 from __future__ import annotations
 
@@ -32,6 +33,15 @@ HOLDING_NAME = ("investment name", "description", "name", "security", "security 
 HOLDING_QTY = ("shares", "quantity", "units", "qty")
 HOLDING_PRICE = ("share price", "last price", "price", "unit price", "nav")
 HOLDING_VALUE = ("total value", "current value", "market value", "value", "balance", "amount")
+BILL_NAME_KEYS = ("bill", "name", "payee", "biller", "merchant", "subscription", "service", "description")
+BILL_AMOUNT_KEYS = ("amount", "cost", "price", "payment", "monthly cost", "total")
+BILL_DUE_DAY_KEYS = ("due day", "day of month", "day due")
+BILL_NEXT_KEYS = ("next due", "next date", "next payment", "due date", "next charge", "renews", "renewal date", "next bill", "due")
+BILL_CADENCE_KEYS = ("frequency", "cadence", "repeats", "billing cycle", "cycle", "every", "interval", "period", "schedule")
+BILL_AUTOPAY_KEYS = ("autopay", "auto pay", "auto-pay", "automatic")
+BILL_CATEGORY_KEYS = ("category", "type", "kind")
+CADENCE_WORDS = (("biweekly", "biweekly"), ("bi-weekly", "biweekly"), ("every 2 weeks", "biweekly"), ("every two weeks", "biweekly"), ("fortnight", "biweekly"), ("2 weeks", "biweekly"), ("weekly", "weekly"), ("week", "weekly"), ("quarterly", "quarterly"), ("quarter", "quarterly"), ("3 months", "quarterly"), ("annual", "yearly"), ("yearly", "yearly"), ("year", "yearly"), ("12 months", "yearly"), ("monthly", "monthly"), ("month", "monthly"))
+PLAIN_DATE_COLUMNS = ("date", "transaction date", "posted date", "post date", "posting date", "trade date")
 HOLDING_KINDS = {"etf": "etf", "mutual fund": "mutual fund", "fund": "mutual fund", "stock": "equity", "equity": "equity", "bond": "fixed income", "fixed income": "fixed income", "cash": "cash", "money market": "cash", "crypto": "cryptocurrency"}
 
 
@@ -183,6 +193,9 @@ def detect(text: str) -> dict[str, Any]:
     if re.search(r"<OFX>|<STMTTRN>|OFXHEADER", text, re.IGNORECASE):
         parsed = parse_ofx(text)
         return {**parsed, "sample": parsed["rows"][:5], "ready": bool(parsed["rows"] or parsed["positions"])}
+    bills = sniff_bills_csv(text)
+    if bills["ready"]:
+        return bills
     return sniff_csv(text)
 
 
@@ -249,3 +262,94 @@ def import_holdings(session: Session, account: Account, positions: list[dict], *
     session.commit()
     record_balance(session, account, total, when)
     return SyncResult(ok=True, summary=f"{len(positions)} holdings, {total:,.2f} in all, into {account.name}", inserted=len(positions), details={"account_id": account.id, "total": total}, at=utcnow())
+
+
+# ---- a bills list ------------------------------------------------------------------------------
+
+
+def _cadence_word(value: str) -> str:
+    v = (value or "").strip().lower()
+    for word, cadence in CADENCE_WORDS:
+        if word in v:
+            return cadence
+    return "monthly"
+
+
+def sniff_bills_csv(text: str) -> dict[str, Any]:
+    """A list of bills rather than of transactions: a name and an amount, plus how often or when. The tell is a
+    frequency or due-day column, or a next-due column with no plain date column, which no bank export has."""
+    reader = csv.DictReader(io.StringIO(text))
+    columns = [c for c in (reader.fieldnames or []) if c is not None]
+    mapping = {
+        "name": _pick(columns, BILL_NAME_KEYS), "amount": _pick(columns, BILL_AMOUNT_KEYS), "due_day": _pick(columns, BILL_DUE_DAY_KEYS),
+        "next_date": _pick(columns, BILL_NEXT_KEYS), "cadence": _pick(columns, BILL_CADENCE_KEYS), "autopay": _pick(columns, BILL_AUTOPAY_KEYS), "category": _pick(columns, BILL_CATEGORY_KEYS),
+    }
+    if mapping["due_day"] and mapping["due_day"] == mapping["next_date"]:
+        mapping["next_date"] = None
+    plain_date = any(_norm(c) in PLAIN_DATE_COLUMNS for c in columns)
+    looks_like_bills = bool(mapping["name"] and mapping["amount"] and (mapping["cadence"] or mapping["due_day"] or (mapping["next_date"] and not plain_date)))
+    rows = parse_bills_rows(text, mapping) if looks_like_bills else []
+    return {"kind": "bills", "columns": columns, "mapping": mapping, "total": len(rows), "sample": rows[:8], "ready": looks_like_bills and bool(rows)}
+
+
+def parse_bills_rows(text: str, mapping: dict | None = None) -> list[dict]:
+    m = mapping or sniff_bills_csv(text)["mapping"]
+    rows: list[dict] = []
+    for raw in csv.DictReader(io.StringIO(text)):
+        name = str(raw.get(m.get("name") or "", "") or "").strip()
+        amount = parse_amount(raw.get(m.get("amount") or "", "")) if m.get("amount") else None
+        if not name or amount is None:
+            continue
+        next_date = parse_date(raw.get(m.get("next_date") or "", "")) if m.get("next_date") else None
+        due_day = None
+        if m.get("due_day"):
+            try:
+                due_day = int(float(str(raw.get(m["due_day"], "") or "").strip()))
+            except ValueError:
+                due_day = None
+        if due_day is None and next_date is not None:
+            due_day = next_date.day
+        cadence = _cadence_word(str(raw.get(m.get("cadence") or "", "") or "")) if m.get("cadence") else "monthly"
+        autopay = str(raw.get(m.get("autopay") or "", "") or "").strip().lower() in ("yes", "y", "true", "1", "on", "auto", "autopay") if m.get("autopay") else False
+        category = str(raw.get(m.get("category") or "", "") or "").strip()
+        rows.append({"name": name[:80], "amount": round(abs(amount), 2), "cadence": cadence, "due_day": max(1, min(28, due_day)) if due_day else None, "next_date": next_date, "autopay": autopay, "category": category})
+    return rows
+
+
+def import_bills(session: Session, rows: list[dict], *, source_file: str) -> SyncResult:
+    """Each row becomes a bill on the register, or updates the bill of the same name. A row without a due day
+    (no due-day, next-date or date column it could come from) is skipped and said so."""
+    from ..engine.recurring import merchant_key, suggest_kind
+    from ..models import Bill
+
+    bills = list(session.exec(select(Bill).where(Bill.active == True)).all())  # noqa: E712
+    created = updated = skipped = 0
+    ids: list[int] = []
+    for r in rows:
+        if r["due_day"] is None:
+            skipped += 1
+            continue
+        key = merchant_key(r["name"])
+        bill = next((b for b in bills if merchant_key(b.name) == key), None)
+        kind = "subscription" if suggest_kind(r["category"], r["name"]) == "subscription" else "bill"
+        if bill is None:
+            bill = Bill(name=r["name"], kind=kind, amount=r["amount"], amount_mode="fixed", cadence=r["cadence"], due_day=r["due_day"], autopay=r["autopay"], movable=True, move_window="1-28", category=r["category"])
+            session.add(bill)
+            session.flush()
+            bills.append(bill)
+            created += 1
+        else:
+            bill.amount, bill.cadence, bill.due_day = r["amount"], r["cadence"], r["due_day"]
+            bill.autopay = r["autopay"] or bill.autopay
+            if r["category"]:
+                bill.category = r["category"]
+            session.add(bill)
+            updated += 1
+        ids.append(int(bill.id or 0))
+    if created or updated:
+        from ..llm.reviewer import mark_pending
+
+        mark_pending(session, f"bills imported from {source_file}")
+    session.commit()
+    summary = f"{created} bill{'s' if created != 1 else ''} added, {updated} updated" + (f", {skipped} without a due day skipped" if skipped else "")
+    return SyncResult(ok=True, summary=summary, inserted=created, details={"created": created, "updated": updated, "skipped": skipped, "bill_ids": ids, "source_file": source_file}, at=utcnow())

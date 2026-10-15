@@ -327,7 +327,7 @@ def apply_fact(session: Session, fact: ExtractedFact, ref: MessageRef | None, bo
         record_balance(session, account, float(balance), as_of, commit=False)
         return f"account:{account.id}"
     if fact.kind in ("bill_due", "past_due", "price_change"):
-        name = (body.name or fields.get("sender_name") or (ref.sender_name if ref else "") or "Bill").strip()
+        name = (body.name or fields.get("name") or fields.get("sender_name") or (ref.sender_name if ref else "") or "Bill").strip()
         amount = body.amount if body.amount is not None else fields.get("amount")
         due = body.due_date or (date.fromisoformat(fields["due_date"]) if fields.get("due_date") else None)
         key = merchant_key(name)
