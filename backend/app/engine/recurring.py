@@ -11,6 +11,8 @@ import statistics
 from collections import Counter, defaultdict
 from datetime import date, timedelta
 
+from .cadence import is_semimonthly, next_paydays
+
 CADENCES = [  # (name, min_days, max_days, charges_per_year)
     ("weekly", 6, 8, 52),
     ("biweekly", 13, 16, 26),
@@ -93,6 +95,9 @@ def detect(rows: list[dict], as_of: date, lookback_days: int = 400, include_inac
                 continue
             typical = statistics.median(amounts)
             next_expected = dates[-1] + timedelta(days=round(med_gap))
+            if name == "biweekly" and is_semimonthly(dates):
+                name, per_year = "semimonthly", 24
+                next_expected = next_paydays(dates[-1], "semimonthly", 2)[1]
             active = (as_of - dates[-1]).days <= med_gap * 1.5
             if not active and not include_inactive:
                 continue

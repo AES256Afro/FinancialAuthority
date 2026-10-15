@@ -73,7 +73,7 @@ In BoxPilot, the Cloudflare Tunnel app's **Tunnel** tab: **Connect** with a Clou
 
 ### 8. Paystubs (M2.6)
 
-Keep forwarding paystub PDFs to the Proton mailbox, or drop them into the `/imports/paystubs` share BoxPilot can publish on the LAN. Tell the coding agent which payroll provider issues them, so the first parser is the right one.
+Upload a paystub PDF on the Paystubs page, keep forwarding them to the Proton mailbox, or drop them into the `/imports/paystubs` share BoxPilot can publish on the LAN; each waits on Needs you for one tap. Tell the coding agent which payroll provider issues them, so the first parser is the right one.
 
 ### 9. Push notifications (M6.3)
 

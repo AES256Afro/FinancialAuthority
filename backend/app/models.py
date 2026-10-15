@@ -28,6 +28,7 @@ class Account(SQLModel, table=True):
     last4_enc: str = ""
     balance: float | None = None
     balance_at: dt.datetime | None = None
+    spendable: bool | None = None  # None means by kind: checking and cash are for spending, savings is kept
     connector: str = "manual"
     external_id: str = Field(default="", index=True)
     active: bool = True
@@ -84,8 +85,9 @@ class Income(SQLModel, table=True):
     __tablename__ = "incomes"
     id: int | None = Field(default=None, primary_key=True)
     name: str
-    cadence: str = "biweekly"
-    expected_net: float
+    cadence: str = "biweekly"  # weekly | biweekly | semimonthly | monthly
+    expected_net: float  # the usual net; for a semi-monthly paycheck, the mid-month check
+    expected_net_end: float | None = None  # a semi-monthly paycheck's end-of-month check, when it differs
     next_date: dt.date
     account_id: int | None = Field(default=None, foreign_key="accounts.id")
     series_id: int | None = Field(default=None, foreign_key="recurring_series.id")
@@ -106,6 +108,7 @@ class Bill(SQLModel, table=True):
     grace_days: int = 0
     late_fee: float = 0.0
     movable: bool = False
+    paid_from: str = "due"  # due | mid | end: the paycheck that pays it (mid = the 15th check, end = the end-of-month check)
     move_window: str = ""
     category: str = ""
     series_id: int | None = Field(default=None, foreign_key="recurring_series.id")

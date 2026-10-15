@@ -12,9 +12,9 @@ from sqlmodel import Session, select
 
 from ..models import Account, Advance, Approval, Bill, Debt, ExtractedFact, Income, InstallmentPlan, MessageRef, RecurringSeries, Transaction
 from ..store import get_setting
-from .projection import build_events, line_of, next_due, project, projection_caveats, set_aside_of, split_windows  # noqa: F401
+from .cadence import next_paydays, payday_position
+from .projection import build_events, cash_of, line_of, next_due, project, projection_caveats, set_aside_of, split_windows, wdate  # noqa: F401
 
-CASH_KINDS = {"checking", "savings", "cash"}
 PACE_DAYS = 56
 OBLIGATION_CATEGORIES = {"Rent", "Loan Payment", "Credit Card Payment", "Fees & Charges", "Insurance", "Bills & Utilities"}
 
@@ -60,15 +60,26 @@ def _mail_facts(session: Session, today: date) -> dict:
 
 def finance_snapshot(session: Session, today: date) -> dict:
     accounts = session.exec(select(Account).where(Account.active == True)).all()  # noqa: E712
-    cash = sum((a.balance or 0.0) for a in accounts if a.kind in CASH_KINDS)
+    cash, cash_all = cash_of(accounts)  # the plan spends checking and cash; savings is kept and shown apart
     buffer = float(get_setting(session, "buffer", 200.0))
 
     incomes = session.exec(select(Income).where(Income.active == True)).all()  # noqa: E712
     upcoming = sorted(((i.next_date, i) for i in incomes if i.next_date >= today), key=lambda p: p[0])
     next_pay = upcoming[0] if upcoming else None
     next_payday = next_pay[0] if next_pay else today + timedelta(days=14)
-    following_payday = next_payday + timedelta(days=14)
-    expected_net = next_pay[1].expected_net if next_pay else 0.0
+    cadence = (next_pay[1].cadence if next_pay else "biweekly") or "biweekly"
+    paydays = next_paydays(next_payday, cadence, 6)
+    following_payday = paydays[1]
+
+    def net_for(payday: date) -> float:
+        """The usual net of the check that lands on `payday`; a semi-monthly paycheck may differ by position."""
+        if next_pay is None:
+            return 0.0
+        if cadence == "semimonthly" and payday_position(payday) == "end" and next_pay[1].expected_net_end is not None:
+            return float(next_pay[1].expected_net_end)
+        return float(next_pay[1].expected_net)
+
+    expected_net = net_for(next_payday)
 
     bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
     plans = session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all()  # noqa: E712
@@ -80,35 +91,41 @@ def finance_snapshot(session: Session, today: date) -> dict:
     approvals_waiting = len(session.exec(select(Approval.id).where(Approval.status == "pending")).all())
 
     events = build_events(bills, plans, advances, today)
-    windows_split = split_windows(events, today, next_payday, following_payday)
+    windows_split = split_windows(events, today, next_payday, following_payday, paydays[2])
     before, window, next_window, advances_due = windows_split["before"], windows_split["window"], windows_split["next_window"], windows_split["advances_due"]
 
     due_before = sum(e["amount"] for e in before)
     window_total = sum(e["amount"] for e in window)
     set_aside = windows_split["set_aside"]
     advances_total = sum(e["amount"] for e in advances_due)
-    safe = cash - due_before + expected_net - advances_total - window_total - set_aside - buffer
+    # Safe to spend, until payday: what is in checking, less what is due before payday, the advances, the buffer,
+    # and whatever the next paycheck will not cover of its own window. The paycheck itself is not spent early.
+    advances_before = sum(e["amount"] for e in advances_due if e["date"] < next_payday)  # pulled before the check lands
+    advances_on_payday = advances_total - advances_before  # pulled from the check itself
+    next_window_shortfall = max(0.0, window_total + set_aside + advances_on_payday - expected_net)
+    safe = cash - due_before - advances_before - buffer - next_window_shortfall
 
     # A daily path for sixty days: `available` is cash minus the buffer minus what is reserved, if nothing
     # else is spent; `at_pace` also spends the usual everyday amount each day, which is the honest line.
     pace = usual_pace(session, today, {b.name for b in bills})
-    pay_dates = {next_payday, following_payday, following_payday + timedelta(days=14), following_payday + timedelta(days=28)}
-    projection = project(today, cash=cash, buffer=buffer, expected_net=expected_net, pay_dates=pay_dates, set_aside=set_aside, events=events, per_day=pace["per_day"])
+    pay_dates = set(paydays[:4])
+    pay_amounts = {d: net_for(d) for d in paydays[:4]}
+    projection = project(today, cash=cash, buffer=buffer, expected_net=expected_net, pay_dates=pay_dates, set_aside=set_aside, events=events, per_day=pace["per_day"], pay_amounts=pay_amounts)
 
     # Four paycheck windows, each filled the same way: what the paycheck carries in, what leaves it, what is left.
     windows = []
     carried = cash - due_before - buffer
     for k in range(4):
-        start = next_payday + timedelta(days=14 * k)
-        end = start + timedelta(days=13)
-        after_end = end + timedelta(days=14)
-        in_window = [e for e in events if start <= e["date"] <= end and e["kind"] != "advance"]
+        start = paydays[k]
+        end = paydays[k + 1] - timedelta(days=1)
+        after_end = paydays[k + 2] - timedelta(days=1)
+        in_window = [e for e in events if start <= wdate(e) <= end and e["kind"] != "advance"]
         adv = [e for e in events if e["kind"] == "advance" and (start <= e["date"] <= end or (k == 0 and e["date"] <= start))]
-        following = [e for e in events if end < e["date"] <= after_end and e["kind"] != "advance"]
+        following = [e for e in events if end < wdate(e) <= after_end and e["kind"] != "advance"]
         aside = set_aside_of(following)
         bills_total = sum(e["amount"] for e in in_window)
         adv_total = sum(e["amount"] for e in adv)
-        left = carried + expected_net - adv_total - bills_total - aside
+        left = carried + net_for(start) - adv_total - bills_total - aside
         # Funded, in date order: the money runs out on the last bills when a window is short.
         running = carried + expected_net - adv_total
         funded_items = []
@@ -163,14 +180,21 @@ def finance_snapshot(session: Session, today: date) -> dict:
             for a in accounts
         ],
         "cash": _money(cash),
+        "cash_all": _money(cash_all),
+        "savings": _money(cash_all - cash),
         "buffer": _money(buffer),
-        "next_paycheck": {"date": next_payday.isoformat(), "days": (next_payday - today).days, "amount": _money(expected_net), "source": f"income:{next_pay[1].id}" if next_pay else None, "known": next_pay is not None},
+        "next_paycheck": {"date": next_payday.isoformat(), "days": (next_payday - today).days, "amount": _money(expected_net), "source": f"income:{next_pay[1].id}" if next_pay else None, "known": next_pay is not None, "cadence": cadence},
+        "paydays": [{"date": d.isoformat(), "amount": _money(net_for(d))} for d in paydays[:4]],
         "caveats": caveats,
         "due_before_payday": {"total": _money(due_before), "items": [{**e, "date": e["date"].isoformat()} for e in before]},
         "advances": {"total": _money(advances_total), "items": [{**e, "date": e["date"].isoformat()} for e in advances_due]},
         "window": {"start": next_payday.isoformat(), "end": (following_payday - timedelta(days=1)).isoformat(), "total": _money(window_total), "items": [{**e, "date": e["date"].isoformat()} for e in window]},
         "set_aside": {"total": _money(set_aside), "items": [{**e, "date": e["date"].isoformat()} for e in next_window]},
-        "safe_to_spend": {"amount": _money(safe), "after_goals": _money(safe - goals["per_paycheck"]), "through": (following_payday - timedelta(days=1)).isoformat(), "version": "v0"},
+        "safe_to_spend": {
+            "amount": _money(safe), "after_goals": _money(safe - goals["per_paycheck"]), "through": (next_payday - timedelta(days=1)).isoformat(), "version": "v1",
+            "basis": "cash in checking, less what is due before payday, advances, the buffer, and any shortfall the next paycheck leaves in its own window",
+            "parts": {"cash": _money(cash), "due_before_payday": _money(due_before), "advances": _money(advances_before), "advances_on_payday": _money(advances_on_payday), "buffer": _money(buffer), "next_window_shortfall": _money(next_window_shortfall)},
+        },
         "goals": goals,
         "usual_pace": pace,
         "debts": [{"id": d.id, "name": d.name, "kind": d.kind, "balance": d.balance, "apr": d.apr, "minimum": d.minimum, "due_day": d.due_day} for d in debts],

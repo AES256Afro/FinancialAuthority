@@ -33,6 +33,20 @@ def run_detection(session: Session, today: date, lookback_days: int = 400) -> di
     for f in found:
         key = _series_key(f)
         series = existing.get(key)
+        if series is None and f["cadence"] in ("biweekly", "semimonthly"):
+            # A run first called biweekly that the day pattern now shows as semi-monthly (or the reverse) is the
+            # same series: its cadence moves, and so does the paycheck that hangs off it.
+            other = (key[0], "semimonthly" if f["cadence"] == "biweekly" else "biweekly", key[2])
+            series = existing.pop(other, None)
+            if series is not None:
+                series.cadence = f["cadence"]
+                existing[key] = series
+                for inc in incomes:
+                    if inc.series_id == series.id:
+                        inc.cadence = f["cadence"]
+                        if f["next_expected"] >= today:
+                            inc.next_date = f["next_expected"]
+                        session.add(inc)
         if series is None:
             series = RecurringSeries(
                 merchant_key=f["merchant_key"], merchant=f["merchant"], category=f["category"], cadence=f["cadence"], typical_amount=f["typical_amount"],

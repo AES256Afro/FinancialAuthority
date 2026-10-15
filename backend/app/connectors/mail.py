@@ -125,7 +125,7 @@ def upcoming_bills_facts(session: Session, ref: MessageRef, parsed: Parsed, toda
     for charge in charges:
         key = merchant_key(charge["name"])
         match = next((b for b in bills if merchant_key(b.name) == key or merchant_key(b.name).startswith(key) or key.startswith(merchant_key(b.name))), None)
-        same = match is not None and abs(match.amount - charge["amount"]) < 0.01 and match.due_day == min(charge["due_date"].day, 28)
+        same = match is not None and abs(match.amount - charge["amount"]) < 0.01 and match.due_day == charge["due_date"].day
         fields = {**base, "name": charge["name"], "amount": charge["amount"], "due_date": charge["due_date"].isoformat()}
         excerpt = f"{charge['name']} · {charge['due_date'].strftime('%A, %B %d')} · ${charge['amount']:,.2f}"
         session.add(ExtractedFact(kind="bill_due", message_ref_id=ref.id, fields=json.dumps(fields), confidence=0.85, status="auto" if same else "pending", excerpt=excerpt,

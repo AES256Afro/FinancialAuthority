@@ -312,7 +312,7 @@ def parse_bills_rows(text: str, mapping: dict | None = None) -> list[dict]:
         cadence = _cadence_word(str(raw.get(m.get("cadence") or "", "") or "")) if m.get("cadence") else "monthly"
         autopay = str(raw.get(m.get("autopay") or "", "") or "").strip().lower() in ("yes", "y", "true", "1", "on", "auto", "autopay") if m.get("autopay") else False
         category = str(raw.get(m.get("category") or "", "") or "").strip()
-        rows.append({"name": name[:80], "amount": round(abs(amount), 2), "cadence": cadence, "due_day": max(1, min(28, due_day)) if due_day else None, "next_date": next_date, "autopay": autopay, "category": category})
+        rows.append({"name": name[:80], "amount": round(abs(amount), 2), "cadence": cadence, "due_day": max(1, min(31, due_day)) if due_day else None, "next_date": next_date, "autopay": autopay, "category": category})
     return rows
 
 

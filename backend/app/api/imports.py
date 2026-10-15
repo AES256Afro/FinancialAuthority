@@ -11,6 +11,7 @@ from sqlmodel import Session
 from .. import auth
 from ..connectors.files import detect, import_bills, import_holdings, import_rows, parse_bills_rows, parse_csv_rows, parse_ofx, sniff_holdings_csv
 from ..db import get_session
+from ..engine.paystubs import paystub_fact_from_file
 from ..models import Account
 from .routes import today
 
@@ -41,6 +42,19 @@ async def preview(file: UploadFile = File(...), _: auth.Principal = Depends(auth
     text = await _text(file)
     found = detect(text)
     return _serial({**found, "filename": file.filename or "upload", "rows": None, "positions": found.get("positions", [])[:5] if found["kind"] == "ofx" else None})
+
+
+@router.post("/paystub")
+async def import_paystub(file: UploadFile = File(...), session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    """A paystub PDF handed over by hand: read, then queued on Needs you to confirm with one tap."""
+    raw = await file.read()
+    if len(raw) > LIMIT:
+        raise HTTPException(413, "That file is over 50 MB")
+    fact = paystub_fact_from_file(session, raw, file.filename or "paystub.pdf", today(), "upload")
+    if fact is None:
+        raise HTTPException(400, "That file does not read like a paystub. The reader looks for a pay date and a net pay line; a scanned image needs a text layer.")
+    fields = json.loads(fact.fields)
+    return {"ok": True, "fact_id": fact.id, "confidence": fact.confidence, "net": fields.get("net"), "gross": fields.get("gross"), "pay_date": fields.get("pay_date"), "note": "On Needs you to confirm."}
 
 
 @router.post("/file")

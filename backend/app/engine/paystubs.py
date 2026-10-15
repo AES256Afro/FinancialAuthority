@@ -9,18 +9,49 @@ from hashlib import sha256
 
 from sqlmodel import Session, select
 
-from ..models import Income, Paystub, Transaction
+from ..models import ExtractedFact, Income, Paystub, Transaction
+from .cadence import payday_position
 
 TOLERANCE = 20.0  # dollars under the usual before it is a discrepancy
 
 
+def _position(income: Income | None, pay_date: date) -> str:
+    return payday_position(pay_date) if income is not None and income.cadence == "semimonthly" else ""
+
+
 def expected_net(session: Session, before: date) -> float | None:
-    recent = session.exec(select(Paystub).where(Paystub.pay_date < before).order_by(Paystub.pay_date.desc()).limit(4)).all()
-    nets = [p.net for p in recent]
+    """The usual net for a check landing on `before`: the median of the last stubs in the same position of the
+    month (a semi-monthly paycheck's mid-month and end-of-month checks differ), else what the income says."""
+    income = session.exec(select(Income).where(Income.active == True)).first()  # noqa: E712
+    position = _position(income, before)
+    recent = session.exec(select(Paystub).where(Paystub.pay_date < before).order_by(Paystub.pay_date.desc()).limit(8)).all()
+    nets = [p.net for p in recent if not position or payday_position(p.pay_date) == position][:4]
     if len(nets) >= 2:
         return round(statistics.median(nets), 2)
-    income = session.exec(select(Income).where(Income.active == True)).first()  # noqa: E712
-    return income.expected_net if income else None
+    if income is None:
+        return None
+    if position == "end" and income.expected_net_end is not None:
+        return income.expected_net_end
+    return income.expected_net
+
+
+def paystub_fact_from_file(session: Session, data: bytes, filename: str, today: date, source: str) -> ExtractedFact | None:
+    """A paystub the owner handed over as a file (an upload, or the import folder): read it and queue it on
+    Needs you as a pending fact, the same as one that came by mail. None when it does not read as a stub."""
+    from ..mail.classify import excerpt_for
+    from ..parsers.paystub import parse_paystub_text, pdf_text
+
+    text = pdf_text(data) if filename.lower().endswith(".pdf") else data.decode("utf-8", errors="replace")
+    stub = parse_paystub_text(text, today)
+    if not stub:
+        return None
+    confidence = stub.pop("confidence")
+    stub.update({"source": source, "attachment": filename, "sender_name": stub.get("employer") or ""})
+    fact = ExtractedFact(kind="paystub", message_ref_id=None, fields=json.dumps(stub), confidence=confidence, status="pending", excerpt=excerpt_for(text, {"amount": stub.get("net"), "due_date": stub.get("pay_date")}), produced_by=f"{source}+parser:paystub")
+    session.add(fact)
+    session.commit()
+    session.refresh(fact)
+    return fact
 
 
 def match_deposit(session: Session, pay_date: date, net: float) -> Transaction | None:
@@ -52,15 +83,25 @@ def record_paystub(session: Session, fields: dict, source: str, fact_id: int | N
     session.add(stub)
     session.commit()
     session.refresh(stub)
-    # Keep the paycheck's expected net current once three stubs agree.
+    # Keep the paycheck's expected net current. A semi-monthly paycheck keeps one figure per position of the
+    # month: the first stub in a position sets it, and from two stubs the median does.
     income = session.exec(select(Income).where(Income.active == True)).first()  # noqa: E712
-    recent = session.exec(select(Paystub).order_by(Paystub.pay_date.desc()).limit(3)).all()
-    if income is not None and len(recent) >= 3:
-        median = round(statistics.median(p.net for p in recent), 2)
-        if abs(median - income.expected_net) > 1:
-            income.expected_net = median
+    if income is not None:
+        position = _position(income, pay_date)
+        recent = session.exec(select(Paystub).order_by(Paystub.pay_date.desc()).limit(8)).all()
+        same = [p.net for p in recent if not position or payday_position(p.pay_date) == position][:3]
+        target = "expected_net_end" if position == "end" else "expected_net"
+        current = getattr(income, target)
+        if position and len(same) == 1 and (current is None or abs(same[0] - current) > TOLERANCE):
+            setattr(income, target, round(same[0], 2))
             session.add(income)
             session.commit()
+        elif (len(same) >= 2 if position else len(same) >= 3):
+            median = round(statistics.median(same), 2)
+            if current is None or abs(median - current) > 1:
+                setattr(income, target, median)
+                session.add(income)
+                session.commit()
     return stub
 
 
