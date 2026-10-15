@@ -114,6 +114,24 @@ def card_events(cards: list[Account], paydays: list[date], mode: str, today: dat
     return events
 
 
+def pending_installment_events(series_rows: list, today: date) -> list[dict]:
+    """A pay-later stream the ledger found and the owner has not named yet still charges on its day: it is
+    counted at its last amount, marked pending, until the payments left are set and it becomes a plan."""
+    events: list[dict] = []
+    horizon = today + timedelta(days=HORIZON_DAYS)
+    for s in series_rows:
+        if s.confirmed or not s.active or getattr(s, "suggested_kind", "") != "installment":
+            continue
+        step = {"weekly": 7, "biweekly": 14, "monthly": 30}.get(s.cadence, 30)
+        d = s.next_expected
+        while d < today:
+            d += timedelta(days=step)
+        while d <= horizon:
+            events.append({"date": d, "window_date": d, "name": f"{s.merchant} (payments left not set)", "amount": _money(s.typical_amount), "kind": "installment", "autopay": True, "source": f"series:{s.id}", "line": "debt", "paid_from": "due", "pending": True})
+            d += timedelta(days=step)
+    return events
+
+
 def set_aside_of(items: list[dict]) -> float:
     return sum(e["amount"] for e in items if e["amount"] >= LARGE_BILL) / 2 + sum(e["amount"] for e in items if e["amount"] < LARGE_BILL)
 
@@ -166,7 +184,7 @@ def low_point(projection: list[dict], key: str = "at_pace") -> dict:
     return {"date": low["date"], "value": low[key]}
 
 
-def projection_caveats(*, has_income: bool, bills: int, unnamed: int) -> list[str]:
+def projection_caveats(*, has_income: bool, bills: int, unnamed: int, pending_installments: int = 0) -> list[str]:
     """What the projection does not know, said next to every figure it still produces. A payday that is not on
     file is never invented: the windows are anchored two weeks out so the arithmetic has a frame, and the
     caveat says so."""
@@ -177,4 +195,6 @@ def projection_caveats(*, has_income: bool, bills: int, unnamed: int) -> list[st
         out.append("No bills are on the register yet, so none are counted.")
     if unnamed:
         out.append(f"{unnamed} recurring charge{'s' if unnamed != 1 else ''} in the ledger {'are' if unnamed != 1 else 'is'} unnamed and not counted until named.")
+    if pending_installments:
+        out.append(f"{pending_installments} pay-later stream{'s' if pending_installments != 1 else ''} {'are' if pending_installments != 1 else 'is'} counted at {'their' if pending_installments != 1 else 'its'} last amount until the payments left are set.")
     return out

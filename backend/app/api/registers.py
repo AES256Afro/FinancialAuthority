@@ -94,7 +94,7 @@ def classify(series_id: int, body: ClassifyIn, session: Session = Depends(get_se
     if body.kind in ("bill", "subscription"):
         due_day = body.due_day or series.next_expected.day
         cadence = series.cadence if series.cadence in ("weekly", "biweekly", "monthly", "quarterly", "yearly") else "monthly"
-        bill = Bill(name=name, kind=body.kind, amount=round(amount, 2), amount_mode="fixed", cadence=cadence, due_day=due_day, autopay=body.autopay, movable=body.movable,
+        bill = Bill(name=name, kind=body.kind, amount=round(amount, 2), amount_mode="fixed", cadence=cadence, due_day=due_day, autopay=body.autopay or body.kind == "subscription", movable=body.movable,
                     move_window="1-28" if body.movable else "", category=series.category, series_id=series.id)
         session.add(bill)
         session.flush()

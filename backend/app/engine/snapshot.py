@@ -13,7 +13,7 @@ from sqlmodel import Session, select
 from ..models import Account, Advance, Approval, Bill, Debt, ExtractedFact, Income, InstallmentPlan, MessageRef, RecurringSeries, Transaction
 from ..store import get_setting
 from .cadence import next_paydays, payday_position
-from .projection import build_events, card_events, cash_of, line_of, next_due, project, projection_caveats, set_aside_of, split_windows, wdate  # noqa: F401
+from .projection import build_events, card_events, cash_of, line_of, next_due, pending_installment_events, project, projection_caveats, set_aside_of, split_windows, wdate  # noqa: F401
 
 PACE_DAYS = 56
 OBLIGATION_CATEGORIES = {"Rent", "Loan Payment", "Credit Card Payment", "Fees & Charges", "Insurance", "Bills & Utilities", "Borrowing"}
@@ -85,14 +85,16 @@ def finance_snapshot(session: Session, today: date) -> dict:
     plans = session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all()  # noqa: E712
     advances = session.exec(select(Advance).where(Advance.repaid == False)).all()  # noqa: E712
     debts = session.exec(select(Debt).where(Debt.active == True)).all()  # noqa: E712
-    unconfirmed = len(session.exec(select(RecurringSeries.id).where(RecurringSeries.confirmed == False, RecurringSeries.active == True)).all())  # noqa: E712
-    caveats = projection_caveats(has_income=next_pay is not None, bills=len(bills), unnamed=unconfirmed)
+    unconfirmed_rows = session.exec(select(RecurringSeries).where(RecurringSeries.confirmed == False, RecurringSeries.active == True)).all()  # noqa: E712
+    unconfirmed = len(unconfirmed_rows)
+    pending_streams = [r for r in unconfirmed_rows if r.suggested_kind == "installment"]
+    caveats = projection_caveats(has_income=next_pay is not None, bills=len(bills), unnamed=unconfirmed - len(pending_streams), pending_installments=len(pending_streams))
     facts = _mail_facts(session, today)
     approvals_waiting = len(session.exec(select(Approval.id).where(Approval.status == "pending")).all())
 
     events = build_events(bills, plans, advances, today)
     card_mode = (get_setting(session, "cards", {}) or {}).get("pay_from", "auto")
-    events = sorted(events + card_events([a for a in accounts if a.kind == "card"], paydays[:4], card_mode, today, debts), key=lambda e: e["date"])
+    events = sorted(events + card_events([a for a in accounts if a.kind == "card"], paydays[:4], card_mode, today, debts) + pending_installment_events(pending_streams, today), key=lambda e: e["date"])
     windows_split = split_windows(events, today, next_payday, following_payday, paydays[2])
     before, window, next_window, advances_due = windows_split["before"], windows_split["window"], windows_split["next_window"], windows_split["advances_due"]
 

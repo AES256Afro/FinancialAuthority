@@ -21,6 +21,8 @@ export interface Event {
   funded?: boolean;
   share?: number;
   bill_id?: number;
+  paid_from?: string;
+  pending?: boolean;
 }
 
 export interface PaymentRow {
