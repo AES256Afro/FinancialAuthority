@@ -3,9 +3,26 @@ events from the registers, the paycheck windows, the set-aside rule, and the dai
 
 from __future__ import annotations
 
+import calendar
 from datetime import date, timedelta
 
-from ..models import Advance, Bill, InstallmentPlan
+from ..models import Account, Advance, Bill, InstallmentPlan
+from .cadence import payday_for
+
+SPENDABLE_KINDS = {"checking", "cash"}
+CASH_KINDS = {"checking", "savings", "cash"}
+
+
+def is_spendable(a: Account) -> bool:
+    """Checking and cash are for spending; savings is kept unless the owner says otherwise on the account."""
+    return bool(a.spendable) if a.spendable is not None else a.kind in SPENDABLE_KINDS
+
+
+def cash_of(accounts: list[Account]) -> tuple[float, float]:
+    """(cash to spend, all cash including savings)."""
+    spend = sum((a.balance or 0.0) for a in accounts if is_spendable(a))
+    every = sum((a.balance or 0.0) for a in accounts if a.kind in CASH_KINDS)
+    return spend, every
 
 LARGE_BILL = 500.0  # a bill at or over this is set aside by halves across two paychecks
 WINDOW_DAYS = 14
@@ -17,12 +34,19 @@ def _money(v: float) -> float:
 
 
 def next_due(due_day: int, today: date) -> date:
-    candidate = today.replace(day=min(due_day, 28))
+    """The next date a bill due on `due_day` falls; 29 to 31 mean the last such day the month has."""
+    candidate = date(today.year, today.month, min(due_day, calendar.monthrange(today.year, today.month)[1]))
     if candidate < today:
         month = today.month % 12 + 1
         year = today.year + (1 if month == 1 else 0)
-        candidate = date(year, month, min(due_day, 28))
+        candidate = date(year, month, min(due_day, calendar.monthrange(year, month)[1]))
     return candidate
+
+
+def window_date(due: date, paid_from: str) -> date:
+    """The payday whose window a bill belongs to: its due date, or the mid or end-of-month check the owner
+    pays it from. Cash still leaves on the due date; this only decides which paycheck carries it."""
+    return payday_for(due, paid_from) if paid_from in ("mid", "end") else due
 
 
 def line_of(category: str, kind: str) -> str:
@@ -44,8 +68,9 @@ def build_events(bills: list[Bill], plans: list[InstallmentPlan], advances: list
     for b in bills:
         due_day = (due_days or {}).get(b.id, b.due_day)
         d = next_due(due_day, today)
+        paid_from = getattr(b, "paid_from", "due") or "due"
         while d <= horizon:
-            events.append({"date": d, "name": b.name, "amount": _money(b.amount), "kind": b.kind, "autopay": b.autopay, "source": f"bill:{b.id}", "line": line_of(b.category, b.kind), "bill_id": b.id})
+            events.append({"date": d, "window_date": window_date(d, paid_from), "name": b.name, "amount": _money(b.amount), "kind": b.kind, "autopay": b.autopay, "source": f"bill:{b.id}", "line": line_of(b.category, b.kind), "bill_id": b.id, "paid_from": paid_from})
             d = next_due(due_day, d + timedelta(days=1))
     for p in plans:
         d, left = p.next_date, p.remaining
@@ -62,16 +87,23 @@ def set_aside_of(items: list[dict]) -> float:
     return sum(e["amount"] for e in items if e["amount"] >= LARGE_BILL) / 2 + sum(e["amount"] for e in items if e["amount"] < LARGE_BILL)
 
 
-def split_windows(events: list[dict], today: date, next_payday: date, following_payday: date) -> dict:
-    """What is due before payday, in the window after it, in the window after that, and the advances due."""
-    before = [e for e in events if today <= e["date"] < next_payday and e["kind"] != "advance"]
-    window = [e for e in events if next_payday <= e["date"] < following_payday and e["kind"] != "advance"]
-    next_window = [e for e in events if following_payday <= e["date"] < following_payday + timedelta(days=WINDOW_DAYS) and e["kind"] != "advance"]
+def wdate(e: dict) -> date:
+    return e.get("window_date") or e["date"]
+
+
+def split_windows(events: list[dict], today: date, next_payday: date, following_payday: date, after_following: date | None = None) -> dict:
+    """What is due before payday, in the window after it, in the window after that, and the advances due.
+    A bill sits in the window of the paycheck that pays it (its window date), not merely where its due date
+    falls, so rent due on the 1st and paid from the end-of-month check belongs to that check."""
+    third = after_following or following_payday + timedelta(days=WINDOW_DAYS)
+    before = [e for e in events if today <= e["date"] and wdate(e) < next_payday and e["kind"] != "advance"]
+    window = [e for e in events if next_payday <= wdate(e) < following_payday and e["kind"] != "advance"]
+    next_window = [e for e in events if following_payday <= wdate(e) < third and e["kind"] != "advance"]
     advances_due = [e for e in events if e["kind"] == "advance" and e["date"] <= next_payday]
     return {"before": before, "window": window, "next_window": next_window, "advances_due": advances_due, "set_aside": set_aside_of(next_window)}
 
 
-def project(today: date, *, cash: float, buffer: float, expected_net: float, pay_dates: set[date], set_aside: float, events: list[dict], per_day: float, days: int = 60) -> list[dict]:
+def project(today: date, *, cash: float, buffer: float, expected_net: float, pay_dates: set[date], set_aside: float, events: list[dict], per_day: float, days: int = 60, pay_amounts: dict[date, float] | None = None) -> list[dict]:
     """A daily path: `available` is cash minus the buffer minus what is reserved, if nothing else is spent;
     `at_pace` also spends the usual everyday amount each day, which is the honest line."""
     following_payday = sorted(pay_dates)[1] if len(pay_dates) > 1 else today + timedelta(days=28)
@@ -82,9 +114,11 @@ def project(today: date, *, cash: float, buffer: float, expected_net: float, pay
     out = []
     for i in range(days):
         d = today + timedelta(days=i)
-        if d in pay_dates and expected_net:
-            balance += expected_net
-            reserved = set_aside
+        if d in pay_dates:
+            paid = (pay_amounts or {}).get(d, expected_net)
+            if paid:
+                balance += paid
+                reserved = set_aside
         for e in by_day.get(d, []):
             balance -= e["amount"]
             if d >= following_payday and reserved:

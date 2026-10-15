@@ -135,7 +135,10 @@ export interface Snapshot {
   accounts: AccountRow[];
   cash: number;
   buffer: number;
-  next_paycheck: { date: string; days: number; amount: number; source: string | null; known?: boolean };
+  next_paycheck: { date: string; days: number; amount: number; source: string | null; known?: boolean; cadence?: string };
+  paydays?: { date: string; amount: number }[];
+  cash_all?: number;
+  savings?: number;
   caveats?: string[];
   due_before_payday: { total: number; items: Event[] };
   advances: { total: number; items: Event[] };
@@ -193,6 +196,7 @@ export interface BillRow {
   grace_days: number;
   late_fee: number;
   movable: boolean;
+  paid_from: string;
   move_window: string;
   category: string;
   series_id: number | null;

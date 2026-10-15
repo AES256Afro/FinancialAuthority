@@ -71,5 +71,6 @@ def test_bill_update_clamps_due_day(owner: TestClient):
         seed(session)
         rent_id = session.exec(select(Bill).where(Bill.name == "Rent")).one().id
     changed = owner.put(f"/api/v1/bills/{rent_id}", json={"due_day": 31, "movable": False}).json()
-    assert changed["due_day"] == 28 and changed["movable"] is False
+    assert changed["due_day"] == 31 and changed["movable"] is False  # the 31st means the last day the month has
+    assert owner.put(f"/api/v1/bills/{rent_id}", json={"due_day": 40}).json()["due_day"] == 31
     assert owner.put(f"/api/v1/bills/{rent_id}", json={"kind": "loan"}).status_code == 400

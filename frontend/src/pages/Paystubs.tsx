@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useApi } from "../api";
 import { money, shortDate } from "../format";
+import { PaycheckSetup } from "../components/PaycheckSetup";
 import { palette } from "../looks";
 import { getPrefs } from "../prefs";
 import type { PaystubRow } from "../types";
@@ -16,9 +17,12 @@ export function Paystubs() {
   const stub = data.recent.find((p) => p.id === pick) ?? data.last;
   if (!stub) {
     return (
-      <div className="card" style={{ padding: 18, maxWidth: 720 }}>
-        <h1 style={{ margin: "0 0 6px", fontSize: 20, fontWeight: 800 }}>Paystubs</h1>
-        <div style={{ color: "var(--ink-2)" }}>None yet. Forward a paystub PDF to a connected mailbox, or drop it into the import folder's paystubs subfolder, and it appears on Needs you.</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 960 }}>
+        <div className="card" style={{ padding: 18 }}>
+          <h1 style={{ margin: "0 0 6px", fontSize: 20, fontWeight: 800 }}>Paystubs</h1>
+          <div style={{ color: "var(--ink-2)" }}>None yet. Upload one below, forward a paystub PDF to a connected mailbox, or drop it into the import folder's paystubs subfolder; it appears on Needs you.</div>
+        </div>
+        <PaycheckSetup />
       </div>
     );
   }
@@ -54,6 +58,8 @@ export function Paystubs() {
           </div>
         )}
       </div>
+
+      <PaycheckSetup />
 
       <section className="card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}><strong>Gross to net, as one bar</strong><span style={{ fontSize: 12, color: "var(--muted)" }}>every segment is a line on the stub</span></div>

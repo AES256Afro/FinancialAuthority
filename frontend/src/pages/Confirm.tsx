@@ -58,7 +58,7 @@ function FactCard({ f, onDone }: { f: FactRow; onDone: () => void }) {
   );
 }
 
-const CADENCE: Record<string, string> = { weekly: "every week", biweekly: "every two weeks", monthly: "monthly", quarterly: "quarterly", yearly: "yearly" };
+const CADENCE: Record<string, string> = { weekly: "every week", biweekly: "every two weeks", semimonthly: "twice a month, the 15th and the last day", monthly: "monthly", quarterly: "quarterly", yearly: "yearly" };
 
 function Row({ s, onDone }: { s: SeriesRow; onDone: () => void }) {
   const [busy, setBusy] = useState(false);

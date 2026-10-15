@@ -9,8 +9,9 @@ from sqlmodel import Session, select
 
 from ..models import Account, Advance, Bill, Income, InstallmentPlan, RecurringSeries
 from ..store import get_setting
-from .projection import build_events, low_point, project, projection_caveats, split_windows
-from .snapshot import CASH_KINDS, finance_snapshot, usual_pace
+from .cadence import next_paydays, payday_position
+from .projection import build_events, cash_of, low_point, project, projection_caveats, split_windows
+from .snapshot import finance_snapshot, usual_pace
 
 NOT_ADVICE = "Computed by the engine from the registers and the projection. Not financial advice."
 ORDINALS = {1: "1st", 2: "2nd", 3: "3rd", 21: "21st", 22: "22nd", 23: "23rd"}
@@ -113,14 +114,26 @@ def billing_date_suggestions(session: Session, today: date) -> dict:
     """For every movable bill, the due day that lifts the sixty-day low point the most, each change judged on
     its own against the registers as they stand. A change that does not lift the low point is not offered."""
     accounts = session.exec(select(Account).where(Account.active == True)).all()  # noqa: E712
-    cash = sum((a.balance or 0.0) for a in accounts if a.kind in CASH_KINDS)
+    cash, _all_cash = cash_of(accounts)
     buffer = float(get_setting(session, "buffer", 200.0))
     incomes = session.exec(select(Income).where(Income.active == True)).all()  # noqa: E712
     upcoming = sorted(((i.next_date, i) for i in incomes if i.next_date >= today), key=lambda p: p[0])
     next_payday = upcoming[0][0] if upcoming else today + timedelta(days=14)
-    expected_net = upcoming[0][1].expected_net if upcoming else 0.0
-    following = next_payday + timedelta(days=14)
-    pay_dates = {next_payday, following, following + timedelta(days=14), following + timedelta(days=28)}
+    cadence = (upcoming[0][1].cadence if upcoming else "biweekly") or "biweekly"
+    paydays = next_paydays(next_payday, cadence, 5)
+
+    def net_for(payday: date) -> float:
+        if not upcoming:
+            return 0.0
+        income = upcoming[0][1]
+        if cadence == "semimonthly" and payday_position(payday) == "end" and income.expected_net_end is not None:
+            return float(income.expected_net_end)
+        return float(income.expected_net)
+
+    expected_net = net_for(next_payday)
+    following = paydays[1]
+    pay_dates = set(paydays[:4])
+    pay_amounts = {d: net_for(d) for d in paydays[:4]}
     bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
     plans = session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all()  # noqa: E712
     advances = session.exec(select(Advance).where(Advance.repaid == False)).all()  # noqa: E712
@@ -130,8 +143,8 @@ def billing_date_suggestions(session: Session, today: date) -> dict:
 
     def low_for(due_days: dict[int, int]) -> dict:
         events = build_events(bills, plans, advances, today, due_days=due_days)
-        windows = split_windows(events, today, next_payday, following)
-        path = project(today, cash=cash, buffer=buffer, expected_net=expected_net, pay_dates=pay_dates, set_aside=windows["set_aside"], events=events, per_day=pace["per_day"])
+        windows = split_windows(events, today, next_payday, following, paydays[2])
+        path = project(today, cash=cash, buffer=buffer, expected_net=expected_net, pay_dates=pay_dates, set_aside=windows["set_aside"], events=events, per_day=pace["per_day"], pay_amounts=pay_amounts)
         return low_point(path)
 
     baseline = low_for({})

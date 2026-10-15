@@ -34,16 +34,17 @@ export function RiverChart({ snapshot, look }: Props) {
   const floorY = y(0);
 
   const paydays = useMemo(() => {
-    const first = parseIso(snapshot.next_paycheck.date);
-    const out: number[] = [];
-    for (let k = 0; k < 5; k++) {
-      const d = new Date(first);
-      d.setDate(first.getDate() + 14 * k);
-      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-      const idx = points.findIndex((p) => p.date === iso);
-      if (idx >= 0) out.push(idx);
+    // The engine lists the coming paydays by the paycheck's own cadence; the fourteen-day walk is only a fallback.
+    const isos = snapshot.paydays?.length ? snapshot.paydays.map((p) => p.date) : [];
+    if (isos.length === 0) {
+      const first = parseIso(snapshot.next_paycheck.date);
+      for (let k = 0; k < 5; k++) {
+        const d = new Date(first);
+        d.setDate(first.getDate() + 14 * k);
+        isos.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`);
+      }
     }
-    return out;
+    return isos.map((iso) => points.findIndex((p) => p.date === iso)).filter((idx) => idx >= 0);
   }, [snapshot, points]);
 
   const bills = useMemo(() => {
