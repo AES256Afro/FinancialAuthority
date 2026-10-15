@@ -12,7 +12,7 @@ from sqlmodel import Session, select
 
 from ..models import Account, Advance, Approval, Bill, Debt, ExtractedFact, Income, InstallmentPlan, MessageRef, RecurringSeries, Transaction
 from ..store import get_setting
-from .projection import build_events, line_of, next_due, project, set_aside_of, split_windows  # noqa: F401
+from .projection import build_events, line_of, next_due, project, projection_caveats, set_aside_of, split_windows  # noqa: F401
 
 CASH_KINDS = {"checking", "savings", "cash"}
 PACE_DAYS = 56
@@ -75,6 +75,7 @@ def finance_snapshot(session: Session, today: date) -> dict:
     advances = session.exec(select(Advance).where(Advance.repaid == False)).all()  # noqa: E712
     debts = session.exec(select(Debt).where(Debt.active == True)).all()  # noqa: E712
     unconfirmed = len(session.exec(select(RecurringSeries.id).where(RecurringSeries.confirmed == False, RecurringSeries.active == True)).all())  # noqa: E712
+    caveats = projection_caveats(has_income=next_pay is not None, bills=len(bills), unnamed=unconfirmed)
     facts = _mail_facts(session, today)
     approvals_waiting = len(session.exec(select(Approval.id).where(Approval.status == "pending")).all())
 
@@ -163,7 +164,8 @@ def finance_snapshot(session: Session, today: date) -> dict:
         ],
         "cash": _money(cash),
         "buffer": _money(buffer),
-        "next_paycheck": {"date": next_payday.isoformat(), "days": (next_payday - today).days, "amount": _money(expected_net), "source": f"income:{next_pay[1].id}" if next_pay else None},
+        "next_paycheck": {"date": next_payday.isoformat(), "days": (next_payday - today).days, "amount": _money(expected_net), "source": f"income:{next_pay[1].id}" if next_pay else None, "known": next_pay is not None},
+        "caveats": caveats,
         "due_before_payday": {"total": _money(due_before), "items": [{**e, "date": e["date"].isoformat()} for e in before]},
         "advances": {"total": _money(advances_total), "items": [{**e, "date": e["date"].isoformat()} for e in advances_due]},
         "window": {"start": next_payday.isoformat(), "end": (following_payday - timedelta(days=1)).isoformat(), "total": _money(window_total), "items": [{**e, "date": e["date"].isoformat()} for e in window]},

@@ -1,7 +1,7 @@
 // The app shell: a rail on wide screens, tabs on a phone, and the header with the payday chip.
 import { BarChart3, BellDot, Clock, FileText, Landmark, List, Mail, MessageSquare, Mountain, Receipt, Settings, Telescope, TrendingUp, Waves } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import { NavLink } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom";
 import { DEMO } from "../demo/shim";
 import { NextStepsStrip } from "./NextSteps";
 import { daysWord, longDate, shortDate } from "../format";
@@ -69,7 +69,7 @@ export function Shell({ children, snapshot, title }: { children: ReactNode; snap
           {snapshot && (
             <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, padding: "6px 12px", borderRadius: 999, background: "var(--paycheck-soft)", color: "var(--paycheck-ink)" }}>
               <span className="sw" style={{ background: "var(--paycheck)", margin: 0 }} />
-              Payday {daysWord(snapshot.next_paycheck.days)} · {shortDate(snapshot.next_paycheck.date)}
+              {snapshot.next_paycheck.known === false ? <>No payday on file · <Link to="/confirm" style={{ color: "inherit", textDecoration: "underline" }}>name your paycheck</Link></> : <>Payday {daysWord(snapshot.next_paycheck.days)} · {shortDate(snapshot.next_paycheck.date)}</>}
             </div>
           )}
           {title && <h1 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>{title}</h1>}

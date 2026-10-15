@@ -15,6 +15,7 @@ interface Check {
   fits_safe_to_spend: boolean;
   safe_to_spend: { amount: number; through: string };
   not_advice: string;
+  caveats?: string[];
 }
 
 const TONE = { yes: "var(--safe)", wait: "var(--warning)", no: "var(--critical)" };
@@ -56,6 +57,7 @@ export function PurchaseCheck() {
         <button className="btn dark" type="submit" disabled={busy || amount === ""}>Check</button>
       </form>
       {error && <div style={{ fontSize: 13, color: "var(--critical)" }}>{error}</div>}
+      {r?.caveats && r.caveats.length > 0 && <div style={{ fontSize: 12, color: "var(--warning)", fontWeight: 600 }}>{r.caveats.join(" ")}</div>}
       {r && (
         <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
           <div style={{ minWidth: 64, padding: "8px 0", borderRadius: 12, background: TONE[r.verdict], color: "#fff", textAlign: "center", fontWeight: 800, fontSize: 18 }}>{WORD[r.verdict]}</div>

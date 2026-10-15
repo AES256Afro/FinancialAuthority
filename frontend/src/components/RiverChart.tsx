@@ -93,7 +93,7 @@ export function RiverChart({ snapshot, look }: Props) {
             <line x1={x(i)} y1={floorY} x2={x(i)} y2={y(points[i].at_pace)} stroke={c.paycheck} strokeWidth={2} />
             <circle cx={x(i)} cy={y(points[i].at_pace)} r={5.5} fill={c.paycheck} stroke={c.surface} strokeWidth={2} />
             <text x={x(i) + 8} y={y(points[i].at_pace) - 10} fontSize={11} fontWeight={700} fill={c.ink}>
-              {k === 0 ? `Payday ${money(snapshot.next_paycheck.amount, { sign: true })}` : "Payday"}
+              {snapshot.next_paycheck.known === false ? "No payday on file" : k === 0 ? `Payday ${money(snapshot.next_paycheck.amount, { sign: true })}` : "Payday"}
             </text>
           </g>
         ))}
