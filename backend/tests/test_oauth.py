@@ -130,3 +130,33 @@ def test_issuer_takes_https_or_the_loopback_and_never_a_plain_address(monkeypatc
     assert oauth_module.issuer() == f"http://localhost:{settings.port}"  # the app keeps running; OAuth waits for https
     monkeypatch.setattr(settings, "public_url", "")
     assert oauth_module.issuer() == f"http://localhost:{settings.port}"
+
+
+def test_the_native_app_signs_in_with_its_own_callback_and_reads_the_glance(client: TestClient):
+    from app.engine.household import seed
+    from sqlmodel import Session
+    from app.db import engine
+
+    with Session(engine) as session:
+        seed(session)
+    anon = TestClient(client.app)
+    callback = "financialauthority://oauth/callback"
+    r = anon.post("/register", json={"client_name": "FinancialAuthority for iPhone", "redirect_uris": [callback], "token_endpoint_auth_method": "none",
+                                     "grant_types": ["authorization_code", "refresh_token"], "response_types": ["code"], "scope": "read"})
+    assert r.status_code == 201, r.text
+    info = r.json()
+    verifier, challenge = pkce()
+    start = anon.get("/authorize", params={"response_type": "code", "client_id": info["client_id"], "redirect_uri": callback, "code_challenge": challenge, "code_challenge_method": "S256", "state": "app", "scope": "read"}, follow_redirects=False)
+    req = parse_qs(urlparse(start.headers["location"]).query)["req"][0]
+    page = anon.get(start.headers["location"])
+    assert "financialauthority:" in page.headers["content-security-policy"] and "fonts.googleapis" not in page.text
+    anon.post("/oauth/consent", data={"req": req, "decision": "signin", "username": "owner", "password": "correct horse battery"})
+    allowed = anon.post("/oauth/consent", data={"req": req, "decision": "allow", "scope": ["read"]}, follow_redirects=False)
+    assert allowed.status_code == 302 and allowed.headers["location"].startswith(callback + "?")
+    code = parse_qs(urlparse(allowed.headers["location"]).query)["code"][0]
+    tokens = anon.post("/token", data={"grant_type": "authorization_code", "code": code, "code_verifier": verifier, "client_id": info["client_id"], "redirect_uri": callback}).json()
+    bearer = {"Authorization": f"Bearer {tokens['access_token']}"}
+    glance = anon.get("/api/v1/glance", headers=bearer)
+    assert glance.status_code == 200 and glance.json()["text"].startswith("Safe to spend")
+    assert anon.get("/api/v1/cover", headers=bearer).status_code == 200 and anon.get("/api/v1/paychecks", headers=bearer).status_code == 200
+    assert anon.post("/api/v1/checkin", headers=bearer, json={}).status_code == 403  # read only: it cannot write
