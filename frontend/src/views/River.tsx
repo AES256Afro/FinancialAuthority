@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { ByCheck } from "../components/ByCheck";
 import { RiverChart } from "../components/RiverChart";
 import { daysWord, money, monthDay, shortDate } from "../format";
 import { getPrefs } from "../prefs";
@@ -37,7 +38,17 @@ export function River({ snapshot }: ViewProps) {
             {s.safe_to_spend.version === "v0" && <span style={{ color: "var(--muted)" }}> First-cut arithmetic; the full engine lands in M5.</span>}
           </div>
         </div>
-        <Tile label="Due before payday" value={money(s.due_before_payday.total)} sub={before.length ? `${before.filter((e) => !e.via_card).map((e) => e.name).slice(0, 2).join(", ") || "only card-charged items"} · ${shortDate(before[0].date)}${s.on_card && s.on_card.total > 0 ? ` · ${money(s.on_card.total)} rides the card` : ""}` : "Nothing before payday"} />
+        <Tile
+          label="Due before payday"
+          value={money(s.due_before_payday.total)}
+          sub={
+            s.due_before_payday.groups && s.due_before_payday.groups.length > 0
+              ? `${s.due_before_payday.groups.map((g) => `${g.label.toLowerCase()} ${money(g.total)}`).join(" · ")}${s.due_before_payday.next_check && s.due_before_payday.next_check.total > 0 ? ` · ${money(s.due_before_payday.next_check.total)} waits for the ${s.due_before_payday.next_check.position === "end" ? "end-of-month" : s.due_before_payday.next_check.position === "mid" ? "15th" : "next"} check` : ""}`
+              : before.length
+                ? `${before.filter((e) => !e.via_card).map((e) => e.name).slice(0, 2).join(", ") || "only card-charged items"} · ${shortDate(before[0].date)}`
+                : "Nothing before payday"
+          }
+        />
         <Tile label="Cash to spend" value={money(s.cash)} sub={`${s.accounts.filter((a) => ["checking", "savings", "cash"].includes(a.kind)).length} accounts`} />
         <Link to="/confirm" style={{ textDecoration: "none", color: "inherit", display: "contents" }}>
           <Tile label="Needs you" value={String(s.pending.confirmations + s.pending.approvals)} sub={`${s.pending.confirmations} to confirm, ${s.pending.approvals} to approve`} />
@@ -59,6 +70,8 @@ export function River({ snapshot }: ViewProps) {
           <span><span className="sw" style={{ background: "var(--buffer)", height: 2, verticalAlign: 3 }} />Buffer {money(s.buffer)}</span>
         </div>
       </section>
+
+      <ByCheck s={s} />
 
       <section style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "stretch" }}>
         <div className="card" style={{ flex: "1 1 520px", padding: "16px 20px", display: "flex", flexDirection: "column" }}>

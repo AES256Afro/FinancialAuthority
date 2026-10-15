@@ -25,11 +25,16 @@ def build_brief(snap: dict) -> list[dict]:
     pay = snap["next_paycheck"]
     before = snap["due_before_payday"]
     if before["total"] > 0:
-        names = ", ".join(e["name"] for e in before["items"][:3])
-        taps = [e["name"] for e in before["items"] if not e["autopay"]]
+        groups = before.get("groups") or []
+        parts = "; ".join(f"{g['label'].lower()} {money(g['total'])}" + (f" ({', '.join(g['names'][:2])})" if g["key"] in ("planned", "card_payment", "advance") else "") for g in groups)
+        names = parts or ", ".join(e["name"] for e in before["items"][:3])
+        nxt = before.get("next_check") or {}
+        check_word = {"end": "the end-of-month check", "mid": "the 15th check"}.get(nxt.get("position", ""), "the next check")
+        waits = f" {money(nxt['total'])} waits for {check_word} on {when(nxt['start'])}" + (f": {', '.join(t['name'] for t in nxt['top'][:2])}." if nxt.get("top") else ".") if nxt.get("total") else ""
+        taps = [e["name"] for e in before["items"] if not e["autopay"] and not e.get("via_card")]
         items.append({
             "severity": "warning" if snap["cash"] - before["total"] < snap["buffer"] else "info",
-            "text": f"{money(before['total'])} clears before payday: {names}." + (f" {', '.join(taps)} needs a tap." if taps else " All autopay."),
+            "text": f"{money(before['total'])} clears before payday: {names}.{waits}" + (f" {', '.join(taps)} needs a tap." if taps else ""),
             "link": "/bills",
         })
     if pay["amount"]:

@@ -148,7 +148,12 @@ export interface Snapshot {
   on_card?: { total: number; items: Event[]; paid_on: string | null };
   card_payments?: Event[];
   caveats?: string[];
-  due_before_payday: { total: number; items: Event[] };
+  due_before_payday: {
+    total: number;
+    items: Event[];
+    groups?: { key: string; label: string; total: number; count: number; names: string[] }[];
+    next_check?: { start: string; total: number; position: string; top: { name: string; amount: number; date: string }[] };
+  };
   advances: { total: number; items: Event[] };
   window: { start: string; end: string; total: number; items: Event[] };
   set_aside: { total: number; items: Event[] };
