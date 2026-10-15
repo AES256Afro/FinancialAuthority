@@ -118,6 +118,27 @@ Done when: everything the tools can answer is visible without a model, every vie
 
 Done when: `v1.0.0` is tagged, every item in the security checklist is ticked, and every recommendation carries its sources and the not-advice line.
 
+## M9 — Proven on real money (proposed 2026-10-15, agreed the same day)
+
+No new features. Everything before this ran on the synthetic household; this milestone makes the app something the owner trusts with their own accounts.
+
+**Done when:** thirty consecutive days on BigBox with the owner's real accounts, during which every scheduled job ran, the brief arrived every morning, no figure on any screen was wrong, and a backup was restored to a clean machine and matched. Held the whole time: backend tests above 120, no unhandled exception in the logs, the self-check green, the brief delivered 30 of 30 mornings, the demo regenerated from the fixture after every merge.
+
+Order: the owner's keys and the catalog install first (nothing else is real without them), then reconciliation, then the drills, then the model week, with the phone pass running throughout.
+
+- ☐ **M9.1 Real data in.** Plaid Trial keys pasted and Capital One linked; Teller keys and the credit union linked; both mailboxes connected; the Bridge signed in once; the last three paystubs forwarded.
+- ☐ **M9.2 One transaction, once.** The same transaction seen through a connector, the Rocket Money export and a bank alert lands once. Test: import all three for one month, count once.
+- ☐ **M9.3 The first mail sweep triaged.** Every pending fact from the first sweep confirmed or rejected; the classifier rules extended with each miss; the malicious-mailbox suite grows by every real miss.
+- ☐ **M9.4 One window reconciled by hand.** A paycheck window checked line by line against the bank's own statement: cash, due-before, advances, set-aside, safe-to-spend. Every difference becomes a fixture case and a golden test.
+- ☐ **M9.5 The decisions cross-checked.** The purchase check, the date moves and the outlook compared with a spreadsheet for the same inputs.
+- ☐ **M9.6 Installed from the catalog.** The GHCR package public, the BoxPilot pull request merged, the app installed from the catalog, `data/` migrated from the hand-run copy, the hand-run copy removed.
+- ☐ **M9.7 Published.** The Cloudflare tunnel (optional: only claude.ai's cloud connector and devices off the tailnet need it) or the tailnet https address; rate limits, lockout and OAuth revocation verified from outside; claude.ai and Claude Code sign in from the phone.
+- ☐ **M9.8 Restore and upgrade drills.** A BoxPilot backup restored to a throwaway container with identical figures; a version with a new column installed over old data.
+- ☐ **M9.9 Keys and exit.** Dependency audit in CI; `FA_DATA_KEY` rotation; export everything; delete everything (M8.5 brought forward).
+- ☐ **M9.10 A week with the advisor.** The advisor on BigBox's Ollama for a week of real questions; the reviewer on Claude by API with its cost shown; the citation check over those real conversations, every unverified figure explained or fixed.
+- ☐ **M9.11 Tool misuse by a connected app.** Tests for an OAuth client at each scope, mirroring the red-team suite for keys.
+- ☐ **M9.12 Every screen on the phone.** Phone-width pass on all eighteen pages with empty, loading and error states; the Today page usable one-handed.
+
 ## Later
 
 - ☐ **L1 Plaid or Teller** for institutions SimpleFIN misses.
