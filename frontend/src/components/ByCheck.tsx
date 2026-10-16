@@ -80,27 +80,25 @@ export function ByCheck({ s }: { s: Snapshot }) {
       </div>
 
       {s.windows.slice(0, 3).map((w) => {
-        const card = w.bills.items.filter((e) => e.kind === "card_payment" && !e.via_card);
-        const other = w.bills.items.filter((e) => e.kind !== "card_payment" && !e.via_card);
-        const carried = card.reduce((t, e) => t + (e.parts?.balance ?? 0), 0);
-        const rode = card.reduce((t, e) => t + (e.parts?.bills ?? 0), 0);
-        const spend = card.reduce((t, e) => t + (e.parts?.spend ?? 0), 0);
+        const carried = w.bills.card_parts.balance;
+        const rode = w.bills.card_parts.bills;
+        const spend = w.bills.card_parts.spend;
         const parts: Part[] = [
           { label: "advances", amount: w.advances.total, fill: c.debt },
           { label: "card balance", amount: carried, fill: "#6b5fcf", title: `Card balance carried into this check: ${money(carried)}` },
           { label: "bills on the card", amount: rode, fill: "#8d7ff0", title: `Bills charged to the card before this check pays it: ${money(rode)}` },
           { label: "usual card spend", amount: spend, fill: "#b4abf7", title: `Everyday spending expected on the card until this check pays it: ${money(spend)}` },
-          { label: "bills", amount: other.reduce((t, e) => t + e.amount, 0), fill: c.bill },
+          { label: "bills", amount: w.bills.other_total, fill: c.bill },
           { label: "set aside", amount: w.set_aside.total, fill: c.buffer },
           { label: "left", amount: Math.max(0, w.safe), fill: c.safe },
         ];
-        const inflow = w.paycheck + w.carried_in;
+        const inflow = w.inflow;
         return (
           <div key={w.start} style={{ display: "flex", flexDirection: "column", gap: 6, borderTop: "1px solid var(--surface-2)", paddingTop: 10 }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
               <strong>{shortDate(w.start)}, {checkWord(w.start)}</strong>
               <span style={{ fontSize: 12, color: "var(--ink-2)" }}>{money(w.paycheck)} lands{w.carried_in > 0 ? ` + ${money(w.carried_in)} carried in` : ""} · pays through {shortDate(w.end)}</span>
-              <span className="num" style={{ marginLeft: "auto", fontWeight: 800, color: w.safe < 0 ? "var(--critical)" : "inherit" }}>{money(w.bills.total + w.advances.total)} out · {money(w.safe)} left</span>
+              <span className="num" style={{ marginLeft: "auto", fontWeight: 800, color: w.safe < 0 ? "var(--critical)" : "inherit" }}>{money(w.out)} out · {money(w.safe)} left</span>
             </div>
             <Bar parts={parts} total={Math.max(inflow, parts.reduce((t, p) => t + p.amount, 0))} />
             <Lines items={w.bills.items} c={c} />

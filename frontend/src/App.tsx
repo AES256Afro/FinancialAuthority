@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { useApi } from "./api";
 import { loadAppearance } from "./appearance";
 import { Shell } from "./components/Shell";
+import { Failed, Loading as Wait } from "./components/State";
 import { Home } from "./pages/Home";
 import { SignIn } from "./pages/SignIn";
 import { Today } from "./pages/Today";
@@ -36,6 +37,7 @@ const Models = lazy(() => import("./pages/Models").then((m) => ({ default: m.Mod
 const Outlook = lazy(() => import("./pages/Outlook").then((m) => ({ default: m.Outlook })));
 const Notifications = lazy(() => import("./pages/Notifications").then((m) => ({ default: m.Notifications })));
 const Paystubs = lazy(() => import("./pages/Paystubs").then((m) => ({ default: m.Paystubs })));
+const More = lazy(() => import("./pages/More").then((m) => ({ default: m.More })));
 const Reports = lazy(() => import("./pages/Reports").then((m) => ({ default: m.Reports })));
 const SettingsIndex = lazy(() => import("./pages/Settings").then((m) => ({ default: m.SettingsIndex })));
 const Transactions = lazy(() => import("./pages/Transactions").then((m) => ({ default: m.Transactions })));
@@ -53,12 +55,12 @@ export default function App() {
 
   if (me.loading) return <Loading text="Opening…" />;
   if (me.error && me.error.status === 401) return <SignIn onDone={me.reload} />;
-  if (me.error) return <Loading text={`The server answered: ${me.error.message}`} />;
+  if (me.error) return <div style={{ padding: 24, maxWidth: 640 }}><Failed error={me.error} what="the app" onRetry={me.reload} /></div>;
 
   const snap = snapshot.data;
   const body = (content: (s: Snapshot) => React.ReactNode) => {
-    if (snapshot.error) return <Loading text={`Could not load the snapshot: ${snapshot.error.message}`} />;
-    if (!snap) return <Loading text="Computing…" />;
+    if (snapshot.error && !snap) return <Failed error={snapshot.error} what="your plan" onRetry={snapshot.reload} />;
+    if (!snap) return <Wait what="your plan" />;
     return content(snap);
   };
 
@@ -89,6 +91,7 @@ export default function App() {
         <Route path="/reports" element={<Reports />} />
         <Route path="/confirm" element={<Confirm onChanged={snapshot.reload} />} />
         <Route path="/settings" element={<SettingsIndex />} />
+        <Route path="/more" element={<More />} />
         <Route path="/settings/appearance" element={<Appearance />} />
         <Route path="/settings/clients" element={<Clients />} />
         <Route path="/settings/models" element={<Models />} />

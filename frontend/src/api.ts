@@ -16,12 +16,17 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("X-Requested-With", "FinancialAuthority");
   if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  const response = DEMO ? await demoFetch(path, init) : await fetch(path, { ...init, headers, credentials: "same-origin" });
+  let response: Response;
+  try {
+    response = DEMO ? await demoFetch(path, init) : await fetch(path, { ...init, headers, credentials: "same-origin" });
+  } catch {
+    throw new ApiError(0, "The app can't be reached right now. Check the connection, then try again.");
+  }
   if (!response.ok) {
-    let detail = response.statusText;
+    let detail = response.statusText || `The app answered ${response.status}.`;
     try {
-      const body = (await response.json()) as { detail?: string };
-      if (body.detail) detail = body.detail;
+      const body = (await response.json()) as { detail?: unknown };
+      detail = readable(body.detail) ?? detail;
     } catch {
       // not JSON
     }
@@ -29,6 +34,20 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
   if (response.headers.get("content-type")?.includes("text/csv")) return (await response.text()) as unknown as T;
   return (await response.json()) as T;
+}
+
+/** A refusal in words: FastAPI sends a list of field problems when a form does not fit. */
+function readable(detail: unknown): string | null {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const parts = detail.map((d) => {
+      const item = d as { loc?: unknown[]; msg?: string };
+      const field = Array.isArray(item.loc) ? String(item.loc[item.loc.length - 1] ?? "") : "";
+      return `${field ? `${field.replace(/_/g, " ")}: ` : ""}${item.msg ?? "not accepted"}`;
+    });
+    return parts.length ? `Check the form. ${parts.join("; ")}.` : null;
+  }
+  return null;
 }
 
 export interface Loaded<T> {

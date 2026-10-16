@@ -1,16 +1,18 @@
 import { Link } from "react-router-dom";
 import { useApi } from "../api";
+import { Cushion } from "../components/Cushion";
+import { when } from "../format";
 
 const ITEMS = [
   { to: "/settings/setup", title: "Setting up", text: "What only you can do, in order: the app's secrets, mail, your bank, reaching it from anywhere, your phone, Claude, backups." },
-  { to: "/settings/appearance", title: "Appearance", text: "Eight home views, three looks, kept per device." },
-  { to: "/settings/connectors", title: "Connectors", text: "Rocket Money export in and out; the import folder; live bank connectors arrive in M1." },
+  { to: "/settings/appearance", title: "Appearance", text: "Eight home views, three looks, text size. Saved for all your devices." },
+  { to: "/settings/connectors", title: "Connections", text: "Your banks, your mailboxes, importing a file, and Rocket Money exports in and out." },
   { to: "/settings/models", title: "Models", text: "The advisor and the reviewer: Ollama, any OpenAI-compatible server, or Claude by API; your rules and goals." },
-  { to: "/settings/clients", title: "Clients", text: "Apps signed in through OAuth, and API keys for scripts, each with a scope and a redaction level." },
-  { to: "/settings/notifications", title: "Notifications", text: "The morning brief on the phone through ntfy or Gotify, both free." },
+  { to: "/settings/clients", title: "Apps and keys", text: "Apps and keys that can read your plan, what each can see, and the devices signed in." },
+  { to: "/settings/notifications", title: "Notifications", text: "Notifications on this device, reminders, and the morning brief through ntfy or Gotify." },
   { to: "/settings/backups", title: "Backups", text: "A copy of everything before each import and once a day; undo an import, or put everything back to a moment." },
   { to: "/settings/jobs", title: "Jobs", text: "What the app does on its own, and whether it ran." },
-  { to: "/settings/audit", title: "Audit", text: "Every read a model, an app or a script made through the tools." },
+  { to: "/settings/audit", title: "Activity", text: "Every read a model, an app or a script made of your data." },
 ];
 
 export function SettingsIndex() {
@@ -18,17 +20,18 @@ export function SettingsIndex() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 820 }}>
       <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Settings</h1>
+      <Cushion />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(240px, 100%), 1fr))", gap: 12 }}>
         {ITEMS.map((i) => (
           <Link key={i.to} to={i.to} className="card" style={{ padding: 14, textDecoration: "none", color: "var(--ink)" }}>
-            <strong>{i.title}</strong>
+            <h2 style={{ margin: 0, fontSize: 14, fontWeight: 800 }}>{i.title}</h2>
             <div style={{ fontSize: 13, color: "var(--ink-2)", marginTop: 4 }}>{i.text}</div>
           </Link>
         ))}
       </div>
       {data && (
         <div style={{ fontSize: 12, color: "var(--muted)" }}>
-          Version {data.version}{data.demo ? " · demo data" : ""} · {data.transactions} transactions · today {data.today} · time zone {data.tz}{data.public_url ? ` · published at ${data.public_url}` : " · not published yet"}
+          Version {data.version}{data.demo ? " · demo data" : ""} · {data.transactions} transactions · today {when(data.today)} · time zone {data.tz}{data.public_url ? ` · published at ${data.public_url}` : " · not published yet"}
         </div>
       )}
     </div>

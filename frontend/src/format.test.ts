@@ -18,3 +18,19 @@ describe("dates", () => {
     expect(daysWord(2)).toBe("in 2 days");
   });
 });
+
+describe("typed and server values", () => {
+  it("reads a typed amount the way people type it", async () => {
+    const { parseMoney } = await import("./format");
+    expect(parseMoney("$1,200.50")).toBe(1200.5);
+    expect(parseMoney("120")).toBe(120);
+    expect(parseMoney("12.345")).toBeNull();
+    expect(parseMoney("abc")).toBeNull();
+  });
+  it("reads a server time without a zone as UTC and says it with the weekday", async () => {
+    const { when } = await import("./format");
+    expect(when(null)).toBe("never");
+    expect(when("2026-10-16")).toBe("Fri Oct 16");
+    expect(when("2026-10-16T12:00:00")).toMatch(/^(Fri|Thu|Sat) Oct 1[5-7], \d{1,2}:\d{2} (am|pm)$/);
+  });
+});

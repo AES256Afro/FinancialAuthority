@@ -63,7 +63,7 @@ function basePalette(id: LookId) {
     surface: dark ? (id === "console" ? "#14171c" : "#1b1e24") : "#ffffff",
     ink: dark ? "#f2f2ee" : "#141518",
     ink2: dark ? "#b9bcc6" : "#4e5058",
-    muted: "#85878f",
+    muted: dark ? "#9a9ea8" : "#6b6d75",
     hairline: dark ? "#2a2e36" : "#e4e1da",
   };
 }

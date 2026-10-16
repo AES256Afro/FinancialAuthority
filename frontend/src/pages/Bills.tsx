@@ -66,12 +66,12 @@ function Editor({ b, accounts, onSaved }: { b: BillRow; accounts: AccountRow[]; 
 }
 
 export function Bills({ onChanged }: { onChanged: () => void }) {
-  const { data, reload } = useApi<{ bills: BillRow[] }>("/api/v1/bills");
+  const { data, reload } = useApi<{ bills: BillRow[]; monthly_total: number; monthly_basis: string }>("/api/v1/bills");
   const { data: accounts } = useApi<{ accounts: AccountRow[] }>("/api/v1/accounts");
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
   const [dueDay, setDueDay] = useState("1");
-  const total = (data?.bills ?? []).reduce((sum, b) => sum + (b.cadence === "monthly" ? b.amount : b.cadence === "semimonthly" ? b.amount * 2 : b.cadence === "biweekly" ? b.amount * 2.17 : b.cadence === "weekly" ? b.amount * 4.33 : b.cadence === "yearly" ? b.amount / 12 : b.amount / 3), 0);
+  const total = data?.monthly_total ?? 0; // the engine's, each bill by its own cadence
 
   function changed() {
     reload();

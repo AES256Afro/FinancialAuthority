@@ -80,7 +80,7 @@ def spending_summary(session: Session, today: date, *, months: int = 6, by: str 
         "months": [{**v, "spent": _money(v["spent"]), "income": _money(v["income"])} for v in per_month.values()],
         "groups": out_groups,
         "top_merchants": top_merchants,
-        "totals": {"spent": _money(spent_total), "income": _money(income_total), "savings_rate": round((income_total - spent_total) / income_total, 4) if income_total > 0 else None, "months": months, "full_months": len(full_months)},
+        "totals": {"spent": _money(spent_total), "income": _money(income_total), "kept": _money(income_total - spent_total), "savings_rate": round((income_total - spent_total) / income_total, 4) if income_total > 0 else None, "months": months, "full_months": len(full_months)},
         "not_advice": NOT_ADVICE,
     }
 
@@ -143,6 +143,7 @@ def debt_mountain(session: Session, today: date) -> dict:
         "items": sorted(items, key=lambda d: -(d["balance"] or 0.0)),
         "minimums_month": _money(minimums),
         "interest_month": _money(interest_month),
+        "bnpl": {"total": _money(sum((d["balance"] or 0.0) for d in items if d["kind"] == "bnpl")), "count": sum(1 for d in items if d["kind"] == "bnpl")},
         "order": {"avalanche": avalanche, "snowball": snowball},
         "not_advice": NOT_ADVICE,
     }

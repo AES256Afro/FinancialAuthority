@@ -38,7 +38,7 @@ export function BillBoard({ snapshot }: ViewProps) {
   const nextWindow = w?.set_aside.items ?? [];
   const paid = snapshot.payments.paid.slice(-10).reverse();
   const problems: PaymentRow[] = [...snapshot.payments.past_due, ...snapshot.payments.late];
-  const sum = (xs: { amount: number }[]) => xs.reduce((s, x) => s + x.amount, 0);
+  const board = snapshot.board;
   const dotFor = (e: Event) => (e.funded === false ? "var(--warning)" : "var(--safe)");
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -51,19 +51,19 @@ export function BillBoard({ snapshot }: ViewProps) {
       </div>
       <SafeExplain s={snapshot} />
       <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5" style={{ gap: 12 }}>
-        <Column title="Past due or unmatched" total={sum(problems)} bg={problems.length ? "var(--critical-soft)" : undefined} empty="Nothing. Keep the column empty.">
+        <Column title="Past due or unmatched" total={board.problems.total} bg={problems.length ? "var(--critical-soft)" : undefined} empty="Nothing. Keep the column empty.">
           {problems.map((p) => <Card key={p.source} title={p.name} amount={p.amount} when={`${shortDate(p.due_date)} · ${p.status === "past_due" ? "past due" : "not matched yet"}`} src="payments" dot="var(--critical)" note={p.status === "late" ? "If paid, the ledger catches up within a sync." : undefined} />)}
         </Column>
-        <Column title="Due in 7 days" total={sum(due7)} bg="var(--warning-soft)" empty="Nothing due this week.">
+        <Column title="Due in 7 days" total={board.due_7.total} bg="var(--warning-soft)" empty="Nothing due this week.">
           {due7.map((e, i) => <Card key={`${e.source}-${i}`} title={e.name} amount={e.amount} when={`${shortDate(e.date)} · ${e.autopay ? "autopay" : "pay online"}`} src={e.source.split(":")[0]} dot={dotFor(e)} />)}
         </Column>
-        <Column title="Later this window" total={sum(later)} empty="Nothing more this window.">
+        <Column title="Later this window" total={board.later.total} empty="Nothing more this window.">
           {later.map((e, i) => <Card key={`${e.source}-${i}`} title={e.name} amount={e.amount} when={`${shortDate(e.date)} · ${e.autopay ? "autopay" : "pay online"}`} src={e.source.split(":")[0]} dot={dotFor(e)} />)}
         </Column>
         <Column title="Next window, set aside" total={w?.set_aside.total ?? 0} empty="Nothing set aside yet.">
           {nextWindow.map((e, i) => <Card key={`${e.source}-${i}`} title={e.name} amount={e.amount} when={`${shortDate(e.date)} · ${(e.share ?? 1) < 1 ? "half set aside" : "set aside"}`} src={e.source.split(":")[0]} dot={e.funded ? "var(--safe)" : "var(--warning)"} />)}
         </Column>
-        <Column title="Paid recently" total={sum(paid)} bg="var(--surface-2)" empty="No payments matched yet; the ledger needs a few weeks of history.">
+        <Column title="Paid recently" total={board.paid.total} bg="var(--surface-2)" empty="No payments matched yet; the ledger needs a few weeks of history.">
           {paid.map((p) => <Card key={p.source} title={p.name} amount={p.amount} when={`${shortDate(p.paid_date ?? p.due_date)} · matched to the ledger`} src="paid" muted />)}
         </Column>
       </section>

@@ -64,6 +64,7 @@ interface Mountain {
   items: DebtItem[];
   minimums_month: number;
   interest_month: number;
+  bnpl: { total: number; count: number };
   order: { avalanche: string[]; snowball: string[] };
   not_advice: string;
 }
@@ -124,8 +125,8 @@ export function Debts() {
 
           {data.items.some((d) => d.kind === "bnpl") && (
             <section className="card" style={{ padding: 14, display: "flex", gap: 22, flexWrap: "wrap", alignItems: "baseline" }}>
-              <div><div className="lab">Pay-later plans, still to pay</div><div className="num" style={{ fontSize: 22, fontWeight: 800 }}>{money(data.items.filter((d) => d.kind === "bnpl").reduce((t, d) => t + (d.balance ?? 0), 0))}</div></div>
-              <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{data.items.filter((d) => d.kind === "bnpl").length} plans · the lender's own schedule where the confirmation email was read, else the payments left you entered · <Link to="/borrowing#loans">see each loan</Link></div>
+              <div><div className="lab">Pay-later plans, still to pay</div><div className="num" style={{ fontSize: 22, fontWeight: 800 }}>{money(data.bnpl.total)}</div></div>
+              <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{data.bnpl.count} plans · the lender's own schedule where the confirmation email was read, else the payments left you entered · <Link to="/borrowing#loans">see each loan</Link></div>
             </section>
           )}
           <section className="card" style={{ padding: "6px 14px", overflowX: "auto" }}>

@@ -32,6 +32,33 @@ export function longDate(iso: string): string {
   return `${days[d.getDay()]}, ${months[d.getMonth()]} ${d.getDate()}`;
 }
 
+/** A moment from the server in local time with the weekday: "Wed Oct 15, 2:04 pm". A plain date gets the
+ * weekday only. The server writes UTC; a time without a zone is read as UTC. */
+export function when(value: string | null | undefined): string {
+  if (!value) return "never";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return shortDate(value);
+  const zoned = /[zZ]|[+-]\d{2}:?\d{2}$/.test(value) ? value : `${value}Z`;
+  const d = new Date(zoned);
+  if (Number.isNaN(d.getTime())) return value;
+  const hour = d.getHours() % 12 || 12;
+  const minute = String(d.getMinutes()).padStart(2, "0");
+  return `${DAYS[d.getDay()]} ${MONTHS[d.getMonth()]} ${d.getDate()}, ${hour}:${minute} ${d.getHours() < 12 ? "am" : "pm"}`;
+}
+
+/** Today as the owner's local date, YYYY-MM-DD (never the UTC date, which is tomorrow on a US evening). */
+export function localToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** An amount typed by a person: "$1,200.50" and "1200.5" both read; anything else is null. */
+export function parseMoney(text: string): number | null {
+  const clean = text.replace(/[$,\s]/g, "");
+  if (!/^-?\d+(\.\d{1,2})?$/.test(clean)) return null;
+  const n = Number(clean);
+  return Number.isFinite(n) ? n : null;
+}
+
 export function daysWord(n: number): string {
   if (n === 0) return "today";
   if (n === 1) return "tomorrow";

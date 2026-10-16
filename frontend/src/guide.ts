@@ -15,6 +15,7 @@ export interface CoverWindow {
   end: string;
   has: number;
   inflow: number;
+  has_total: number;
   needs: number;
   bills: number;
   everyday: number;
@@ -60,6 +61,7 @@ export interface CoverAccount {
   planned?: number;
   riding?: CoverItem[];
   payments?: { date: string; amount: number; parts: { balance?: number; bills?: number; spend?: number }; source: string }[];
+  per_window?: [number, number];
   rung?: Rung | null;
   short?: number;
 }

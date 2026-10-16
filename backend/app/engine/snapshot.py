@@ -201,13 +201,17 @@ def _finance_snapshot(session: Session, today: date) -> dict:
             funded_items.append({**e, "date": e["date"].isoformat(), "funded": ok})
         funded_items += [{**e, "date": e["date"].isoformat(), "funded": True} for e in card_bills if start <= wdate(e) <= end]
         funded_items.sort(key=lambda e: e["date"])
-        aside_items = [{**e, "date": e["date"].isoformat(), "funded": running >= aside, "share": 0.5 if e["amount"] >= 500 else 1.0} for e in following]
+        aside_items = [{**e, "date": e["date"].isoformat(), "funded": running >= aside, "share": 0.5 if e["amount"] >= 500 else 1.0,
+                        "kept": _money(e["amount"] * (0.5 if e["amount"] >= 500 else 1.0))} for e in following if e.get("kind") != "card_payment"]
         windows.append({
             "start": start.isoformat(), "end": end.isoformat(), "paycheck": _money(net_for(start)), "carried_in": _money(carried),
+            "inflow": _money(net_for(start) + carried),
             "advances": {"total": _money(adv_total), "items": [{**e, "date": e["date"].isoformat(), "funded": True} for e in adv]},
-            "bills": {"total": _money(bills_total), "items": funded_items},
+            "bills": {"total": _money(bills_total), "items": funded_items, **_bill_groups(funded_items)},
             "set_aside": {"total": _money(aside), "items": aside_items},
             "buffer": _money(buffer) if k == 0 else 0.0,
+            "out": _money(bills_total + adv_total),
+            "spoken_for": _money(adv_total + bills_total + aside + (buffer if k == 0 else 0.0)),
             "safe": _money(left),
         })
         carried = aside
@@ -272,7 +276,8 @@ def _finance_snapshot(session: Session, today: date) -> dict:
             **explain,
         },
         "goals": goals,
-        "usual_pace": pace,
+        "usual_pace": {**pace, "over_safe": _money(max(0.0, pace["per_window"] - safe))},
+        "board": _board(display_events, before, windows[0] if windows else None, payments, today),
         "debts": [{"id": d.id, "name": d.name, "kind": d.kind, "balance": d.balance, "apr": d.apr, "minimum": d.minimum, "due_day": d.due_day} for d in debts],
         "pending": {"confirmations": unconfirmed + len(facts["pending"]), "series": unconfirmed, "facts": len(facts["pending"]), "approvals": approvals_waiting, "past_due": len(payments["past_due"])},
         "mail": facts,
@@ -311,7 +316,8 @@ def _explain_safe(session: Session, accounts: list, before: list[dict], advances
         rows[deposit_id].update(buffer=buffer, advances=advances_before, shortfall=shortfall)
     by_account = []
     for r in rows.values():
-        r["safe"] = _money(r["balance"] - r["due"] - r["buffer"] - r["advances"] - r["shortfall"])
+        r["goes_out"] = _money(r["due"] + r["buffer"] + r["advances"] + r["shortfall"])
+        r["safe"] = _money(r["balance"] - r["goes_out"])
         for k in ("balance", "due", "buffer", "advances", "shortfall"):
             r[k] = _money(r[k])
         r["items"] = sorted(r["items"], key=lambda i: i["date"])
@@ -359,3 +365,38 @@ def _from_mail(text: str | None, limit: int) -> str:
     clean = _re.sub(r"[\x00-\x1f\x7f\u2028\u2029]+", " ", text or "")
     clean = _re.sub(r"\s+", " ", clean).strip()
     return clean if len(clean) <= limit else clean[: limit - 1] + "…"
+
+
+SMALL_BILL = 25.0  # bills under this are grouped as "small stuff" in the pictures
+
+
+def _bill_groups(items: list[dict]) -> dict:
+    """The groups the pictures draw a window's bills in: card payments split into their parts, other bills, the
+    small ones together, and what is left after the eight largest."""
+    card = [e for e in items if e.get("kind") == "card_payment" and not e.get("via_card")]
+    other = [e for e in items if e.get("kind") != "card_payment" and not e.get("via_card")]
+    small = [e for e in items if e["amount"] < SMALL_BILL]
+    by_size = sorted(items, key=lambda e: -e["amount"])
+    rest = by_size[8:]
+    return {
+        "card_parts": {k: _money(sum((e.get("parts") or {}).get(k, 0.0) for e in card)) for k in ("balance", "bills", "spend")},
+        "other_total": _money(sum(e["amount"] for e in other)),
+        "small": {"total": _money(sum(e["amount"] for e in small)), "count": len(small), "names": [e["name"] for e in small][:4], "all_funded": all(e.get("funded") for e in small), "under": SMALL_BILL},
+        "after_eight": {"total": _money(sum(e["amount"] for e in rest)), "count": len(rest)},
+    }
+
+
+def _board(display_events: list[dict], before: list[dict], window: dict | None, payments: dict, today: date) -> dict:
+    """The bill board's four columns, with their totals: past due or unmatched, due within a week, later this
+    paycheck, paid recently."""
+    upcoming = [{**e, "date": e["date"].isoformat() if hasattr(e["date"], "isoformat") else e["date"]} for e in before] + list((window or {}).get("bills", {}).get("items", []))
+    soon = (today + timedelta(days=7)).isoformat()
+    due7 = [e for e in upcoming if e["date"] <= soon]
+    later = [e for e in upcoming if e["date"] > soon]
+    problems = payments["past_due"] + payments["late"]
+    paid = list(reversed(payments["paid"][-10:]))
+
+    def col(rows: list[dict]) -> dict:
+        return {"total": _money(sum(r["amount"] for r in rows)), "items": rows}
+
+    return {"problems": col(problems), "due_7": col(due7), "later": col(later), "paid": col(paid)}
