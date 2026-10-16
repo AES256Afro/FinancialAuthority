@@ -11,7 +11,7 @@ interface Spending {
   months: { month: string; spent: number; income: number; count: number; partial: boolean }[];
   groups: { name: string; total: number; count: number; this_month: number; average: number; share: number }[];
   top_merchants: { name: string; total: number; count: number }[];
-  totals: { spent: number; income: number; savings_rate: number | null; months: number; full_months: number };
+  totals: { spent: number; income: number; kept: number; savings_rate: number | null; months: number; full_months: number };
   not_advice: string;
 }
 
@@ -86,7 +86,7 @@ export function Reports() {
             <div style={{ display: "flex", gap: 18, flexWrap: "wrap", fontSize: 13 }}>
               <span>Income <strong className="num">{money(data.totals.income)}</strong></span>
               <span>Spent <strong className="num">{money(data.totals.spent)}</strong></span>
-              <span>Kept <strong className="num" style={{ color: data.totals.income - data.totals.spent < 0 ? "var(--critical)" : "var(--safe)" }}>{money(data.totals.income - data.totals.spent)}</strong>{data.totals.savings_rate !== null ? <span style={{ color: "var(--ink-2)" }}> · {(data.totals.savings_rate * 100).toFixed(0)}% of income</span> : null}</span>
+              <span>Kept <strong className="num" style={{ color: data.totals.kept < 0 ? "var(--critical-ink)" : "var(--safe-ink)" }}>{money(data.totals.kept)}</strong>{data.totals.savings_rate !== null ? <span style={{ color: "var(--ink-2)" }}> · {(data.totals.savings_rate * 100).toFixed(0)}% of income</span> : null}</span>
             </div>
           </section>
 

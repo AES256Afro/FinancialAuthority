@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import statistics
 from datetime import date, timedelta
 from hashlib import sha256
@@ -105,8 +106,20 @@ def record_paystub(session: Session, fields: dict, source: str, fact_id: int | N
     return stub
 
 
+TAX_WORDS = re.compile(r"federal|social security|medicare|state|local|tax|sdi|oasdi|fica", re.IGNORECASE)
+
+
 def paystub_out(p: Paystub) -> dict:
+    deductions = json.loads(p.deductions or "[]")
+    for d in deductions:
+        d["group"] = "tax" if TAX_WORDS.search(str(d.get("name", ""))) else "benefit"
+    gross = p.gross if p.gross is not None else p.net + sum(float(d.get("amount") or 0.0) for d in deductions)
+    taxes = sum(float(d.get("amount") or 0.0) for d in deductions if d["group"] == "tax")
+    benefits = sum(float(d.get("amount") or 0.0) for d in deductions if d["group"] == "benefit")
     return {
+        "gross_total": round(gross, 2), "taxes_total": round(taxes, 2), "benefits_total": round(benefits, 2),
+        "net_share": round(p.net / gross, 4) if gross else None,
+        "deductions_grouped": deductions,
         "id": p.id, "employer": p.employer, "provider": p.provider, "pay_date": p.pay_date.isoformat(), "period_start": p.period_start.isoformat() if p.period_start else None,
         "period_end": p.period_end.isoformat() if p.period_end else None, "gross": p.gross, "net": p.net, "hours": p.hours, "deductions": json.loads(p.deductions or "[]"),
         "source": p.source, "transaction_id": p.transaction_id, "matched": p.transaction_id is not None, "expected_net": p.expected_net, "difference": p.difference, "sourcelink": f"paystub:{p.id}",

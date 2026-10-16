@@ -43,19 +43,19 @@ export function Envelopes({ snapshot }: ViewProps) {
   if (w.advances.total > 0) envs.push({ key: "adv", name: "Advances", sub: `repay ${shortDate(w.start)}`, amount: w.advances.total, target: w.advances.total, fill: 1, tone: "debt", tag: `${w.advances.items.length} app${w.advances.items.length === 1 ? "" : "s"}` });
   const small: Event[] = [];
   for (const e of [...w.bills.items].sort((a, b) => b.amount - a.amount)) {
-    if (e.amount < 25) {
+    if (e.amount < w.bills.small.under) {
       small.push(e);
       continue;
     }
     envs.push({ key: e.source, name: e.name, sub: `due ${shortDate(e.date)}${e.autopay ? " · autopay" : ""}`, amount: e.amount, target: e.amount, fill: e.funded ? 1 : 0, tone: e.kind === "installment" ? "debt" : "bill", tag: e.funded ? "funded" : "not yet" });
   }
-  if (small.length) {
-    const total = small.reduce((s, e) => s + e.amount, 0);
-    envs.push({ key: "small", name: "Small stuff", sub: small.map((e) => e.name).slice(0, 4).join(", "), amount: total, target: total, fill: small.every((e) => e.funded) ? 1 : 0.5, tone: "bill", tag: small.every((e) => e.funded) ? "funded" : "partly" });
+  if (w.bills.small.count) {
+    const g = w.bills.small;
+    envs.push({ key: "small", name: "Small stuff", sub: g.names.join(", "), amount: g.total, target: g.total, fill: g.all_funded ? 1 : 0.5, tone: "bill", tag: g.all_funded ? "funded" : "partly" });
   }
   for (const e of [...w.set_aside.items].sort((a, b) => b.amount - a.amount)) {
     const share = e.share ?? 1;
-    envs.push({ key: `aside-${e.source}`, name: e.name, sub: `due ${shortDate(e.date)} · next window`, amount: e.amount * share, target: e.amount, fill: e.funded ? share : 0, tone: "bill", tag: e.funded ? (share < 1 ? "half" : "set aside") : "not yet" });
+    envs.push({ key: `aside-${e.source}`, name: e.name, sub: `due ${shortDate(e.date)} · next paycheck`, amount: e.kept ?? e.amount, target: e.amount, fill: e.funded ? share : 0, tone: "bill", tag: e.funded ? (share < 1 ? "half" : "set aside") : "not yet" });
   }
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>

@@ -35,7 +35,7 @@ interface Outlook {
 const TONE: Record<Scenario["id"], string> = { low: "var(--debt)", mid: "var(--paycheck)", high: "var(--safe)" };
 const pct = (r: number) => `${(r * 100).toFixed(r * 100 % 1 === 0 ? 0 : 1)}%`;
 
-function Chart({ scenarios, retireIn, real }: { scenarios: Scenario[]; retireIn: number | null; real: boolean }) {
+function Chart({ scenarios, retireIn, real, now }: { scenarios: Scenario[]; retireIn: number | null; real: boolean; now: number }) {
   const w = 680;
   const h = 260;
   const pad = { l: 56, r: 70, t: 14, b: 28 };
@@ -61,7 +61,7 @@ function Chart({ scenarios, retireIn, real }: { scenarios: Scenario[]; retireIn:
         </g>
       )}
       {scenarios.map((s) => {
-        const points = [{ year: 0, v: real ? s.years[0].contributed - (s.years[0].contributed - (s.years[0].balance - s.years[0].growth)) : s.years[0].balance - s.years[0].growth }, ...s.years.map((r) => ({ year: r.year, v: real ? r.real : r.balance }))];
+        const points = [{ year: 0, v: now }, ...s.years.map((r) => ({ year: r.year, v: real ? r.real : r.balance }))];
         const d = points.map((p, i) => `${i === 0 ? "M" : "L"}${x(p.year).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
         const last = points[points.length - 1];
         return (
@@ -321,7 +321,7 @@ export function Outlook() {
             {d.investments.now === 0 && d.investments.per_paycheck === 0 ? (
               <div style={{ fontSize: 13, color: "var(--muted)" }}>Nothing to carry forward yet: add an investment account on <Link to="/investments">Investing</Link>, or set a contribution below.</div>
             ) : (
-              <Chart scenarios={d.investments.scenarios} retireIn={d.investments.years_to_retirement} real={real} />
+              <Chart scenarios={d.investments.scenarios} retireIn={d.investments.years_to_retirement} real={real} now={d.investments.now} />
             )}
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12, color: "var(--ink-2)" }}>
               {d.investments.scenarios.map((s) => <span key={s.id} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span className="sw" style={{ background: TONE[s.id], margin: 0 }} />{s.word}, {pct(s.rate)} a year</span>)}

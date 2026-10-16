@@ -34,7 +34,7 @@ export function River({ snapshot }: ViewProps) {
           <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
             Money in your spending accounts that nothing needs before payday on {shortDate(s.next_paycheck.date)}: what comes out before then and your {money(s.buffer)} buffer are already taken off. Bills after payday are paid from that paycheck.
             {s.usual_pace.per_day > 0 && (
-              <span> Your usual pace is {money(s.usual_pace.per_day)} a day, {money(s.usual_pace.per_window)} over two weeks{s.usual_pace.per_window > s.safe_to_spend.amount ? `, which is ${money(s.usual_pace.per_window - s.safe_to_spend.amount)} more than is safe` : ""}.</span>
+              <span> Your usual pace is {money(s.usual_pace.per_day)} a day, {money(s.usual_pace.per_window)} over two weeks{s.usual_pace.over_safe > 0 ? `, which is ${money(s.usual_pace.over_safe)} more than is safe` : ""}.</span>
             )}
             {s.safe_to_spend.version === "v0" && <span style={{ color: "var(--muted)" }}> First-cut arithmetic; the full engine lands in M5.</span>}
           </div>

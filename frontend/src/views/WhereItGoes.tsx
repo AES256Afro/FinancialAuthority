@@ -19,7 +19,7 @@ export function WhereItGoes({ snapshot }: ViewProps) {
   const c = palette(getPrefs().look);
   const w = snapshot.windows[0];
   if (!w) return <div className="card" style={{ padding: 18 }}>No paycheck is known yet. Confirm a paycheck on Needs you.</div>;
-  const entering = w.paycheck + w.carried_in;
+  const entering = w.inflow;
   const short = w.safe < 0;
   const groups = [
     { id: "advances", label: `Advances ${money(w.advances.total)}`, amount: w.advances.total, fill: c.debt, text: "#ffffff" },
@@ -45,9 +45,10 @@ export function WhereItGoes({ snapshot }: ViewProps) {
   const top = bills.slice(0, 8);
   const rest = bills.slice(8);
   for (const e of top) leaves.push({ label: `${e.name} · ${money(e.amount)} · ${monthDay(e.date)}`, amount: e.amount, fill: e.kind === "installment" ? c.debt : c.bill, group: "bills" });
-  if (rest.length) leaves.push({ label: `${rest.length} smaller · ${money(rest.reduce((s, e) => s + e.amount, 0))}`, amount: rest.reduce((s, e) => s + e.amount, 0), fill: c.bill, group: "bills" });
+  if (rest.length) leaves.push({ label: `${w.bills.after_eight.count} smaller · ${money(w.bills.after_eight.total)}`, amount: w.bills.after_eight.total, fill: c.bill, group: "bills" });
   for (const e of [...w.set_aside.items].sort((a, b) => b.amount - a.amount).slice(0, 5)) {
-    leaves.push({ label: `${e.name}${e.amount >= 500 ? ", half" : ""} · ${money(e.amount >= 500 ? e.amount / 2 : e.amount)} · ${monthDay(e.date)}`, amount: e.amount >= 500 ? e.amount / 2 : e.amount, fill: c.surface, stroke: c.bill, group: "aside" });
+    const kept = e.kept ?? e.amount;
+    leaves.push({ label: `${e.name}${(e.share ?? 1) < 1 ? ", half" : ""} · ${money(kept)} · ${monthDay(e.date)}`, amount: kept, fill: c.surface, stroke: c.bill, group: "aside" });
   }
   const leafPlaced: (typeof leaves[number] & { y: number; h: number; fromY: number })[] = [];
   for (const g of placed) {
@@ -100,7 +101,7 @@ export function WhereItGoes({ snapshot }: ViewProps) {
             </div>
           ))}
           <div style={{ marginTop: 8, padding: "12px 14px", borderRadius: 10, background: "var(--surface-2)", fontSize: 12, color: "var(--ink-2)" }}>
-            {entering > 0 ? `${money(entering)} enters this window; ${money(w.advances.total + w.bills.total + w.set_aside.total + w.buffer)} is spoken for.` : ""} The next window carries {money(w.set_aside.total)} in.
+            {entering > 0 ? `${money(entering)} enters this window; ${money(w.spoken_for)} is spoken for.` : ""} The next window carries {money(w.set_aside.total)} in.
           </div>
         </div>
       </section>

@@ -50,7 +50,7 @@ export function SafeExplain({ s, open = false }: { s: Snapshot; open?: boolean }
                   <tr key={a.id}>
                     <td>{a.name}{a.paycheck_lands ? <div style={{ fontSize: 11, color: "var(--muted)" }}>the paycheck lands here; it keeps the buffer</div> : null}</td>
                     <td className="num" style={{ textAlign: "right" }}>{money(a.balance, { cents: true })}</td>
-                    <td className="num" style={{ textAlign: "right" }}>{money(a.due + a.buffer + a.advances + a.shortfall, { cents: true })}</td>
+                    <td className="num" style={{ textAlign: "right" }}>{money(a.goes_out, { cents: true })}</td>
                     <td className="num" style={{ textAlign: "right", fontWeight: 800 }}>{money(a.safe, { cents: true })}</td>
                   </tr>
                 ))}

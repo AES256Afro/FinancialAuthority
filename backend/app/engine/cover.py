@@ -114,7 +114,7 @@ def account_cover(session: Session, today: date, *, saving: dict | None = None) 
                 low, low_day = _walk(start_balance - keep, items, pace, start, end, inflow)
                 left = start_balance + (inflow[1] if inflow else 0.0) - needs
                 out_w.append({
-                    "start": start.isoformat(), "end": end.isoformat(), "has": _money(start_balance), "inflow": _money(inflow[1]) if inflow else 0.0, "needs": _money(needs),
+                    "start": start.isoformat(), "end": end.isoformat(), "has": _money(start_balance), "inflow": _money(inflow[1]) if inflow else 0.0, "has_total": _money(start_balance + (inflow[1] if inflow else 0.0)), "needs": _money(needs),
                     "bills": _money(sum(e["amount"] for e in items)), "everyday": _money(spend), "buffer": _money(keep), "left": _money(left),
                     "low": _money(low), "low_on": low_day.isoformat(),
                     "items": [{"name": e["name"], "amount": e["amount"], "date": e["date"].isoformat(), "kind": e["kind"], "source": e.get("source", "")} for e in items],
@@ -166,6 +166,7 @@ def account_cover(session: Session, today: date, *, saving: dict | None = None) 
                                  "statement_utilisation": round(util_statement, 3) if util_statement is not None else None, "to_target": _money(to_target), "pay_by": pay_by.isoformat() if pay_by else None,
                                  "planned": _money(planned_off), "riding": [{"name": e["name"], "amount": e["amount"], "date": e["date"].isoformat(), "source": e.get("source", "")} for e in riding if e["date"] < p2],
                                  "payments": [{"date": e["date"].isoformat(), "amount": e["amount"], "parts": e.get("parts", {}), "source": e.get("source", "")} for e in mine_pay if e["date"] < p2 + timedelta(days=14)],
+                                 "per_window": [_money(sum(e["amount"] for e in mine_pay if e["date"] < p1)), _money(sum(e["amount"] for e in mine_pay if p1 <= e["date"] < p2))],
                                  "debt_id": debt.id if debt else None})
             payer = accounts.get(default_id).name if default_id in accounts else "checking"
             early_due = status != "good" and pay_by is not None and pay_by >= today and to_target > 0

@@ -47,7 +47,7 @@ function SpendGauge({ a, paydays }: { a: CoverAccount; paydays: [string, string]
   return (
     <>
       {(a.windows ?? []).map((w, k) => {
-        const has = w.has + w.inflow;
+        const has = w.has_total;
         const label = k === 0 ? `Before ${monthDay(paydays[0])}` : `${monthDay(w.start)} to ${monthDay(w.end)}`;
         return (
           <div key={w.start} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -164,10 +164,7 @@ function Columns({ cover }: { cover: Cover }) {
     .filter((a) => a.role === "spend" || a.role === "card")
     .map((a) => {
       if (a.role === "spend") return { name: a.name, w1: a.windows?.[0]?.needs ?? 0, w2: a.windows?.[1]?.needs ?? 0, has: (a.balance ?? 0) };
-      const p1 = cover.paydays[0];
-      const p2 = cover.paydays[1];
-      const pays = a.payments ?? [];
-      return { name: a.name, w1: pays.filter((p) => p.date < p1).reduce((t, p) => t + p.amount, 0), w2: pays.filter((p) => p.date >= p1 && p.date < p2).reduce((t, p) => t + p.amount, 0), has: null as number | null };
+      return { name: a.name, w1: a.per_window?.[0] ?? 0, w2: a.per_window?.[1] ?? 0, has: null as number | null };
     });
   const series = [
     { key: "w1" as const, label: `needs before ${monthDay(cover.paydays[0])}`, fill: c.bill },

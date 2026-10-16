@@ -7,7 +7,7 @@ export const TERMS: { id: string; word: string; means: string }[] = [
   { id: "due-before-payday", word: "Due before payday", means: "What leaves checking between today and the next payday. Bills charged to a card are paid with the card payment instead, so they are listed but not counted here." },
   { id: "window", word: "Paycheck window", means: "The days a paycheck has to cover: from the day it lands to the day before the next one." },
   { id: "set-aside", word: "Set aside", means: "Money a check keeps for the window after it, so a big bill like rent is ready when it comes: half of a large bill, all of a small one." },
-  { id: "buffer", word: "Buffer", means: "A cushion kept in checking that the plan never spends, for the surprise you did not see coming. You set its size." },
+  { id: "buffer", word: "Safety cushion (buffer)", means: "Money kept in checking that the plan never spends, for the surprise you did not see coming. You set its size on Settings." },
   { id: "carried-in", word: "Carried in", means: "What a window starts with from before its paycheck: the set-aside from the check before, or today's checking less what is due." },
   { id: "pace", word: "Usual pace", means: "What you spend on everyday things in an ordinary day, from the last eight weeks of the ledger, bills and borrowing left out." },
   { id: "honest-line", word: "The honest line", means: "The sixty-day picture of what is free if you keep spending at your usual pace. The low point is the day it dips lowest." },

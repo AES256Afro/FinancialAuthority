@@ -27,6 +27,7 @@ export interface Event {
   via_card?: boolean;
   from_kind?: "card" | "cash";
   parts?: { balance: number; bills: number; spend: number };
+  kept?: number;
 }
 
 export interface PaymentRow {
@@ -98,6 +99,11 @@ export interface PaystubRow {
   net: number;
   hours: number | null;
   deductions: { name: string; amount: number }[];
+  deductions_grouped: { name: string; amount: number; group: "tax" | "benefit" }[];
+  gross_total: number;
+  taxes_total: number;
+  benefits_total: number;
+  net_share: number | null;
   source: string;
   transaction_id: number | null;
   matched: boolean;
@@ -116,10 +122,20 @@ export interface Window {
   end: string;
   paycheck: number;
   carried_in: number;
+  inflow: number;
   advances: { total: number; items: Event[] };
-  bills: { total: number; items: Event[] };
+  bills: {
+    total: number;
+    items: Event[];
+    card_parts: { balance: number; bills: number; spend: number };
+    other_total: number;
+    small: { total: number; count: number; names: string[]; all_funded: boolean; under: number };
+    after_eight: { total: number; count: number };
+  };
   set_aside: { total: number; items: Event[] };
   buffer: number;
+  out: number;
+  spoken_for: number;
   safe: number;
 }
 
@@ -162,12 +178,13 @@ export interface Snapshot {
     amount: number; after_goals: number; through: string; version: string;
     parts?: { cash: number; due_before_payday: number; advances: number; advances_on_payday: number; buffer: number; next_window_shortfall: number };
     steps?: { label: string; amount: number; note?: string; as_of?: string | null; items?: { name: string; amount: number; date: string; source?: string }[] }[];
-    by_account?: { id: number; name: string; kind: string; balance: number; as_of: string | null; from_bank: boolean; paycheck_lands: boolean; due: number; buffer: number; advances: number; shortfall: number; safe: number; items: { name: string; amount: number; date: string }[] }[];
+    by_account?: { id: number; name: string; kind: string; balance: number; as_of: string | null; from_bank: boolean; paycheck_lands: boolean; due: number; buffer: number; advances: number; shortfall: number; goes_out: number; safe: number; items: { name: string; amount: number; date: string }[] }[];
     left_out?: { name: string; verb?: string; amount: number; why: string; owes?: boolean }[];
   };
   borrowing?: { fees_90d: number; fees_month: number; advances_90d: number; outstanding_total: number; outstanding: number };
   goals: { per_paycheck: number; items: { id: number; name: string; kind: string; target: number; funded: number; remaining: number; target_date: string | null; per_paycheck: number; on_track: boolean }[] };
-  usual_pace: { per_day: number; per_window: number; basis_days: number; transactions: number };
+  usual_pace: { per_day: number; per_window: number; basis_days: number; transactions: number; over_safe: number };
+  board: { problems: { total: number; items: PaymentRow[] }; due_7: { total: number; items: Event[] }; later: { total: number; items: Event[] }; paid: { total: number; items: PaymentRow[] } };
   debts: { id: number; name: string; kind: string; balance: number; apr: number; minimum: number; due_day: number | null }[];
   pending: { confirmations: number; series: number; facts: number; approvals: number; past_due: number };
   mail: { pending: { id: number; kind: string; sender_name: string; subject: string; date: string | null }[]; alerts: { id: number; kind: string; fields: Record<string, string | number>; sender_name: string; date: string | null }[] };

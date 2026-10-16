@@ -8,7 +8,6 @@ import { getPrefs } from "../prefs";
 import type { PaystubRow } from "../types";
 import { Where } from "../components/Where";
 
-const TAX = /federal|social security|medicare|state|local|tax|sdi/i;
 
 export function Paystubs() {
   const c = palette(getPrefs().look);
@@ -28,9 +27,9 @@ export function Paystubs() {
       </div>
     );
   }
-  const gross = stub.gross ?? stub.net + stub.deductions.reduce((s, d) => s + d.amount, 0);
-  const taxes = stub.deductions.filter((d) => TAX.test(d.name));
-  const benefits = stub.deductions.filter((d) => !TAX.test(d.name));
+  const gross = stub.gross_total;
+  const taxes = stub.deductions_grouped.filter((d) => d.group === "tax");
+  const benefits = stub.deductions_grouped.filter((d) => d.group === "benefit");
   const segs = [...taxes.map((d) => ({ ...d, fill: c.bill })), ...benefits.map((d) => ({ ...d, fill: c.debt })), { name: "Net", amount: stub.net, fill: c.safe }];
   const W = 1100;
   const x0 = 20;
@@ -44,7 +43,7 @@ export function Paystubs() {
   });
   const strip = [...data.recent].sort((a, b) => a.pay_date.localeCompare(b.pay_date)).slice(-6);
   const maxNet = Math.max(1, ...strip.map((p) => p.net));
-  const pct = gross > 0 ? Math.round((stub.net / gross) * 1000) / 10 : 0;
+  const pct = stub.net_share !== null ? Math.round(stub.net_share * 1000) / 10 : 0;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 16 }}>
@@ -74,8 +73,8 @@ export function Paystubs() {
             </g>
           ))}
           <g fontSize={11} fontWeight={700} fill={c.ink2}>
-            <rect x={x0} y={96} width={10} height={10} rx={3} fill={c.bill} /><text x={x0 + 16} y={105}>Taxes {money(taxes.reduce((s, d) => s + d.amount, 0))}</text>
-            <rect x={x0 + 150} y={96} width={10} height={10} rx={3} fill={c.debt} /><text x={x0 + 166} y={105}>Benefits {money(benefits.reduce((s, d) => s + d.amount, 0))}</text>
+            <rect x={x0} y={96} width={10} height={10} rx={3} fill={c.bill} /><text x={x0 + 16} y={105}>Taxes {money(stub.taxes_total)}</text>
+            <rect x={x0 + 150} y={96} width={10} height={10} rx={3} fill={c.debt} /><text x={x0 + 166} y={105}>Benefits {money(stub.benefits_total)}</text>
             <rect x={x0 + 320} y={96} width={10} height={10} rx={3} fill={c.safe} /><text x={x0 + 336} y={105}>Net {money(stub.net, { cents: true })}</text>
           </g>
         </svg>
@@ -111,8 +110,8 @@ export function Paystubs() {
             <thead><tr><th>Line</th><th style={{ textAlign: "right" }}>This stub</th></tr></thead>
             <tbody>
               <tr><td>Gross{stub.hours ? ` · ${stub.hours} h` : ""}</td><td className="num" style={{ textAlign: "right" }}>{money(gross, { cents: true })}</td></tr>
-              {stub.deductions.map((d) => (
-                <tr key={d.name}><td><span className="sw" style={{ background: TAX.test(d.name) ? "var(--bill)" : "var(--debt)" }} />{d.name}</td><td className="num" style={{ textAlign: "right" }}>−{money(d.amount, { cents: true })}</td></tr>
+              {stub.deductions_grouped.map((d) => (
+                <tr key={d.name}><td><span className="sw" style={{ background: d.group === "tax" ? "var(--bill)" : "var(--debt)" }} />{d.name} <span style={{ color: "var(--muted)", fontSize: 11 }}>{d.group === "tax" ? "tax" : "benefit"}</span></td><td className="num" style={{ textAlign: "right" }}>−{money(d.amount, { cents: true })}</td></tr>
               ))}
               <tr><td><strong><span className="sw" style={{ background: "var(--safe)" }} />Net pay</strong></td><td className="num" style={{ textAlign: "right" }}><strong>{money(stub.net, { cents: true })}</strong></td></tr>
             </tbody>

@@ -70,7 +70,7 @@ export function PaycheckSetup() {
   }
 
   return (
-    <section className="card" style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+    <section id="paycheck" className="card" style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10, scrollMarginTop: 16 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
         <strong style={{ fontSize: 14 }}>Your paycheck</strong>
         <span style={{ fontSize: 12, color: "var(--muted)" }}>what the windows, the safe-to-spend and the outlook are built on</span>

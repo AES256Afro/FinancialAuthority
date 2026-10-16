@@ -127,8 +127,11 @@ def classify(series_id: int, body: ClassifyIn, session: Session = Depends(get_se
 
 @router.get("/bills")
 def list_bills(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+    from ..engine.billdates import per_year
+
     rows = session.exec(select(Bill).where(Bill.active == True).order_by(Bill.due_day)).all()  # noqa: E712
-    return {"bills": [bill_out(b) for b in rows]}
+    monthly = sum(float(b.amount) * per_year(b) / 12.0 for b in rows)
+    return {"bills": [bill_out(b) for b in rows], "monthly_total": round(monthly, 2), "monthly_basis": "each bill by its own cadence: weekly 52 a year, every two weeks 26, twice a month 24, monthly 12, quarterly 4, yearly 1"}
 
 
 class BillIn(BaseModel):

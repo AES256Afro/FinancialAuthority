@@ -10,7 +10,7 @@
   --hairline: #e4e1da;
   --ink: #141518;
   --ink-2: #4e5058;
-  --muted: #85878f;
+  --muted: #6b6d75;
   --inverse: #ffffff;
   --paycheck: #2a78d6;
   --paycheck-soft: #e3eefb;
@@ -34,6 +34,7 @@
   --warning-ink: #7a4a00;
   --critical: #d03b3b;
   --critical-soft: #f8dada;
+  --critical-ink: #9b1c1c;
   --radius: 14px;
   --font: 'Manrope Variable', Manrope, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
@@ -47,7 +48,7 @@
   --hairline: #2a2e36;
   --ink: #f2f2ee;
   --ink-2: #b9bcc6;
-  --muted: #80848f;
+  --muted: #9a9ea8;
   --inverse: #121417;
   --paycheck: #3987e5;
   --paycheck-soft: #1b2a40;
@@ -68,6 +69,7 @@
   --warning-soft: #3d2f0f;
   --warning-ink: #f5cf7a;
   --critical-soft: #3f1d1d;
+  --critical-ink: #f4a3a3;
 }
 
 :root[data-look="console"] {
