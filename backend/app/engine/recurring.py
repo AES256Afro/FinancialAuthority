@@ -27,6 +27,21 @@ def merchant_key(merchant: str) -> str:
     return re.sub(r"\s+", " ", (merchant or "").lower()).strip()
 
 
+def bill_keys(bill) -> list[str]:  # noqa: ANN001 - a Bill
+    """The names a bill's payments may carry: its own, and who it is paid to when that differs."""
+    keys = [merchant_key(bill.name), merchant_key(getattr(bill, "pays_to", "") or "")]
+    return [k for i, k in enumerate(keys) if k and k not in keys[:i]]
+
+
+def bill_named(bills, key: str, *, loose: bool = False):  # noqa: ANN001, ANN201
+    """The bill this name means: the same name (or who it is paid to), or, loosely, one that starts the other."""
+    for b in bills:
+        for k in bill_keys(b):
+            if k == key or (loose and key and (k.startswith(key) or key.startswith(k))):
+                return b
+    return None
+
+
 def _consistent(amounts: list[float]) -> bool:
     med = statistics.median(amounts)
     return sum(1 for a in amounts if abs(a - med) <= max(1.0, 0.15 * med)) >= 0.75 * len(amounts)

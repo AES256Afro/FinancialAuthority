@@ -11,7 +11,7 @@ from datetime import date, timedelta
 from sqlmodel import Session, select
 
 from ..models import Bill, Payment, RecurringSeries, Transaction
-from .recurring import merchant_key
+from .recurring import bill_keys, merchant_key
 from .snapshot import next_due
 
 LOOKBACK_DAYS = 60
@@ -26,12 +26,12 @@ def _due_dates(bill: Bill, start: date, end: date) -> list[date]:
     return bill_dates(bill, start, end)
 
 
-def _looks_like(bill_key: str, series_key: str | None, t_key: str) -> bool:
+def _looks_like(bill_key: list[str] | str, series_key: str | None, t_key: str) -> bool:
     if not t_key:
         return False
     if series_key and (t_key == series_key or t_key.startswith(series_key) or series_key.startswith(t_key)):
         return True
-    return t_key == bill_key or t_key.startswith(bill_key) or bill_key.startswith(t_key)
+    return any(t_key == k or t_key.startswith(k) or k.startswith(t_key) for k in ([bill_key] if isinstance(bill_key, str) else bill_key))
 
 
 def match_payments(session: Session, today: date) -> dict:
@@ -44,7 +44,7 @@ def match_payments(session: Session, today: date) -> dict:
     used = {p.transaction_id for p in existing.values() if p.transaction_id}
     counts = {"paid": 0, "late": 0, "past_due": 0, "scheduled": 0}
     for bill in bills:
-        bill_key = merchant_key(bill.name)
+        bill_key = bill_keys(bill)
         series_key = series_keys.get(bill.series_id) if bill.series_id else None
         # A named match may drift by the detector's own 15% (a price change); an estimate by 40%.
         tolerance = max(2.0, bill.amount * (0.4 if bill.amount_mode == "estimate" else 0.15))

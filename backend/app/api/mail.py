@@ -397,10 +397,9 @@ def apply_fact(session: Session, fact: ExtractedFact, ref: MessageRef | None, bo
         due = body.due_date or (date.fromisoformat(fields["due_date"]) if fields.get("due_date") else None)
         key = merchant_key(name)
         bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
-        if owner:
-            bill = next((b for b in bills if merchant_key(b.name) == key or merchant_key(b.name).startswith(key) or key.startswith(merchant_key(b.name))), None)
-        else:
-            bill = next((b for b in bills if merchant_key(b.name) == key), None)  # a key changes only the bill of exactly that name
+        from ..engine.recurring import bill_named
+
+        bill = bill_named(bills, key, loose=owner)  # a key changes only the bill of exactly that name
         if bill is None:
             if amount is None or due is None:
                 raise HTTPException(400, "A new bill needs an amount and a due date; add them to the confirmation")

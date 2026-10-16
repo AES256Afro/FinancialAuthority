@@ -189,3 +189,56 @@ def test_documents_are_searched_read_and_kept_for_the_owner(owner: TestClient, l
     assert "Untrusted message" in r.text and "Example deposit" in r.text
     assert owner.delete(f"/api/v1/documents/{sheet['id']}").json() == {"ok": True}
     assert [d["id"] for d in owner.get("/api/v1/documents").json()["documents"]] == [lease["id"]]
+
+
+def test_a_bill_made_part_of_a_home_keeps_matching_the_payments_the_bank_shows(owner: TestClient):
+    from app.engine.payments import match_payments
+    from app.models import Account, Payment, Transaction
+
+    with Session(engine) as session:
+        account = Account(name="Example Checking", kind="checking", balance=2000.0)
+        session.add(account)
+        session.flush()
+        bill = Bill(name="Example Property LLC", amount=1100.0, due_day=1, category="Rent", created_on=date(2026, 9, 1))
+        session.add(bill)
+        session.add(Transaction(account_id=account.id, date=date(2026, 10, 1), merchant="Example Property LLC", amount=1100.4, row_hash="t-rent-oct"))
+        session.commit()
+        bill_id = bill.id
+    out = owner.post("/api/v1/housing/adopt", json={"bill_id": bill_id, "name": "Example Court 4"}).json()
+    assert out["homes"][0]["payee"] == "Example Property LLC"
+    with Session(engine) as session:
+        bill = session.get(Bill, bill_id)
+        assert bill.name == "Rent · Example Court 4" and bill.pays_to == "Example Property LLC"
+        match_payments(session, TODAY)
+        paid = session.exec(select(Payment).where(Payment.bill_id == bill_id, Payment.due_date == date(2026, 10, 1))).one()
+        assert paid.status == "paid"  # matched by the property's name, not only by an exact amount
+
+
+def test_a_utility_takes_a_bill_already_on_the_list_and_one_that_moves_with_you_is_not_missing(owner: TestClient):
+    with Session(engine) as session:
+        session.add(Bill(name="Example Internet", amount=60.0, due_day=12, category="Internet"))
+        session.commit()
+    home = _home(owner)
+    listed = owner.get("/api/v1/utilities").json()
+    internet = next(b for b in listed["bills_to_link"] if b["name"] == "Example Internet")
+    out = owner.post("/api/v1/utilities", json={"home_id": home["id"], "service": "internet", "provider": "Example Internet", "bill_id": internet["id"]}).json()
+    u = out["utilities"][0]
+    assert u["bill_id"] == internet["id"] and u["amount"] == 60.0 and u["due_day"] == 12
+    assert all(b["id"] != internet["id"] for b in out["bills_to_link"])
+    with Session(engine) as session:
+        assert len(session.exec(select(Bill).where(Bill.active == True)).all()) == 1  # noqa: E712 - the same bill, not a second
+        bill = session.get(Bill, internet["id"])
+        assert bill.utility_id == u["id"] and bill.category == "Internet" and bill.pays_to == "Example Internet"
+    owner.post("/api/v1/utilities", json={"home_id": home["id"], "service": "electric", "provider": "Example Power", "moves_with_you": True})
+    h = next(x for x in owner.get("/api/v1/housing").json()["homes"] if x["id"] == home["id"])
+    assert "Electricity" not in h["missing"] and next(x for x in h["utilities"] if x["service"] == "electric")["known"]
+
+
+def test_a_cost_with_no_date_is_named_and_not_counted(owner: TestClient):
+    home = _home(owner)
+    owner.post(f"/api/v1/housing/{home['id']}/costs", json={"name": "Move-in check", "amount": 950.0, "due_on": "2026-11-29"})
+    out = owner.post(f"/api/v1/housing/{home['id']}/costs", json={"name": "Application fee", "amount": 75.0}).json()
+    h = next(x for x in out["homes"] if x["id"] == home["id"])
+    assert h["costs_undated"] == ["Application fee"] and h["costs_counted"] == 950.0 and h["costs_total"] == 1025.0
+    with Session(engine) as session:
+        assert any(s["id"] == f"home-undated-{home['id']}" for s in next_steps(session, TODAY)["steps"])
