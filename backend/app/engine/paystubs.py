@@ -126,6 +126,17 @@ def paystub_out(p: Paystub) -> dict:
     }
 
 
+def verdict(difference: float | None) -> dict:
+    """A stub against the usual take-home pay, in a word: short by more than the tolerance, over by more, or matching."""
+    if difference is None:
+        return {"status": "good", "short": False, "word": "No usual take-home pay to compare with yet"}
+    if difference < -TOLERANCE:
+        return {"status": "warn", "short": True, "word": f"${-difference:,.0f} under the usual"}
+    if difference > TOLERANCE:
+        return {"status": "good", "short": False, "word": f"${difference:,.0f} over the usual"}
+    return {"status": "good", "short": False, "word": "Take-home pay matches the usual"}
+
+
 def paystubs_overview(session: Session, limit: int = 8) -> dict:
     rows = session.exec(select(Paystub).order_by(Paystub.pay_date.desc()).limit(limit)).all()
     out = []
@@ -134,6 +145,7 @@ def paystubs_overview(session: Session, limit: int = 8) -> dict:
         usual = expected_net(session, p.pay_date)  # judged afresh, by position of the month, against what is known now
         if usual is not None:
             row["expected_net"], row["difference"] = usual, round(p.net - usual, 2)
+        row["verdict"] = verdict(row["difference"])
         out.append(row)
     last = out[0] if out else None
     short = [p for p in out[:2] if p["difference"] is not None and p["difference"] < -TOLERANCE]

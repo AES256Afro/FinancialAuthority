@@ -74,7 +74,8 @@ def spending_summary(session: Session, today: date, *, months: int = 6, by: str 
     out_groups = []
     for name, g in groups.items():
         average = (sum(g["months"][k] for k in full_months) / len(full_months)) if full_months else g["total"]
-        out_groups.append({"name": "(redacted)" if redaction == "aggregates" and by == "merchant" else name, "total": _money(g["total"]), "count": g["count"], "this_month": _money(g["this_month"]), "average": _money(average), "share": round(g["total"] / spent_total, 4) if spent_total else 0.0})
+        out_groups.append({"name": "(redacted)" if redaction == "aggregates" and by == "merchant" else name, "total": _money(g["total"]), "count": g["count"], "this_month": _money(g["this_month"]), "average": _money(average), "share": round(g["total"] / spent_total, 4) if spent_total else 0.0,
+                           "over_usual": bool(full_months) and average > 0 and g["this_month"] > average + 0.005})
     out_groups.sort(key=lambda g: -g["total"])
     top_merchants = sorted(({"name": "(redacted)" if redaction == "aggregates" else n, "total": _money(m["total"]), "count": m["count"]} for n, m in merchants.items()), key=lambda m: -m["total"])[:10]
     return {
@@ -97,7 +98,8 @@ def net_worth(session: Session, today: date) -> dict:
     linked = {d.account_id for d in debts if d.account_id}
 
     def account_out(a: Account) -> dict:
-        return {"id": a.id, "name": a.name, "institution": a.institution, "kind": a.kind, "balance": a.balance, "balance_at": a.balance_at.isoformat() if a.balance_at else None, "connector": a.connector, "source": f"account:{a.id}"}
+        return {"id": a.id, "name": a.name, "institution": a.institution, "kind": a.kind, "balance": a.balance, "balance_at": a.balance_at.isoformat() if a.balance_at else None, "connector": a.connector, "source": f"account:{a.id}",
+                "age_days": max(0, (today - a.balance_at.date()).days) if a.balance_at else None}
 
     assets = [account_out(a) for a in accounts if a.kind in ASSET_KINDS]
     by_id = {a.id: a for a in accounts}
@@ -107,11 +109,12 @@ def net_worth(session: Session, today: date) -> dict:
         return {
             "id": d.id, "name": d.name, "kind": d.kind, "balance": d.balance, "apr": d.apr, "minimum": d.minimum, "source": f"debt:{d.id}", "account_id": d.account_id,
             "statement_day": d.statement_day, "due_day": d.due_day, "pay_in_full": d.pay_in_full, "credit_limit": limit,
-            "utilisation": round(d.balance / limit, 4) if limit else None, "interest_month_if_carried": _money(max(0.0, d.balance) * d.apr / 100.0 / 12.0) if d.apr else 0.0,
+            "utilisation": round(d.balance / limit, 4) if limit else None, "utilisation_status": limit_status(d.balance / limit if limit else None), "interest_month_if_carried": _money(max(0.0, d.balance) * d.apr / 100.0 / 12.0) if d.apr else 0.0,
         }
 
     owed = [debt_out(d) for d in debts]
-    owed += [{**account_out(a), "apr": None, "minimum": None, "credit_limit": a.credit_limit, "utilisation": round((a.balance or 0.0) / a.credit_limit, 4) if a.credit_limit else None} for a in accounts if a.kind in DEBT_KINDS and a.id not in linked and a.balance]
+    owed += [{**account_out(a), "apr": None, "minimum": None, "credit_limit": a.credit_limit, "utilisation": round((a.balance or 0.0) / a.credit_limit, 4) if a.credit_limit else None,
+               "utilisation_status": limit_status((a.balance or 0.0) / a.credit_limit if a.credit_limit else None)} for a in accounts if a.kind in DEBT_KINDS and a.id not in linked and a.balance]
     owed += [{"id": p.id, "name": (f"{p.provider} · {p.merchant}" if p.merchant and p.merchant.lower() != p.provider.lower() else p.provider) + (f" · {p.remaining} of {p.count} left" if not p.balance else ""), "kind": "bnpl",
               "balance": _money(p.balance) if p.balance else _money(p.installment * p.remaining), "apr": p.apr if p.apr is not None else 0.0, "minimum": p.installment, "source": f"plan:{p.id}", "finance_charge": p.finance_charge, "interest_paid": p.interest_paid,
               "ends": (p.next_date + timedelta(days=p.cadence_days * max(0, p.remaining - 1))).isoformat(), "balance_at": p.balance_at.isoformat() if p.balance_at else None, "loan_id": p.loan_id} for p in plans if p.remaining > 0 or (p.balance or 0) > 0]
@@ -151,3 +154,17 @@ def debt_mountain(session: Session, today: date) -> dict:
         "order": {"avalanche": avalanche, "snowball": snowball},
         "not_advice": NOT_ADVICE,
     }
+
+
+LIMIT_TARGET = 0.30  # the share of a credit limit the bureaus like to see under
+
+
+def limit_status(share: float | None) -> dict | None:
+    """How much of a credit limit is used, judged: over the limit, over 30 percent, or fine."""
+    if share is None:
+        return None
+    if share > 1.0:
+        return {"status": "crit", "over_target": True, "word": f"{share * 100:.0f}% of your limit used, over the limit"}
+    if share > LIMIT_TARGET:
+        return {"status": "warn", "over_target": True, "word": f"{share * 100:.0f}% of your limit used, over 30%"}
+    return {"status": "good", "over_target": False, "word": f"{share * 100:.0f}% of your limit used"}
