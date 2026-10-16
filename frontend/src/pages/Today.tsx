@@ -14,7 +14,7 @@ import { useApi } from "../api";
 import type { Cover, Saving } from "../guide";
 import { FirstRunBanner } from "./Welcome";
 import { NextStepsCard } from "../components/NextSteps";
-import { Watchlist } from "../components/Watchlist";
+import { Watchlist, WorthALook } from "../components/Watchlist";
 import { money, shortDate, when } from "../format";
 import type { Snapshot } from "../types";
 import { SafeExplain } from "../components/SafeExplain";
@@ -124,6 +124,8 @@ export function Today({ snapshot }: { snapshot: Snapshot }) {
           </div>
         ))}
       </section>
+
+      <WorthALook />
 
       <NextStepsCard />
 

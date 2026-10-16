@@ -1,11 +1,14 @@
 // Debts: the mountain. Every balance as a slice of the whole, the minimums due each month, the interest the
-// month costs, and the two classic orders. The engine computed all of it; this page draws it.
-import React, { useState } from "react";
+// month costs, and the two classic orders. Then paying it off: the date each debt is gone each way, with the extra
+// you name; advance apps by what they cost; money between people. The engine computed all of it; this page draws it.
+import { ArrowDownLeft, ArrowUpRight, Info } from "lucide-react";
+import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
-import { Failed, Loading, Said } from "../components/State";
-import { StatusPill } from "../components/Status";
-import { money, parseMoney, when } from "../format";
+import { Empty, Failed, Loading, Said } from "../components/State";
+import { SeverityTag, StatusPill } from "../components/Status";
+import { money, monthYear, parseIso, parseMoney, shortDate, when } from "../format";
+import type { AdvanceCost, PayoffOut, PayoffWay, PersonLoan } from "../types";
 
 interface DebtItem {
   id: number;
@@ -128,9 +131,356 @@ function MountainChart({ items, total }: { items: DebtItem[]; total: number }) {
   );
 }
 
+const AMOUNT_HINT = "Type an amount like 120 or 1200.50";
+const SMALL_BTN = { minHeight: 32, padding: "4px 10px" } as const;
+const H2 = { margin: 0, fontSize: 14, fontWeight: 700 } as const;
+const DAY_MS = 86_400_000;
+// A debt that is not gone within the fifty years the app looks ahead: its bar runs to the edge, striped.
+const NOT_GONE = "repeating-linear-gradient(135deg, var(--debt) 0 4px, var(--debt-soft) 4px 8px)";
+const WAY_WORD: Record<"avalanche" | "snowball", { title: string; plain: string }> = {
+  avalanche: { title: "Highest rate first", plain: "The extra goes to the debt with the highest rate (the avalanche)." },
+  snowball: { title: "Smallest balance first", plain: "The extra goes to the smallest balance (the snowball)." },
+};
+
+// Where a date sits between today and the last paid-off date of either order, as a share of the width. Placing
+// only: nothing here is shown as money or as a date.
+function timeline(p: PayoffOut) {
+  const from = parseIso(p.as_of).getTime();
+  const dates = [p.avalanche, p.snowball].flatMap((w) => [w.debt_free, ...w.debts.map((d) => d.paid_on)]).filter((d): d is string => Boolean(d));
+  const end = Math.max(from + 365 * DAY_MS, ...dates.map((d) => parseIso(d).getTime()));
+  const share = (iso: string) => Math.min(1, Math.max(0, (parseIso(iso).getTime() - from) / (end - from)));
+  const years: number[] = [];
+  for (let y = parseIso(p.as_of).getFullYear() + 1; y <= new Date(end).getFullYear(); y++) years.push(y);
+  const step = Math.max(1, Math.ceil(years.length / 6));
+  const ticks = years.map((y, i) => ({ year: y, at: share(`${y}-01-01`), labelled: i % step === 0 }));
+  return { share, ticks };
+}
+
+type Scale = ReturnType<typeof timeline>;
+
+function Axis({ scale }: { scale: Scale }) {
+  return (
+    <div aria-hidden="true" style={{ position: "relative", height: 16, fontSize: 11, color: "var(--muted)" }}>
+      <span style={{ position: "absolute", left: 0 }}>Today</span>
+      {scale.ticks.filter((t) => t.labelled && t.at > 0.12).map((t) => (
+        <span key={t.year} className="num" style={{ position: "absolute", left: `${t.at * 100}%`, transform: t.at > 0.9 ? "translateX(-100%)" : "translateX(-50%)" }}>{t.year}</span>
+      ))}
+    </div>
+  );
+}
+
+// One order: a line per debt from today to the month it is paid off, earliest first, then the dates and the
+// interest in words. The thin gaps in each bar are the turns of the year.
+function OrderColumn({ way, kind, scale, cheapest }: { way: PayoffWay; kind: "avalanche" | "snowball"; scale: Scale; cheapest: boolean }) {
+  const rows = [...way.debts].sort((a, b) => (a.paid_on ?? "9999").localeCompare(b.paid_on ?? "9999"));
+  const id = `payoff-${kind}`;
+  return (
+    <section aria-labelledby={id} style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, borderRadius: 10, border: "1px solid var(--hairline)", minWidth: 0 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <h3 id={id} style={{ margin: 0, fontSize: 14, fontWeight: 700, flex: "1 1 auto" }}>{WAY_WORD[kind].title}</h3>
+        {cheapest && <StatusPill status="good">Cheapest: the least interest</StatusPill>}
+      </div>
+      <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{WAY_WORD[kind].plain}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {rows.map((d) => (
+          <div key={d.source} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, flexWrap: "wrap" }}>
+              <strong style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={d.name}>{d.name}</strong>
+              <span className="num" style={{ color: "var(--ink-2)" }}>{d.paid_on ? `paid off ${monthYear(d.paid_on)}` : "not paid off within 50 years"} · {money(d.interest)} interest</span>
+            </div>
+            <div role="img" aria-label={`${d.name}: ${d.paid_on ? `paid off ${monthYear(d.paid_on)}` : "not paid off within 50 years"}, ${money(d.interest)} in interest`} style={{ position: "relative", height: 12, background: "var(--surface-2)", borderRadius: 4, overflow: "hidden" }}>
+              <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: d.paid_on ? `${scale.share(d.paid_on) * 100}%` : "100%", background: d.paid_on ? "var(--debt)" : NOT_GONE, borderRadius: 4 }} />
+              {scale.ticks.map((t) => <div key={t.year} style={{ position: "absolute", left: `${t.at * 100}%`, top: 0, bottom: 0, width: 1, background: "var(--surface)" }} />)}
+            </div>
+          </div>
+        ))}
+      </div>
+      <Axis scale={scale} />
+      <div style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 13 }}>
+        <div className="num" style={{ fontSize: 17, fontWeight: 800 }}>{way.debt_free ? `Debt-free ${monthYear(way.debt_free)}` : "Not debt-free within 50 years"}</div>
+        {way.months !== null && <div className="num" style={{ color: "var(--ink-2)" }}>in {way.months} {way.months === 1 ? "month" : "months"}</div>}
+        <div className="num">Interest along the way: <strong>{money(way.interest)}</strong></div>
+        {way.interest_saved !== null && way.interest_saved !== undefined ? (
+          <div className="num" style={{ color: "var(--ink-2)" }}>{money(way.interest_saved)} less interest than paying only the minimums</div>
+        ) : (
+          <div style={{ color: "var(--ink-2)" }}>Paying only the minimums never clears them, so there is no saving to compare.</div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+// The interest each way on one scale: only the minimums, then the two orders with the extra.
+function InterestBars({ p }: { p: PayoffOut }) {
+  const rows = [
+    { label: "Only the minimums", value: p.minimums_only.interest },
+    { label: WAY_WORD.avalanche.title, value: p.avalanche.interest },
+    { label: WAY_WORD.snowball.title, value: p.snowball.interest },
+  ];
+  const scale = Math.max(1, ...rows.map((r) => r.value));
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, maxWidth: 560 }}>
+      <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>Interest each way</h3>
+      {rows.map((r) => (
+        <div key={r.label} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: "2px 10px", alignItems: "center", fontSize: 13 }}>
+          <span>{r.label}</span>
+          <strong className="num" style={{ textAlign: "right" }}>{money(r.value)}</strong>
+          <div role="img" aria-label={`${r.label}: ${money(r.value)} in interest`} style={{ gridColumn: "1 / -1", position: "relative", height: 10, background: "var(--surface-2)", borderRadius: 4 }}>
+            <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${Math.min(100, (r.value / scale) * 100)}%`, background: "var(--debt)", borderRadius: 4 }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Advance apps by what they cost: the fee or tip for each $100 over the last 90 days, and the yearly rate a card
+// would need to cost the same. The bar is that yearly rate, the costliest provider the full width.
+function AdvanceCosts({ items }: { items: AdvanceCost[] }) {
+  const scale = Math.max(1, ...items.map((a) => a.as_yearly_rate));
+  const rate = (n: number) => `${n.toLocaleString("en-US", { maximumFractionDigits: 1 })}%`;
+  return (
+    <section className="card" aria-labelledby="advance-cost-title" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+      <h2 id="advance-cost-title" style={H2}>Advance apps, by what they cost</h2>
+      <div style={{ fontSize: 12, color: "var(--ink-2)" }}>The fee or tip you paid for each $100 taken over the last 90 days, and the yearly rate a card would have to charge to cost the same for as long as you held the money.</div>
+      {items.length === 0 ? (
+        <Empty card={false}>No advances taken in the last 90 days.</Empty>
+      ) : (
+        items.map((a) => (
+          <div key={a.provider} style={{ display: "flex", flexDirection: "column", gap: 4, borderTop: "1px solid var(--surface-2)", paddingTop: 8 }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap", fontSize: 13 }}>
+              <strong style={{ flex: "1 1 120px", minWidth: 0 }}>{a.provider}</strong>
+              <span className="num">{money(a.fee_per_100, { cents: true })} for each $100</span>
+              <strong className="num">{rate(a.as_yearly_rate)} a year</strong>
+            </div>
+            <div role="img" aria-label={`${a.provider}: as a yearly rate, ${rate(a.as_yearly_rate)}`} style={{ position: "relative", height: 10, background: "var(--surface-2)", borderRadius: 4, maxWidth: 560 }}>
+              <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${Math.min(100, (a.as_yearly_rate / scale) * 100)}%`, background: "var(--later)", borderRadius: 4 }} />
+            </div>
+            <div className="num" style={{ fontSize: 12, color: "var(--ink-2)" }}>
+              {a.advances === 1 ? "1 advance" : `${a.advances} advances`}: {money(a.taken)} taken, {money(a.fees, { cents: true })} in fees or tips, each held about {a.days_held} days.
+            </div>
+          </div>
+        ))
+      )}
+      <div style={{ fontSize: 12 }}><Link to="/borrowing">Open Borrowing</Link> for each advance and when it is repaid.</div>
+    </section>
+  );
+}
+
+// Money lent to or borrowed from people: a list kept by hand, with no rate. Settling is a switch, so it can be
+// turned back.
+function People({ rows, onChanged }: { rows: PersonLoan[]; onChanged: () => void }) {
+  const [person, setPerson] = useState("");
+  const [direction, setDirection] = useState<"lent" | "borrowed">("lent");
+  const [amount, setAmount] = useState("");
+  const [on, setOn] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [formSaid, setFormSaid] = useState<Note>(null);
+  const [rowSaid, setRowSaid] = useState<Record<number, Note>>({});
+
+  async function add(e: React.FormEvent) {
+    e.preventDefault();
+    const name = person.trim();
+    if (!name) {
+      setFormSaid({ tone: "error", text: "Type the person's name." });
+      return;
+    }
+    const value = parseMoney(amount);
+    if (value === null || value <= 0) {
+      setFormSaid({ tone: "error", text: AMOUNT_HINT });
+      return;
+    }
+    setBusy("form");
+    setFormSaid(null);
+    try {
+      await api<{ people: PersonLoan[] }>("/api/v1/debts/payoff/people", { method: "POST", body: JSON.stringify({ person: name, direction, amount: value, on: on || null, note: note.trim(), settled: false }) });
+      setFormSaid({ tone: "info", text: `Added: ${direction === "lent" ? `you lent ${name}` : `you borrowed from ${name}`} ${money(value, { cents: true })}.` });
+      setPerson("");
+      setAmount("");
+      setOn("");
+      setNote("");
+      onChanged();
+    } catch (err) {
+      setFormSaid({ tone: "error", text: `Couldn't add it: ${(err as Error).message}` });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function settle(index: number, r: PersonLoan) {
+    setBusy(`row-${index}`);
+    setRowSaid((all) => ({ ...all, [index]: null }));
+    try {
+      await api<{ people: PersonLoan[] }>(`/api/v1/debts/payoff/people/${index}`, { method: "PUT", body: JSON.stringify({ ...r, settled: !r.settled }) });
+      setRowSaid((all) => ({ ...all, [index]: { tone: "info", text: r.settled ? "Marked as not settled." : "Marked as settled." } }));
+      onChanged();
+    } catch (err) {
+      setRowSaid((all) => ({ ...all, [index]: { tone: "error", text: `Couldn't change it: ${(err as Error).message}` } }));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <section className="card" aria-labelledby="people-title" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+      <h2 id="people-title" style={H2}>Money between people</h2>
+      <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Money you lent to someone or borrowed from someone, kept here so it is not forgotten. It has no rate and is not counted in your debts above.</div>
+      {rows.length === 0 ? (
+        <Empty card={false}>Nothing on the list. Add a loan to or from a person below.</Empty>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          {rows.map((r, i) => {
+            const Icon = r.direction === "lent" ? ArrowUpRight : ArrowDownLeft;
+            const said = rowSaid[i];
+            return (
+              <div key={`${i}-${r.person}-${r.on}`} style={{ display: "flex", flexDirection: "column", gap: 4, padding: "8px 0", borderTop: i === 0 ? 0 : "1px solid var(--surface-2)", opacity: r.settled ? 0.75 : 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 13 }}>
+                  <Icon size={16} aria-hidden="true" style={{ flexShrink: 0, color: "var(--ink-2)" }} />
+                  <span style={{ flex: "1 1 180px", minWidth: 0 }}>
+                    <strong>{r.direction === "lent" ? `You lent ${r.person}` : `You borrowed from ${r.person}`}</strong>
+                    <span style={{ color: "var(--ink-2)" }}> · {shortDate(r.on)}</span>
+                  </span>
+                  <strong className="num">{money(r.amount, { cents: true })}</strong>
+                  {r.settled ? <StatusPill status="good">Settled</StatusPill> : <SeverityTag severity="info" word="Still open" />}
+                </div>
+                {r.note && <div style={{ fontSize: 12, color: "var(--ink-2)", paddingLeft: 24 }}>{r.note}</div>}
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", paddingLeft: 24 }}>
+                  <button type="button" className="btn" style={SMALL_BTN} disabled={busy === `row-${i}`} onClick={() => settle(i, r)}>{r.settled ? "Mark as not settled" : "Mark as settled"}</button>
+                  {said && <Said text={said.text} tone={said.tone} />}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <form onSubmit={add} style={{ display: "flex", flexDirection: "column", gap: 10, borderTop: "1px solid var(--hairline)", paddingTop: 10 }}>
+        <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>Add to the list</h3>
+        <fieldset style={{ border: 0, padding: 0, margin: 0, display: "flex", gap: 16, flexWrap: "wrap" }}>
+          <legend className="lab" style={{ padding: 0, marginBottom: 4 }}>Which way the money went</legend>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, minHeight: 36 }}>
+            <input type="radio" name="person-direction" checked={direction === "lent"} onChange={() => setDirection("lent")} style={{ width: 18, height: 18 }} />
+            I lent money to them
+          </label>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, minHeight: 36 }}>
+            <input type="radio" name="person-direction" checked={direction === "borrowed"} onChange={() => setDirection("borrowed")} style={{ width: 18, height: 18 }} />
+            I borrowed money from them
+          </label>
+        </fieldset>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "1 1 160px", minWidth: 0 }}>
+            <span className="lab">Person</span>
+            <input className="input" value={person} onChange={(e) => setPerson(e.target.value)} autoComplete="off" />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span className="lab">Amount</span>
+            <input className="input num" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: "min(100%, 130px)" }} />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span className="lab">On (empty means today)</span>
+            <input className="input" type="date" value={on} onChange={(e) => setOn(e.target.value)} />
+          </label>
+        </div>
+        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span className="lab">Note (optional)</span>
+          <input className="input" value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} />
+        </label>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <button type="submit" className="btn dark" disabled={busy === "form"}>{busy === "form" ? "Adding…" : "Add to the list"}</button>
+          <Said text={formSaid?.text ?? null} tone={formSaid?.tone} />
+        </div>
+      </form>
+    </section>
+  );
+}
+
+// Paying it off: the extra each month is asked of the app again whenever it changes. `changed` goes up when the
+// debts' terms are saved above, so the dates follow.
+function Payoff({ changed }: { changed: number }) {
+  const [text, setText] = useState("");
+  const [extra, setExtra] = useState(0);
+  const [said, setSaid] = useState<Note>(null);
+  const state = useApi<PayoffOut>(`/api/v1/debts/payoff?extra=${extra}`);
+  const { reload } = state;
+  // reload is a new function each render; only a save above should ask again.
+  useEffect(() => {
+    if (changed > 0) reload();
+  }, [changed]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function ask(e: React.FormEvent) {
+    e.preventDefault();
+    const value = text.trim() === "" ? 0 : parseMoney(text);
+    if (value === null || value < 0) {
+      setSaid({ tone: "error", text: AMOUNT_HINT });
+      return;
+    }
+    if (value > 100_000) {
+      setSaid({ tone: "error", text: "Type an extra of 100,000 or less." });
+      return;
+    }
+    setSaid(null);
+    if (value === extra) reload();
+    else setExtra(value);
+  }
+
+  const p = state.data;
+  const working = state.loading && p !== null;
+  const assumed = p ? p.debts.filter((d) => d.minimum_assumed).map((d) => d.name) : [];
+  const same = p ? p.avalanche.interest === p.snowball.interest : false;
+  const scale = p ? timeline(p) : null;
+  return (
+    <>
+      <section className="card" aria-labelledby="payoff-title" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+        <h2 id="payoff-title" style={H2}>Paying it off</h2>
+        <form onSubmit={ask} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span className="lab">Extra each month, on top of the minimums</span>
+            <input className="input num" inputMode="decimal" value={text} onChange={(e) => setText(e.target.value)} placeholder="0" style={{ width: "min(100%, 160px)" }} />
+          </label>
+          <button type="submit" className="btn dark" disabled={working}>{working ? "Working it out…" : "Work it out"}</button>
+          <Said text={said?.text ?? null} tone={said?.tone} />
+          {state.error && p && <Said text={`Couldn't work it out: ${state.error.message}`} tone="error" />}
+        </form>
+        {state.error && !p && <Failed card={false} error={state.error} what="the payoff dates" onRetry={reload} />}
+        {!state.error && !p && <Loading card={false} what="the payoff dates" />}
+        {p && scale && (
+          p.debts.length === 0 ? (
+            <Empty card={false}>No debts with a balance to pay off. Cards, loans, installment plans and medical bills appear here once they have a balance.</Empty>
+          ) : (
+            <>
+              <div className="num" style={{ fontSize: 13, color: "var(--ink-2)" }}>
+                Worked out with <strong style={{ color: "var(--ink)" }}>{money(p.extra, { cents: true })}</strong> extra each month on top of the minimums ({money(p.minimums_total, { cents: true })} a month together). When a debt is gone, its minimum moves on to the next one.
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))", gap: 12 }}>
+                <OrderColumn way={p.avalanche} kind="avalanche" scale={scale} cheapest={!same && p.cheapest === "avalanche"} />
+                <OrderColumn way={p.snowball} kind="snowball" scale={scale} cheapest={!same && p.cheapest === "snowball"} />
+              </div>
+              {same && <div style={{ fontSize: 13 }}>Both orders cost the same interest here.</div>}
+              <InterestBars p={p} />
+              <div className="num" style={{ fontSize: 13, color: "var(--ink-2)" }}>
+                Paying only the minimums: {p.minimums_only.debt_free ? `debt-free ${monthYear(p.minimums_only.debt_free)}${p.minimums_only.months !== null ? `, in ${p.minimums_only.months} months` : ""}` : "not debt-free within 50 years"}, with {money(p.minimums_only.interest)} in interest.
+              </div>
+              {assumed.length > 0 && (
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 6, fontSize: 12, color: "var(--ink-2)", background: "var(--surface-2)", borderRadius: 10, padding: "8px 10px" }}>
+                  <Info size={14} aria-hidden="true" style={{ flexShrink: 0, marginTop: 1 }} />
+                  <span>{p.note} Assumed for: {assumed.join(", ")}.</span>
+                </div>
+              )}
+              <div style={{ fontSize: 11, color: "var(--muted)" }}>{p.not_advice}</div>
+            </>
+          )
+        )}
+      </section>
+      {p && <AdvanceCosts items={p.advances} />}
+      {p && <People rows={p.people} onChanged={reload} />}
+    </>
+  );
+}
+
 export function Debts() {
   const { data, error, reload } = useApi<Mountain>("/api/v1/debts");
   const [notes, setNotes] = useState<Record<string, Note>>({});
+  const [changed, setChanged] = useState(0);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 980 }}>
       <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Debts</h1>
@@ -172,7 +522,7 @@ export function Debts() {
                       <td className="num" style={{ textAlign: "right", color: "var(--ink-2)" }}>{d.minimum ? money(d.minimum) : "—"}</td>
                       <td className="num" style={{ textAlign: "right", color: "var(--muted)" }}>{(d.share * 100).toFixed(0)}%</td>
                     </tr>
-                    {d.source.startsWith("debt:") && (d.kind === "card" || d.kind === "loan") && <Terms key={`${d.source}-${d.apr}-${d.credit_limit}-${d.statement_day}-${d.due_day}-${d.minimum}-${String(d.pay_in_full)}`} d={d} onSaved={reload} said={notes[d.source] ?? null} setSaid={(n) => setNotes((all) => ({ ...all, [d.source]: n }))} />}
+                    {d.source.startsWith("debt:") && (d.kind === "card" || d.kind === "loan") && <Terms key={`${d.source}-${d.apr}-${d.credit_limit}-${d.statement_day}-${d.due_day}-${d.minimum}-${String(d.pay_in_full)}`} d={d} onSaved={() => { reload(); setChanged((n) => n + 1); }} said={notes[d.source] ?? null} setSaid={(n) => setNotes((all) => ({ ...all, [d.source]: n }))} />}
                   </React.Fragment>
                 ))}
                 {data.items.length === 0 && <tr><td colSpan={6} style={{ color: "var(--muted)" }}>No debts on record. Cards, loans, installment plans and advances appear here as they are confirmed.</td></tr>}
@@ -194,6 +544,7 @@ export function Debts() {
               </section>
             </div>
           )}
+          <Payoff changed={changed} />
           <div style={{ fontSize: 12, color: "var(--muted)" }}>{data.not_advice} Installment plans count what is left to pay; advances count the amount with its fee.</div>
         </>
       )}

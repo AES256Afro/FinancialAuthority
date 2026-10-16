@@ -1,9 +1,19 @@
 // Reports: spending by month beside income, the categories with this month against the usual, the top
-// merchants. Every number is the engine's; the charts draw them and add nothing.
-import { useState } from "react";
+// merchants; then a report you build and save, groups of categories, the year in review and tax time.
+// Every number is the engine's; the charts draw them and add nothing.
+import { useEffect, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { useApi } from "../api";
+import { ReportBuilder, TaxTime, YearInReview } from "../components/ReportBuilder";
 import { Failed, Loading } from "../components/State";
 import { money } from "../format";
+
+const JUMPS = [
+  { id: "build", label: "Build a report" },
+  { id: "groups", label: "Groups of categories" },
+  { id: "year", label: "The year in review" },
+  { id: "tax", label: "Tax time" },
+];
 
 interface Spending {
   as_of: string;
@@ -77,6 +87,11 @@ export function Reports() {
   const { data, error, reload } = useApi<Spending>(`/api/v1/reports/spending?months=${months}&by=${by}`);
   const [table, setTable] = useState(false);
   const groupMax = Math.max(1, ...(data?.groups.map((g) => Math.max(g.this_month, g.average)) ?? [1]));
+  const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ block: "start", behavior: "smooth" });
+  const { hash } = useLocation();
+  useEffect(() => {
+    if (hash) document.getElementById(hash.slice(1))?.scrollIntoView({ block: "start" });
+  }, [hash]);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 980 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -92,6 +107,12 @@ export function Reports() {
           {(["category", "merchant"] as const).map((k) => <button key={k} type="button" aria-pressed={by === k} className={`btn${by === k ? " dark" : ""}`} style={{ minHeight: 36, padding: "4px 12px" }} onClick={() => setBy(k)}>By {k}</button>)}
         </div>
       </div>
+      <nav aria-label="On this page" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", fontSize: 13 }}>
+        <span className="lab">Jump to</span>
+        {JUMPS.map((j) => (
+          <Link key={j.id} to={{ hash: `#${j.id}` }} onClick={() => jump(j.id)} className="btn" style={{ minHeight: 32, padding: "4px 12px", textDecoration: "none", display: "inline-flex", alignItems: "center" }}>{j.label}</Link>
+        ))}
+      </nav>
       {error && !data && <Failed error={error} what="the report" onRetry={reload} />}
       {!data && !error && <Loading what="the report" />}
       {data && (
@@ -168,6 +189,10 @@ export function Reports() {
           <div style={{ fontSize: 12, color: "var(--muted)" }}>{data.not_advice} Spending leaves out transfers, card payments, income and rows you ignored.</div>
         </>
       )}
+
+      <ReportBuilder />
+      <YearInReview />
+      <TaxTime />
     </div>
   );
 }
