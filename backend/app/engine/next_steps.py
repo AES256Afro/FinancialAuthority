@@ -89,6 +89,11 @@ def next_steps(session: Session, today: date) -> dict:
     for mv in session.exec(select(AccountMove).where(AccountMove.status == "moving")).all():
         if mv.target_account_id is None:
             steps.append(_step(f"move-target-{mv.id}", "warning", f"{mv.name}: add {mv.target_name or 'the new account'} to the app (link it through Plaid, or add it by hand) so each switch is confirmed from its ledger.", "Connect", "/settings/connectors?connect=plaid", f"move:{mv.id}"))
+    from .assets import assets_overview
+
+    for a in assets_overview(session, today)["items"]:
+        if a["needs_update"]:
+            steps.append(_step(f"asset-{a['id']}", "info", f"{a['name']}: its value was set on {a['value_on']}. Update it so net worth stays true.", "Update the value", "/accounts#other", a["source"]))
     if session.exec(select(Paystub.id)).first() is None:
         steps.append(_step("paystub-none", "info", "No paystub yet: forward a pay statement PDF to the mailbox, or drop it into Imports.", "Paystubs", "/paystubs", "paystubs"))
 

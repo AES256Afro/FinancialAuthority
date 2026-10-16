@@ -119,9 +119,14 @@ def net_worth(session: Session, today: date) -> dict:
               "balance": _money(p.balance) if p.balance else _money(p.installment * p.remaining), "apr": p.apr if p.apr is not None else 0.0, "minimum": p.installment, "source": f"plan:{p.id}", "finance_charge": p.finance_charge, "interest_paid": p.interest_paid,
               "ends": (p.next_date + timedelta(days=p.cadence_days * max(0, p.remaining - 1))).isoformat(), "balance_at": p.balance_at.isoformat() if p.balance_at else None, "loan_id": p.loan_id} for p in plans if p.remaining > 0 or (p.balance or 0) > 0]
     owed += [{"id": a.id, "name": f"{a.provider} advance", "kind": "advance", "balance": _money(a.amount + a.fee), "apr": None, "minimum": None, "source": f"advance:{a.id}"} for a in advances]
+    from .assets import assets_overview
+
+    others = assets_overview(session, today)
+    assets += [{"id": o["id"], "name": o["name"], "institution": "", "kind": o["kind"], "balance": o["value_now"], "balance_at": o["value_on"], "connector": "owner", "source": o["source"],
+                "age_days": max(0, (today - date.fromisoformat(o["value_on"])).days), "other": True, "needs_update": o["needs_update"]} for o in others["items"]]
     assets_total = sum((a["balance"] or 0.0) for a in assets)
     debts_total = sum((d["balance"] or 0.0) for d in owed)
-    stale = [a["name"] for a in assets if a["balance_at"] and date.fromisoformat(a["balance_at"][:10]) < today - timedelta(days=3)]
+    stale = [a["name"] for a in assets if not a.get("other") and a["balance_at"] and date.fromisoformat(a["balance_at"][:10]) < today - timedelta(days=3)]
     return {
         "as_of": today.isoformat(),
         "assets": {"total": _money(assets_total), "items": assets},
