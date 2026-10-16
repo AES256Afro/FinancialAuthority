@@ -23,6 +23,7 @@ const CoverPage = lazy(() => import("./pages/CoverPage").then((m) => ({ default:
 const Saving = lazy(() => import("./pages/Saving").then((m) => ({ default: m.Saving })));
 const Welcome = lazy(() => import("./pages/Welcome").then((m) => ({ default: m.Welcome })));
 const Exports = lazy(() => import("./pages/Exports").then((m) => ({ default: m.Exports })));
+const Switch = lazy(() => import("./pages/Switch").then((m) => ({ default: m.Switch })));
 const Glossary = lazy(() => import("./pages/Glossary").then((m) => ({ default: m.Glossary })));
 const Debts = lazy(() => import("./pages/Debts").then((m) => ({ default: m.Debts })));
 const Connectors = lazy(() => import("./pages/Connectors").then((m) => ({ default: m.Connectors })));
@@ -79,6 +80,7 @@ export default function App() {
         <Route path="/welcome" element={<Welcome />} />
         <Route path="/exports" element={<Exports />} />
         <Route path="/glossary" element={<Glossary />} />
+        <Route path="/switch" element={<Switch />} />
         <Route path="/accounts" element={<Accounts />} />
         <Route path="/investments" element={<Investments />} />
         <Route path="/outlook" element={<Outlook />} />

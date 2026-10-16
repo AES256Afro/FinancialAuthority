@@ -84,6 +84,11 @@ def next_steps(session: Session, today: date) -> dict:
         steps.append(_step("borrowing", "warning", f"Borrowing cost ${borrowing['fees_90d']:,.0f} in fees in the last 90 days" + (f"; {borrowing['outstanding']} advance{'s' if borrowing['outstanding'] != 1 else ''} still out" if borrowing["outstanding"] else "") + ". The cycle, its cost and the way out are laid out.", "Borrowing", "/borrowing", "borrowing"))
     for a in session.exec(select(Account).where(Account.active == True, Account.connector == "manual", Account.kind == "card")).all():  # noqa: E712
         steps.append(_step(f"link-card-{a.id}", "warning", f"{a.name} is on file by hand, with {'no balance' if a.balance is None else 'a typed balance'}: link it through Plaid and its balance, its payments and the Affirm charges on it count by themselves.", "Connect", "/settings/connectors?connect=plaid", f"account:{a.id}"))
+    from ..models import AccountMove
+
+    for mv in session.exec(select(AccountMove).where(AccountMove.status == "moving")).all():
+        if mv.target_account_id is None:
+            steps.append(_step(f"move-target-{mv.id}", "warning", f"{mv.name}: add {mv.target_name or 'the new account'} to the app (link it through Plaid, or add it by hand) so each switch is confirmed from its ledger.", "Connect", "/settings/connectors?connect=plaid", f"move:{mv.id}"))
     if session.exec(select(Paystub.id)).first() is None:
         steps.append(_step("paystub-none", "info", "No paystub yet: forward a pay statement PDF to the mailbox, or drop it into Imports.", "Paystubs", "/paystubs", "paystubs"))
 

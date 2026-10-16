@@ -13,7 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import auth, oauth
 from .security import SecurityMiddleware
-from .api import appearance, approvals, banks, borrowing, exports, goals, guide, imports, investments, ledger_rules, llm, mail, planned, projections, push, registers, routes, scenarios, tools
+from .api import appearance, approvals, banks, borrowing, exports, goals, guide, imports, moves, investments, ledger_rules, llm, mail, planned, projections, push, registers, routes, scenarios, tools
 from .config import settings
 from .db import init_db, session_scope
 from .engine.household import seed
@@ -73,6 +73,7 @@ app.include_router(scenarios.router)
 app.include_router(guide.router)
 app.include_router(appearance.router)
 app.include_router(exports.router)
+app.include_router(moves.router)
 app.include_router(investments.router)
 app.include_router(imports.router)
 app.include_router(projections.router)
