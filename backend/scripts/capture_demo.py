@@ -55,6 +55,7 @@ GETS = [
     "/api/auth/factors", "/api/auth/sessions", "/api/v1/accounts", "/api/v1/assets", "/api/v1/budgets", "/api/v1/debts/payoff", "/api/v1/goals/sinking", "/api/v1/ha",
     "/api/v1/pairs", "/api/v1/privacy", "/api/v1/recap", "/api/v1/reports/custom/saved", "/api/v1/reports/custom/tax", "/api/v1/reports/custom/year?year=2026",
     "/api/v1/reports/custom?rows=category&period=last_365", "/api/v1/restore-points/offbox", "/api/v1/watch", "/api/v1/housing", "/api/v1/utilities", "/api/v1/documents",
+    "/api/v1/people", "/api/v1/shared", "/api/v1/receipts", "/api/v1/documents/months",
 ]
 
 REVIEW = {"notes": [
@@ -134,6 +135,23 @@ def seed_extras(client: TestClient) -> None:
              "Pet rent $25.00 per month.\nA late fee of $75.00 is charged after the 3rd.\nSecurity deposit: $300.00\n"
              "Lease ends on November 30, 2027. Resident must give 60 days written notice to vacate.\n")
     client.post("/api/v1/documents", files={"file": ("lease.txt", lease.encode(), "text/plain")}, data={"title": "Lease", "kind": "lease", "attach_to": f"home:{new['id']}"})
+    # A second person who sees the shared accounts, and a joint account marked shared. Synthetic.
+    accounts = client.get("/api/v1/accounts").json()
+    rows = accounts if isinstance(accounts, list) else accounts.get("accounts", [])
+    joint = next((a for a in rows if a.get("kind") == "checking"), None)
+    client.post("/api/v1/people", json={"username": "sam", "display_name": "Sam", "role": "shared"})
+    if joint:
+        client.put(f"/api/v1/accounts/{joint['id']}/sharing", json={"shared": True})
+    # Two kept receipts: one matched to its purchase with a return window, one photo not matched yet.
+    tx = client.get("/api/v1/transactions/search", params={"limit": 40}).json()["transactions"]
+    bought = next((t for t in tx if t["amount"] > 20), None)
+    if bought:
+        receipt = f"Receipt from {bought['merchant']}\nOrder #EX-1001\nTotal: ${bought['amount']:,.2f}\n30-day returns.\n"
+        client.post("/api/v1/documents", files={"file": ("receipt.txt", receipt.encode(), "text/plain")},
+                    data={"kind": "receipt", "attach_to": f"transaction:{bought['id']}", "merchant": bought["merchant"], "amount": str(bought["amount"]), "bought_on": bought["date"],
+                          "return_by": "2026-11-05", "warranty_until": "2027-10-01", "title": f"Receipt · {bought['merchant']}"})
+    client.post("/api/v1/documents", files={"file": ("headphones.png", b"\x89PNG synthetic", "image/png")},
+                data={"kind": "receipt", "merchant": "Example Electronics", "amount": "79.99", "bought_on": "2026-10-10", "return_by": "2026-10-24", "warranty_until": "2027-10-10", "title": "Receipt · Example Electronics"})
     # A send waiting for approval, from the Bills page's date-move request.
     approvals.notify.send = lambda *a, **k: {"ok": True}  # type: ignore[assignment]
     client.post("/api/v1/approvals", json={"to": "billing@example-lender.test", "subject": "Request to move my billing date to the 13th", "body": "Hello,\n\nI would like to move my billing date from the 28th of each month to the 13th, starting with the next cycle. Please confirm the change and any one-time adjustment to the next bill.\n\nThank you.", "reason": "Car loan: 28th to 13th", "source": "bill:13"})
