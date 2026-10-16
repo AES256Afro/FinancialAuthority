@@ -47,8 +47,8 @@ def _caller() -> tuple[str, str]:
     token = get_access_token()
     if token is None:
         return "mcp", "full"
-    redaction = (token.claims or {}).get("redaction", "full") if hasattr(token, "claims") else "full"
-    return token.client_id, redaction
+    claims = (token.claims or {}) if hasattr(token, "claims") else {}
+    return str(claims.get("name") or token.client_id), claims.get("redaction", "full")
 
 
 def _today() -> date:

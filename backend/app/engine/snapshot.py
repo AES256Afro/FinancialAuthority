@@ -64,8 +64,8 @@ def _mail_facts(session: Session, today: date) -> dict:
     def out(f: ExtractedFact) -> dict:
         r = refs.get(f.message_ref_id)
         fields = json.loads(f.fields or "{}")
-        return {"id": f.id, "kind": f.kind, "fields": fields, "confidence": f.confidence, "status": f.status, "sender_name": r.sender_name if r else fields.get("sender_name", ""),
-                "subject": r.subject if r else "", "date": r.date.date().isoformat() if r and r.date else fields.get("message_date"), "source": f"fact:{f.id}"}
+        return {"id": f.id, "kind": f.kind, "fields": fields, "confidence": f.confidence, "status": f.status, "sender_name": _from_mail(r.sender_name if r else fields.get("sender_name", ""), 60),
+                "subject": _from_mail(r.subject if r else "", 100), "date": r.date.date().isoformat() if r and r.date else fields.get("message_date"), "source": f"fact:{f.id}", "from_mail": True}
 
     return {"pending": [out(f) for f in pending_rows], "alerts": [out(f) for f in alert_rows]}
 
@@ -323,3 +323,12 @@ def _explain_safe(session: Session, accounts: list, before: list[dict], advances
         left_out.append({"name": " and ".join(names) or "Advances", "verb": "take back" if len(names) > 1 else "takes back", "amount": _money(advances_on_payday),
                          "why": f"On payday ({next_payday:%b} {next_payday.day}), from that paycheck, not from what is here now."})
     return {"by_account": by_account, "steps": steps, "left_out": left_out}
+
+
+def _from_mail(text: str | None, limit: int) -> str:
+    """A name or subject from an email, on one line and short: it is data, shown as written, never instructions."""
+    import re as _re
+
+    clean = _re.sub(r"[\x00-\x1f\x7f\u2028\u2029]+", " ", text or "")
+    clean = _re.sub(r"\s+", " ", clean).strip()
+    return clean if len(clean) <= limit else clean[: limit - 1] + "…"

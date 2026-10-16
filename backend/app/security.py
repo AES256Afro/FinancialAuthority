@@ -53,9 +53,26 @@ class SecurityMiddleware:
                 return
         path: str = scope.get("path", "")
         https = _is_https(scope)
+        state = {"received": 0, "refused": False, "started": False}
+
+        async def counted_receive() -> dict:
+            message = await receive()
+            if message.get("type") == "http.request":
+                state["received"] += len(message.get("body", b""))
+                if state["received"] > MAX_BODY and not state["refused"]:
+                    state["refused"] = True
+                    if not state["started"]:
+                        state["started"] = True
+                        await send({"type": "http.response.start", "status": 413, "headers": [(b"content-type", b"application/json"), *COMMON]})
+                        await send({"type": "http.response.body", "body": b'{"detail":"That request is too large"}'})
+                    return {"type": "http.disconnect"}
+            return message
 
         async def wrapped(message: dict) -> None:
+            if state["refused"]:
+                return
             if message["type"] == "http.response.start":
+                state["started"] = True
                 headers = [(k, v) for k, v in message.get("headers", []) if k.lower() not in {h for h, _ in COMMON} and k.lower() != b"content-security-policy"]
                 headers += COMMON
                 if https:
@@ -67,4 +84,4 @@ class SecurityMiddleware:
                 message = {**message, "headers": headers}
             await send(message)
 
-        await self.app(scope, receive, wrapped)
+        await self.app(scope, counted_receive, wrapped)

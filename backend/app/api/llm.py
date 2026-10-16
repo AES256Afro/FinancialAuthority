@@ -159,7 +159,9 @@ def put_rules(body: RulesIn, session: Session = Depends(get_session), _: auth.Pr
 
 
 @router.post("/chat")
-async def chat(body: ChatIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> StreamingResponse:
+async def chat(body: ChatIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> StreamingResponse:
+    if principal.kind != "owner":
+        raise HTTPException(403, "The built-in chat is the owner's; a connected app talks to its own model through /mcp")
     if not body.messages or len(body.messages) > 60:
         raise HTTPException(400, "Between one and sixty messages")
     history = []

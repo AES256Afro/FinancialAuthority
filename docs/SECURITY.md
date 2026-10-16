@@ -15,9 +15,9 @@ It never holds a bank password, a card number in the clear, or a government iden
 
 | Principal | How | May |
 | --- | --- | --- |
-| The owner | Session cookie after the sign-in form; CSRF header on writes; lockout after repeated failures | Everything, including approve |
-| A connected app (claude.ai, Claude Code, Open WebUI) | OAuth 2.1: dynamic registration, authorization code with PKCE, consent page with the owner's sign-in, access tokens for a day, refresh tokens for ninety, rotated | `read`, and `confirm` only if granted on the consent page; never `approve` or `admin` |
-| A script | API key as a bearer token, scoped at creation | `read`, `confirm`; never `approve` |
+| The owner | A session after the sign-in form, recorded on the server and ended by signing out (Settings › Clients lists every signed-in device and ends any); CSRF header on writes; a lockout per address and a doubling wait per account | Everything, including approve |
+| A connected app (claude.ai, Claude Code, Open WebUI) | OAuth 2.1: dynamic registration (at most twenty a day and a hundred live), authorization code with PKCE, a consent page that names where it sends you and warns when that is not Claude, the owner's sign-in, access tokens for a day, refresh tokens for ninety, rotated | `read`, and `confirm` only if granted on the consent page; never `approve` or `admin` |
+| A script | API key as a bearer token, scoped at creation; a key that hides details reads through `/mcp` only, and every REST read by a key is in the activity log | `read`, `confirm`; never `approve` or `admin`; never the built-in chat |
 | The reviewer model | Called by the app, never calling in | Sees the plan, rules, goals, alerts; never mail, attachments, account names or numbers |
 | The advisor model | Called by the app in the chat | The read tools, redaction applied; cannot confirm, approve or send |
 | Anyone else | The public surface: the sign-in page, `/mcp`, `/api`, `/oauth/*`, `/.well-known/*`, `/api/health` | Nothing without a credential |
@@ -71,7 +71,9 @@ Each line is a test in `backend/tests/test_hardening.py` or `test_exports.py`, o
 | Control | How it is held | Checked |
 |---|---|---|
 | Security headers | `app/security.py`, plain ASGI: nosniff, no referrer, `X-Frame-Options: DENY`, a permissions policy, HSTS over https; the pages get a content-security policy (scripts from the app and Plaid Link only, no plugins, no outside forms, no framing); the OAuth consent page gets its own, whose form rule allows the client's https or local callback | test, and `curl -I` against BigBox |
-| Body ceiling | requests over 60 MB refused with 413 before the body is read; each upload route still refuses over 50 MB | test |
+| Body ceiling | requests over 60 MB refused with 413, whether they state a length or arrive in chunks; each upload route still refuses over 50 MB | test |
+| Restores | a restore puts the money data back but keeps keys, connected apps, sessions, approvals, the calendar feed and the activity log as they are now | test |
+| Mail in the plan | sender names and subjects reach the plan and the brief on one short line, and the advisor is told they are written by the sender | test |
 | Malformed uploads | empty, truncated, binary and script-laden files to every upload route answer under 500 | test |
 | Session cookie | HttpOnly, SameSite=Lax, Secure whenever the request came over https; writes need the app's own header | test |
 | Sign-in | lockout after repeated failures per address | test (existing); not re-run against the live box, since it would lock the owner's own address out |
