@@ -215,3 +215,42 @@ The owner is moving the banking to a credit union over a few months, the card la
 
 - ☐ **L12 Look it up.** An optional research tool for the models: web search through the owner's own SearXNG (free, self-hosted, in BoxPilot's catalog), so the advisor can find, for example, how a biller changes its payment method, with the source link shown. Never required; the engine works without it.
 
+
+## M19 to M36 — Picked by the owner on 2026-10-16
+
+Proposed after a survey of YNAB, Monarch, Copilot, Rocket Money, Empower, Simplifi, Lunch Money, Tiller, PocketGuard, Origin, Actual Budget, Firefly III and Maybe (the milestone book: what their users vote for, with sources). The owner picked all eighteen. Order: the sweeps first (readability and usability, bugs in rounds, performance, security), then M19, M20, M22, M26, M27, M29 (the recommended set), then the rest.
+
+**Money you can trust**
+
+- ☐ **M19 Pending and posted, near-instant.** Pending charges shown as pending and replaced by the posted ones without counting twice; Plaid's transactions webhook so new rows arrive minutes after Plaid has them (needs the https address); bank alert emails as provisional transactions within fifteen minutes, matched when the bank posts; every figure shows how fresh its data is.
+- ☐ **M20 Transfers and card payments matched.** Money leaving one account paired with money arriving in another; a checking payment paired with the card's credit; the same transaction through two sources merged; a review list for unsure pairs.
+- ☐ **M21 More free ways in.** Bank and card alert emails parsed for amount, merchant and account; statement PDFs (text) read into transactions with a preview; Teller as an equal first choice; free logins left shown per service.
+
+**Planning**
+
+- ☐ **M22 A budget for each paycheck.** Category amounts per paycheck rather than per month; what is left in each between paydays; leftovers roll to the next check or a goal; safe to spend by category.
+- ☐ **M23 Plan versus what happened.** After each payday, the last window's plan beside what happened; the usual pace adjusts from it with the change shown; a weekly recap on the phone.
+- ☐ **M24 Goals you can watch fill.** A progress picture per goal with the date it is reached at the current pace; sinking funds for yearly bills; goals that take a window's leftovers.
+- ☐ **M25 Debt payoff, advances included.** Snowball or avalanche with dates and interest saved; advance apps and pay-later plans as debts with the fee per $100; money lent to and borrowed from people; a check-by-check plan to stop using advances.
+
+**Security and safety**
+
+- ☐ **M26 Passkeys and a second step.** Passkey sign-in; an authenticator code with recovery codes; signed-in devices with sign out everywhere; optional sign-in through the owner's own OpenID provider.
+- ☐ **M27 Backups that prove themselves.** A weekly restore drill of the newest copy; an encrypted copy to a drive or any cloud folder with the owner's passphrase; a one-page recovery kit.
+- ☐ **M28 Privacy you control.** Hide amounts with one tap; each AI feature can be turned off, local models the default; everything in one file, and delete everything.
+
+**Quality of life**
+
+- ☐ **M29 Setup that checks itself.** Each setup step with a live check (secrets, mail, bank, https address, phone, backups); the Bridge's state read from the app; one button to test everything, with the fix for each failure.
+- ☐ **M30 Tags, splits, notes and bulk edit.** Split a transaction across categories; tags and notes; select many and recategorize; rules with a preview.
+- ☐ **M31 Receipts and documents.** A receipt forwarded to the mailbox attaches to its transaction; return and warranty dates as reminders; statements and paystubs kept with their months.
+- ☐ **M32 Reports you build.** Rows, period and picture chosen and saved; category groups; a year in review and tax-time totals.
+- ☐ **M33 A second person, if ever.** A second login with a role (everything, or shared accounts only); shared and personal accounts marked; approvals kept apart.
+
+**Models and reach**
+
+- ☐ **M34 An assistant that watches.** Daily checks for unusual charges, new or doubled subscriptions and price rises, each with its rows and a one-tap approval to act; on the local model unless Claude is chosen.
+- ☐ **M35 Home Assistant and widgets.** Sensors for safe to spend, next bill and days to payday; a dashboard card; the iPhone widget from the same glance.
+- ☐ **M36 Net worth beyond the accounts.** A home, a car or anything else with an owner-entered value and an update reminder; depreciation for a car; investment returns from the imported holdings.
+
+Left out on purpose: multi-currency and crypto (little use for one US household), a bill-negotiation or cancellation concierge (it would act for the owner and take a share), and paid data sources (SimpleFIN, valuation and credit-score services), each possible later as an opt-in.
