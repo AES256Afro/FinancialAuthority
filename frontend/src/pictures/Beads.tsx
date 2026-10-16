@@ -32,7 +32,7 @@ function addDays(iso: string, n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function Beads({ spans }: { spans: { start: string; end: string; items: Bead[] }[] }) {
+export function Beads({ spans }: { spans: { start: string; end: string; before?: boolean; items: Bead[] }[] }) {
   const colours = useColours();
   const [i, setI] = useState(spans.length > 1 ? 1 : 0);
   const [drag, setDrag] = useState<{ key: string; x: number } | null>(null);
@@ -86,7 +86,7 @@ export function Beads({ spans }: { spans: { start: string; end: string; items: B
         {spans.map((s, k) => (
           <button key={s.start} type="button" role="tab" aria-selected={i === k} onClick={() => { setI(k); setCheck(null); }}
             style={{ font: "inherit", fontSize: 12, fontWeight: 800, padding: "5px 10px", borderRadius: 999, border: "1px solid var(--hairline)", cursor: "pointer", minHeight: 30, background: i === k ? "var(--ink)" : "var(--surface)", color: i === k ? "var(--inverse)" : "var(--ink-2)" }}>
-            {k === 0 ? "Until payday" : `${monthDay(s.start)} to ${monthDay(s.end)}`}
+            {s.before ? "Until payday" : `${monthDay(s.start)} to ${monthDay(s.end)}`}
           </button>
         ))}
       </div>
@@ -101,9 +101,9 @@ export function Beads({ spans }: { spans: { start: string; end: string; items: B
           }}>
           <line x1={padL} x2={W - padR} y1={yl} y2={yl} stroke="var(--hairline)" strokeWidth={4} strokeLinecap="round" />
           {[span.start, span.end].map((d, k) => (
-            <g key={d}>
-              <rect x={x(d) - 7} y={yl - 7} width={14} height={14} rx={3} transform={`rotate(45 ${x(d)} ${yl})`} fill={k === 0 && i === 0 ? "var(--ink-2)" : "var(--paycheck)"} />
-              <text x={x(d)} y={yl + 4} dx={k === 0 ? -14 : 14} fontSize="11" fontWeight="800" textAnchor={k === 0 ? "end" : "start"} fill="var(--ink)">{k === 0 && i === 0 ? "today" : monthDay(d)}</text>
+            <g key={`${k}-${d}`}>
+              <rect x={x(d) - 7} y={yl - 7} width={14} height={14} rx={3} transform={`rotate(45 ${x(d)} ${yl})`} fill={k === 0 && span.before ? "var(--ink-2)" : "var(--paycheck)"} />
+              <text x={x(d)} y={yl + 4} dx={k === 0 ? -14 : 14} fontSize="11" fontWeight="800" textAnchor={k === 0 ? "end" : "start"} fill="var(--ink)">{k === 0 && span.before ? "today" : monthDay(d)}</text>
             </g>
           ))}
           {placed.map(({ b, k, cx0, lane }) => {

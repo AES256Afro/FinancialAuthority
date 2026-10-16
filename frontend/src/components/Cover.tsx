@@ -83,7 +83,7 @@ function CardGauge({ a }: { a: CoverAccount }) {
   return (
     <div style={{ fontSize: 12, color: "var(--ink-2)", display: "flex", flexDirection: "column", gap: 2 }}>
       <span className="num">{money(owed)} owed · no line on file, so utilisation is unknown (add the line on Debts)</span>
-      {(a.payments ?? []).slice(0, 2).map((p) => <span key={p.date} className="num">{money(p.amount)} on {shortDate(p.date)}</span>)}
+      {(a.payments ?? []).slice(0, 2).map((p, i) => <span key={`${p.date}-${i}`} className="num">{money(p.amount)} on {shortDate(p.date)}</span>)}
     </div>
   );
 }
