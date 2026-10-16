@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import logging
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -23,6 +24,22 @@ from .version import __version__
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("fa")
+
+
+class _HideFeedToken(logging.Filter):
+    """The calendar feed's address is its secret: the access log shows the route, never the token."""
+
+    PATTERN = re.compile(r"/api/calendar/[^/?\s\"]+\.ics")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(self.PATTERN.sub("/api/calendar/<hidden>.ics", a) if isinstance(a, str) else a for a in record.args)
+        elif isinstance(record.msg, str):
+            record.msg = self.PATTERN.sub("/api/calendar/<hidden>.ics", record.msg)
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(_HideFeedToken())
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
@@ -53,7 +70,8 @@ async def lifespan(app: FastAPI):
 
 _docs = {} if not auth.auth_enabled() else {"docs_url": None, "redoc_url": None, "openapi_url": None}
 app = FastAPI(title="FinancialAuthority", version=__version__, lifespan=lifespan, **_docs)
-app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+if settings.cors_origins:
+    app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 app.add_middleware(SecurityMiddleware)
 app.include_router(auth.router)
 app.include_router(routes.router)
@@ -84,11 +102,11 @@ for route in asgi_routes():
 
 @app.get("/api/health")
 def health() -> dict:
-    return {"ok": True, "version": __version__, "demo": settings.demo}
+    return {"ok": True, "demo": settings.demo}
 
 
 @app.get("/api/version")
-def version() -> dict:
+def version(_: auth.Principal = Depends(auth.require_read)) -> dict:
     return {"version": __version__}
 
 

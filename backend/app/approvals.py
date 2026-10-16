@@ -48,8 +48,11 @@ def sending_account(session: Session, account_id: int | None) -> MailAccount | N
 
 
 def create(session: Session, *, to: str, subject: str, body: str, reason: str = "", source: str = "", created_by: str = "owner", created_kind: str = "owner", account_id: int | None = None) -> Approval:
+    from email.utils import getaddresses
+
     to = to.strip()
-    if "@" not in to or " " in to:
+    found = [addr for _, addr in getaddresses([to]) if addr]
+    if len(found) != 1 or found[0] != to or "@" not in to or any(c in to for c in " ,;<>\r\n"):
         raise ValueError("the recipient must be one email address")
     if not subject.strip() or not body.strip():
         raise ValueError("a subject and a body are needed")

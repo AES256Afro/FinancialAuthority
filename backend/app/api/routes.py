@@ -72,8 +72,9 @@ def add_account(body: AccountIn, session: Session = Depends(get_session), _: aut
 
     if body.kind not in ("checking", "savings", "cash", "card", "loan"):
         raise HTTPException(400, "kind is checking, savings, cash, card or loan")
-    key = f"manual:{body.name.strip().lower()}:{body.last4}"
-    row = upsert_account(session, provider="manual", external_id=key, name=body.name.strip()[:80], institution=body.institution[:80], kind=body.kind, balance=body.balance, last4=body.last4[-4:] if body.last4 else "", credit_limit=body.credit_limit)
+    last4 = "".join(ch for ch in body.last4 if ch.isdigit())[-4:]
+    key = f"manual:{body.name.strip().lower()[:80]}:{last4}"
+    row = upsert_account(session, provider="manual", external_id=key, name=body.name.strip()[:80], institution=body.institution[:80], kind=body.kind, balance=body.balance, last4=last4, credit_limit=body.credit_limit)
     session.commit()
     return {"id": row.id, "name": row.name, "kind": row.kind, "balance": row.balance, "credit_limit": row.credit_limit}
 
@@ -367,8 +368,8 @@ class SettingIn(BaseModel):
 
 @router.put("/settings/{key}")
 def write_setting(key: str, body: SettingIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
-    if key not in DEFAULTS or key in ("imports.processed", "selfcheck"):
-        raise HTTPException(400, "That setting cannot be written here")
+    if key not in DEFAULTS or key in ("imports.processed", "selfcheck", "appearance"):
+        raise HTTPException(400, "That setting cannot be written here; appearance is saved on Settings › Appearance, which checks it")
     if key == "buffer" and not isinstance(body.value, (int, float)):
         raise HTTPException(400, "buffer must be a number")
     set_setting(session, key, body.value)

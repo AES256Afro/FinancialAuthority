@@ -87,7 +87,7 @@ def list_points() -> list[dict[str, Any]]:
     """Every restore point, newest first."""
     out = []
     for path in folder().glob("*.db"):
-        if not NAME.match(path.name):
+        if not NAME.fullmatch(path.name):
             continue
         meta_path = path.with_suffix(".json")
         try:
@@ -119,7 +119,7 @@ def status() -> dict[str, Any]:
 
 
 def _path(name: str) -> Path:
-    if not NAME.match(name or ""):
+    if not NAME.fullmatch(name or ""):
         raise ValueError("No such restore point")
     path = folder() / name
     if not path.exists():

@@ -24,6 +24,9 @@ _tmp = Path(tempfile.mkdtemp(prefix="fa-demo-"))
 os.environ.update({
     "FA_DATA_DIR": str(_tmp), "FA_DEMO": "true", "FA_JOBS": "false", "FA_PASSWORD": "", "FA_USERNAME": "owner",
     "FA_SESSION_SECRET": "demo-session", "FA_DATA_KEY": "demo-data-key", "FA_PUBLIC_URL": "", "TZ": "America/Chicago",
+    # nothing from the machine that runs the capture: the model addresses and keys are the demo's own
+    "FA_OLLAMA_URL": "http://localhost:11434", "FA_OPENAI_BASE_URL": "", "FA_OPENAI_API_KEY": "", "FA_ANTHROPIC_API_KEY": "",
+    "FA_PLAID_CLIENT_ID": "", "FA_PLAID_SECRET": "", "FA_TELLER_APP_ID": "",
 })
 sys.path.insert(0, str(ROOT))
 
@@ -147,9 +150,11 @@ def main() -> None:
     roles.set_override("reviewer", None)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(data, separators=(",", ":"))
-    for forbidden in ("not-a-real-password", "fa_"):
-        if forbidden == "not-a-real-password":
-            assert forbidden not in text, "a password reached the demo data"
+    assert "not-a-real-password" not in text, "a password reached the demo data"
+    import re as _re
+
+    token = _re.search(r"fa_(?:o[aorc]_)?[A-Za-z0-9_-]{40,}", text)
+    assert token is None, "a key or token reached the demo data"
     OUT.write_text(text, encoding="utf-8")
     print(f"wrote {OUT} ({len(text) / 1e6:.2f} MB): {len(responses)} responses, {len(checks)} checks")
 

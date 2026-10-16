@@ -3,7 +3,7 @@
 # Run:    see deploy/compose/docker-compose.yml, or install from BoxPilot's catalog on BigBox.
 
 # ---- frontend build ----------------------------------------------------------
-FROM node:24-alpine AS web
+FROM node:24-alpine@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS web
 WORKDIR /web
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
@@ -11,7 +11,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # ---- backend -----------------------------------------------------------------
-FROM python:3.12-slim AS runtime
+FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS runtime
 ARG VERSION=dev
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \

@@ -51,8 +51,9 @@ class Settings(BaseSettings):
     demo: bool = False
     # Run the scheduler (off in tests).
     jobs: bool = True
-    # Allow the Vite dev server during development.
-    cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    # Other origins allowed to call the API with the owner's cookie. None by default: the Vite dev server proxies
+    # /api, so it needs none either. Set FA_CORS_ORIGINS only for a front end served from elsewhere.
+    cors_origins: list[str] = []
 
     @property
     def tz(self) -> str:

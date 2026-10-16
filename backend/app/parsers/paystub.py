@@ -36,13 +36,18 @@ DEDUCTION_LABELS = [
 ]
 
 
+MAX_PDF_PAGES = 40
+MAX_PDF_TEXT = 2_000_000
+
+
 def pdf_text(data: bytes) -> str:
     """Text from a PDF, page by page. A scanned stub gives nothing here; OCR is a later milestone."""
     try:
         from pypdf import PdfReader
 
         reader = PdfReader(io.BytesIO(data))
-        return "\n".join((page.extract_text() or "") for page in reader.pages)
+        # A stub or a statement is a few pages; a document from the mail is read no further than forty.
+        return "\n".join((page.extract_text() or "") for page in list(reader.pages)[:MAX_PDF_PAGES])[:MAX_PDF_TEXT]
     except Exception:  # noqa: BLE001  (a bad file is still just data)
         return ""
 

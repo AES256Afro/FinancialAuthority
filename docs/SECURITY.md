@@ -20,7 +20,7 @@ It never holds a bank password, a card number in the clear, or a government iden
 | A script | API key as a bearer token, scoped at creation; a key that hides details reads through `/mcp` only, and every REST read by a key is in the activity log | `read`, `confirm`; never `approve` or `admin`; never the built-in chat |
 | The reviewer model | Called by the app, never calling in | Sees the plan, rules, goals, alerts; never mail, attachments, account names or numbers |
 | The advisor model | Called by the app in the chat | The read tools, redaction applied; cannot confirm, approve or send |
-| Anyone else | The public surface: the sign-in page, `/mcp`, `/api`, `/oauth/*`, `/.well-known/*`, `/api/health` | Nothing without a credential |
+| Anyone else | The public surface: the sign-in page, `/mcp`, `/api`, the OAuth endpoints (`/authorize`, `/token`, `/register`, `/revoke`, `/oauth/consent`), `/.well-known/*`, `/api/health` (up or not, no version) | Nothing without a credential |
 
 No tool, job or button initiates a payment, a transfer or an email. Push notifications go to the owner's own ntfy or Gotify.
 
@@ -72,6 +72,8 @@ Each line is a test in `backend/tests/test_hardening.py` or `test_exports.py`, o
 |---|---|---|
 | Security headers | `app/security.py`, plain ASGI: nosniff, no referrer, `X-Frame-Options: DENY`, a permissions policy, HSTS over https; the pages get a content-security policy (scripts from the app and Plaid Link only, no plugins, no outside forms, no framing); the OAuth consent page gets its own, whose form rule allows the client's https or local callback | test, and `curl -I` against BigBox |
 | Body ceiling | requests over 60 MB refused with 413, whether they state a length or arrive in chunks; each upload route still refuses over 50 MB | test |
+| Refresh tokens | rotated on every use; a spent one presented again more than a minute later ends every token that client holds | test |
+| Small things from the first sweep | the calendar token is hidden in the access log and its limit counts the real address; the Teller key is written only to a private runtime folder, never the data folder; a manual account keeps four digits at most; one recipient per approval, as the mail library reads it; no cross-origin access by default; OFX blocks found in one pass; PDFs read to forty pages; base images pinned by digest, with Dependabot proposing new ones | test |
 | Restores | a restore puts the money data back but keeps keys, connected apps, sessions, approvals, the calendar feed and the activity log as they are now | test |
 | Mail in the plan | sender names and subjects reach the plan and the brief on one short line, and the advisor is told they are written by the sender | test |
 | Malformed uploads | empty, truncated, binary and script-laden files to every upload route answer under 500 | test |

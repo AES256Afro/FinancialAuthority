@@ -151,10 +151,21 @@ OFX_TAG = re.compile(r"<([A-Z0-9.]+)>([^<\r\n]*)")
 
 
 def _ofx_blocks(text: str, name: str) -> list[dict[str, str]]:
+    """Each <name>...</name> block, found in one pass: an unclosed tag ends the search instead of rescanning."""
     blocks = []
-    for m in re.finditer(rf"<{name}>(.*?)</{name}>", text, re.DOTALL | re.IGNORECASE):
+    opening, closing = re.compile(rf"<{name}>", re.IGNORECASE), re.compile(rf"</{name}>", re.IGNORECASE)
+    pos = 0
+    while True:
+        start = opening.search(text, pos)
+        if start is None:
+            break
+        end = closing.search(text, start.end())
+        if end is None:
+            break
+        body = text[start.end():end.start()]
+        pos = end.end()
         fields: dict[str, str] = {}
-        for tag, value in OFX_TAG.findall(m.group(1)):
+        for tag, value in OFX_TAG.findall(body):
             if value.strip() and tag.upper() not in fields:
                 fields[tag.upper()] = value.strip()
         blocks.append(fields)

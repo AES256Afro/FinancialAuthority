@@ -1,0 +1,12 @@
+# Base images are pinned by digest; Dependabot proposes the new digest when a tag moves, so pins never go stale.
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: /docker
+    schedule: { interval: weekly }
+  - package-ecosystem: docker
+    directory: /deploy/bridge
+    schedule: { interval: weekly }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: monthly }
