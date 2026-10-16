@@ -57,11 +57,12 @@ function SpendGauge({ a, paydays }: { a: CoverAccount; paydays: [string, string]
   return (
     <>
       {(a.windows ?? []).map((w, k) => {
+        if (w.start > w.end) return null; // on payday the stretch before it is empty
         const has = w.has_total;
         const label = k === 0 ? `Before ${shortDate(paydays[0])}` : `${shortDate(w.start)} to ${shortDate(w.end)}`;
         const short = w.left < 0;
         return (
-          <div key={w.start} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div key={`${k}-${w.start}`} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <span style={{ fontWeight: 700, fontSize: 12 }}>{label}</span>
             <Meter value={has} max={Math.max(has, w.needs) * 1.05} marks={[{ at: w.needs, text: `needs ${money(w.needs)}` }]} tone={short ? "short" : "fill"} label={`${label}: has ${money(has)}, needs ${money(w.needs)}`} />
             <span className="num" style={{ fontSize: 12, color: "var(--ink-2)" }}>

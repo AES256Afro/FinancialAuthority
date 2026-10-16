@@ -6,16 +6,58 @@ import { api, useApi, type Loaded } from "../api";
 import { Approvals } from "../components/Approvals";
 import { ConfirmButton } from "../components/ConfirmButton";
 import { Empty, Failed, Loading, Said } from "../components/State";
-import { money, parseMoney, shortDate, when } from "../format";
-import type { FactRow, PairRow, PairSide, PairsOut, SeriesRow } from "../types";
+import { money, ordinal, parseMoney, shortDate, when } from "../format";
+import type { DocumentTermsFields, FactRow, PairRow, PairSide, PairsOut, SeriesRow } from "../types";
 
-const FACT_LABEL: Record<string, string> = { export: "Rocket Money export, ready to import", bill_due: "Bill due", statement: "Statement", paystub: "Paystub", installment: "Installment plan", advance: "Advance", price_change: "Price change", past_due: "Past-due notice" };
+const FACT_LABEL: Record<string, string> = { export: "Rocket Money export, ready to import", bill_due: "Bill due", statement: "Statement", paystub: "Paystub", installment: "Installment plan", advance: "Advance", price_change: "Price change", past_due: "Past-due notice", document_terms: "Terms from a document" };
+
+// The terms a lease or a charge sheet states, in the order a person reads a lease, each in plain words.
+type TermKey = keyof DocumentTermsFields["terms"];
+const TERM_ROWS: { key: TermKey; what: string; show: (v: number | string) => string }[] = [
+  { key: "rent", what: "Monthly rent", show: (v) => money(Number(v), { cents: true }) },
+  { key: "pet_rent", what: "Pet rent", show: (v) => money(Number(v), { cents: true }) },
+  { key: "deposit", what: "Security deposit", show: (v) => money(Number(v), { cents: true }) },
+  { key: "late_fee", what: "Late fee", show: (v) => money(Number(v), { cents: true }) },
+  { key: "notice_days", what: "Notice to move out", show: (v) => `${v} days` },
+  { key: "due_day", what: "Rent due on the", show: (v) => ordinal(Number(v)) },
+  { key: "grace_days", what: "Days of grace", show: (v) => `${v} day${Number(v) === 1 ? "" : "s"}` },
+  { key: "ends_on", what: "Lease ends", show: (v) => `${shortDate(String(v))}, ${String(v).slice(0, 4)}` },
+];
+
+/** What a document states, one row per term: what, the value, the page, and the words it was read from. */
+function TermsTable({ fields }: { fields: DocumentTermsFields }) {
+  const rows = TERM_ROWS.filter((r) => fields.terms?.[r.key]);
+  if (rows.length === 0) return <div style={{ fontSize: 13, color: "var(--ink-2)" }}>No terms were read from it.</div>;
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table className="ledger" style={{ fontSize: 13 }}>
+        <thead><tr><th>What</th><th>It says</th><th>Where</th></tr></thead>
+        <tbody>
+          {rows.map((r) => {
+            const t = fields.terms[r.key]!;
+            return (
+              <tr key={r.key}>
+                <td>
+                  <strong>{r.what}</strong>
+                  <div style={{ fontSize: 11, color: "var(--muted)", overflowWrap: "anywhere" }}>“{t.quote}”</div>
+                </td>
+                <td className="num" style={{ fontWeight: 800, whiteSpace: "nowrap" }}>{r.show(t.value)}</td>
+                <td style={{ whiteSpace: "nowrap", color: "var(--ink-2)" }}>page {t.page}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 function FactCard({ f, onDone }: { f: FactRow; onDone: () => void }) {
   const [busy, setBusy] = useState(false);
   const [amount, setAmount] = useState(f.fields.amount !== undefined ? String(f.fields.amount) : "");
   const [due, setDue] = useState(f.fields.due_date ? String(f.fields.due_date) : "");
   const [error, setError] = useState<string | null>(null);
+  const terms = f.kind === "document_terms" ? (f.fields as unknown as DocumentTermsFields) : null;
   const sender = f.message?.sender_name || String(f.fields.sender_name || "");
   const who = String(f.fields.name || "") || sender;
   const via = f.fields.name && sender && String(f.fields.name) !== sender ? sender : "";
@@ -39,6 +81,24 @@ function FactCard({ f, onDone }: { f: FactRow; onDone: () => void }) {
   async function discard() {
     await api(`/api/v1/facts/${f.id}/reject`, { method: "POST" });
     onDone();
+  }
+
+  if (terms) {
+    return (
+      <div className="card" style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+        <div>
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, overflowWrap: "anywhere" }}>{terms.title ? `Terms from ${terms.title}` : FACT_LABEL.document_terms}</h3>
+          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Read from a document you added · {when(f.created_at)} · {Math.round(f.confidence * 100)}% sure. Check each against its page.</div>
+        </div>
+        <TermsTable fields={terms} />
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>Quoted from the document. Anything it asks the app to do is ignored. Applying sets these on the home it is kept with, on <Link to="/housing">Housing</Link>.</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <button className="btn dark" type="button" disabled={busy} onClick={confirm}>{busy ? "Applying…" : "Apply to the home"}</button>
+          <ConfirmButton label="Wrong, discard" question="Discard the terms read from this document? The document stays on Housing." yes="Yes, discard them" no="Keep them" onConfirm={discard} />
+        </div>
+        <Said text={error} tone="error" />
+      </div>
+    );
   }
 
   return (
@@ -312,12 +372,12 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
         <Said text={looked?.text ?? null} tone={looked?.tone} />
         <button className="btn" type="button" onClick={detect} disabled={detecting}>{detecting ? "Looking…" : "Look again"}</button>
       </div>
-      <p style={{ margin: 0, color: "var(--ink-2)", fontSize: 13 }}>First: emails waiting for your OK. Then: details read from your mail. Then: money that moved between your accounts. Then: repeating charges found in your transactions. Once you answer one, every screen uses it.</p>
+      <p style={{ margin: 0, color: "var(--ink-2)", fontSize: 13 }}>First: emails waiting for your OK. Then: details read from your mail and from documents you added. Then: money that moved between your accounts. Then: repeating charges found in your transactions. Once you answer one, every screen uses it.</p>
       <Approvals onChanged={onChanged} />
-      {facts.error && !facts.data && <Failed error={facts.error} what="what was read from your mail" onRetry={facts.reload} />}
+      {facts.error && !facts.data && <Failed error={facts.error} what="what was read from your mail and documents" onRetry={facts.reload} />}
       {facts.data && facts.data.facts.length > 0 && (
         <>
-          <h2 className="lab" style={{ margin: 0 }}>From the mail · {facts.data.pending}</h2>
+          <h2 className="lab" style={{ margin: 0 }}>From your mail and documents · {facts.data.pending}</h2>
           {facts.data.facts.map((f) => (
             <FactCard
               key={f.id}

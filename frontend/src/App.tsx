@@ -20,6 +20,7 @@ const Chat = lazy(() => import("./pages/Chat").then((m) => ({ default: m.Chat })
 const Clients = lazy(() => import("./pages/Clients").then((m) => ({ default: m.Clients })));
 const Confirm = lazy(() => import("./pages/Confirm").then((m) => ({ default: m.Confirm })));
 const Borrowing = lazy(() => import("./pages/Borrowing").then((m) => ({ default: m.Borrowing })));
+const Housing = lazy(() => import("./pages/Housing").then((m) => ({ default: m.Housing })));
 const Move = lazy(() => import("./pages/Move").then((m) => ({ default: m.Move })));
 const CheckIn = lazy(() => import("./pages/CheckIn").then((m) => ({ default: m.CheckIn })));
 const CoverPage = lazy(() => import("./pages/CoverPage").then((m) => ({ default: m.CoverPage })));
@@ -81,7 +82,8 @@ export default function App() {
         <Route path="/paystubs" element={<Paystubs />} />
         <Route path="/debts" element={<Debts />} />
         <Route path="/borrowing" element={<Borrowing />} />
-        <Route path="/move" element={<Move />} />
+        <Route path="/housing" element={<Housing onChanged={snapshot.reload} />} />
+        <Route path="/move" element={<Move onChanged={snapshot.reload} />} />
         <Route path="/cover" element={<CoverPage />} />
         <Route path="/saving" element={<Saving />} />
         <Route path="/checkin" element={<CheckIn />} />

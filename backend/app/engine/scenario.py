@@ -170,10 +170,12 @@ def run_scenario(session: Session, today: date, spec: dict) -> dict:
     if not inp["has_income"]:
         caveats.append("No paycheck is on file, so no income is counted; the verdict cannot hold until one is named.")
     if inp["pace"]["transactions"] < 20:
-        caveats.append("The usual pace rests on few transactions; the honest line is rough until more history lands.")
+        caveats.append("Your usual spending rests on few transactions, so your balance day by day is a rough guess until more history comes in.")
     verdict = "passes" if scen_low["value"] >= 0 else "short"
-    summary = (f"A move on {move_date.strftime('%b %d')} holds: the honest line's low point is {scen_low['value']:,.0f} on {scen_low['date']}." if verdict == "passes"
-               else f"A move on {move_date.strftime('%b %d')} runs {shortfall:,.0f} short at the usual pace, lowest on {scen_low['date']}" + (f"; the first date that holds is {first_passes.strftime('%b %d')}." if first_passes else "; no date inside the horizon holds at this pace."))
+    low_on = date.fromisoformat(str(scen_low["date"])[:10])
+    low_word = f"{low_on:%a %b} {low_on.day}"
+    summary = (f"A move on {move_date:%a %b} {move_date.day} holds: the lowest balance is ${scen_low['value']:,.0f}, on {low_word}." if verdict == "passes"
+               else f"A move on {move_date:%a %b} {move_date.day} runs ${shortfall:,.0f} short at your usual spending, lowest on {low_word}" + (f"; the first date that holds is {first_passes:%a %b} {first_passes.day}." if first_passes else "; no date inside the horizon holds at this pace."))
     return {
         "as_of": today.isoformat(), "name": spec.get("name") or "Scenario", "move_date": move_date.isoformat(), "horizon_days": inp["horizon_days"], "cadence": inp["cadence"],
         "verdict": verdict, "summary": summary, "first_passes": first_passes.isoformat() if first_passes else None,

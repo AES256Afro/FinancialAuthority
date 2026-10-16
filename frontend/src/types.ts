@@ -474,3 +474,220 @@ export interface PayoffOut {
   note: string;
   not_advice: string;
 }
+
+// M37, M38: housing, utilities and documents (GET /api/v1/housing, /api/v1/utilities, /api/v1/documents).
+export type HomeState = "current" | "upcoming" | "ended";
+
+export interface HomeNotice {
+  by: string;
+  given_on: string | null;
+  status: "good" | "warn" | "crit";
+  word: string;
+  days_left?: number;
+}
+
+export interface HomeCharge {
+  id: number;
+  name: string;
+  kind: string;
+  amount: number | null;
+  estimate: boolean;
+  pays_to: "home" | "other";
+  payee: string;
+  due_day: number | null;
+  starts_on: string | null;
+  ends_on: string | null;
+  note: string;
+  known: boolean;
+  bill_id: number | null;
+}
+
+export interface CostPart {
+  name: string;
+  amount: number;
+  refundable: boolean;
+}
+
+export interface HomeCost {
+  id: number;
+  name: string;
+  amount: number | null;
+  due_on: string | null;
+  refundable: boolean;
+  parts: CostPart[];
+  paid: boolean;
+  known: boolean;
+  note: string;
+  bill_id: number | null;
+  counted: boolean;
+}
+
+export interface UtilityRow {
+  id: number;
+  home_id: number | null;
+  service: string;
+  what: string;
+  provider: string;
+  billed: string;
+  billed_word: string;
+  billing_company: string;
+  account_last4: "set" | "";
+  amount: number | null;
+  estimate: boolean;
+  due_day: number | null;
+  starts_on: string | null;
+  ends_on: string | null;
+  moves_with_you: boolean;
+  bill_id: number | null;
+  note: string;
+  known: boolean;
+}
+
+export interface HomeDocument {
+  id: number;
+  title: string;
+  kind: string;
+  pages: number;
+  uploaded_at: string;
+}
+
+export interface HomeRow {
+  id: number;
+  name: string;
+  kind: "rent" | "mortgage" | "other";
+  payee: string;
+  state: HomeState;
+  starts_on: string | null;
+  ends_on: string | null;
+  first_due: string | null;
+  /** The first regular payment as typed; null when it is the move-in day. */
+  first_due_entered: string | null;
+  notice_given_on: string | null;
+  /** The lease term's end as the lease states it; the rent goes on after it unless you move out. */
+  lease_ends_on: string | null;
+  lease_word: string | null;
+  next_due: string | null;
+  due_day: number;
+  grace_days: number;
+  late_fee: number;
+  autopay: boolean;
+  notice_days: number | null;
+  notice: HomeNotice | null;
+  deposit: number;
+  deposit_back_on: string | null;
+  pay_from_account_id: number | null;
+  note: string;
+  charges: HomeCharge[];
+  to_landlord_monthly: number;
+  own_bills_monthly: number;
+  monthly_total: number;
+  missing: string[];
+  costs: HomeCost[];
+  costs_total: number;
+  costs_missing: string[];
+  costs_paid_before: number;
+  /** Costs with an amount and no date: shown, not counted in the plan until they have the day they are paid. */
+  costs_undated: string[];
+  /** What the plan counts of the costs to get in: those with an amount and a date, not yet paid. */
+  costs_counted: number;
+  refundable_in_costs: number;
+  utilities: UtilityRow[];
+  documents: HomeDocument[];
+  bill_id: number | null;
+  source: string;
+}
+
+export interface HousingMove {
+  from: string;
+  to: string;
+  on: string | null;
+  monthly_change: number;
+  costs_total: number;
+  costs_missing: string[];
+  old_ends_on: string | null;
+  old_notice: HomeNotice | null;
+  /** The next home's first unpaid cost with a date: the move-in check, usually. */
+  first_cost: { name: string; on: string; amount: number | null; source: string } | null;
+}
+
+export interface HousingOut {
+  as_of: string;
+  homes: HomeRow[];
+  current_id: number | null;
+  upcoming_id: number | null;
+  move: HousingMove | null;
+  utilities_unassigned: UtilityRow[];
+  rent_bills_to_adopt: { id: number; name: string; amount: number; due_day: number }[];
+  not_advice: string;
+}
+
+export interface UtilitiesOut {
+  utilities: UtilityRow[];
+  services: string[];
+  billed: Record<string, string>;
+  /** Bills already on the list that belong to no home or utility: a utility can take one over. */
+  bills_to_link: { id: number; name: string; amount: number; due_day: number; category: string }[];
+}
+
+export interface MovePathPoint {
+  date: string;
+  available: number;
+  at_pace: number;
+  cash: number;
+}
+
+export interface MoveCheckOut {
+  home: HomeRow;
+  move_on: string;
+  low: MovePathPoint | null;
+  holds: boolean;
+  status: "good" | "crit";
+  word: string;
+  path: MovePathPoint[];
+  caveats: string[];
+}
+
+export interface DocumentRow {
+  id: number;
+  title: string;
+  kind: string;
+  attach_to: string;
+  filename: string;
+  content_type: string;
+  size: number;
+  pages: number;
+  has_text: boolean;
+  note: string;
+  uploaded_at: string;
+  source: string;
+  note_text?: string;
+}
+
+export interface DocumentsOut {
+  documents: DocumentRow[];
+  kinds: string[];
+}
+
+export interface DocumentHit {
+  document_id: number;
+  title: string;
+  kind: string;
+  attach_to: string;
+  page: number;
+  score: number;
+  snippet: string;
+}
+
+export interface DocumentPage extends DocumentRow {
+  page: number;
+  of: number;
+  text: string;
+}
+
+/** A document_terms fact's fields: what a lease or charge sheet states, each with its page and the words quoted. */
+export interface DocumentTermsFields {
+  document_id: number;
+  title: string;
+  attach_to: string;
+  terms: Partial<Record<"rent" | "pet_rent" | "deposit" | "late_fee" | "notice_days" | "due_day" | "grace_days" | "ends_on", { value: number | string; page: number; quote: string }>>;
+}

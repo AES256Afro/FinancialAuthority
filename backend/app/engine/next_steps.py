@@ -107,6 +107,11 @@ def next_steps(session: Session, today: date) -> dict:
         if h["state"] == "upcoming" and (h["missing"] or h["costs_missing"]):
             what = ", ".join((h["missing"] + h["costs_missing"])[:4])
             steps.append(_step(f"home-missing-{h['id']}", "info", f"{h['name']}: no amount yet for {what}. Each one you add is counted in the plan.", "Housing", f"/housing#home-{h['id']}", h["source"]))
+        if h["state"] == "current" and h["lease_word"] and h["lease_ends_on"] and h["notice_days"]:
+            from datetime import date as _d, timedelta as _td
+
+            if 0 <= (_d.fromisoformat(h["lease_ends_on"]) - _td(days=h["notice_days"] + 1) - today).days <= 30:
+                steps.append(_step(f"home-lease-{h['id']}", "warning", f"{h['name']}: {h['lease_word']}", "Housing", f"/housing#home-{h['id']}", h["source"]))
         if h["state"] == "upcoming" and h["costs_undated"]:
             what = ", ".join(h["costs_undated"][:3])
             steps.append(_step(f"home-undated-{h['id']}", "info", f"{h['name']}: {what} has no date, so the plan does not count it. Give it the day you pay, or mark it paid if it is.", "Moving home", "/move", h["source"]))
