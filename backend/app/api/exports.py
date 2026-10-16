@@ -185,7 +185,7 @@ FEED_LIMIT = 60  # requests an hour, per address
 
 @router.get("/api/calendar/{token}.ics", include_in_schema=False)
 def feed(token: str, request: Request, session: Session = Depends(get_session)) -> Response:
-    ip = request.client.host if request.client else "?"
+    ip = auth._client_ip(request)
     now = time.time()
     recent = [t for t in _hits.get(ip, []) if now - t < 3600]
     if len(recent) >= FEED_LIMIT:

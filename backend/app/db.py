@@ -28,6 +28,23 @@ def init_db() -> None:
 
     SQLModel.metadata.create_all(engine)
     add_missing_columns()
+    _trim_manual_keys()
+
+
+def _trim_manual_keys() -> None:
+    """Manual accounts once kept whatever number was typed in their key; keep only the last four digits."""
+    from sqlalchemy import text
+
+    with engine.begin() as connection:
+        try:
+            rows = connection.execute(text("SELECT id, external_id FROM accounts WHERE provider = 'manual' AND external_id LIKE 'manual:%'")).all()
+        except Exception:  # noqa: BLE001 - a fresh database has nothing to trim
+            return
+        for row_id, key in rows:
+            head, _, tail = str(key).rpartition(":")
+            digits = "".join(ch for ch in tail if ch.isdigit())[-4:]
+            if tail != digits and head:
+                connection.execute(text("UPDATE accounts SET external_id = :k WHERE id = :i"), {"k": f"{head}:{digits}", "i": row_id})
 
 
 def add_missing_columns() -> list[str]:

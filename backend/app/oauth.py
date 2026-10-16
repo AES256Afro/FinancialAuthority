@@ -33,6 +33,7 @@ log = logging.getLogger("fa.oauth")
 from .db import session_scope
 from .models import OAuthClient, OAuthCode, OAuthToken as TokenRow, utcnow
 
+REUSE_GRACE = 60  # seconds a spent refresh token may be retried before it counts as stolen
 ACCESS_SECONDS = 24 * 3600
 REFRESH_SECONDS = 90 * 24 * 3600
 CODE_SECONDS = 600
@@ -130,6 +131,16 @@ class AuthorityProvider(OAuthAuthorizationServerProvider[AuthorizationCode, Refr
     async def load_refresh_token(self, client: OAuthClientInformationFull, refresh_token: str) -> RefreshToken | None:
         with session_scope() as session:
             row = session.exec(select(TokenRow).where(TokenRow.token_hash == _hash(refresh_token), TokenRow.kind == "refresh")).first()
+            if row is not None and row.revoked_at is not None and row.client_id == client.client_id:
+                # A spent refresh token presented again: someone holds a copy. A retry within a minute of the
+                # exchange is a lost reply, not a thief; after that, every token the client holds is ended.
+                if (datetime.now(timezone.utc) - row.revoked_at.replace(tzinfo=timezone.utc)).total_seconds() > REUSE_GRACE:
+                    for live in session.exec(select(TokenRow).where(TokenRow.client_id == client.client_id, TokenRow.revoked_at == None)).all():  # noqa: E711
+                        live.revoked_at = utcnow()
+                        session.add(live)
+                    session.commit()
+                    log.warning("a spent refresh token was used again; the client's tokens are revoked")
+                return None
             if row is None or row.revoked_at is not None or row.client_id != client.client_id or (row.expires_at and row.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc)):
                 return None
             return RefreshToken(token=refresh_token, client_id=row.client_id, scopes=row.scopes.split(), expires_at=int(row.expires_at.replace(tzinfo=timezone.utc).timestamp()) if row.expires_at else None, resource=row.resource, subject="owner")
