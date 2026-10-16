@@ -94,6 +94,11 @@ def _record_failure(ip: str, now: float | None = None) -> None:
     _failures.setdefault("*", []).append(now or time.time())
 
 
+def clear_failures(ip: str) -> None:
+    _failures.pop(ip, None)
+    _failures.pop("*", None)
+
+
 def _account_wait(now: float | None = None) -> float:
     """Seconds before the next sign-in may be tried, whatever address it comes from: none for the first few
     failures, then doubling, at most a minute. Guessing stays hopeless; the owner waits a minute at worst."""
@@ -277,8 +282,12 @@ def login(body: LoginIn, request: Request, response: Response, session: Session 
     if not (user_ok and pass_ok):
         _record_failure(ip)
         raise HTTPException(401, "Wrong username or password")
-    _failures.pop(ip, None)
-    _failures.pop("*", None)
+    from .factors import second_step_on, ticket_for
+
+    if second_step_on(session):
+        # The password was right; the session waits for the code.
+        return {"ok": False, "second_step": "code", "ticket": ticket_for()}
+    clear_failures(ip)
     token = start_session(session, request)
     response.set_cookie(
         COOKIE,

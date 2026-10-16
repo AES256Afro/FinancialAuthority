@@ -267,12 +267,13 @@ def _consent_body(data: dict, req: str, client_name: str, error: str = "") -> st
     )
 
 
-def _signin_body(req: str, error: str = "") -> str:
+def _signin_body(req: str, error: str = "", code: bool = False) -> str:
     return (
         "<h1>Sign in to continue</h1><div class=\"muted\">An app is asking to connect. Sign in with the owner's password first.</div>"
         f'<input type="hidden" name="req" value="{html.escape(req)}">'
         '<label>Username<input type="text" name="username" value="owner" autocomplete="username"></label>'
         '<label>Password<input type="password" name="password" autocomplete="current-password"></label>'
+        + ('<label>Code from your authenticator app (or a recovery code)<input type="text" name="code" inputmode="numeric" autocomplete="one-time-code"></label>' if code else "") +
         f'{f"<div class=err>{html.escape(error)}</div>" if error else ""}'
         '<div class="row"><button class="dark" type="submit" name="decision" value="signin">Sign in</button></div>'
     )
@@ -291,12 +292,16 @@ async def consent_get(request: Request, req: str = "") -> HTMLResponse:
     with session_scope() as session:
         principal = auth.principal_from_request(request, session)
     if principal is None or principal.kind != "owner":
-        return _page("Sign in", _signin_body(req))
+        from .factors import second_step_on
+
+        with session_scope() as session:
+            needs_code = second_step_on(session)
+        return _page("Sign in", _signin_body(req, code=needs_code))
     return _page("Allow access", _consent_body(data, req, await _client_name(data["client_id"])))
 
 
 @router.post("/oauth/consent")
-async def consent_post(request: Request, req: str = Form(""), decision: str = Form(""), username: str = Form(""), password: str = Form(""), scope: list[str] | None = Form(None)):  # noqa: ANN201
+async def consent_post(request: Request, req: str = Form(""), decision: str = Form(""), username: str = Form(""), password: str = Form(""), code: str = Form(""), scope: list[str] | None = Form(None)):  # noqa: ANN201
     data = _load_request(req)
     if data is None:
         return _page("Expired", "<h1>That request has expired</h1><div class=\"muted\">Start the connection again from the app that asked.</div>")
@@ -306,10 +311,18 @@ async def consent_post(request: Request, req: str = Form(""), decision: str = Fo
         ip = auth._client_ip(request)
         if auth._locked(ip) or auth._account_wait() > 0:
             return _page("Sign in", _signin_body(req, "Too many failed sign-ins. Wait a minute, then try again."))
+        from .factors import check_code, second_step_on
+
         ok = auth.auth_enabled() and hmac.compare_digest(username.encode(), settings.username.encode()) and hmac.compare_digest(password.encode(), settings.password.encode())
         if not ok and auth.auth_enabled():
             auth._record_failure(ip)
-            return _page("Sign in", _signin_body(req, "Wrong username or password."))
+            with session_scope() as session:
+                needs_code = second_step_on(session)
+            return _page("Sign in", _signin_body(req, "Wrong username or password.", code=needs_code))
+        with session_scope() as session:
+            if auth.auth_enabled() and second_step_on(session) and not check_code(session, code):
+                auth._record_failure(ip)
+                return _page("Sign in", _signin_body(req, "Type the code your authenticator app shows now, or a recovery code.", code=True))
         response = _page("Allow access", _consent_body(data, req, await _client_name(data["client_id"])))
         with session_scope() as session:
             token = auth.start_session(session, request)

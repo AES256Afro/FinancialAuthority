@@ -15,7 +15,7 @@ It never holds a bank password, a card number in the clear, or a government iden
 
 | Principal | How | May |
 | --- | --- | --- |
-| The owner | A session after the sign-in form, recorded on the server and ended by signing out (Settings › Clients lists every signed-in device and ends any); CSRF header on writes; a lockout per address and a doubling wait per account | Everything, including approve |
+| The owner | A passkey (at the https address), or the password and, once turned on, a six-digit code from an authenticator app (each code accepted once; ten hashed recovery codes); then a session after the sign-in form, recorded on the server and ended by signing out (Settings › Clients lists every signed-in device and ends any); CSRF header on writes; a lockout per address and a doubling wait per account | Everything, including approve |
 | A connected app (claude.ai, Claude Code, Open WebUI) | OAuth 2.1: dynamic registration (at most twenty a day and a hundred live), authorization code with PKCE, a consent page that names where it sends you and warns when that is not Claude, the owner's sign-in, access tokens for a day, refresh tokens for ninety, rotated | `read`, and `confirm` only if granted on the consent page; never `approve` or `admin` |
 | A script | API key as a bearer token, scoped at creation; a key that hides details reads through `/mcp` only, and every REST read by a key is in the activity log | `read`, `confirm`; never `approve` or `admin`; never the built-in chat |
 | The reviewer model | Called by the app, never calling in | Sees the plan, rules, goals, alerts; never mail, attachments, account names or numbers |

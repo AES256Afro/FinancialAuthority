@@ -23,8 +23,8 @@ KEEP = {"import": 15, "daily": 7, "manual": 10, "before-restore": 5}
 NAME = re.compile(r"^\d{8}-\d{6}-\d{6}-[a-z-]+\.db$")
 # Who may get in, what was sent, and what happened stay as they are now: a restore never brings back a revoked
 # key or a closed session, never makes a sent email look unsent, and never erases the activity log.
-CARRIED = ("api_keys", "oauth_clients", "oauth_codes", "oauth_tokens", "web_sessions", "audit_entries", "approvals")
-CARRIED_SETTINGS = ("calendar.feed",)
+CARRIED = ("api_keys", "oauth_clients", "oauth_codes", "oauth_tokens", "web_sessions", "audit_entries", "approvals", "passkeys")
+CARRIED_SETTINGS = ("calendar.feed", "auth.totp", "auth.totp.last_step")
 
 
 def folder() -> Path:
