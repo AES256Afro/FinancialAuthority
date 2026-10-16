@@ -11,7 +11,10 @@ from app.models import Account, Transaction
 def test_the_privacy_page_says_what_leaves_and_each_model_turns_off(owner: TestClient):
     got = owner.get("/api/v1/privacy").json()
     chat = next(m for m in got["models"] if m["role"] == "advisor")
-    assert chat["on"] and chat["local"] and "Never mail" in chat["sees"]
+    assert chat["on"] and chat["local"] and "your mail and your documents" in chat["sees"]  # at full, when asked
+    owner.put("/api/v1/models/advisor", json={"sees": "aggregates"})
+    chat = next(m for m in owner.get("/api/v1/privacy").json()["models"] if m["role"] == "advisor")
+    assert "Never a name, mail, documents" in chat["sees"]
     assert {l["service"] for l in got["leaves"]} >= {"Plaid", "Teller", "Anthropic", "ntfy or Gotify"}
     off = owner.post("/api/v1/privacy/models/advisor", json={"on": False}).json()
     assert next(m for m in off["models"] if m["role"] == "advisor")["on"] is False

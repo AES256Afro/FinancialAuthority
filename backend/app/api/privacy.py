@@ -29,8 +29,14 @@ PHRASE = "delete everything"
 KEEP_TABLES = {"web_sessions", "passkeys"}
 KEEP_SETTINGS = {"auth.totp", "auth.totp.last_step"}
 
+# What the chat's model sees at each level the owner can choose on Models.
+ADVISOR_SEES = {
+    "full": "Your questions, the plan's figures and names, and, when you ask, your mail and your documents (boxed as data, never as instructions). Never account numbers.",
+    "merchants": "Your questions, the plan's figures and who was paid. Never descriptions or notes, mail, documents or account numbers.",
+    "aggregates": "Your questions and the plan's amounts, dates and categories only. Never a name, mail, documents or account numbers.",
+}
 ROLE_WORDS = {
-    "advisor": ("The chat", "Your questions, and the plan's figures and names. Never mail, attachments or account numbers."),
+    "advisor": ("The chat", ADVISOR_SEES["full"]),
     "reviewer": ("Notes on your plan after payday", "The plan's figures, your rules and goals, and alert summaries. Never mail, attachments or account numbers."),
 }
 
@@ -46,6 +52,8 @@ def privacy(session: Session = Depends(get_session), _: auth.Principal = Depends
     models = []
     for role, (what, sees) in ROLE_WORDS.items():
         provider = roles[role]["provider"]
+        if role == "advisor":
+            sees = ADVISOR_SEES.get(str(roles[role].get("sees") or "full"), sees)
         models.append({"role": role, "what": what, "on": provider != "none", "provider": provider, "model": roles[role]["model"] if provider != "none" else None,
                        "local": provider == "ollama", "sees": sees,
                        "where": "on your own computer (Ollama)" if provider == "ollama" else "off" if provider == "none" else "Anthropic, by API" if provider == "anthropic" else "an OpenAI-compatible server you set"})
