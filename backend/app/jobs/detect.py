@@ -15,6 +15,9 @@ def _series_key(found: dict) -> tuple:
 
 
 def run_detection(session: Session, today: date, lookback_days: int = 400) -> dict:
+    from ..engine.pairs import find_pairs
+
+    pairs = find_pairs(session, today)  # transfers and card payments first, so they never look like spending
     since = today - timedelta(days=lookback_days)
     rows = [
         {"date": t.date, "merchant": t.merchant, "amount": t.amount, "category": t.category}
@@ -115,7 +118,7 @@ def run_detection(session: Session, today: date, lookback_days: int = 400) -> di
     from ..engine.planned import settle_planned
 
     settled = settle_planned(session, today)  # a plan whose payment just arrived stops counting now, not when a page opens
-    return {"found": len(found), "created": created, "updated": updated, "linked": linked, "retired": retired, "paying_accounts_filled": filled, "planned_settled": settled}
+    return {"found": len(found), "created": created, "updated": updated, "linked": linked, "retired": retired, "paying_accounts_filled": filled, "planned_settled": settled, "pairs": pairs}
 
 
 def accounts_index(session: Session) -> tuple[dict, dict]:

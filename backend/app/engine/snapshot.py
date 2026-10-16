@@ -129,6 +129,9 @@ def _finance_snapshot(session: Session, today: date) -> dict:
     caveats = projection_caveats(has_income=next_pay is not None, bills=len(bills), unnamed=unconfirmed - len(pending_streams), pending_installments=len(pending_streams))
     facts = _mail_facts(session, today)
     approvals_waiting = len(session.exec(select(Approval.id).where(Approval.status == "pending")).all())
+    from ..models import TransactionPair
+
+    pairs_waiting = len(session.exec(select(TransactionPair.id).where(TransactionPair.status == "pending")).all())
 
     from .planned import open_planned, planned_events, planned_out, planned_to_cards
 
@@ -283,7 +286,7 @@ def _finance_snapshot(session: Session, today: date) -> dict:
         "fresh": _freshness(session, accounts),
         "in_flight": _in_flight(session, today),
         "debts": [{"id": d.id, "name": d.name, "kind": d.kind, "balance": d.balance, "apr": d.apr, "minimum": d.minimum, "due_day": d.due_day} for d in debts],
-        "pending": {"confirmations": unconfirmed + len(facts["pending"]), "series": unconfirmed, "facts": len(facts["pending"]), "approvals": approvals_waiting, "past_due": len(payments["past_due"])},
+        "pending": {"confirmations": unconfirmed + len(facts["pending"]) + pairs_waiting, "series": unconfirmed, "facts": len(facts["pending"]), "pairs": pairs_waiting, "approvals": approvals_waiting, "past_due": len(payments["past_due"])},
         "mail": facts,
         "projection": projection,
         "not_advice": "Computed by the engine from the registers above. Not financial advice.",

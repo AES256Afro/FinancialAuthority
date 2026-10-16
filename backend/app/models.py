@@ -64,6 +64,23 @@ class Transaction(SQLModel, table=True):
         return not (self.is_transfer or self.is_card_payment or self.is_income or self.is_ignored)
 
 
+class TransactionPair(SQLModel, table=True):
+    """Two rows that are one movement of money (a transfer, a card payment and its credit) or one purchase seen
+    twice. `before` keeps both rows' flags as they were, so a "no" puts them back."""
+
+    __tablename__ = "transaction_pairs"
+    id: int | None = Field(default=None, primary_key=True)
+    kind: str = "transfer"  # transfer | card_payment | duplicate
+    a_id: int = Field(index=True)  # money out (or the row kept, for a duplicate)
+    b_id: int = Field(index=True)  # money in (or the row hidden, for a duplicate)
+    status: str = Field(default="pending", index=True)  # auto | pending | confirmed | rejected
+    confidence: float = 0.0
+    reason: str = ""
+    before: str = "{}"
+    created_at: dt.datetime = Field(default_factory=utcnow)
+    decided_at: dt.datetime | None = None
+
+
 class RecurringSeries(SQLModel, table=True):
     __tablename__ = "recurring_series"
     id: int | None = Field(default=None, primary_key=True)
