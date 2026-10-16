@@ -97,8 +97,40 @@ def tx_hash(provider: str, tx_id: str) -> str:
     return sha256(f"{provider}:{tx_id}".encode()).hexdigest()
 
 
+LIVE_PROVIDERS = ("plaid", "teller")
+ADOPTABLE = ("rocketmoney", "file", "manual")  # accounts made by an import or by hand, which a link brings live
+MERGE_DAYS = 3  # a link's date and an import's can differ by posting; within this many days they are one
+
+
+def _last4_of(a: Account) -> str:
+    if a.last4_enc:
+        try:
+            return crypto.decrypt(a.last4_enc) if crypto.is_encrypted(a.last4_enc) else a.last4_enc
+        except Exception:  # noqa: BLE001 - a key that cannot be read is just no match
+            return ""
+    digits = "".join(ch for ch in (a.external_id or "") if ch.isdigit())  # an export keeps the account's number as its key
+    return digits[-4:] if a.connector == "rocketmoney" and len(digits) >= 4 else ""
+
+
+def _imported_account(session: Session, *, name: str, institution: str, last4: str) -> Account | None:
+    """The account a link's first sync takes over: one an import or the owner made, with the same last four digits,
+    else the same name at the same institution. Its history is then the link's, not a second account beside it."""
+    candidates = [a for a in session.exec(select(Account).where(Account.active == True, Account.connector.in_(ADOPTABLE))).all() if a.kind != "investment"]  # noqa: E712
+    if last4:
+        same = [a for a in candidates if _last4_of(a) == last4]
+        if same:
+            return same[0]
+    inst = (institution or "").strip().lower()
+    named = [a for a in candidates if (a.name or "").strip().lower() == (name or "").strip().lower() and (a.institution or "").strip().lower() == inst]
+    return next((a for a in named if not (last4 and _last4_of(a))), None) if name else None  # two different numbers are two accounts, whatever their names
+
+
 def upsert_account(session: Session, *, provider: str, external_id: str, name: str, institution: str, kind: str, balance: float | None, last4: str = "", subtype: str = "", credit_limit: float | None = None) -> Account:
     row = session.exec(select(Account).where(Account.connector == provider, Account.external_id == external_id)).first()
+    if row is None and provider in LIVE_PROVIDERS:
+        row = _imported_account(session, name=name, institution=institution, last4=last4)
+        if row is not None:
+            row.connector, row.external_id = provider, external_id  # the link takes over the account its history was imported into
     if row is None:
         row = Account(name=name or "Account", institution=institution, kind=kind, connector=provider, external_id=external_id)
         session.add(row)
@@ -167,9 +199,16 @@ def upsert_holding(session: Session, *, account: Account, external_id: str, name
 
 
 def upsert_transaction(session: Session, *, provider: str, tx_id: str, account: Account, when: date, amount: float, merchant: str, raw_name: str, category: str, description: str = "", posted: date | None = None, pending: bool = False) -> bool:
-    """Insert or update one transaction by its vendor id. Returns True when it is new."""
+    """Insert or update one transaction by its vendor id. Returns True when it is new. A posted row the account
+    already holds from an import (the same amount within three days, by the same name or on the same day) is the
+    same transaction: the link takes that row over instead of adding a second."""
     h = tx_hash(provider, tx_id)
     row = session.exec(select(Transaction).where(Transaction.row_hash == h)).first()
+    if row is None and not pending and account.id is not None:
+        row = _imported_twin(session, account, when, round(float(amount), 2), f"{merchant} {raw_name} {description}")
+        if row is not None:
+            row.row_hash, row.source, row.source_ref, row.import_id = h, provider, tx_id, None  # the bank's own row now; undoing the import leaves it
+            session.add(row)
     new = row is None
     if row is None:
         row = Transaction(account_id=account.id, date=when, amount=amount, row_hash=h, source=provider, source_ref=tx_id)
@@ -188,6 +227,22 @@ def upsert_transaction(session: Session, *, provider: str, tx_id: str, account: 
     row.is_income = category == "Income" or (amount < 0 and category in ("Income", "Paycheck"))
     apply_rules(rules_for(session), row)
     return new
+
+
+def _imported_twin(session: Session, account: Account, when: date, amount: float, text: str) -> Transaction | None:
+    """The row an import (or the owner) already put in this account for the same transaction: posted, the same
+    amount, within three days, and by a shared word of the name or on the same day; the nearest day first. A row
+    a link already holds is its own and never a twin."""
+    from datetime import timedelta
+
+    from .files import _words
+
+    rows = session.exec(select(Transaction).where(Transaction.account_id == account.id, Transaction.pending == False, Transaction.source.not_in(LIVE_PROVIDERS),  # noqa: E712
+                                                  Transaction.date >= when - timedelta(days=MERGE_DAYS), Transaction.date <= when + timedelta(days=MERGE_DAYS),
+                                                  Transaction.amount >= amount - 0.005, Transaction.amount <= amount + 0.005)).all()
+    words = _words(text)
+    twins = [t for t in rows if t.date == when or words & _words(f"{t.merchant} {t.raw_name} {t.description}")]
+    return min(twins, key=lambda t: (abs((t.date - when).days), t.id), default=None)
 
 
 def remove_transaction(session: Session, provider: str, tx_id: str) -> bool:

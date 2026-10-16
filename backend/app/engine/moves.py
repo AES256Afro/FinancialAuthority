@@ -352,8 +352,7 @@ def _occurrences(due_day: int | None, start: date, end: date) -> list[date]:
 
 
 def move_plan(session: Session, move: AccountMove, today: date) -> dict[str, Any]:
-    from .scenario import load_inputs
-    from .projection import assemble
+    from .scenario import assembled, load_inputs
 
     accounts = _accounts(session)
     source = accounts.get(move.source_account_id)
@@ -377,8 +376,7 @@ def move_plan(session: Session, move: AccountMove, today: date) -> dict[str, Any
     paycheck_there = not income_items or all(i.status == "confirmed" for i in income_items)
 
     # Money through the move: each pay window, what each account brings in and pays out with the switches applied.
-    events = assemble(bills=inp["bills"], plans=inp["plans"], advances=inp["advances"], today=today, accounts=inp["accounts"], paydays=inp["paydays"], card_mode=inp["card_mode"], debts=inp["debts"],
-                      planned=inp["planned"], extra=inp["extra"], card_pace_by_account=inp["pace"]["per_day_by_account"], horizon_days=150)["math"]
+    events = assembled(inp, 150)["math"]
     # Recurring charges the ledger found count on the old account too, until they move.
     for i in items:
         if i.kind == "found" and i.due_day:

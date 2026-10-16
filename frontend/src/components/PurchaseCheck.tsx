@@ -1,6 +1,6 @@
 // Should I buy this? An amount in, a verdict out: yes, wait or no, the first thing it breaks, the first date
 // it would pass. The engine decides; this card asks and shows.
-import { CircleCheck, OctagonAlert, TriangleAlert } from "lucide-react";
+import { CircleCheck, CircleHelp, OctagonAlert, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { api } from "../api";
 import { money, parseMoney, shortDate } from "../format";
@@ -10,7 +10,8 @@ interface Check {
   amount: number;
   on: string;
   installments: number | null;
-  verdict: "yes" | "wait" | "no";
+  verdict: "yes" | "wait" | "no" | "outside";
+  outside?: { horizon: string; charges: { date: string; amount: number }[] } | null;
   breaks: { date: string; name: string; event_date: string; shortfall: number; already_short: number } | null;
   first_ok_date: string | null;
   low_point: { date: string; at_pace: number };
@@ -25,6 +26,7 @@ const VERDICT = {
   yes: { word: "Yes", bg: "var(--safe-soft)", ink: "var(--safe-ink)", Icon: CircleCheck },
   wait: { word: "Wait", bg: "var(--warning-soft)", ink: "var(--warning-ink)", Icon: TriangleAlert },
   no: { word: "No", bg: "var(--critical-soft)", ink: "var(--critical-ink)", Icon: OctagonAlert },
+  outside: { word: "Can't tell yet", bg: "var(--paycheck-soft)", ink: "var(--paycheck-ink)", Icon: CircleHelp },
 };
 
 export function PurchaseCheck() {
@@ -91,6 +93,11 @@ export function PurchaseCheck() {
             )}
             {r.verdict === "wait" && r.first_ok_date && <div>It fits from <strong>{shortDate(r.first_ok_date)}</strong>.</div>}
             {r.verdict === "no" && <div>It doesn't fit on any day in the next 60 days.</div>}
+            {r.verdict === "outside" && r.outside && (
+              <div>
+                Up to {shortDate(r.outside.horizon)} it fits, but {r.outside.charges.length === 1 ? "a payment falls" : `${r.outside.charges.length} payments fall`} after that ({r.outside.charges.map((c) => `${money(c.amount)} on ${shortDate(c.date)}`).join(", ")}), past what the plan can see yet. Check again closer to then.
+              </div>
+            )}
             <div style={{ color: "var(--muted)", fontSize: 12 }}>Safe to spend today is {money(r.safe_to_spend.amount)} through {shortDate(r.safe_to_spend.through)}. {r.not_advice}</div>
           </div>
         </div>

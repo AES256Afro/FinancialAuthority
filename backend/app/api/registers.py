@@ -102,13 +102,15 @@ def classify(series_id: int, body: ClassifyIn, session: Session = Depends(get_se
         from ..jobs.detect import account_for_series
 
         bill = Bill(name=name, kind=body.kind, amount=round(amount, 2), amount_mode="fixed", cadence=cadence, due_day=due_day, autopay=body.autopay or body.kind == "subscription", movable=body.movable, pay_from_account_id=account_for_series(session, series),
-                    move_window="1-28" if body.movable else "", category=series.category, series_id=series.id, anchor_date=series.next_expected if cadence != "monthly" else None)
+                    move_window="1-28" if body.movable else "", category=series.category, series_id=series.id, anchor_date=series.next_expected if cadence != "monthly" else None, created_on=today())
         session.add(bill)
         session.flush()
         created = {"bill": bill_out(bill)}
     elif body.kind == "income":
+        from ..engine.cadence import pay_day_from
+
         next_date = series.next_expected if series.next_expected >= today() else today()
-        income = Income(name=name, cadence=series.cadence, expected_net=round(amount, 2), next_date=next_date, series_id=series.id)
+        income = Income(name=name, cadence=series.cadence, expected_net=round(amount, 2), next_date=next_date, series_id=series.id, pay_day=pay_day_from(series.next_expected) if series.cadence == "monthly" else 0)
         session.add(income)
         session.flush()
         created = {"income": {"id": income.id, "name": income.name, "cadence": income.cadence, "expected_net": income.expected_net, "next_date": income.next_date.isoformat()}}
@@ -171,7 +173,7 @@ def create_bill(body: BillIn, session: Session = Depends(get_session), _: auth.P
         raise HTTPException(400, f"cadence is one of {', '.join(CADENCES)}")
     bill = Bill(name=body.name, kind=body.kind or "bill", amount=body.amount, amount_mode=body.amount_mode or "fixed", due_day=max(1, min(31, body.due_day)), paid_from=body.paid_from or "due",
                 cadence=body.cadence or "monthly", anchor_date=body.anchor_date,
-                autopay=bool(body.autopay), movable=body.movable if body.movable is not None else True, grace_days=body.grace_days or 0, late_fee=body.late_fee or 0.0, category=body.category or "")
+                autopay=bool(body.autopay), movable=body.movable if body.movable is not None else True, grace_days=body.grace_days or 0, late_fee=body.late_fee or 0.0, category=body.category or "", created_on=today())
     session.add(bill)
     session.commit()
     session.refresh(bill)
@@ -218,7 +220,8 @@ def update_bill(bill_id: int, body: BillIn, session: Session = Depends(get_sessi
 @router.get("/incomes")
 def list_incomes(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
     rows = session.exec(select(Income).where(Income.active == True)).all()  # noqa: E712
-    return {"incomes": [{"id": i.id, "name": i.name, "cadence": i.cadence, "expected_net": i.expected_net, "expected_net_end": i.expected_net_end, "next_date": i.next_date.isoformat(), "series_id": i.series_id} for i in rows]}
+    return {"incomes": [{"id": i.id, "name": i.name, "cadence": i.cadence, "expected_net": i.expected_net, "expected_net_end": i.expected_net_end, "next_date": i.next_date.isoformat(), "series_id": i.series_id,
+                         "pay_days": i.pay_days, "pay_day": i.pay_day} for i in rows]}
 
 
 class IncomeIn(BaseModel):
@@ -229,6 +232,7 @@ class IncomeIn(BaseModel):
     next_date: date | None = None
     active: bool | None = None
     pay_days: str | None = None
+    pay_day: int | None = None  # monthly only: the day of the month it pays, 31 for month end
 
 
 @router.put("/incomes/{income_id}")
@@ -236,16 +240,30 @@ def update_income(income_id: int, body: IncomeIn, session: Session = Depends(get
     income = session.get(Income, income_id)
     if income is None:
         raise HTTPException(404, "No such income")
-    from ..engine.cadence import PAY_DAYS
+    from ..engine.cadence import PAY_DAYS, pay_day_from
 
     if body.pay_days is not None and body.pay_days not in PAY_DAYS:
         raise HTTPException(400, 'pay_days is "" (the 15th and the last day) or "1,15" (the 1st and the 15th)')
+    if body.pay_day is not None and not 1 <= body.pay_day <= 31:
+        raise HTTPException(400, "pay_day is a day of the month, 1 to 31; 31 is the last day of every month")
     for field, value in body.model_dump(exclude_unset=True).items():
         if value is not None:
             setattr(income, field, value)
+    # A monthly paycheck keeps its own day of the month, so a date in a short month never pulls it earlier for good:
+    # a new date that the day already lands on (Feb 28 for month end) keeps it; any other date sets it.
+    if body.pay_day is None and (income.cadence or "") == "monthly" and (body.next_date is not None or not income.pay_day):
+        if not (income.pay_day and _lands_on(income.pay_day, income.next_date)):
+            income.pay_day = pay_day_from(income.next_date)
     session.add(income)
     session.commit()
     return {"ok": True}
+
+
+def _lands_on(day: int, d: date) -> bool:
+    """Whether a monthly paycheck kept on `day` pays on `d` (day 31 pays on the last day of every month)."""
+    import calendar
+
+    return min(day, calendar.monthrange(d.year, d.month)[1]) == d.day
 
 
 # ---- matched pairs: transfers, card payments, the same purchase twice ----------------------------------------

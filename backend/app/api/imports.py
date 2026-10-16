@@ -68,7 +68,7 @@ def import_file(
         bill_rows = parse_bills_rows(text, found["mapping"])
         if not bill_rows:
             raise HTTPException(400, "No rows with a name and an amount were found; check the columns in the preview")
-        landed = import_bills(session, bill_rows, source_file=file.filename or "upload")
+        landed = import_bills(session, bill_rows, source_file=file.filename or "upload", today=today())
         return {"ok": True, "summary": landed.summary, "inserted": landed.inserted, "duplicates": 0, "accounts_created": 0, "account_id": None, "bills": landed.details, "detection": {},
                 "import_id": landed.details.get("import_id")}
     if found["kind"] == "ofx":

@@ -14,7 +14,7 @@ import hashlib
 import json
 import logging
 from contextlib import AbstractContextManager
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable
 
 from sqlmodel import Session, select
@@ -162,14 +162,35 @@ def review_sync(session_factory: Callable[[], AbstractContextManager[Session]], 
     return asyncio.run(review(session_factory, today, trigger))
 
 
-def run_if_due(session_factory: Callable[[], AbstractContextManager[Session]], today: date) -> str:
-    """The hourly job: review on payday once, and after a confirmed change, when a reviewer is configured."""
+BACKOFF_CAP_HOURS = 24
+
+
+def backoff_until(session: Session) -> datetime | None:
+    """When the job may next ask the reviewer after failed runs in a row: an hour after the first failure, then
+    two, four and so on, never more than a day. Each try is a billed call. None when the last run went well."""
+    failed = 0
+    last = None
+    for r in session.exec(select(ReviewRun).where(ReviewRun.trigger != "request").order_by(ReviewRun.created_at.desc()).limit(8)).all():
+        if r.ok:
+            break
+        failed += 1
+        last = last or r.created_at
+    if not failed or last is None:
+        return None
+    last = last if last.tzinfo else last.replace(tzinfo=timezone.utc)
+    return last + timedelta(hours=min(BACKOFF_CAP_HOURS, 2 ** (failed - 1)))
+
+
+def run_if_due(session_factory: Callable[[], AbstractContextManager[Session]], today: date, now: datetime | None = None) -> str:
+    """The hourly job: review on payday once, and after a confirmed change, when a reviewer is configured. After
+    a failure it waits longer each time (backoff_until) instead of paying for the same failure every hour."""
+    now = now or utcnow()
     with session_factory() as session:
         if provider_for(session, "reviewer") is None:
             return "reviewer off"
         pending = get_setting(session, "review.pending", None)
         snap = finance_snapshot(session, today)
-        payday = snap["next_paycheck"]["days"] == 0 and snap["next_paycheck"]["amount"] > 0
+        payday = snap["payday"]["today"] and snap["payday"]["amount"] > 0  # the scheduled payday, before its check posts and after
         from datetime import timezone as _tz
 
         from ..clock import local_now
@@ -177,6 +198,9 @@ def run_if_due(session_factory: Callable[[], AbstractContextManager[Session]], t
         midnight = local_now().replace(hour=0, minute=0, second=0, microsecond=0).astimezone(_tz.utc)  # the owner's midnight, not UTC's
         today_runs = session.exec(select(ReviewRun).where(ReviewRun.created_at >= midnight)).all()
         ran_today = any(r.trigger == "payday" for r in today_runs)
+        wait = backoff_until(session)
+    if wait is not None and now < wait and (pending or (payday and not ran_today)):
+        return f"waiting after a failed review, until {wait.isoformat(timespec='minutes')}"
     if pending:
         run = review_sync(session_factory, today, "change")
         return f"reviewed after a change: {'ok' if run.ok else run.error}"

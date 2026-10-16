@@ -92,15 +92,16 @@ def _past_paydays(session: Session, today: date, count: int) -> list[date]:
     income = session.exec(select(Income).where(Income.active == True).order_by(Income.next_date)).first()  # noqa: E712
     if income is None:
         return []
-    from .cadence import _add_months
+    from .cadence import _add_months, income_days
 
     cadence = income.cadence or "biweekly"
     start = income.next_date
+    days = income_days(income)
     # Walk forward from a real payday far enough back that `count` paydays before today are on the list.
     if cadence == "monthly":
-        seq = [_add_months(start, -k) for k in range(count + 4)]
+        seq = [_add_months(start, -k, days["pay_day"]) for k in range(count + 4)]
     elif cadence == "semimonthly":
-        seq = next_paydays(start - timedelta(days=16 * (count + 3)), cadence, 2 * count + 12)[1:]  # the first is only where the walk began
+        seq = next_paydays(start - timedelta(days=16 * (count + 3)), cadence, 2 * count + 12, days["pay_days"])[1:]  # the first is only where the walk began
     else:
         step = 7 if cadence == "weekly" else 14
         seq = next_paydays(start - timedelta(days=step * (count + 3)), cadence, count + 8)
@@ -167,12 +168,10 @@ def history(session: Session, today: date, count: int = 6) -> list[dict]:
 
 def months_ahead(session: Session, today: date, saving: dict | None, count: int = 6) -> list[dict]:
     """Month by month, what the checks bring and where it is due to go: the stream's bands."""
-    from .projection import assemble
-    from .scenario import load_inputs
+    from .scenario import assembled, load_inputs
 
     inp = load_inputs(session, today, horizon_days=31 * count + 5)
-    events = assemble(bills=inp["bills"], plans=inp["plans"], advances=inp["advances"], today=today, accounts=inp["accounts"], paydays=inp["paydays"], card_mode=inp["card_mode"], debts=inp["debts"],
-                      planned=inp["planned"], extra=inp["extra"], card_pace_by_account=inp["pace"]["per_day_by_account"], horizon_days=inp["horizon_days"])["math"]
+    events = assembled(inp)["math"]
     pace = float(inp["pace"]["per_day_cash"])
     share = float((saving or {}).get("share_used", 0) if (saving or {}).get("chosen") else 0)
     out = []

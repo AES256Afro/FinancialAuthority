@@ -110,19 +110,21 @@ def _bulk_write(state) -> None:  # noqa: ANN001
 
 
 def _trim_manual_keys() -> None:
-    """Manual accounts once kept whatever number was typed in their key; keep only the last four digits."""
-    from sqlalchemy import text
+    """Manual accounts once kept whatever number was typed in their key; keep only the last four digits. An
+    investment account's key is its name ("manual:fidelity 401k"), which trimming would make collide; it is left be."""
+    from sqlalchemy import inspect, text
 
+    if "accounts" not in inspect(engine).get_table_names():
+        return  # a fresh database has nothing to trim
     with engine.begin() as connection:
-        try:
-            rows = connection.execute(text("SELECT id, external_id FROM accounts WHERE provider = 'manual' AND external_id LIKE 'manual:%'")).all()
-        except Exception:  # noqa: BLE001 - a fresh database has nothing to trim
-            return
+        rows = connection.execute(text("SELECT id, external_id FROM accounts WHERE connector = 'manual' AND kind != 'investment' AND external_id LIKE 'manual:%:%'")).all()
+        keys = {str(key) for _, key in rows}
         for row_id, key in rows:
-            head, _, tail = str(key).rpartition(":")
+            head, _, tail = str(key).rpartition(":")  # manual:<name>:<number>
             digits = "".join(ch for ch in tail if ch.isdigit())[-4:]
-            if tail != digits and head:
+            if tail != digits and head and f"{head}:{digits}" not in keys:
                 connection.execute(text("UPDATE accounts SET external_id = :k WHERE id = :i"), {"k": f"{head}:{digits}", "i": row_id})
+                keys.add(f"{head}:{digits}")
 
 
 def add_missing_columns() -> list[str]:

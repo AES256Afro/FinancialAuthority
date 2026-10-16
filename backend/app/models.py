@@ -156,6 +156,7 @@ class RecurringSeries(SQLModel, table=True):
     kind: str = "unknown"  # unknown | bill | subscription | income | advance | installment | ignored
     confirmed: bool = False
     suggested_kind: str = ""  # what the category says it is; a default for the owner's tap, never a fact
+    origin: str = ""  # "borrowing" when queued from a lender's payments rather than found by detection, which then leaves it be
 
 
 class Income(SQLModel, table=True):
@@ -170,6 +171,7 @@ class Income(SQLModel, table=True):
     series_id: int | None = Field(default=None, foreign_key="recurring_series.id")
     active: bool = True
     pay_days: str = ""  # semi-monthly only: "" pays the 15th and the last day, "1,15" the 1st and the 15th
+    pay_day: int = 0  # monthly only: the day of the month it pays, 31 for month end (Feb 28, Apr 30); 0 until known, then the day of next_date
 
 
 class Bill(SQLModel, table=True):
@@ -192,6 +194,7 @@ class Bill(SQLModel, table=True):
     category: str = ""
     series_id: int | None = Field(default=None, foreign_key="recurring_series.id")
     active: bool = True
+    created_on: dt.date | None = None  # the day it was added; no payment is looked for before it (None: from before this was kept)
 
 
 class Payment(SQLModel, table=True):

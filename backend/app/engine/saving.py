@@ -101,6 +101,14 @@ def saving_plan(session: Session, today: date, *, snap: dict | None = None) -> d
     share = cfg["share"]
     used = share if share is not None else SUGGESTED
     per_check = [{"date": w["start"], "left": _money(lefts[k]), "keep": _money(max(0.0, lefts[k]) * used / 100.0)} for k, w in enumerate(windows)]
+    asides = [{"start": w["start"], "set_aside": w["set_aside"]["total"]} for w in windows]
+    pay = snap.get("payday") or {}
+    if pay.get("landed"):
+        # Today's check has posted, so the windows start at the next one; what today's check keeps and leaves are
+        # the snapshot's own figures for it, and the payday moves still have them.
+        left = float(pay["left"]) - pace_day * ((date.fromisoformat(pay["end"]) - today).days + 1)
+        per_check.insert(0, {"date": today.isoformat(), "left": _money(left), "keep": _money(max(0.0, left) * used / 100.0)})
+        asides.insert(0, {"start": today.isoformat(), "set_aside": pay["set_aside"]})
 
     # The rollover: a plan's payment, freed when it ends, keeps going into the ladder.
     check_days = 365.0 / CHECKS_PER_YEAR.get(cadence, 26)
@@ -116,7 +124,8 @@ def saving_plan(session: Session, today: date, *, snap: dict | None = None) -> d
     roll.sort(key=lambda r: r["last_payment"])
 
     p1 = date.fromisoformat(snap["next_paycheck"]["date"])
-    checks = next_paydays(p1, cadence, CHECKS_AHEAD) if snap["next_paycheck"].get("known", True) else []
+    days = {k: snap["next_paycheck"][k] for k in ("pay_days", "pay_day") if k in snap["next_paycheck"]}
+    checks = next_paydays(p1, cadence, CHECKS_AHEAD, **days) if snap["next_paycheck"].get("known", True) else []
 
     def simulate(pct: int, with_rollover: bool) -> list[str | None]:
         """The date each rung is reached, keeping `pct` percent of what each check leaves (the first check
@@ -154,7 +163,7 @@ def saving_plan(session: Session, today: date, *, snap: dict | None = None) -> d
     return {
         "as_of": today.isoformat(), "balance": _money(balance), "accounts": [{"id": a.id, "name": a.name, "balance": a.balance, "source": f"account:{a.id}"} for a in saves],
         "share": share, "chosen": share is not None, "suggested": SUGGESTED, "share_used": used, "presets": PRESETS, "starter": cfg["starter"],
-        "per_check": per_check, "windows": [{"start": w["start"], "set_aside": w["set_aside"]["total"]} for w in windows],
+        "per_check": per_check, "windows": asides,
         "rungs": rungs, "next_rung": next_rung, "by_share": by_share, "month": _money(month), "must_pays": _money(must),
         "rollover": {"enabled": cfg["rollover"], "items": roll, "freed_per_check": _money(sum(r["per_check"] for r in roll))},
         "basis": "Rungs from the next two checks' bills and advances and the usual everyday pace; each check's share from what its window leaves after the pace.",

@@ -65,7 +65,7 @@ If you need help, visit our Help Center.
 """
 
 
-def _raw(subject: str, text: str) -> bytes:
+def _raw(subject: str, text: str, message_id: str = "<loan-1@example.test>") -> bytes:
     from email.message import EmailMessage
 
     m = EmailMessage()
@@ -73,7 +73,7 @@ def _raw(subject: str, text: str) -> bytes:
     m["To"] = "owner@example.test"
     m["Subject"] = subject
     m["Date"] = "Thu, 15 Oct 2026 10:00:00 -0500"
-    m["Message-ID"] = "<loan-1@example.test>"
+    m["Message-ID"] = message_id
     m.set_content(text)
     return bytes(m)
 
@@ -123,10 +123,10 @@ def test_the_mail_becomes_a_plan_on_the_lenders_dates(owner: TestClient):
     loan = over["loans"][0]
     assert loan["loan_id"] == "9ABC-DEF2" and loan["remaining"] == 2 and loan["left_to_pay"] == 484.62 and loan["interest_left"] == 19.72 and loan["ends"] == "2026-12-23" and loan["from_lender"]
     assert over["loans_finance_charge"] == 39.29 and over["loans_left_to_pay"] == 484.62
-    # the same confirmation again updates the plan rather than doubling it
+    # the same confirmation sent again (a message of its own) updates the plan rather than doubling it
     with Session(engine) as session:
         account = session.exec(select(MailAccount)).one()
-        parsed = parse_message(_raw("Your loan confirmation", CONFIRMATION))
+        parsed = parse_message(_raw("Your loan confirmation", CONFIRMATION, "<loan-1-resent@example.test>"))
         handle_message(session, account, "INBOX", 502, parsed, TODAY)
         session.commit()
         again = session.exec(select(ExtractedFact).where(ExtractedFact.kind == "installment", ExtractedFact.status == "pending")).one()

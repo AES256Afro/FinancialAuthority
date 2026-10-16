@@ -14,7 +14,7 @@ from sqlmodel import Session, select
 
 from ..models import Account, Advance, Approval, Bill, Debt, ExtractedFact, Income, InstallmentPlan, MessageRef, RecurringSeries, Transaction
 from ..store import get_setting
-from .cadence import next_paydays, next_unpaid_payday, payday_position, paydays_through
+from .cadence import income_net, next_paydays, next_unpaid_payday, pay_schedule, payday_position, paydays_through, scheduled_payday  # noqa: F401
 from .projection import HORIZON_DAYS, assemble, build_events, card_events, cash_of, line_of, next_due, pending_installment_events, project, projection_caveats, set_aside_of, split_windows, wdate  # noqa: F401
 
 PACE_DAYS = 56
@@ -102,22 +102,23 @@ def _finance_snapshot(session: Session, today: date) -> dict:
     buffer = float(get_setting(session, "buffer", 200.0))
 
     incomes = session.exec(select(Income).where(Income.active == True)).all()  # noqa: E712
-    upcoming = sorted(((next_unpaid_payday(session, i, today), i) for i in incomes), key=lambda p: p[0])
-    next_pay = upcoming[0] if upcoming else None
-    next_payday = next_pay[0] if next_pay else today + timedelta(days=14)
-    cadence = (next_pay[1].cadence if next_pay else "biweekly") or "biweekly"
-    paydays = paydays_through(next_payday, cadence, today + timedelta(days=HORIZON_DAYS + 31), at_least=6)
+    # Every paycheck on one schedule: each payday of each, what lands on it, and the earliest as the next.
+    schedule = pay_schedule(session, incomes, today, today + timedelta(days=HORIZON_DAYS + 31), at_least=6)
+    next_pay = (schedule["next"], schedule["income"]) if schedule["known"] else None
+    next_payday = schedule["next"]
+    cadence = schedule["cadence"]
+    paydays = schedule["paydays"]
     following_payday = paydays[1]
 
     def net_for(payday: date) -> float:
-        """The usual net of the check that lands on `payday`; a semi-monthly paycheck may differ by position."""
-        if next_pay is None:
-            return 0.0
-        if cadence == "semimonthly" and payday_position(payday) == "end" and next_pay[1].expected_net_end is not None:
-            return float(next_pay[1].expected_net_end)
-        return float(next_pay[1].expected_net)
+        """What lands on `payday`: the usual net of every paycheck paid that day (a semi-monthly one by its
+        position in the month), added together."""
+        return schedule["amounts"].get(payday, 0.0)
 
     expected_net = net_for(next_payday)
+
+    from .borrowing import plan_covers_series
+    from .payments import paid_periods
 
     bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
     plans = session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all()  # noqa: E712
@@ -125,8 +126,10 @@ def _finance_snapshot(session: Session, today: date) -> dict:
     debts = session.exec(select(Debt).where(Debt.active == True)).all()  # noqa: E712
     unconfirmed_rows = session.exec(select(RecurringSeries).where(RecurringSeries.confirmed == False, RecurringSeries.active == True)).all()  # noqa: E712
     unconfirmed = len(unconfirmed_rows)
-    pending_streams = [r for r in unconfirmed_rows if r.suggested_kind == "installment"]
-    caveats = projection_caveats(has_income=next_pay is not None, bills=len(bills), unnamed=unconfirmed - len(pending_streams), pending_installments=len(pending_streams))
+    streams = [r for r in unconfirmed_rows if r.suggested_kind == "installment"]
+    pending_streams = [r for r in streams if not any(plan_covers_series(p, r) for p in plans)]  # a plan's own payments are the plan, counted once
+    caveats = projection_caveats(has_income=next_pay is not None, bills=len(bills), unnamed=unconfirmed - len(streams), pending_installments=len(pending_streams))
+    paid = paid_periods(session, today)
     facts = _mail_facts(session, today)
     approvals_waiting = len(session.exec(select(Approval.id).where(Approval.status == "pending")).all())
     from ..models import TransactionPair
@@ -140,7 +143,7 @@ def _finance_snapshot(session: Session, today: date) -> dict:
     pace = usual_pace(session, today, {b.name for b in bills})
     by_id = {a.id: a for a in accounts}
     assembled = assemble(bills=bills, plans=plans, advances=advances, today=today, accounts=by_id, paydays=paydays, card_mode=card_mode, debts=debts, planned=planned_to_cards(session, today),
-                         extra=pending_installment_events(pending_streams, today) + planned_rows, card_pace_by_account=pace["per_day_by_account"])
+                         extra=pending_installment_events(pending_streams, today, plans=plans) + planned_rows, card_pace_by_account=pace["per_day_by_account"], paid=paid, pay_days=schedule["pay_days"])
     events, display_events, card_bills, payoffs = assembled["math"], assembled["display"], assembled["card_bills"], assembled["payoffs"]
     windows_split = split_windows(events, today, next_payday, following_payday, paydays[2])
     shown = split_windows(display_events, today, next_payday, following_payday, paydays[2])
@@ -177,10 +180,11 @@ def _finance_snapshot(session: Session, today: date) -> dict:
                             advances_on_payday=advances_on_payday, shortfall=next_window_shortfall)
 
     # A daily path for sixty days: `available` is cash minus the buffer minus what is reserved, if nothing
-    # else is spent; `at_pace` also spends the usual everyday amount each day, which is the honest line.
-    in_view = [d for d in paydays if d <= today + timedelta(days=60)]  # every payday the sixty-day line can see
-    pay_dates = set(in_view)
-    pay_amounts = {d: net_for(d) for d in in_view}
+    # else is spent; `at_pace` also spends the usual everyday amount each day, which is the honest line. Every
+    # payday goes in, past the sixty days too: the line only counts the checks it reaches, but it releases a
+    # reserve on the check after next, which a monthly paycheck may not reach inside them.
+    pay_dates = set(paydays)
+    pay_amounts = {d: net_for(d) for d in paydays}
     projection = project(today, cash=cash, buffer=buffer, expected_net=expected_net, pay_dates=pay_dates, set_aside=set_aside, events=events, per_day=pace["per_day_cash"], pay_amounts=pay_amounts, reserved_for={(e.get("source"), e["date"]) for e in windows_split["next_window"]})
 
     # Four paycheck windows, each filled the same way: what the paycheck carries in, what leaves it, what is left.
@@ -214,9 +218,9 @@ def _finance_snapshot(session: Session, today: date) -> dict:
             "advances": {"total": _money(adv_total), "items": [{**e, "date": e["date"].isoformat(), "funded": True} for e in adv]},
             "bills": {"total": _money(bills_total), "items": funded_items, **_bill_groups(funded_items)},
             "set_aside": {"total": _money(aside), "items": aside_items},
-            "buffer": _money(buffer) if k == 0 else 0.0,
+            "buffer": _money(buffer) if k == 0 else 0.0,  # shown, and already kept out of what the first window carries in
             "out": _money(bills_total + adv_total),
-            "spoken_for": _money(adv_total + bills_total + aside + (buffer if k == 0 else 0.0)),
+            "spoken_for": _money(adv_total + bills_total + aside),
             "safe": _money(left),
         })
         carried = aside
@@ -224,8 +228,12 @@ def _finance_snapshot(session: Session, today: date) -> dict:
     # The calendar: every event for sixty days, paydays included, and each week's low point at the usual pace.
     calendar_events = [{**e, "date": e["date"].isoformat()} for e in display_events if today <= e["date"] <= today + timedelta(days=60)]
     for pd in sorted(pay_dates):
-        if today <= pd <= today + timedelta(days=60) and expected_net:
-            calendar_events.append({"date": pd.isoformat(), "name": "Payday", "amount": _money(-expected_net), "kind": "paycheck", "autopay": True, "source": f"income:{next_pay[1].id}" if next_pay else "income"})
+        if not today <= pd <= today + timedelta(days=60):
+            continue
+        for income in schedule["incomes_on"].get(pd, []):  # each check as it lands that day, an end-of-month one at its own net
+            amount = income_net(income, pd)
+            if amount:
+                calendar_events.append({"date": pd.isoformat(), "name": "Payday" if len(incomes) == 1 else f"Payday: {income.name}", "amount": _money(-amount), "kind": "paycheck", "autopay": True, "source": f"income:{income.id}"})
     calendar_events.sort(key=lambda e: e["date"])
     weeks = []
     week_start = today - timedelta(days=(today.weekday() + 1) % 7)  # the Sunday on or before today
@@ -241,7 +249,18 @@ def _finance_snapshot(session: Session, today: date) -> dict:
     from .payments import payments_overview
     from .paystubs import paystubs_overview
 
-    goals = goals_plan(session, today, next_payday, cadence)
+    goals = goals_plan(session, today, next_payday, cadence, days=schedule["days"])
+
+    # Payday is the day a check is scheduled, whether or not it has posted: a deposit that landed in the last
+    # two days is today's check. Once it has landed the windows start at the next check, so what today's check
+    # keeps for that window and what it leaves after it are worked out here, for the payday moves.
+    paid_today = [i for i in incomes if scheduled_payday(i, today) == today]
+    landed = bool(paid_today) and next_payday > today
+    payday = {"today": bool(paid_today), "date": (today if paid_today else next_payday).isoformat(), "amount": _money(sum(income_net(i, today) for i in paid_today) if paid_today else expected_net),
+              "landed": landed, "sources": [f"income:{i.id}" for i in paid_today]}
+    if landed:
+        keep = set_aside_of(windows_split["window"])
+        payday.update(set_aside=_money(keep), left=_money(cash - due_before - advances_before - buffer - keep), end=(next_payday - timedelta(days=1)).isoformat())
 
     payments = payments_overview(session, today)
     paystubs = paystubs_overview(session)
@@ -267,7 +286,9 @@ def _finance_snapshot(session: Session, today: date) -> dict:
         "cash_all": _money(cash_all),
         "savings": _money(cash_all - cash),
         "buffer": _money(buffer),
-        "next_paycheck": {"date": next_payday.isoformat(), "days": (next_payday - today).days, "amount": _money(expected_net), "source": f"income:{next_pay[1].id}" if next_pay else None, "known": next_pay is not None, "cadence": cadence},
+        "next_paycheck": {"date": next_payday.isoformat(), "days": (next_payday - today).days, "amount": _money(expected_net), "source": f"income:{next_pay[1].id}" if next_pay else None, "known": next_pay is not None, "cadence": cadence,
+                          "pay_days": schedule["days"]["pay_days"], "pay_day": schedule["days"]["pay_day"]},
+        "payday": payday,
         "paydays": [{"date": d.isoformat(), "amount": _money(net_for(d))} for d in paydays[:4]],
         "caveats": caveats,
         "due_before_payday": {"total": _money(due_before), "items": [{**e, "date": e["date"].isoformat()} for e in before], "groups": due_groups, "next_check": next_check},
@@ -381,10 +402,11 @@ SMALL_BILL = 25.0  # bills under this are grouped as "small stuff" in the pictur
 def _bill_groups(items: list[dict]) -> dict:
     """The groups the pictures draw a window's bills in: card payments split into their parts, other bills, the
     small ones together, and what is left after the eight largest."""
-    card = [e for e in items if e.get("kind") == "card_payment" and not e.get("via_card")]
-    other = [e for e in items if e.get("kind") != "card_payment" and not e.get("via_card")]
-    small = [e for e in items if e["amount"] < SMALL_BILL]
-    by_size = sorted(items, key=lambda e: -e["amount"])
+    own = [e for e in items if not e.get("via_card")]  # a bill riding a card is in the card payment's bills part already
+    card = [e for e in own if e.get("kind") == "card_payment"]
+    other = [e for e in own if e.get("kind") != "card_payment"]
+    small = [e for e in own if e["amount"] < SMALL_BILL]
+    by_size = sorted(own, key=lambda e: -e["amount"])
     rest = by_size[8:]
     return {
         "card_parts": {k: _money(sum((e.get("parts") or {}).get(k, 0.0) for e in card)) for k in ("balance", "bills", "spend")},

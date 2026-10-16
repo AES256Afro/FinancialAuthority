@@ -32,20 +32,25 @@ def _fetch_key(kid: str) -> dict:
     return api.webhook_key(kid)
 
 
+def sync_link(link_id: int) -> str:
+    """One link's sync, then, when rows arrived, the chain the scheduled bank sync runs: detection, borrowing
+    (advances and pay-later streams) and payment matching, so a webhook leaves the plan as current as the hour does."""
+    from ..connectors.plaid import PlaidConnector
+    from ..jobs import scheduler
+
+    with session_scope() as session:
+        result = PlaidConnector().sync(session, link_id=link_id)
+    if result.inserted:
+        return f"{result.summary} · {scheduler.detect_recurring()}"
+    return result.summary
+
+
 def _sync(link_id: int) -> None:
     """A sync of one link in the background, recorded like the scheduled one."""
 
     def work() -> None:
-        from ..connectors.plaid import PlaidConnector
-        from ..jobs.detect import run_detection
-        from .routes import today
-
         try:
-            with session_scope() as session:
-                result = PlaidConnector().sync(session, link_id=link_id)
-                if result.inserted:
-                    run_detection(session, today())
-            log.info("plaid webhook sync: %s", result.summary)
+            log.info("plaid webhook sync: %s", sync_link(link_id))
         except Exception:  # noqa: BLE001 - the scheduled sync is still there if this one fails
             log.exception("plaid webhook sync failed")
 

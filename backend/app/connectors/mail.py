@@ -78,6 +78,15 @@ def handle_message(session: Session, account: MailAccount, folder: str, uid: int
     existing = session.exec(select(MessageRef).where(MessageRef.account_id == account.id, MessageRef.folder == folder, MessageRef.uid == uid)).first()
     if existing is not None:
         return {"seen": True}
+    if parsed.message_id:
+        # The same message under a new number (the server renumbered the folder) is one already read: its reference
+        # follows the new number, and nothing it yielded is made twice.
+        same = session.exec(select(MessageRef).where(MessageRef.account_id == account.id, MessageRef.message_id == parsed.message_id[:255])).first()
+        if same is not None:
+            if same.folder == folder:
+                same.uid = uid
+                session.add(same)
+            return {"seen": True}
     kind, confidence, produced_by = classify(parsed.sender, parsed.subject, parsed.text)
     ref = MessageRef(
         account_id=account.id, folder=folder, uid=uid, message_id=parsed.message_id[:255], sender=parsed.sender[:255], sender_name=parsed.sender_name[:120],
@@ -272,12 +281,13 @@ class MailConnector(Connector):
                 known = int(get_setting(session, uid_key(account.id, folder) + ".validity", 0) or 0)
                 if validity and known and validity != known:
                     # The server numbered the folder afresh (a rebuilt Bridge cache): start again from the recent end.
+                    # The old numbers mean nothing now, so they are set aside (negative) and never match a new one;
+                    # a message already read is known again by its Message-ID.
                     last = 0
-                    from sqlmodel import delete
+                    from sqlmodel import delete, update
 
                     session.exec(delete(MessageRef).where(MessageRef.account_id == account.id, MessageRef.folder == folder, MessageRef.kind == "none"))
-                if validity:
-                    set_setting(session, uid_key(account.id, folder) + ".validity", validity)
+                    session.exec(update(MessageRef).where(MessageRef.account_id == account.id, MessageRef.folder == folder, MessageRef.uid > 0).values(uid=-MessageRef.uid))
                 uids = client.new_uids(last)
                 # A new mailbox starts from the most recent messages; after that, the oldest unread first.
                 uids = uids[-BATCH_FIRST:] if last == 0 else uids[:BATCH_FIRST]
@@ -298,6 +308,10 @@ class MailConnector(Connector):
                     if done % 25 == 0:
                         set_setting(session, uid_key(account.id, folder), last)
                 set_setting(session, uid_key(account.id, folder), last)
+                if validity:
+                    # Written with the last UID it goes with, once the folder is read: a sync that fails before this
+                    # finds the numbering still new next time and reads the folder again from the start.
+                    set_setting(session, uid_key(account.id, folder) + ".validity", validity)
                 session.commit()
         finally:
             client.close()
