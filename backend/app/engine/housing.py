@@ -33,6 +33,11 @@ def _money(v: float) -> float:
     return round(float(v), 2)
 
 
+def _what(u: Utility) -> str:
+    """What a utility is, in a word: the service, or for anything else, who provides it."""
+    return SERVICE_WORDS.get(u.service, "Service") if u.service != "other" else (u.provider or u.billing_company or "Service")
+
+
 def charges_of(session: Session, home_id: int) -> list[HomeCharge]:
     return list(session.exec(select(HomeCharge).where(HomeCharge.home_id == home_id, HomeCharge.active == True).order_by(HomeCharge.id)).all())  # noqa: E712
 
@@ -123,7 +128,7 @@ def sync_utility(session: Session, u: Utility) -> None:
     if u.active and u.billed in ("direct", "submetered") and u.amount is not None:
         b = b or Bill(name="", amount=0.0, created_on=date.today())
         who = u.billing_company if u.billed == "submetered" and u.billing_company else u.provider
-        b.name = f"{SERVICE_WORDS.get(u.service, 'Service')} · {who}".strip(" ·")[:80]
+        b.name = (f"{SERVICE_WORDS[u.service]} · {who}" if u.service in SERVICE_WORDS and u.service != "other" else who or "Service").strip(" ·")[:80]
         b.amount, b.amount_mode = _money(u.amount), "estimate" if u.estimate else "fixed"
         b.cadence, b.due_day = "monthly", max(1, min(31, u.due_day or 1))
         b.starts_on, b.ends_on = u.starts_on, u.ends_on
@@ -179,7 +184,7 @@ def _cost_out(c: HomeCost) -> dict[str, Any]:
 
 
 def utility_out(u: Utility) -> dict[str, Any]:
-    return {"id": u.id, "home_id": u.home_id, "service": u.service, "what": SERVICE_WORDS.get(u.service, "Service"), "provider": u.provider, "billed": u.billed, "billed_word": BILLED_WORDS.get(u.billed, u.billed),
+    return {"id": u.id, "home_id": u.home_id, "service": u.service, "what": _what(u), "provider": u.provider, "billed": u.billed, "billed_word": BILLED_WORDS.get(u.billed, u.billed),
             "billing_company": u.billing_company, "account_last4": "set" if u.account_last4_enc else "", "amount": u.amount, "estimate": u.estimate, "due_day": u.due_day,
             "starts_on": u.starts_on.isoformat() if u.starts_on else None, "ends_on": u.ends_on.isoformat() if u.ends_on else None, "moves_with_you": u.moves_with_you,
             "bill_id": u.bill_id, "note": u.note, "known": u.amount is not None or u.billed in ("landlord", "included") or u.moves_with_you}
@@ -200,7 +205,7 @@ def home_out(session: Session, home: Home, today: date) -> dict[str, Any]:
     to_landlord = sum(c.amount for c in with_rent if c.amount is not None)
     own_bills = sum(c.amount for c in elsewhere if c.amount is not None) + sum(u.amount for u in utilities if u.amount is not None and u.billed in ("direct", "submetered"))
     state = "upcoming" if home.starts_on and home.starts_on > today else "ended" if home.ends_on and home.ends_on <= today else "current"
-    missing = [c.name for c in charges if c.amount is None] + [SERVICE_WORDS.get(u.service, "Service") for u in utilities if u.amount is None and u.billed in ("direct", "submetered") and not u.moves_with_you]
+    missing = [c.name for c in charges if c.amount is None] + [_what(u) for u in utilities if u.amount is None and u.billed in ("direct", "submetered") and not u.moves_with_you]
     costs_known = [c for c in costs if c.amount is not None and not c.paid]
     return {
         "id": home.id, "name": home.name, "kind": home.kind, "payee": home.payee, "state": state,
