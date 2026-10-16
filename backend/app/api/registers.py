@@ -241,3 +241,32 @@ def update_income(income_id: int, body: IncomeIn, session: Session = Depends(get
     session.add(income)
     session.commit()
     return {"ok": True}
+
+
+# ---- matched pairs: transfers, card payments, the same purchase twice ----------------------------------------
+
+
+@router.get("/pairs")
+def list_pairs(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+    from ..engine.pairs import pairs_overview
+
+    return pairs_overview(session)
+
+
+class PairDecisionIn(BaseModel):
+    decision: str
+
+
+@router.post("/pairs/{pair_id}")
+def decide_pair(pair_id: int, body: PairDecisionIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_scope("confirm"))) -> dict:
+    from .. import services
+    from ..engine.pairs import decide
+
+    try:
+        out = decide(session, pair_id, body.decision)
+    except KeyError as error:
+        raise HTTPException(404, "No such pair") from error
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    services.audit(session, client=principal.name, client_kind=principal.kind, tool="pair_decide", args={"pair": pair_id, "decision": body.decision}, rows=1, redaction=principal.redaction)
+    return out
