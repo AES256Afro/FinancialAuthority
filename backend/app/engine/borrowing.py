@@ -395,7 +395,7 @@ def borrowing_overview(session: Session, today: date) -> dict:
         statement = next_due(int(debt.statement_day), today) if debt and debt.statement_day else None
         due = next_due(int(debt.due_day), today) if debt and debt.due_day else None
         credit.append({
-            "account_id": a.id, "debt_id": debt.id if debt else None, "name": a.name, "balance": _money(balance), "credit_limit": limit, "utilisation": round(balance / limit, 4) if limit else None,
+            "account_id": a.id, "debt_id": debt.id if debt else None, "name": a.name, "balance": _money(balance), "credit_limit": limit, "utilisation": round(balance / limit, 4) if limit else None, "utilisation_status": _limit_status(balance / limit if limit else None),
             "apr": debt.apr if debt else None, "pay_in_full": debt.pay_in_full if debt else None, "statement_day": debt.statement_day if debt else None, "next_statement": statement.isoformat() if statement else None,
             "due_day": debt.due_day if debt else None, "next_due": due.isoformat() if due else None,
             "interest_month_if_carried": _money(balance * (debt.apr if debt else 0.0) / 100.0 / 12.0),
@@ -639,3 +639,9 @@ def statement_fact_from_file(session: Session, data: bytes, filename: str, today
     if not parsed:
         return None
     return apply_affirm_statement(session, parsed, today, source=source)
+
+
+def _limit_status(share: float | None) -> dict | None:
+    from .reports import limit_status
+
+    return limit_status(share)
