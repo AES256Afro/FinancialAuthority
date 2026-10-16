@@ -17,7 +17,7 @@ from ..engine.snapshot import finance_snapshot
 from ..llm import reviewer
 from ..llm.advisor import advise
 from ..llm.providers import Anthropic, Ollama, OpenAICompatible, ProviderError
-from ..llm.roles import PROVIDER_IDS, ROLES, SECRET_NAMES, provider_for, role_settings, save_role, save_secret, secret, secrets_state
+from ..llm.roles import DEFAULT_MODELS, PROVIDER_IDS, ROLES, SECRET_NAMES, provider_for, role_settings, save_role, save_secret, secret, secrets_state
 from ..models import ReviewRun
 from ..store import get_setting, set_setting
 from .routes import today
@@ -68,6 +68,7 @@ def models_out(session: Session) -> dict:
             {"id": "anthropic", "title": "Anthropic (Claude by API)"},
         ],
         "can_store_secrets": bool(settings.data_key),
+        "defaults": DEFAULT_MODELS,
     }
 
 

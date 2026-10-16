@@ -1,5 +1,6 @@
 // Settings › Models: the advisor and the reviewer, their providers, keys that are stored encrypted and never
 // shown again, the owner's standing rules and goals.
+import { AlertTriangle, Check, CheckCircle2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, useApi } from "../api";
 
@@ -16,6 +17,16 @@ interface ModelsOut {
   secrets: Record<string, boolean>;
   providers: { id: string; title: string; url?: string }[];
   can_store_secrets: boolean;
+  defaults: Record<string, Record<string, string>>;
+}
+
+const PROVIDER_WORD: Record<string, string> = { anthropic: "Anthropic", ollama: "Ollama", openai: "OpenAI-compatible" };
+
+// Anthropic's models are all claude-…; a bare claude-… name belongs to no other server. The server applies the same rule.
+function modelFits(provider: string, model: string): boolean {
+  const m = model.trim().toLowerCase();
+  if (!m) return false;
+  return provider === "anthropic" ? m.startsWith("claude") : !m.startsWith("claude-");
 }
 
 const ROLE_TEXT: Record<string, { title: string; text: string }> = {
@@ -23,7 +34,7 @@ const ROLE_TEXT: Record<string, { title: string; text: string }> = {
   reviewer: { title: "The reviewer", text: "A second opinion on payday, after a confirmed change, and on request. It reads the plan, your rules and goals, never the mail. Claude by API is recommended; any OpenAI-compatible model works; off by default." },
 };
 
-function RoleCard({ role, conf, providers, onSaved }: { role: string; conf: RoleConf; providers: ModelsOut["providers"]; onSaved: () => void }) {
+function RoleCard({ role, conf, providers, defaults, onSaved }: { role: string; conf: RoleConf; providers: ModelsOut["providers"]; defaults: ModelsOut["defaults"]; onSaved: () => void }) {
   const [form, setForm] = useState<RoleConf>(conf);
   const [catalog, setCatalog] = useState<string[]>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
@@ -44,11 +55,23 @@ function RoleCard({ role, conf, providers, onSaved }: { role: string; conf: Role
       setBusy(null);
     }
   }
-  async function find() {
+  const suggested = defaults?.[form.provider]?.[role] ?? "";
+  const misfit = form.provider !== "none" && form.provider !== "openai" && form.model !== "" && !modelFits(form.provider, form.model);
+
+  // Changing the provider brings that provider's own model and its list, so a model from the old one is never sent to the new.
+  function pickProvider(id: string) {
+    const next = { ...form, provider: id, model: modelFits(id, form.model) || id === "openai" ? form.model : (defaults?.[id]?.[role] ?? "") };
+    setForm(next);
+    setCatalog([]);
+    setCatalogError(null);
+    setTest(null);
+    if (id !== "none") void find(next);
+  }
+  async function find(using: RoleConf = form) {
     setBusy("find");
     setCatalogError(null);
     try {
-      const got = await api<{ models: string[]; error?: string }>(`/api/v1/models/catalog?provider=${form.provider}&base_url=${encodeURIComponent(form.base_url)}`);
+      const got = await api<{ models: string[]; error?: string }>(`/api/v1/models/catalog?provider=${using.provider}&base_url=${encodeURIComponent(using.base_url)}`);
       setCatalog(got.models);
       if (got.error) setCatalogError(got.error);
       if (got.models.length === 0 && !got.error) setCatalogError("No models listed.");
@@ -81,7 +104,7 @@ function RoleCard({ role, conf, providers, onSaved }: { role: string; conf: Role
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
         <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <span className="lab">Provider</span>
-          <select className="input" value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value })}>
+          <select className="input" value={form.provider} onChange={(e) => pickProvider(e.target.value)}>
             {providers.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
           </select>
         </label>
@@ -108,15 +131,33 @@ function RoleCard({ role, conf, providers, onSaved }: { role: string; conf: Role
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <button className="btn dark" type="button" disabled={!dirty || busy !== null} onClick={save}>{busy === "save" ? "Saving…" : "Save"}</button>
         <button className="btn" type="button" disabled={form.provider === "none" || busy !== null} onClick={runTest}>{busy === "test" ? "Testing…" : "Test"}</button>
-        {form.provider !== "none" && <button className="btn" type="button" disabled={busy !== null} onClick={find}>{busy === "find" ? "Looking…" : "Find models"}</button>}
-        {test && (
-          <span style={{ fontSize: 13, color: test.ok ? "var(--safe)" : "var(--critical)", fontWeight: 700 }}>
-            {test.ok ? `Replied "${test.reply}" in ${test.ms} ms (${test.model})` : test.error}
-          </span>
-        )}
+        {form.provider !== "none" && <button className="btn" type="button" disabled={busy !== null} onClick={() => find()}>{busy === "find" ? "Looking…" : "Find models"}</button>}
         {catalogError && <span style={{ fontSize: 13, color: "var(--critical)" }}>{catalogError}</span>}
-        {catalog.length > 0 && !catalogError && <span style={{ fontSize: 13, color: "var(--ink-2)" }}>{catalog.length} models listed; pick one in the Model box.</span>}
       </div>
+      {misfit && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 13, color: "var(--ink)" }}>
+          <AlertTriangle size={16} color="var(--warning)" aria-hidden />
+          <span><strong>Wrong model.</strong> "{form.model}" is not a {PROVIDER_WORD[form.provider] ?? form.provider} model, so it cannot answer.</span>
+          {suggested && <button className="btn" type="button" onClick={() => setForm({ ...form, model: suggested })}>Use {suggested}</button>}
+        </div>
+      )}
+      {catalog.length > 0 && (
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          <span className="lab" style={{ marginRight: 4 }}>Tap a model, then Save</span>
+          {catalog.map((m) => (
+            <button key={m} type="button" className={m === form.model ? "btn dark" : "btn"} aria-pressed={m === form.model} onClick={() => setForm({ ...form, model: m })}
+              style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              {m === form.model && <Check size={14} aria-hidden />}{m}{m === suggested && <span style={{ fontSize: 11, opacity: 0.75 }}> · suggested</span>}
+            </button>
+          ))}
+        </div>
+      )}
+      {test && (
+        <div style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 13, color: test.ok ? "var(--safe)" : "var(--critical)" }}>
+          {test.ok ? <CheckCircle2 size={16} aria-hidden style={{ flexShrink: 0, marginTop: 1 }} /> : <AlertTriangle size={16} aria-hidden style={{ flexShrink: 0, marginTop: 1 }} />}
+          <span><strong>{test.ok ? "Works." : "Not working."}</strong> {test.ok ? `${test.model} replied "${test.reply}" in ${test.ms} ms.` : test.error}</span>
+        </div>
+      )}
       <div style={{ fontSize: 12, color: "var(--muted)" }}>Prices are optional. With both entered, every chat and review shows its cost in dollars; without them, tokens only.</div>
     </section>
   );
@@ -217,8 +258,8 @@ export function Models() {
       {error && <div style={{ color: "var(--critical)" }}>{error.message}</div>}
       {data && (
         <>
-          <RoleCard role="advisor" conf={data.roles.advisor} providers={data.providers} onSaved={reload} />
-          <RoleCard role="reviewer" conf={data.roles.reviewer} providers={data.providers} onSaved={reload} />
+          <RoleCard role="advisor" conf={data.roles.advisor} providers={data.providers} defaults={data.defaults} onSaved={reload} />
+          <RoleCard role="reviewer" conf={data.roles.reviewer} providers={data.providers} defaults={data.defaults} onSaved={reload} />
           <Secrets state={data.secrets} canStore={data.can_store_secrets} onSaved={reload} />
           <Rules />
         </>

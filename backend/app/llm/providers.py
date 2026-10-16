@@ -17,6 +17,28 @@ import httpx
 
 ANTHROPIC_MODELS = ["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5", "claude-fable-5-1"]
 ANTHROPIC_VERSION = "2023-06-01"
+
+
+def plain_error(who: str, status: int, detail: str, model: str) -> str:
+    """A provider's error in words the owner can act on, with the provider's own message kept at the end."""
+    message = detail
+    try:
+        body = json.loads(detail)
+        err = body.get("error", body) if isinstance(body, dict) else body
+        message = (err.get("message") if isinstance(err, dict) else str(err)) or detail
+        kind = err.get("type", "") if isinstance(err, dict) else ""
+    except (ValueError, AttributeError):
+        kind = ""
+    low = f"{kind} {message}".lower()
+    if status == 404 or kind == "not_found_error" or ("model" in low and ("not found" in low or "does not exist" in low)):
+        return f'{who} has no model called "{model}". Tap Find models and pick one from the list.'
+    if status in (401, 403) or kind in ("authentication_error", "permission_error"):
+        return f"{who} did not accept the key. Paste a fresh one under Keys. ({message[:120]})"
+    if "credit balance" in low or "billing" in low:
+        return f"The {who} account is out of credit. Add credit in its console, then test again. ({message[:120]})"
+    if status == 429:
+        return f"{who} is limiting requests right now; try again in a minute. ({message[:120]})"
+    return f"{who} answered {status}: {message[:200]}"
 TIMEOUT = httpx.Timeout(120.0, connect=10.0)
 
 
@@ -118,8 +140,8 @@ class OpenAICompatible(Provider):
             try:
                 async with client.stream("POST", f"{self.base_url}/chat/completions", headers=self.headers(), json=body) as response:
                     if response.status_code >= 400:
-                        detail = (await response.aread()).decode("utf-8", "replace")[:300]
-                        yield Event("error", message=f"{self.base_url} answered {response.status_code}: {detail}")
+                        detail = (await response.aread()).decode("utf-8", "replace")[:600]
+                        yield Event("error", message=plain_error(self.base_url, response.status_code, detail, self.model))
                         return
                     async for line in response.aiter_lines():
                         if not line.startswith("data:"):
@@ -185,7 +207,7 @@ class Ollama(OpenAICompatible):
         first: list[Event] = []
         retried = False
         async for event in super().chat(messages, tools, max_tokens=max_tokens):
-            if event.type == "error" and not retried and ("not found" in event.message.lower() or "does not exist" in event.message.lower()):
+            if event.type == "error" and not retried and any(w in event.message.lower() for w in ("not found", "does not exist", "no model called")):
                 try:
                     available = await self.list_models()
                 except httpx.HTTPError:
@@ -251,8 +273,8 @@ class Anthropic(Provider):
             try:
                 async with client.stream("POST", f"{self.base_url}/v1/messages", headers=self.headers(), json=body) as response:
                     if response.status_code >= 400:
-                        detail = (await response.aread()).decode("utf-8", "replace")[:300]
-                        yield Event("error", message=f"Anthropic answered {response.status_code}: {detail}")
+                        detail = (await response.aread()).decode("utf-8", "replace")[:600]
+                        yield Event("error", message=plain_error("Anthropic", response.status_code, detail, self.model))
                         return
                     async for line in response.aiter_lines():
                         if not line.startswith("data:"):
@@ -289,7 +311,17 @@ class Anthropic(Provider):
         yield Event("done")
 
     async def list_models(self) -> list[str]:
-        return list(ANTHROPIC_MODELS)
+        """The models this key can use, newest first; the built-in list when there is no key or no answer."""
+        if not self.api_key:
+            return list(ANTHROPIC_MODELS)
+        try:
+            async with self.client() as client:
+                response = await client.get(f"{self.base_url}/v1/models", params={"limit": 100}, headers=self.headers())
+                response.raise_for_status()
+                ids = [m.get("id", "") for m in response.json().get("data", []) if m.get("id")]
+        except (httpx.HTTPError, ValueError):
+            return list(ANTHROPIC_MODELS)
+        return ids or list(ANTHROPIC_MODELS)
 
 
 class Scripted(Provider):
