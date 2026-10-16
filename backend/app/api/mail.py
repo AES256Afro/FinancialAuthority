@@ -319,6 +319,7 @@ class ConfirmIn(BaseModel):
     autopay: bool | None = None
     remaining: int | None = None
     transaction_id: int | None = None  # a receipt: the purchase it belongs to (none: the best match, or kept unmatched)
+    no_transaction: bool = False  # a receipt kept without a purchase, whatever matches
     return_by: date | None = None
     warranty_until: date | None = None
 
@@ -465,8 +466,8 @@ def _apply_receipt(session: Session, fact: ExtractedFact, ref: MessageRef | None
 
     bought = date.fromisoformat(fields["bought_on"]) if fields.get("bought_on") else today()
     total = body.amount if body.amount is not None else fields.get("total")
-    tid = body.transaction_id
-    if tid is None:
+    tid = None if body.no_transaction else body.transaction_id
+    if tid is None and not body.no_transaction:
         found = candidates(session, total, bought, fields.get("merchant", ""), limit=1)
         tid = found[0]["id"] if found and not found[0]["has_receipt"] else None
     if tid is not None and session.get(Transaction, tid) is None:

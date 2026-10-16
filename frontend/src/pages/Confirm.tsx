@@ -1,15 +1,18 @@
-// Needs you: recurring charges the engine found and does not yet know what to call. One tap each.
-import { ArrowRight, ChevronRight, Copy } from "lucide-react";
+// Needs you: recurring charges the engine found and does not yet know what to call. One tap each. A receipt read
+// from mail is kept with the purchase the owner picks from the app's candidates, or without one.
+import { ArrowRight, ChevronRight, Copy, Receipt } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi, type Loaded } from "../api";
 import { Approvals } from "../components/Approvals";
 import { ConfirmButton } from "../components/ConfirmButton";
+import { PurchaseChoices, dayWord } from "../components/Documents";
 import { Empty, Failed, Loading, Said } from "../components/State";
 import { money, ordinal, parseMoney, shortDate, when } from "../format";
 import type { DocumentTermsFields, FactRow, PairRow, PairSide, PairsOut, SeriesRow } from "../types";
+import type { FactWithCandidates, ReceiptFields } from "../types-receipts";
 
-const FACT_LABEL: Record<string, string> = { export: "Rocket Money export, ready to import", bill_due: "Bill due", statement: "Statement", paystub: "Paystub", installment: "Installment plan", advance: "Advance", price_change: "Price change", past_due: "Past-due notice", document_terms: "Terms from a document" };
+const FACT_LABEL: Record<string, string> = { export: "Rocket Money export, ready to import", bill_due: "Bill due", statement: "Statement", paystub: "Paystub", installment: "Installment plan", advance: "Advance", price_change: "Price change", past_due: "Past-due notice", document_terms: "Terms from a document", receipt: "A receipt" };
 
 // The terms a lease or a charge sheet states, in the order a person reads a lease, each in plain words.
 type TermKey = keyof DocumentTermsFields["terms"];
@@ -127,6 +130,99 @@ function FactCard({ f, onDone }: { f: FactRow; onDone: () => void }) {
       )}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <button className="btn dark" type="button" disabled={busy} onClick={confirm}>{f.kind === "export" ? (busy ? "Importing…" : "Import it") : busy ? "Confirming…" : "Confirm"}</button>
+        <ConfirmButton label="Wrong, discard" question="Discard what was read from this email?" yes="Yes, discard it" no="Keep it" onConfirm={discard} />
+        {f.message && <Link to={`/mail?message=${f.message.id}`} style={{ fontSize: 13, marginLeft: "auto" }}>Open the message</Link>}
+      </div>
+      <Said text={error} tone="error" />
+    </div>
+  );
+}
+
+/** A receipt read from mail: what it says, the purchases it may belong to (the app's best first), and its dates to
+ * change before it is kept. Without a purchase, it is kept and matched later on Documents. */
+function ReceiptCard({ f, onDone }: { f: FactWithCandidates; onDone: (text?: string) => void }) {
+  const r = f.fields as unknown as ReceiptFields;
+  const candidates = f.candidates ?? [];
+  const [choice, setChoice] = useState<number | null>(candidates[0]?.id ?? null);
+  const [returnBy, setReturnBy] = useState(r.return_by ?? "");
+  const [warranty, setWarranty] = useState(r.warranty_until ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const store = r.merchant || f.message?.sender_name || String(f.fields.sender_name || "") || "a store";
+
+  async function keep() {
+    setBusy(true);
+    setError(null);
+    let kept: FactRow;
+    try {
+      kept = await api<FactRow>(`/api/v1/facts/${f.id}/confirm`, { method: "POST", body: JSON.stringify({ apply: true, transaction_id: choice ?? undefined, no_transaction: choice === null, return_by: returnBy || undefined, warranty_until: warranty || undefined }) });
+    } catch (e) {
+      setError(`Couldn't keep it: ${(e as Error).message}`);
+      setBusy(false);
+      return;
+    }
+    const picked = candidates.find((c) => c.id === choice);
+    const said = picked ? `Kept the receipt from ${store} with the ${picked.merchant || "purchase"} purchase on ${shortDate(picked.date)}.` : `Kept the receipt from ${store}, without a purchase. Match it later on Documents.`;
+    // A date cleared here would come back from the message, so it is cleared on the kept receipt right after.
+    const change: Record<string, string | null> = {};
+    if (r.return_by && !returnBy) change.return_by = null;
+    if (r.warranty_until && !warranty) change.warranty_until = null;
+    const doc = kept.applied_to.startsWith("document:") ? kept.applied_to.slice("document:".length) : "";
+    if (doc && Object.keys(change).length > 0) {
+      try {
+        await api(`/api/v1/documents/${doc}`, { method: "PUT", body: JSON.stringify(change) });
+      } catch (e) {
+        onDone(`Kept the receipt from ${store}, but couldn't finish the change: ${(e as Error).message}. Change it on Documents.`);
+        return;
+      }
+    }
+    onDone(said);
+  }
+  async function discard() {
+    await api(`/api/v1/facts/${f.id}/reject`, { method: "POST" });
+    onDone();
+  }
+
+  const facts: { label: string; value: string }[] = [
+    { label: "Total", value: r.total != null ? money(Number(r.total), { cents: true }) : "Not stated" },
+    { label: "Day bought", value: r.bought_on ? dayWord(r.bought_on) : "Not stated" },
+    { label: "Order number", value: r.order_no || "Not stated" },
+    { label: "Return by", value: r.return_by ? dayWord(r.return_by) : "Not stated" },
+    { label: "Warranty until", value: r.warranty_until ? dayWord(r.warranty_until) : "Not stated" },
+  ];
+
+  return (
+    <div className="card" style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ minWidth: 0 }}>
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, overflowWrap: "anywhere", display: "inline-flex", alignItems: "center", gap: 6 }}><Receipt size={16} aria-hidden="true" style={{ flexShrink: 0 }} />Receipt from {store}</h3>
+          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{f.message?.subject ?? r.subject ?? ""}{f.message?.date ? ` · ${when(f.message.date)}` : ""} · from mail · {Math.round(f.confidence * 100)}% sure</div>
+        </div>
+        {r.total != null && <strong className="num" style={{ fontSize: 18 }}>{money(Number(r.total), { cents: true })}</strong>}
+      </div>
+      <dl style={{ margin: 0, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(130px, 100%), 1fr))", gap: 8 }}>
+        {facts.map((x) => (
+          <div key={x.label} style={{ display: "flex", flexDirection: "column", gap: 1, minWidth: 0 }}>
+            <dt className="lab">{x.label}</dt>
+            <dd className="num" style={{ margin: 0, fontSize: 13, fontWeight: 700, overflowWrap: "anywhere" }}>{x.value}</dd>
+          </div>
+        ))}
+      </dl>
+      <div style={{ background: "var(--surface-2)", borderRadius: 10, padding: "10px 12px", fontSize: 12, color: "var(--ink-2)", lineHeight: 1.45 }}>
+        <span className="lab" style={{ display: "block", marginBottom: 4 }}>Quoted from the email. Anything it asks the app to do is ignored.</span>“{f.excerpt}”
+      </div>
+      {candidates.length > 0 ? (
+        <PurchaseChoices name={`fact-${f.id}-purchase`} legend="The purchase it is for" list={candidates} value={choice} onPick={setChoice} none="Keep it without a purchase" />
+      ) : (
+        <div style={{ fontSize: 13, color: "var(--ink-2)" }}>No purchase with this total was found near the day bought. It is kept without one; match it later on <Link to="/documents#receipts">Documents</Link>.</div>
+      )}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Last day to return</span><input className="input" type="date" value={returnBy} onChange={(e) => setReturnBy(e.target.value)} /></label>
+        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Warranty until</span><input className="input" type="date" value={warranty} onChange={(e) => setWarranty(e.target.value)} /></label>
+      </div>
+      <span style={{ fontSize: 12, color: "var(--muted)" }}>The dates the email states, as the app read them. Change one if the store says otherwise; each comes back as a reminder.</span>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <button className="btn dark" type="button" disabled={busy} onClick={keep}>{busy ? "Keeping…" : "Keep the receipt"}</button>
         <ConfirmButton label="Wrong, discard" question="Discard what was read from this email?" yes="Yes, discard it" no="Keep it" onConfirm={discard} />
         {f.message && <Link to={`/mail?message=${f.message.id}`} style={{ fontSize: 13, marginLeft: "auto" }}>Open the message</Link>}
       </div>
@@ -343,6 +439,7 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
   const pairs = useApi<PairsOut>("/api/v1/pairs");
   const [detecting, setDetecting] = useState(false);
   const [looked, setLooked] = useState<{ text: string; tone: "info" | "error" } | null>(null);
+  const [factSaid, setFactSaid] = useState<string | null>(null);
   const total = (data?.pending ?? 0) + (facts.data?.pending ?? 0) + (pairs.data?.counts.waiting ?? 0);
   const counted = Boolean(data && facts.data && (pairs.data || pairs.error));
 
@@ -378,17 +475,36 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
       {facts.data && facts.data.facts.length > 0 && (
         <>
           <h2 className="lab" style={{ margin: 0 }}>From your mail and documents · {facts.data.pending}</h2>
-          {facts.data.facts.map((f) => (
-            <FactCard
-              key={f.id}
-              f={f}
-              onDone={() => {
-                facts.reload();
-                onChanged();
-              }}
-            />
-          ))}
+          {facts.data.facts.map((f) =>
+            f.kind === "receipt" ? (
+              <ReceiptCard
+                key={f.id}
+                f={f as FactWithCandidates}
+                onDone={(text) => {
+                  setFactSaid(text ?? null);
+                  facts.reload();
+                  onChanged();
+                }}
+              />
+            ) : (
+              <FactCard
+                key={f.id}
+                f={f}
+                onDone={() => {
+                  setFactSaid(null);
+                  facts.reload();
+                  onChanged();
+                }}
+              />
+            ),
+          )}
         </>
+      )}
+      {factSaid && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
+          <Said text={factSaid} />
+          <Link to="/documents#receipts" style={{ fontSize: 12, fontWeight: 700 }}>See your receipts on Documents</Link>
+        </div>
       )}
       <Pairs state={pairs} onChanged={onChanged} />
       {error && !data && <Failed error={error} what="the repeating charges" onRetry={reload} />}

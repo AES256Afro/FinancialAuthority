@@ -39,6 +39,7 @@ const Models = lazy(() => import("./pages/Models").then((m) => ({ default: m.Mod
 const Outlook = lazy(() => import("./pages/Outlook").then((m) => ({ default: m.Outlook })));
 const Notifications = lazy(() => import("./pages/Notifications").then((m) => ({ default: m.Notifications })));
 const Paystubs = lazy(() => import("./pages/Paystubs").then((m) => ({ default: m.Paystubs })));
+const Files = lazy(() => import("./pages/Files").then((m) => ({ default: m.Files })));
 const People = lazy(() => import("./pages/People").then((m) => ({ default: m.People })));
 const Shared = lazy(() => import("./pages/Shared").then((m) => ({ default: m.Shared })));
 const Join = lazy(() => import("./pages/Join").then((m) => ({ default: m.Join })));
@@ -104,6 +105,7 @@ export default function App() {
         <Route path="/mail" element={<Mail />} />
         <Route path="/chat" element={body((s) => <Chat snapshot={s} onChanged={snapshot.reload} />)} />
         <Route path="/paystubs" element={<Paystubs />} />
+        <Route path="/documents" element={<Files />} />
         <Route path="/debts" element={<Debts />} />
         <Route path="/borrowing" element={<Borrowing />} />
         <Route path="/housing" element={<Housing onChanged={snapshot.reload} />} />

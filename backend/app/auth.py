@@ -493,7 +493,7 @@ def join_check(body: JoinCheckIn, request: Request, session: Session = Depends(g
     if person is None:
         _record_failure(ip)
         raise HTTPException(400, f"This invitation has expired or was used already. Ask {settings.username} for a new one.")
-    return {"username": person.username, "display_name": person.display_name or person.username, "role": person.role, "role_words": people.ROLES.get(person.role, ""),
+    return {"username": person.username, "display_name": person.display_name or person.username, "role": person.role, "role_words": people.ROLES_FOR_THEM.get(person.role, "").format(owner=settings.username),
             "expires_at": person.invite_expires_at.isoformat() if person.invite_expires_at else None, "min_length": people.MIN_PASSWORD}
 
 

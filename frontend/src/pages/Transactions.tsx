@@ -1,14 +1,17 @@
 // Transactions: every row the app reads, with your own hand on it: a category, a note, tags, hidden or not, one
 // purchase split across categories, and many rows changed at once. The server checks and keeps every change; the
 // only sum here is the split form's "left to place" hint, which checks what was typed against the row's own amount.
-import { ArrowDownLeft, ArrowLeftRight, Clock, CreditCard, Eye, EyeOff, Pencil, Plus, Split, Tag, X } from "lucide-react";
+// A row with a receipt kept says so; its editor lists the receipt and takes a new one. /transactions?open=<id> opens
+// that row (from a receipt on Documents), with &around=<day> listing the days around the purchase.
+import { ArrowDownLeft, ArrowLeftRight, Clock, CreditCard, Eye, EyeOff, Pencil, Plus, Receipt, Split, Tag, X } from "lucide-react";
 import { Fragment, memo, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api, useApi } from "../api";
 import { ConfirmButton } from "../components/ConfirmButton";
+import { Documents } from "../components/Documents";
 import { LedgerRules } from "../components/LedgerRules";
 import { Empty, Failed, Loading, Said } from "../components/State";
-import { money, parseMoney, shortDate } from "../format";
+import { money, parseIso, parseMoney, shortDate } from "../format";
 import type { TransactionRow } from "../types";
 
 type Kind = "spending" | "transfer" | "card payment" | "income";
@@ -23,6 +26,8 @@ interface Row extends TransactionRow {
   kind?: Kind;
   tags?: string[];
   splits?: Part[];
+  /** The receipts kept with this purchase (document ids). */
+  receipts?: number[];
 }
 interface Search {
   returned: number;
@@ -48,6 +53,13 @@ const MARK_TONE = {
   pending: { background: "var(--paycheck-soft)", color: "var(--paycheck-ink)" },
   split: { background: "var(--debt-soft)", color: "var(--debt-ink)" },
 } as const;
+
+/** A day moved by some days, as YYYY-MM-DD: the window of days listed around a receipt's purchase. */
+function shiftDay(iso: string, days: number): string {
+  const d = parseIso(iso);
+  d.setDate(d.getDate() + days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 /** Tag words as typed, comma-separated: trimmed, lower case, no repeats. The server cleans them again. */
 function tagWords(text: string): string[] {
@@ -79,11 +91,12 @@ function Chip({ word }: { word: string }) {
 }
 
 // One row. Kept apart and memoised so ticking one box among 500 redraws one row, not all of them.
-const TxRow = memo(function TxRow({ t, selected, open, onSelect, onOpen }: { t: Row; selected: boolean; open: boolean; onSelect: (id: number) => void; onOpen: (id: number) => void }) {
+const TxRow = memo(function TxRow({ t, selected, open, onSelect, onOpen, onReceipt }: { t: Row; selected: boolean; open: boolean; onSelect: (id: number) => void; onOpen: (id: number) => void; onReceipt: (id: number) => void }) {
   const kind = t.kind && t.kind !== "spending" ? KIND_MARK[t.kind] : null;
   const parts = t.splits ?? [];
   const tags = t.tags ?? [];
-  const marked = Boolean(t.pending || t.hidden || kind || parts.length > 0 || tags.length > 0);
+  const receipts = t.receipts ?? [];
+  const marked = Boolean(t.pending || t.hidden || kind || parts.length > 0 || tags.length > 0 || receipts.length > 0);
   return (
     <tr style={{ background: selected ? "var(--surface-2)" : undefined }}>
       <td style={{ width: 34, paddingRight: 4 }}>
@@ -105,6 +118,13 @@ const TxRow = memo(function TxRow({ t, selected, open, onSelect, onOpen }: { t: 
             {t.hidden && <Mark Icon={EyeOff} word="Hidden" title="Left out of spending, budgets and reports." />}
             {kind && <Mark Icon={kind.Icon} word={kind.word} />}
             {parts.length > 0 && <Mark Icon={Split} word="Split" tone="split" />}
+            {receipts.length > 0 && (
+              <button type="button" onClick={() => onReceipt(t.id)} aria-label={`Receipt kept with ${t.merchant || "this row"}: open it to read or download it`}
+                style={{ ...MARK_TONE.plain, display: "inline-flex", alignItems: "center", gap: 4, minHeight: 32, padding: "0 10px", border: "1px solid var(--hairline)", borderRadius: 999, font: "inherit", fontSize: 11, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}>
+                <Receipt size={12} strokeWidth={2.4} aria-hidden="true" />
+                {receipts.length === 1 ? "Receipt" : `${receipts.length} receipts`}
+              </button>
+            )}
             {tags.map((w) => <Chip key={w} word={w} />)}
           </div>
         )}
@@ -286,7 +306,7 @@ function SplitRow({ row, onSaved }: { row: Row; onSaved: (id: number, text: stri
   );
 }
 
-function Editor({ row, onSaved, onClose }: { row: Row; onSaved: (id: number, text: string) => void; onClose: () => void }) {
+function Editor({ row, onSaved, onClose, readReceipt }: { row: Row; onSaved: (id: number, text: string) => void; onClose: () => void; readReceipt: boolean }) {
   return (
     <tr id={`tx-edit-${row.id}`}>
       <td colSpan={6} style={{ background: "var(--surface-2)", padding: 10 }}>
@@ -300,6 +320,19 @@ function Editor({ row, onSaved, onClose }: { row: Row; onSaved: (id: number, tex
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))", gap: 10, alignItems: "start" }}>
             <ChangeRow row={row} onSaved={onSaved} />
             <SplitRow row={row} onSaved={onSaved} />
+            <section id={`tx-receipt-${row.id}`} className="card" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+              <h3 style={{ margin: 0, fontSize: 13, fontWeight: 800, display: "inline-flex", alignItems: "center", gap: 6 }}><Receipt size={14} aria-hidden="true" />Receipt</h3>
+              <span style={{ fontSize: 12, color: "var(--ink-2)" }}>A photo or a PDF of the receipt, kept with this purchase. A last day to return and a warranty's end come back as reminders. Every receipt is on <Link to="/documents#receipts">Documents</Link>.</span>
+              <Documents
+                key={readReceipt ? "read" : "list"}
+                readFirst={readReceipt}
+                attachTo={`transaction:${row.id}`}
+                defaultKind="receipt"
+                startClosed
+                prefill={{ merchant: row.merchant, amount: row.amount > 0 ? row.amount.toFixed(2) : "", bought_on: row.date }}
+                onChanged={() => onSaved(row.id, `The receipts kept with ${row.merchant || "this row"} changed.`)}
+              />
+            </section>
           </div>
         </div>
       </td>
@@ -315,22 +348,34 @@ interface BulkChange {
 }
 
 export function Transactions() {
+  // From a receipt on Documents: ?open=<id> opens that row; &around=<day> lists from three days before the day bought
+  // to two weeks after (a card charge can post late), every kind of row.
+  const [asked] = useSearchParams();
+  const askedOpen = Number(asked.get("open")) || null;
+  const askedAround = /^\d{4}-\d{2}-\d{2}$/.test(asked.get("around") ?? "") ? (asked.get("around") as string) : null;
   const [text, setText] = useState("");
   const [query, setQuery] = useState("");
   const [tagText, setTagText] = useState("");
   const [tag, setTag] = useState("");
-  const [everything, setEverything] = useState(false);
-  const [limit, setLimit] = useState(100);
+  const [everything, setEverything] = useState(askedOpen !== null);
+  const [limit, setLimit] = useState(askedOpen !== null && !askedAround ? 500 : 100);
+  const [around, setAround] = useState<{ start: string; end: string } | null>(askedAround ? { start: shiftDay(askedAround, -3), end: shiftDay(askedAround, 14) } : null);
+  const wantOpen = useRef<number | null>(askedOpen);
   const params = new URLSearchParams({ limit: String(limit) });
   if (query) params.set("text", query);
   if (tag) params.set("tag", tag);
   if (everything) params.set("include_non_spending", "true");
+  if (around) {
+    params.set("start", around.start);
+    params.set("end", around.end);
+  }
   const path = `/api/v1/transactions/search?${params}`;
   const { data, error, reload } = useApi<Search>(path);
   const rows = data?.transactions ?? NO_ROWS;
 
   const [selected, setSelected] = useState<Set<number>>(() => new Set());
   const [openId, setOpenId] = useState<number | null>(null);
+  const [readId, setReadId] = useState<number | null>(null);
   const [said, setSaid] = useState<Note>(null);
   const [bulkCategory, setBulkCategory] = useState("");
   const [bulkAdd, setBulkAdd] = useState("");
@@ -354,13 +399,39 @@ export function Transactions() {
     if (allBox.current) allBox.current.indeterminate = someOn;
   }, [someOn, data]);
 
+  // The row a receipt belongs to opens once it has loaded.
+  useEffect(() => {
+    const id = wantOpen.current;
+    if (id === null || !data) return;
+    wantOpen.current = null;
+    if (rows.some((r) => r.id === id)) {
+      setOpenId(id);
+      window.requestAnimationFrame(() => {
+        const button = document.getElementById(`tx-open-${id}`);
+        button?.scrollIntoView({ block: "center" });
+        button?.focus();
+      });
+    } else {
+      setSaid({ id: null, tone: "error", text: "The purchase that receipt belongs to is not in this list. Search for its store, or pick “Everything”." });
+    }
+  }, [data, rows]);
+
   const toggle = useCallback((id: number) => setSelected((s) => {
     const next = new Set(s);
     if (next.has(id)) next.delete(id);
     else next.add(id);
     return next;
   }), []);
-  const openRow = useCallback((id: number) => setOpenId((o) => (o === id ? null : id)), []);
+  const openRow = useCallback((id: number) => {
+    setReadId(null);
+    setOpenId((o) => (o === id ? null : id));
+  }, []);
+  // A row's Receipt mark opens its editor at the receipt, its text in the reader (it never closes an open one).
+  const openReceipt = useCallback((id: number) => {
+    setOpenId(id);
+    setReadId(id);
+    window.requestAnimationFrame(() => document.getElementById(`tx-receipt-${id}`)?.scrollIntoView({ block: "nearest" }));
+  }, []);
   function closeEditor() {
     const id = openId;
     setOpenId(null);
@@ -403,7 +474,7 @@ export function Transactions() {
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: 12 }}>
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Transactions</h1>
-        <div style={{ fontSize: 13, color: "var(--ink-2)" }}>What you spent, from every account the app reads. Tap a merchant to change its category, note or tags, or to split it.</div>
+        <div style={{ fontSize: 13, color: "var(--ink-2)" }}>What you spent, from every account the app reads. Tap a merchant to change its category, note or tags, to split it, or to keep its receipt.</div>
       </div>
       <form
         onSubmit={(e) => {
@@ -428,6 +499,13 @@ export function Transactions() {
         <button type="button" role="radio" aria-checked={!everything} className={everything ? "btn" : "btn dark"} onClick={() => setEverything(false)} style={{ minHeight: 34, padding: "4px 12px" }}>Spending only</button>
         <button type="button" role="radio" aria-checked={everything} className={everything ? "btn dark" : "btn"} onClick={() => setEverything(true)} style={{ minHeight: 34, padding: "4px 12px" }}>Everything: transfers, card payments, income and hidden rows too</button>
       </div>
+      {around && (
+        <div role="status" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 13, padding: "8px 12px", borderRadius: 10, background: "var(--surface-2)" }}>
+          <Receipt size={14} aria-hidden="true" style={{ flexShrink: 0 }} />
+          <span style={{ flex: "1 1 220px" }}>Showing {shortDate(around.start)} to {shortDate(around.end)}: the days around a receipt's purchase.</span>
+          <button type="button" className="btn" onClick={() => setAround(null)} style={SMALL}>Show every day</button>
+        </div>
+      )}
       <LedgerRules onChanged={reload} />
       <datalist id="tx-categories">{categories.map((c) => <option key={c} value={c} />)}</datalist>
       <datalist id="tx-tags">{tagsSeen.map((w) => <option key={w} value={w} />)}</datalist>
@@ -515,8 +593,8 @@ export function Transactions() {
               <tbody>
                 {rows.map((t) => (
                   <Fragment key={t.id}>
-                    <TxRow t={t} selected={selected.has(t.id)} open={openId === t.id} onSelect={toggle} onOpen={openRow} />
-                    {openId === t.id && <Editor row={t} onSaved={saved} onClose={closeEditor} />}
+                    <TxRow t={t} selected={selected.has(t.id)} open={openId === t.id} onSelect={toggle} onOpen={openRow} onReceipt={openReceipt} />
+                    {openId === t.id && <Editor row={t} onSaved={saved} onClose={closeEditor} readReceipt={readId === t.id} />}
                   </Fragment>
                 ))}
               </tbody>
