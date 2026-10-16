@@ -484,3 +484,54 @@ def restore_drill() -> str:
 
 jobs.register("offbox_copy", offbox_copy, 3600, "Seal a copy of the database into the off-box folder, daily or weekly as set on Backups")
 jobs.register("restore_drill", restore_drill, 6 * 3600, "Once a week, open the newest copy on its own and prove it holds what it should")
+
+
+
+def watch_daily() -> str:
+    """The assistant's daily look at the ledger: what it finds new is told once, through push when it is set up."""
+    from .. import notify
+    from ..engine.watch import to_announce
+
+    with session_scope() as session:
+        new = to_announce(session, _today())
+        if not new:
+            return "nothing new"
+        sent = notify.send(session, f"{len(new)} thing{'s' if len(new) != 1 else ''} worth a look", "\n".join(f["text"] for f in new[:4]), link="/today", tags=["eyes"])
+        return f"{len(new)} found; " + ("told" if sent.get("ok") else "not sent: " + str(sent.get("reason") or sent.get("detail") or "no channel"))
+
+
+jobs.register("watch_daily", watch_daily, 6 * 3600, "Look over the ledger for unusual or double charges, new subscriptions and price rises; tell each once")
+
+
+def recap_keep() -> str:
+    """Keep the plan for the coming paycheck, so it can be set beside what happened."""
+    from ..engine.recap import record_plan
+
+    with session_scope() as session:
+        kept = record_plan(session, _today())
+        return f"kept the plan for {kept['start']}" if kept else "not due"
+
+
+jobs.register("recap_keep", recap_keep, 6 * 3600, "Keep the plan for the coming paycheck, to compare with what happened")
+
+
+def week_recap_push() -> str:
+    """Sunday evening: the week in one line on the phone."""
+    from .. import notify
+    from ..clock import local_now
+    from ..engine.recap import week_recap
+
+    now = local_now()
+    if now.weekday() != 6 or now.hour < 18:
+        return "not due"
+    with session_scope() as session:
+        key = f"recap.week.{now.date().isoformat()}"
+        if get_setting(session, key, None):
+            return "not due"
+        recap = week_recap(session, _today())
+        sent = notify.send(session, "Your week", recap["text"], link="/recap", tags=["calendar"])
+        set_setting(session, key, True)
+        return "sent" if sent.get("ok") else "not sent: " + str(sent.get("reason") or "no channel")
+
+
+jobs.register("week_recap_push", week_recap_push, 3600, "Sunday evening, the week's spending in one line on the phone")

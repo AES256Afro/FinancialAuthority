@@ -19,11 +19,26 @@ router = APIRouter(prefix="/api/v1/imports", tags=["imports"])
 LIMIT = 50 * 1024 * 1024
 
 
-def _text(file: UploadFile) -> str:
+def _raw(file: UploadFile) -> bytes:
     raw = file.file.read(LIMIT + 1)
     if len(raw) > LIMIT:
         raise HTTPException(413, "That file is over 50 MB")
-    return raw.decode("utf-8-sig", errors="replace")
+    return raw
+
+
+def _text(file: UploadFile) -> str:
+    return _raw(file).decode("utf-8-sig", errors="replace")
+
+
+def _statement(raw: bytes, kind: str) -> dict:
+    """A statement PDF's transaction lines, read from its text layer."""
+    from ..parsers.paystub import pdf_text
+    from ..parsers.statement import parse_statement_text
+
+    text = pdf_text(raw)
+    if not text.strip():
+        raise HTTPException(400, "That PDF has no text the app can read (a scan or a photo). Download the statement from the bank's website instead, or a CSV of the same months.")
+    return parse_statement_text(text, today(), card=kind == "card")
 
 
 def _serial(value):  # noqa: ANN001, ANN202
@@ -37,9 +52,13 @@ def _serial(value):  # noqa: ANN001, ANN202
 
 
 @router.post("/preview")
-def preview(file: UploadFile = File(...), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+def preview(file: UploadFile = File(...), kind: str = Form("checking"), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     """What the file is, which column is which, and the first rows as they would land. Nothing is written."""
-    text = _text(file)
+    raw = _raw(file)
+    if raw.startswith(b"%PDF"):
+        found = _statement(raw, kind)
+        return _serial({**found, "filename": file.filename or "statement.pdf", "sample": found["rows"][:12], "rows": None})
+    text = raw.decode("utf-8-sig", errors="replace")
     found = detect(text)
     return _serial({**found, "filename": file.filename or "upload", "rows": None, "positions": found.get("positions", [])[:5] if found["kind"] == "ofx" else None})
 
@@ -62,16 +81,27 @@ def import_file(
     file: UploadFile = File(...), account_name: str = Form(""), institution: str = Form(""), kind: str = Form("checking"), sign: str = Form(""), mapping: str = Form(""),
     account_id: int | None = Form(None), session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin),
 ) -> dict:
-    text = _text(file)
-    found = detect(text)
-    if found["kind"] == "bills":
+    raw = _raw(file)
+    if raw.startswith(b"%PDF"):
+        found, text = _statement(raw, kind), ""
+    else:
+        text = raw.decode("utf-8-sig", errors="replace")
+        found = detect(text)
+    if found["kind"] == "statement":
+        rows = found["rows"]
+        name = account_name.strip() or "Imported statement"
+        vendor = institution.strip()
+        number = ""
+    elif found["kind"] == "bills":
         bill_rows = parse_bills_rows(text, found["mapping"])
         if not bill_rows:
             raise HTTPException(400, "No rows with a name and an amount were found; check the columns in the preview")
         landed = import_bills(session, bill_rows, source_file=file.filename or "upload", today=today())
         return {"ok": True, "summary": landed.summary, "inserted": landed.inserted, "duplicates": 0, "accounts_created": 0, "account_id": None, "bills": landed.details, "detection": {},
                 "import_id": landed.details.get("import_id")}
-    if found["kind"] == "ofx":
+    if found["kind"] == "statement":
+        pass
+    elif found["kind"] == "ofx":
         parsed = parse_ofx(text)
         rows = parsed["rows"]
         name = account_name.strip() or (f"{parsed['vendor']} {parsed['account_type'] or 'account'}".strip() if parsed["vendor"] else f"Account {parsed['account_id'][-4:]}" if parsed["account_id"] else "Imported")
