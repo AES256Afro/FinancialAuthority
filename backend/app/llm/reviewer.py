@@ -164,7 +164,12 @@ def run_if_due(session_factory: Callable[[], AbstractContextManager[Session]], t
         pending = get_setting(session, "review.pending", None)
         snap = finance_snapshot(session, today)
         payday = snap["next_paycheck"]["days"] == 0 and snap["next_paycheck"]["amount"] > 0
-        today_runs = session.exec(select(ReviewRun).where(ReviewRun.created_at >= utcnow().replace(hour=0, minute=0, second=0, microsecond=0))).all()
+        from datetime import timezone as _tz
+
+        from ..clock import local_now
+
+        midnight = local_now().replace(hour=0, minute=0, second=0, microsecond=0).astimezone(_tz.utc)  # the owner's midnight, not UTC's
+        today_runs = session.exec(select(ReviewRun).where(ReviewRun.created_at >= midnight)).all()
         ran_today = any(r.trigger == "payday" for r in today_runs)
     if pending:
         run = review_sync(session_factory, today, "change")

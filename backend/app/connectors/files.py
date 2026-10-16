@@ -311,7 +311,9 @@ def sniff_holdings_csv(text: str) -> dict[str, Any]:
 
 def import_holdings(session: Session, account: Account, positions: list[dict], *, as_of: date | None = None) -> SyncResult:
     """Positions into one investment account; the balance becomes their total, kept for the day."""
-    when = as_of or utcnow().date()
+    from ..clock import local_today
+
+    when = as_of or local_today()
     for p in positions:
         upsert_holding(session, account=account, external_id=p["external_id"], name=p["name"], ticker=p.get("ticker") or "", kind=p.get("kind") or "other", quantity=p.get("quantity"), price=p.get("price"), value=p.get("value"), cost_basis=None, as_of=datetime.combine(p["as_of"] or when, datetime.min.time(), tzinfo=timezone.utc))
     total = round(sum((p.get("value") or 0.0) for p in positions), 2)

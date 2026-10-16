@@ -582,6 +582,7 @@ dependencies = [
     { name = "python-multipart" },
     { name = "pywebpush" },
     { name = "sqlmodel" },
+    { name = "tzdata" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -609,6 +610,7 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.18" },
     { name = "pywebpush", specifier = ">=2.0" },
     { name = "sqlmodel", specifier = ">=0.0.22" },
+    { name = "tzdata", specifier = ">=2026.5" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]
 

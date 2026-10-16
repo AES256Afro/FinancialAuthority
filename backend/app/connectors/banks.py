@@ -14,6 +14,7 @@ from typing import Any
 from sqlmodel import Session, select
 
 from .. import crypto
+from ..clock import local_today
 from ..engine.rules import apply_rules, rules_for
 from ..models import Account, BalanceSnapshot, BankLink, Holding, Transaction, utcnow
 from ..store import get_setting, set_setting
@@ -119,7 +120,7 @@ def upsert_account(session: Session, *, provider: str, external_id: str, name: s
     row.active = True
     session.flush()
     if balance is not None:
-        record_balance(session, row, float(balance), utcnow().date(), commit=False)
+        record_balance(session, row, float(balance), local_today(), commit=False)
     if kind == "card":
         sync_card_debt(session, row)
     return row
@@ -189,9 +190,23 @@ def upsert_transaction(session: Session, *, provider: str, tx_id: str, account: 
 
 
 def remove_transaction(session: Session, provider: str, tx_id: str) -> bool:
+    """A transaction the bank withdrew. What was matched to it (a bill payment, a planned payment, a paystub) is
+    unmatched first, so the removal never fails on them; the matcher runs again later."""
+    from ..models import Payment, PlannedPayment, Paystub
+
     row = session.exec(select(Transaction).where(Transaction.row_hash == tx_hash(provider, tx_id))).first()
     if row is None:
         return False
+    for p in session.exec(select(Payment).where(Payment.transaction_id == row.id)).all():
+        p.transaction_id = None
+        if p.status == "paid":
+            p.status = "scheduled"
+        session.add(p)
+    for model in (PlannedPayment, Paystub):
+        for r in session.exec(select(model).where(model.transaction_id == row.id)).all():
+            r.transaction_id = None
+            session.add(r)
+    session.flush()
     session.delete(row)
     return True
 
