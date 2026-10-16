@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { money, shortDate } from "../format";
+import { Where } from "./Where";
 
 interface SampleRow {
   date?: string;
@@ -117,8 +118,8 @@ export function FileImport({ onDone }: { onDone: (summary: string) => void }) {
       )}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <input className="input" type="file" accept=".csv,.ofx,.qfx,.qbo,text/csv,application/x-ofx" onChange={(e) => e.target.files?.[0] && look(e.target.files[0])} aria-label="File to import" />
-        <span style={{ fontSize: 12, color: "var(--muted)" }}>CSV from any bank or vendor's download page (Vanguard, Fidelity, Capital One, the credit union), or an OFX, QFX or QBO statement. Or a bills list: a sheet with a name, an amount, how often and the due day or next date, such as Rocket Money's recurring page copied out.</span>
       </div>
+      <Where id="bank_file" />
       {error && <div style={{ fontSize: 13, color: "var(--critical)" }}>{error}</div>}
       {preview && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8, borderTop: "1px solid var(--surface-2)", paddingTop: 8 }}>

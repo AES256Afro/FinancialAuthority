@@ -117,7 +117,14 @@ table.ledger td { padding: 7px 8px 7px 0; border-top: 1px solid var(--surface-2)
 :root[data-size="larger"] { --size-zoom: 1.12; }
 :root[data-size="largest"] { --size-zoom: 1.25; }
 :root[data-density="compact"] { --density-zoom: 0.92; }
-#root { zoom: calc(var(--size-zoom) * var(--density-zoom)); }
+:root { --zoom: calc(var(--size-zoom) * var(--density-zoom)); }
+#root { zoom: var(--zoom); }
+/* The rail: sections scroll in the middle, Settings stays at the foot. Its height is the screen's,
+   divided by the zoom, since lengths inside #root are zoomed with everything else. */
+.rail-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding: 0 8px 8px; scrollbar-width: thin; }
+.rail-group + .rail-group { border-top: 1px solid var(--hairline); margin-top: 6px; padding-top: 6px; }
+.rail-group { display: flex; flex-direction: column; gap: 2px; }
+.rail-foot { flex: 0 0 auto; padding: 8px; border-top: 1px solid var(--hairline); }
 
 /* Quiet numbers: pictures first; a figure shows when tapped, hovered or focused. */
 :root[data-quiet="1"] .num { filter: blur(6px); cursor: pointer; transition: filter .15s; }

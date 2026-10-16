@@ -21,6 +21,7 @@ import { getPrefs } from "./prefs";
 import type { Snapshot } from "./types";
 import { MonthGrid } from "./views/MonthGrid";
 import { VIEWS, viewById } from "./views";
+import { SafeExplain } from "./components/SafeExplain";
 
 export interface SectionDef {
   key: string;
@@ -117,6 +118,7 @@ function SafeSection({ s, mode, setMode }: { s: Snapshot; mode: string; setMode?
       {head}
       {body}
       <Why text={s.why?.safe_to_spend} />
+      <SafeExplain s={s} />
     </section>
   );
 }

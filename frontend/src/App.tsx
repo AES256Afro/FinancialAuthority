@@ -13,6 +13,7 @@ const Accounts = lazy(() => import("./pages/Accounts").then((m) => ({ default: m
 const Appearance = lazy(() => import("./pages/Appearance").then((m) => ({ default: m.Appearance })));
 const Audit = lazy(() => import("./pages/Audit").then((m) => ({ default: m.Audit })));
 const Backups = lazy(() => import("./pages/Backups").then((m) => ({ default: m.Backups })));
+const Setup = lazy(() => import("./pages/Setup").then((m) => ({ default: m.Setup })));
 const Bills = lazy(() => import("./pages/Bills").then((m) => ({ default: m.Bills })));
 const Chat = lazy(() => import("./pages/Chat").then((m) => ({ default: m.Chat })));
 const Clients = lazy(() => import("./pages/Clients").then((m) => ({ default: m.Clients })));
@@ -96,6 +97,7 @@ export default function App() {
         <Route path="/settings/jobs" element={<Jobs />} />
         <Route path="/settings/audit" element={<Audit />} />
         <Route path="/settings/backups" element={<Backups />} />
+        <Route path="/settings/setup" element={<Setup />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       </Suspense>

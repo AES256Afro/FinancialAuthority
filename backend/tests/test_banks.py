@@ -265,3 +265,27 @@ def test_saving_plaid_keys_names_a_sandbox_secret_set_to_production(owner: TestC
         assert "plaid-keys" not in {s["id"] for s in owner.get("/api/v1/next_steps").json()["steps"]}
     finally:
         CONNECTORS["plaid"].client_factory = None
+
+
+def test_freshness_counts_calls_and_forecasts_the_cost(owner: TestClient):
+    from datetime import date, datetime, timedelta, timezone
+
+    from app import usage
+    from app.jobs.scheduler import bank_sync
+    from app.models import BankLink
+
+    usage.record_call("plaid", "/transactions/sync", today=date(2026, 10, 14))
+    usage.record_call("plaid", "/transactions/sync", today=date(2026, 10, 14))
+    usage.record_call("plaid", "/accounts/get", today=date(2026, 10, 14))
+    with Session(engine) as session:
+        counted = usage.calls(session, date(2026, 10, 14))
+        session.add(BankLink(provider="plaid", external_id="item-1", institution="Example Bank", environment="production", last_sync_at=datetime.now(timezone.utc) - timedelta(minutes=30)))
+        session.commit()
+    assert counted["by_day"][-1]["plaid"] == 3 and counted["by_endpoint"]["plaid:/transactions/sync"] == 2
+    got = owner.get("/api/v1/banks/freshness").json()
+    assert got["sync_every_hours"] == 4 and got["plaid"]["items_made"] == 1 and got["cost"]["monthly"] is None and "Trial" in got["cost"]["plan_note"]
+    assert owner.put("/api/v1/banks/freshness", json={"sync_every_hours": 3}).status_code == 400
+    priced = owner.put("/api/v1/banks/freshness", json={"sync_every_hours": 1, "price_per_item": 0.3}).json()
+    assert priced["sync_every_hours"] == 1 and priced["cost"]["monthly"] == 0.3 and priced["cost"]["yearly"] == 3.6
+    owner.put("/api/v1/banks/freshness", json={"sync_every_hours": 4, "clear_price": True})
+    assert bank_sync() == "not due yet"  # read half an hour ago; the next read is in three and a half hours

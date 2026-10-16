@@ -5,6 +5,8 @@ import { api, useApi } from "../api";
 import type { MailAccountRow } from "../types";
 import { Banks } from "./Banks";
 import { FileImport } from "../components/FileImport";
+import { BridgeGuide, type BridgeInfo } from "../components/BridgeGuide";
+import { Where } from "../components/Where";
 
 interface ConnectorRow {
   id: string;
@@ -20,7 +22,7 @@ interface Preset {
   help: string;
 }
 
-function MailboxForm({ presets, onSaved }: { presets: Record<string, Preset>; onSaved: () => void }) {
+function MailboxForm({ presets, bridge, onSaved }: { presets: Record<string, Preset>; bridge: BridgeInfo; onSaved: () => void }) {
   const [kind, setKind] = useState<"proton" | "gmail" | "imap">("proton");
   const [label, setLabel] = useState("Proton");
   const [host, setHost] = useState(presets.proton?.host ?? "bridge");
@@ -79,17 +81,8 @@ function MailboxForm({ presets, onSaved }: { presets: Record<string, Preset>; on
         ))}
       </div>
       <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{presets[kind]?.help}</div>
-      {kind === "proton" && (
-        <div style={{ display: "grid", gap: 6, fontSize: 12, color: "var(--ink-2)", background: "var(--surface-2)", borderRadius: 8, padding: 10 }}>
-          <div><strong>1. Sign in to the Bridge, once.</strong> Over SSH to the server, in the app's folder. At its prompt type <code>login</code>, then your Proton address, password and code; then <code>info</code> shows the username and password for this form; then <code>exit</code>.</div>
-          <code style={{ display: "block", padding: "6px 8px", background: "var(--surface)", borderRadius: 6, overflowX: "auto", whiteSpace: "nowrap" }}>docker compose run --rm bridge init</code>
-          <div><strong>2. Start it for good.</strong> It keeps the sign-in across restarts and backups.</div>
-          <code style={{ display: "block", padding: "6px 8px", background: "var(--surface)", borderRadius: 6, overflowX: "auto", whiteSpace: "nowrap" }}>docker compose --profile bridge up -d bridge</code>
-          <div><strong>3. Only the username and password come from its screen.</strong> It also shows 127.0.0.1 and 1143; leave host and port as they are here (either is understood).</div>
-          <div><strong>To see them again later,</strong> run init only once; this opens the same screen without touching the sign-in (type <code>info</code>, then <code>exit</code>, then step 2 again):</div>
-          <code style={{ display: "block", padding: "6px 8px", background: "var(--surface)", borderRadius: 6, overflowX: "auto", whiteSpace: "nowrap" }}>docker compose --profile bridge stop bridge; docker compose run --rm --entrypoint protonmail-bridge bridge --cli</code>
-        </div>
-      )}
+      {kind === "gmail" && <Where id="gmail_app_password" />}
+      {kind === "proton" && <BridgeGuide info={bridge} onDesktop={(h, p) => { setHost(h); setPort(p); }} />}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
         <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Name</span><input className="input" value={label} onChange={(e) => setLabel(e.target.value)} /></label>
         <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">IMAP host</span><input className="input" value={host} onChange={(e) => setHost(e.target.value)} required /></label>
@@ -110,7 +103,7 @@ function MailboxForm({ presets, onSaved }: { presets: Record<string, Preset>; on
 
 export function Connectors() {
   const { data } = useApi<{ connectors: ConnectorRow[] }>("/api/v1/connectors");
-  const presets = useApi<{ presets: Record<string, Preset> }>("/api/v1/mail/presets");
+  const presets = useApi<{ presets: Record<string, Preset>; bridge?: BridgeInfo }>("/api/v1/mail/presets");
   const accounts = useApi<{ accounts: MailAccountRow[] }>("/api/v1/mail/accounts");
   const [result, setResult] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -187,7 +180,7 @@ export function Connectors() {
         )}
         <div style={{ borderTop: "1px solid var(--surface-2)", paddingTop: 10 }}>
           <div className="lab" style={{ marginBottom: 8 }}>Add a mailbox</div>
-          {presets.data && <MailboxForm presets={presets.data.presets} onSaved={accounts.reload} />}
+          {presets.data && <MailboxForm presets={presets.data.presets} bridge={presets.data.bridge ?? { container: "financialauthority-bridge", install: "", in_container: true }} onSaved={accounts.reload} />}
         </div>
       </section>
 
@@ -212,9 +205,7 @@ export function Connectors() {
             <a className="btn" href="/api/v1/exports/rocketmoney.csv" download="financialauthority-export.csv" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Export the ledger as CSV</a>
             <a className="btn" href="https://app.rocketmoney.com/transactions" target="_blank" rel="noreferrer" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Open Rocket Money's export page</a>
           </form>
-          <div style={{ fontSize: 12, color: "var(--muted)" }}>
-            In Rocket Money: Transactions › Export › all time. The link arrives by email and lives seven days; with a mailbox connected, the app follows it and imports the file by itself. A file can also be dropped into the import folder.
-          </div>
+          <Where id="rocketmoney_export" />
         </section>
       )}
       {result && <div className="card" style={{ padding: 12, fontSize: 13 }}>{result}</div>}

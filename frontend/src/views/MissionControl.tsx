@@ -5,6 +5,7 @@ import { money, monthDay, shortDate } from "../format";
 import { palette } from "../looks";
 import { getPrefs } from "../prefs";
 import type { ViewProps } from "./index";
+import { SafeExplain } from "../components/SafeExplain";
 
 interface JobsData {
   scheduler: string;
@@ -68,6 +69,7 @@ export function MissionControl({ snapshot }: ViewProps) {
         <Tile label="Past due" border={s.pending.past_due ? "var(--critical)" : undefined}><Big value={String(s.pending.past_due)} sub={s.payments.late.length ? `${s.payments.late.length} not matched yet` : "none unmatched"} /></Tile>
         <Tile label="Waiting for you" border={waiting ? "var(--warning)" : undefined}><Big value={String(waiting)} sub={`${s.pending.confirmations} to confirm · ${s.pending.approvals} to approve`} /></Tile>
       </section>
+      <SafeExplain s={s} />
       <section className="grid grid-cols-1 xl:grid-cols-[1.4fr_1fr_1fr]" style={{ gap: 12 }}>
         <Tile label="At your usual pace, next 30 days">
           <svg viewBox="0 0 520 150" width="100%" style={{ display: "block", height: "auto" }} role="img" aria-label="Projected available balance at the usual pace for the next thirty days">

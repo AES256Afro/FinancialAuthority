@@ -24,7 +24,7 @@ def next_steps(session: Session, today: date) -> dict:
     steps: list[dict] = []
 
     if not settings.data_key:
-        steps.append(_step("data-key", "critical", "Secrets cannot be stored until FA_DATA_KEY is set in the app's environment.", "How", "/settings", "setting:data_key"))
+        steps.append(_step("data-key", "critical", "Secrets cannot be stored until FA_DATA_KEY is set in the app's environment.", "How", "/settings/setup#secrets", "setting:data_key"))
 
     links = session.exec(select(BankLink).where(BankLink.active == True)).all()  # noqa: E712
     link_by_account: dict[str, BankLink] = {}
@@ -109,7 +109,7 @@ def next_steps(session: Session, today: date) -> dict:
     if push.get("kind", "off") == "off":
         steps.append(_step("push", "info", "Get the morning brief on your phone through ntfy or Gotify.", "Notifications", "/settings/notifications", "push"))
     if not settings.public_url:
-        steps.append(_step("publish", "info", "Publish the app to reach it, and let Claude reach it, from anywhere.", "How", "/settings", "public_url"))
+        steps.append(_step("publish", "info", "Publish the app to reach it, and let Claude reach it, from anywhere.", "How", "/settings/setup#publish", "public_url"))
     if get_setting(session, "review.pending", None) and (models.get("reviewer") or {}).get("provider", "none") != "none":
         steps.append(_step("review-due", "info", "A review is due after the last change; it runs within the hour, or now.", "Review now", "/chat", "review"))
     for i, problem in enumerate((get_setting(session, "selfcheck", {}) or {}).get("problems", [])[:4]):

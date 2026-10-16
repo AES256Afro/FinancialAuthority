@@ -500,6 +500,7 @@ class BankLink(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     provider: str = Field(index=True)  # plaid | teller
     external_id: str = Field(default="", index=True)  # Plaid item id, Teller enrollment id
+    environment: str = ""  # sandbox | production | development: where it was made, since Plaid's Trial counts production logins
     institution: str = ""
     access_token_enc: str = ""
     cursor: str = ""

@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { api, useApi } from "../api";
 import { ReminderSwitches, ShortcutRecipe, ThisDevice } from "../components/Reach";
+import { Where } from "../components/Where";
 
 interface PushState {
   kind: "off" | "ntfy" | "gotify";
@@ -84,6 +85,8 @@ export function Notifications() {
             <input className="input num" type="number" min={0} max={23} value={form.brief_hour} onChange={(e) => setForm({ ...form, brief_hour: Number(e.target.value) })} />
           </label>
         </div>
+        {form.kind === "ntfy" && <Where id="ntfy" />}
+        {form.kind === "gotify" && <Where id="gotify" />}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <button className="btn dark" type="button" disabled={busy} onClick={save}>Save</button>
           <button className="btn" type="button" disabled={busy || !data?.configured} onClick={() => test("/api/v1/push/test")}>Send a test</button>

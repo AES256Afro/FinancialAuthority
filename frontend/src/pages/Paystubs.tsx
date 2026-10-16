@@ -6,6 +6,7 @@ import { PaycheckSetup } from "../components/PaycheckSetup";
 import { palette } from "../looks";
 import { getPrefs } from "../prefs";
 import type { PaystubRow } from "../types";
+import { Where } from "../components/Where";
 
 const TAX = /federal|social security|medicare|state|local|tax|sdi/i;
 
@@ -21,6 +22,7 @@ export function Paystubs() {
         <div className="card" style={{ padding: 18 }}>
           <h1 style={{ margin: "0 0 6px", fontSize: 20, fontWeight: 800 }}>Paystubs</h1>
           <div style={{ color: "var(--ink-2)" }}>None yet. Upload one below, forward a paystub PDF to a connected mailbox, or drop it into the import folder's paystubs subfolder; it appears on Needs you.</div>
+          <Where id="paystub" />
         </div>
         <PaycheckSetup />
       </div>

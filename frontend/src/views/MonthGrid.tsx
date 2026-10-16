@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { money, parseIso, shortDate } from "../format";
 import type { Event } from "../types";
 import type { ViewProps } from "./index";
+import { SafeExplain } from "../components/SafeExplain";
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -80,6 +81,7 @@ export function MonthGrid({ snapshot }: ViewProps) {
         <div className="card" style={{ flex: "1 1 360px", padding: "12px 16px", display: "flex", gap: 14, alignItems: "center" }}>
           <div className="num" style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.02em" }}>{money(snapshot.safe_to_spend.amount)}</div>
           <div><strong>Safe to spend through {shortDate(snapshot.safe_to_spend.through)}.</strong><br /><span style={{ color: "var(--ink-2)" }}>Lows are at your usual pace of {money(snapshot.usual_pace.per_day)} a day.</span></div>
+          <SafeExplain s={snapshot} />
         </div>
         {firstBad && (
           <div className="card" style={{ flex: "1 1 360px", padding: "12px 16px", display: "flex", gap: 14, alignItems: "center", borderColor: "var(--warning)" }}>

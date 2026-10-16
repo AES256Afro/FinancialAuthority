@@ -2,6 +2,7 @@
 import { money, parseIso, shortDate } from "../format";
 import type { Event, PaymentRow } from "../types";
 import type { ViewProps } from "./index";
+import { SafeExplain } from "../components/SafeExplain";
 
 function Card({ title, amount, when, src, dot, note, muted }: { title: string; amount: number; when: string; src: string; dot?: string; note?: string; muted?: boolean }) {
   return (
@@ -48,6 +49,7 @@ export function BillBoard({ snapshot }: ViewProps) {
         <div style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--surface)", border: "1px solid var(--hairline)", borderRadius: 999, padding: "6px 14px" }}><span className="sw" style={{ background: "var(--safe)" }} /><strong className="num">{money(snapshot.safe_to_spend.amount)}</strong><span style={{ fontSize: 12, color: "var(--ink-2)" }}>safe to spend</span></div>
         <div style={{ display: "flex", gap: 14, fontSize: 12, color: "var(--ink-2)", fontWeight: 600 }}><span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "var(--safe)", marginRight: 5 }} />funded</span><span><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "var(--warning)", marginRight: 5 }} />not yet</span></div>
       </div>
+      <SafeExplain s={snapshot} />
       <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5" style={{ gap: 12 }}>
         <Column title="Past due or unmatched" total={sum(problems)} bg={problems.length ? "var(--critical-soft)" : undefined} empty="Nothing. Keep the column empty.">
           {problems.map((p) => <Card key={p.source} title={p.name} amount={p.amount} when={`${shortDate(p.due_date)} · ${p.status === "past_due" ? "past due" : "not matched yet"}`} src="payments" dot="var(--critical)" note={p.status === "late" ? "If paid, the ledger catches up within a sync." : undefined} />)}

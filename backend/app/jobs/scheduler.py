@@ -260,8 +260,13 @@ jobs.register("review_if_due", review_if_due, 3600, "Ask the reviewer for notes 
 
 
 def bank_sync() -> str:
-    """Every live bank link, through its connector; a link that fails does not stop the others."""
+    """Every live bank link whose interval has passed, through its connector; a link that fails does not stop the
+    others. The interval is the owner's (Connectors › Banks › How fresh); reading more often costs nothing more,
+    since Plaid bills transactions by the month per bank login, not by the read."""
+    from datetime import UTC, datetime, timedelta
+
     from ..models import BankLink
+    from ..store import get_setting
 
     notes: list[str] = []
     inserted = 0
@@ -269,7 +274,12 @@ def bank_sync() -> str:
         links = session.exec(select(BankLink).where(BankLink.active == True)).all()  # noqa: E712
         if not links:
             return "no bank links"
-        for link in links:
+        every = timedelta(hours=float((get_setting(session, "banks.freshness", {}) or {}).get("sync_every_hours", 4)))
+        now = datetime.now(UTC)
+        due = [link for link in links if link.last_sync_at is None or now - (link.last_sync_at if link.last_sync_at.tzinfo else link.last_sync_at.replace(tzinfo=UTC)) >= every - timedelta(minutes=5)]
+        if not due:
+            return "not due yet"
+        for link in due:
             result = CONNECTORS[link.provider].sync(session, link_id=link.id)
             notes.append(result.summary)
             inserted += result.inserted
@@ -283,7 +293,7 @@ def bank_sync() -> str:
     return "; ".join(notes)
 
 
-jobs.register("bank_sync", bank_sync, 4 * 3600, "Read every linked bank for new transactions and balances")
+jobs.register("bank_sync", bank_sync, 3600, "Read each linked bank for new transactions and balances, as often as Connectors › Banks says (every four hours unless changed)")
 
 
 def morning_brief() -> str:

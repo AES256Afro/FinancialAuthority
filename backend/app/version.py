@@ -1,3 +1,3 @@
 """The one version string. Tags vX.Y.Z publish the image; this must match the tag."""
 
-__version__ = "0.3.1"
+__version__ = "0.4.0"
