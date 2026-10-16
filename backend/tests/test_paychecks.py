@@ -91,3 +91,13 @@ def test_appearance_is_kept_on_the_server_and_checked(owner: TestClient):
     assert refused({"brand": {"name": "<b>x</b>", "mark": ""}}) == 400
     plain_svg = "data:image/svg+xml;base64," + base64.b64encode(b"<svg xmlns='http://www.w3.org/2000/svg'><circle r='4' fill='#000'/></svg>").decode()
     assert refused({"brand": {"name": "x", "mark": plain_svg}}) == 200
+
+
+def test_on_a_payday_each_stretch_of_beads_starts_once():
+    payday = date(2026, 10, 16)
+    with Session(engine) as session:
+        seed(session)
+        v = paycheck_views(session, payday)
+    starts = [b["start"] for b in v["beads"]]
+    assert starts[0] == payday.isoformat() and len(starts) == len(set(starts))
+    assert all(b["start"] <= b["end"] for b in v["beads"])

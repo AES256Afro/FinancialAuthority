@@ -206,13 +206,14 @@ def months_ahead(session: Session, today: date, saving: dict | None, count: int 
 def beads(snap: dict) -> list[dict]:
     """Between each pair of paydays, every bill on its own day, with whether its due day can move."""
     out = []
-    first = {"start": snap["as_of"], "end": (date.fromisoformat(snap["windows"][0]["start"]) - timedelta(days=1)).isoformat(), "items": snap["due_before_payday"]["items"]}
-    spans = [first] + [{"start": w["start"], "end": w["end"], "items": w["bills"]["items"] + w["advances"]["items"]} for w in snap["windows"][:3]]
+    first = {"start": snap["as_of"], "end": (date.fromisoformat(snap["windows"][0]["start"]) - timedelta(days=1)).isoformat(), "items": snap["due_before_payday"]["items"], "before": True}
+    # On a payday the stretch before it is empty, and starts the same day as the first window: leave it out.
+    spans = ([first] if first["start"] < snap["windows"][0]["start"] else []) + [{"start": w["start"], "end": w["end"], "items": w["bills"]["items"] + w["advances"]["items"], "before": False} for w in snap["windows"][:3]]
     for span in spans:
         items = []
         for e in span["items"]:
             items.append({**_item(e), "part": part_of(e), "via_card": bool(e.get("via_card")), "bill_id": e.get("bill_id"), "movable": bool(e.get("movable")), "due_day": e.get("due_day")})
-        out.append({"start": span["start"], "end": span["end"], "items": sorted(items, key=lambda i: i["date"])})
+        out.append({"start": span["start"], "end": span["end"], "before": span["before"], "items": sorted(items, key=lambda i: i["date"])})
     return out
 
 
