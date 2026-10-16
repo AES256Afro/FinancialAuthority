@@ -52,6 +52,7 @@ class Transaction(SQLModel, table=True):
     is_card_payment: bool = False
     is_income: bool = False
     is_ignored: bool = False
+    pending: bool = False  # the bank has it but has not posted it; the posted row replaces it
     source: str = "manual"  # manual | rocketmoney | csv | ofx | plaid | teller | era | alert | demo
     source_ref: str = ""
     row_hash: str = Field(index=True, unique=True)
@@ -525,6 +526,7 @@ class BankLink(SQLModel, table=True):
     created_at: dt.datetime = Field(default_factory=utcnow)
     last_sync_at: dt.datetime | None = None
     last_error: str = ""
+    webhook: str = ""  # the address Plaid sends this item's notices to, once registered
 
 
 class Approval(SQLModel, table=True):

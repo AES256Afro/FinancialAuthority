@@ -20,6 +20,7 @@ It never holds a bank password, a card number in the clear, or a government iden
 | A script | API key as a bearer token, scoped at creation; a key that hides details reads through `/mcp` only, and every REST read by a key is in the activity log | `read`, `confirm`; never `approve` or `admin`; never the built-in chat |
 | The reviewer model | Called by the app, never calling in | Sees the plan, rules, goals, alerts; never mail, attachments, account names or numbers |
 | The advisor model | Called by the app in the chat | The read tools, redaction applied; cannot confirm, approve or send |
+| Plaid | `POST /api/plaid/webhook`: a signed notice (ES256 over the body's SHA-256, five minutes at most, key fetched from Plaid by id) | Start a sync of a link the owner already made; nothing else |
 | Anyone else | The public surface: the sign-in page, `/mcp`, `/api`, the OAuth endpoints (`/authorize`, `/token`, `/register`, `/revoke`, `/oauth/consent`), `/.well-known/*`, `/api/health` (up or not, no version) | Nothing without a credential |
 
 No tool, job or button initiates a payment, a transfer or an email. Push notifications go to the owner's own ntfy or Gotify.

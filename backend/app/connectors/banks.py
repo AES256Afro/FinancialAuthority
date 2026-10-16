@@ -166,7 +166,7 @@ def upsert_holding(session: Session, *, account: Account, external_id: str, name
     return row
 
 
-def upsert_transaction(session: Session, *, provider: str, tx_id: str, account: Account, when: date, amount: float, merchant: str, raw_name: str, category: str, description: str = "", posted: date | None = None) -> bool:
+def upsert_transaction(session: Session, *, provider: str, tx_id: str, account: Account, when: date, amount: float, merchant: str, raw_name: str, category: str, description: str = "", posted: date | None = None, pending: bool = False) -> bool:
     """Insert or update one transaction by its vendor id. Returns True when it is new."""
     h = tx_hash(provider, tx_id)
     row = session.exec(select(Transaction).where(Transaction.row_hash == h)).first()
@@ -182,6 +182,7 @@ def upsert_transaction(session: Session, *, provider: str, tx_id: str, account: 
     row.raw_name = raw_name
     row.description = description
     row.category = category or "Uncategorized"
+    row.pending = pending
     row.is_transfer = category == "Transfer"
     row.is_card_payment = category == "Credit Card Payment"
     row.is_income = category == "Income" or (amount < 0 and category in ("Income", "Paycheck"))

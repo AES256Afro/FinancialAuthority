@@ -170,7 +170,7 @@ def import_rows(session: Session, rows: list[dict], source_file: str = "upload.c
 
     live_rows: dict[tuple[int, str], list[list]] = {}
     span = (min(r["date"] for r in rows), max(r["date"] for r in rows)) if rows else None
-    for t in session.exec(select(Transaction).where(Transaction.source != "rocketmoney")).all():
+    for t in session.exec(select(Transaction).where(Transaction.source != "rocketmoney", Transaction.pending == False)).all():  # noqa: E712
         if span is not None and span[0] <= t.date <= span[1]:
             live_rows.setdefault((t.account_id, f"{t.amount:.2f}"), []).append([t.date, t.id, False, _words(f"{t.merchant} {t.raw_name} {t.description}")])
     for r in rows:

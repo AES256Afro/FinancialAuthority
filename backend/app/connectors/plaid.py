@@ -103,6 +103,11 @@ class PlaidClient:
         uri = self.redirect_uri(public_url) if redirect else None
         if uri:
             body["redirect_uri"] = uri
+        from .plaid_webhook import webhook_url
+
+        hook = webhook_url(public_url)
+        if hook and not access_token:
+            body["webhook"] = hook  # new transactions are announced, so they arrive in minutes
         return str(self.post("/link/token/create", body)["link_token"])
 
     def exchange(self, public_token: str) -> tuple[str, str]:
@@ -117,6 +122,14 @@ class PlaidClient:
         if cursor:
             body["cursor"] = cursor
         return self.post("/transactions/sync", body)
+
+    def webhook_key(self, key_id: str) -> dict[str, Any]:
+        """The public key Plaid signs its notices with, by its id."""
+        return dict(self.post("/webhook_verification_key/get", {"key_id": key_id})["key"])
+
+    def set_webhook(self, access_token: str, url: str) -> None:
+        """Tell Plaid where to send this item's notices."""
+        self.post("/item/webhook/update", {"access_token": access_token, "webhook": url})
 
     def remove(self, access_token: str) -> None:
         self.post("/item/remove", {"access_token": access_token})
@@ -244,15 +257,19 @@ class PlaidConnector(Connector):
         inserted = updated = removed = 0
         for page in pages:
             for tx in page.get("added", []) + page.get("modified", []):
-                if tx.get("pending"):
-                    continue
                 account = accounts.get(tx["account_id"])
                 if account is None:
                     continue
+                pending = bool(tx.get("pending"))
+                # A pending charge is kept, marked pending, so it shows minutes after the purchase; the checking
+                # balance Plaid reports already has it taken off. When it posts, Plaid sends a new row that names
+                # the pending one, and the pending row goes: never counted twice.
+                if not pending and tx.get("pending_transaction_id"):
+                    removed += int(remove_transaction(session, "plaid", str(tx["pending_transaction_id"])))
                 new = upsert_transaction(
-                    session, provider="plaid", tx_id=tx["transaction_id"], account=account, when=date.fromisoformat(tx["date"]), amount=float(tx["amount"]),
+                    session, provider="plaid", tx_id=tx["transaction_id"], account=account, when=date.fromisoformat(tx.get("authorized_date") or tx["date"]) if pending else date.fromisoformat(tx["date"]), amount=float(tx["amount"]),
                     merchant=str(tx.get("merchant_name") or tx.get("name") or ""), raw_name=str(tx.get("name") or ""), category=category_for(tx),
-                    posted=date.fromisoformat(tx["date"]),
+                    posted=None if pending else date.fromisoformat(tx["date"]), pending=pending,
                 )
                 inserted, updated = inserted + int(new), updated + int(not new)
             for tx in page.get("removed", []):
@@ -260,7 +277,23 @@ class PlaidConnector(Connector):
         link.cursor = cursor
         link.needs_login = False
         session.commit()
+        self.register_webhook(api, link, token)
         return inserted, updated, removed, list(accounts)
+
+    def register_webhook(self, api: PlaidClient, link: BankLink, token: str) -> None:
+        """An item made before the app was published learns the notice address once; a failure only means the
+        scheduled syncs carry on as before."""
+        from ..config import settings
+        from .plaid_webhook import webhook_url
+
+        hook = webhook_url(settings.public_url)
+        if not hook or link.webhook == hook:
+            return
+        try:
+            api.set_webhook(token, hook)
+            link.webhook = hook
+        except PlaidError as error:
+            log.info("plaid webhook not registered for %s: %s", link.institution, error)
 
     def fetch_holdings(self, api: PlaidClient, token: str) -> dict | None:
         """The item's positions; None for a vendor without the product."""

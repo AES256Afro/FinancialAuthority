@@ -281,7 +281,7 @@ def import_rows(session: Session, rows: list[dict], *, source_file: str, account
     # A row's day may be when it was bought or when it posted; both count, on either side.
     file_days = [d for r in rows for d in (r["date"], r.get("posted")) if d]
     span = (min(file_days), max(file_days)) if file_days else None
-    for t in session.exec(select(Transaction).where(Transaction.account_id == account.id)).all():
+    for t in session.exec(select(Transaction).where(Transaction.account_id == account.id, Transaction.pending == False)).all():  # noqa: E712
         days = {d for d in (t.date, t.posted_date) if d}
         if span is None or not any(span[0] <= d <= span[1] for d in days):
             continue
