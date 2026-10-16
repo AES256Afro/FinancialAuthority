@@ -274,3 +274,62 @@ export interface ReviewRun {
   output_tokens: number;
   cost: number | null;
 }
+
+// M22: a budget for each paycheck (GET /api/v1/budgets; PUT and DELETE /api/v1/budgets/{category} answer the same).
+export interface BudgetItem {
+  category: string;
+  per_paycheck: number;
+  carried: number;
+  allowed: number;
+  spent: number;
+  left: number;
+  share_used: number | null;
+  expected_by_now: number;
+  status: "good" | "warn" | "crit";
+  word: string;
+  rollover: "next" | "none";
+  suggested: number;
+  source: string;
+}
+
+export interface BudgetPlan {
+  as_of: string;
+  span: { start: string; end: string; next_payday: string; known: boolean; days_total: number; days_gone: number; days_left: number };
+  items: BudgetItem[];
+  totals: { allowed: number; spent: number; left: number; left_unspent: number };
+  unbudgeted: { spent: number; top: { category: string; spent: number }[] };
+  suggestions: { category: string; per_paycheck: number }[];
+  safe_to_spend: number;
+  fits: boolean;
+  fit_note: string | null;
+  not_advice: string;
+}
+
+// M20: money that moved between the owner's own accounts, matched (GET /api/v1/pairs, POST /api/v1/pairs/{id}).
+export interface PairSide {
+  id: number;
+  date: string;
+  merchant: string;
+  amount: number;
+  account: string;
+  source: string;
+}
+
+export interface PairRow {
+  id: number;
+  kind: "transfer" | "card_payment" | "duplicate";
+  title: string;
+  status: "auto" | "pending" | "confirmed" | "rejected";
+  confidence: number;
+  reason: string;
+  out: PairSide | null;
+  in: PairSide | null;
+  decided_at: string | null;
+  source: string;
+}
+
+export interface PairsOut {
+  waiting: PairRow[];
+  matched: PairRow[];
+  counts: { waiting: number; matched: number };
+}

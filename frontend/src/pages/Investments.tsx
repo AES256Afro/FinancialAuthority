@@ -1,6 +1,8 @@
 // Investing: every 401(k), IRA, brokerage account and HSA with its vendor, balance and holdings, the balance
-// over time, and what the paychecks put in. Added by signing in at the vendor through Plaid, or by hand.
-import { useEffect, useRef, useState } from "react";
+// over time, what the paychecks put in, and what the holdings have gained against their cost where the vendor gives
+// it. Added by signing in at the vendor through Plaid, or by hand.
+import { Info, Minus, TrendingDown, TrendingUp } from "lucide-react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, useApi } from "../api";
 import { ConfirmButton } from "../components/ConfirmButton";
@@ -57,6 +59,83 @@ const SUBTYPE_WORD: Record<string, string> = { "401k": "401(k)", "403b": "403(b)
 const KIND_TONE: Record<string, string> = { equity: "var(--paycheck)", etf: "var(--paycheck-ink)", "mutual fund": "var(--debt)", "fixed income": "var(--safe)", cash: "var(--safe-ink)", cryptocurrency: "var(--bill)", derivative: "var(--later)", other: "var(--muted)" };
 
 type Note = { text: string; tone: "info" | "error" } | null;
+
+// What each account's holdings have gained against what was paid for them (GET /api/v1/assets, "returns").
+interface Gain {
+  account_id: number;
+  name: string;
+  known: boolean;
+  value: number;
+  cost: number | null;
+  gain: number | null;
+  gain_share: number | null;
+  holdings_without_cost: number;
+}
+interface Returns {
+  accounts: Gain[];
+  gain_total: number;
+  cost_total: number;
+  note: string;
+}
+
+// Up or down as an icon and a word, never colour alone.
+function Direction({ gain, share }: { gain: number; share: number | null }) {
+  const up = gain > 0;
+  const down = gain < 0;
+  const Icon = up ? TrendingUp : down ? TrendingDown : Minus;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontWeight: 800, color: up ? "var(--safe-ink)" : down ? "var(--critical-ink)" : "var(--ink-2)" }}>
+      <Icon size={15} aria-hidden="true" />
+      {up ? "up" : down ? "down" : "even"} <span className="num">{money(Math.abs(gain))}</span>
+      {share !== null && share !== 0 ? <span className="num">({(Math.abs(share) * 100).toFixed(1)}%)</span> : null}
+    </span>
+  );
+}
+
+// The picture: what was paid and what it is worth now, as two bars on one scale.
+function PaidAndWorth({ cost, value }: { cost: number; value: number }) {
+  const top = Math.max(cost, value);
+  const rows = [
+    { word: "Paid", amount: cost, tone: "var(--muted)" },
+    { word: "Worth now", amount: value, tone: "var(--paycheck)" },
+  ];
+  return (
+    <div role="img" aria-label={`Paid ${money(cost)}, worth ${money(value)} now`} style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto", gap: "4px 8px", alignItems: "center", fontSize: 12, maxWidth: 460 }}>
+      {rows.map((r) => (
+        <Fragment key={r.word}>
+          <span style={{ color: "var(--ink-2)" }}>{r.word}</span>
+          <div style={{ height: 10, background: "var(--surface-2)", borderRadius: 4 }}>
+            <div style={{ width: top > 0 ? `${Math.max(0, r.amount / top) * 100}%` : 0, height: "100%", background: r.tone, borderRadius: 4 }} />
+          </div>
+          <span className="num" style={{ fontWeight: 700, textAlign: "right" }}>{money(r.amount)}</span>
+        </Fragment>
+      ))}
+    </div>
+  );
+}
+
+function GainLine({ r, loading }: { r: Gain | undefined; loading: boolean }) {
+  if (loading) return <div style={{ fontSize: 12, color: "var(--muted)" }}>Gain against cost: loading…</div>;
+  if (!r) return null;
+  if (!r.known || r.cost === null || r.gain === null) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--ink-2)" }}>
+        <Info size={14} aria-hidden="true" style={{ flexShrink: 0 }} />
+        <span><span className="lab">Gain against cost</span> The vendor does not give the cost.</span>
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <PaidAndWorth cost={r.cost} value={r.value} />
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 13 }}>
+        <span className="lab">Gain against cost</span>
+        <Direction gain={r.gain} share={r.gain_share} />
+        {r.holdings_without_cost > 0 && <span style={{ fontSize: 12, color: "var(--muted)" }}>{r.holdings_without_cost} holding{r.holdings_without_cost === 1 ? "" : "s"} without a cost {r.holdings_without_cost === 1 ? "is" : "are"} left out.</span>}
+      </div>
+    </div>
+  );
+}
 
 // A real button that opens the file picker, so the keyboard reaches it like any other button.
 function ImportHoldings({ onFile }: { onFile: (f: File) => void }) {
@@ -170,6 +249,11 @@ export function Investments() {
     }
   }
 
+  const gains = useApi<{ returns: Returns }>("/api/v1/assets");
+  const returns = gains.data?.returns ?? null;
+  const gainOf = useMemo(() => new Map((returns?.accounts ?? []).map((r) => [r.account_id, r] as [number, Gain])), [returns]);
+  const anyKnown = (returns?.accounts ?? []).some((r) => r.known);
+
   const d = data;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 980 }}>
@@ -185,6 +269,7 @@ export function Investments() {
         <Link to="/settings/connectors">Plaid keys are on Settings › Connections.</Link> <Link to="/outlook">The Outlook carries these forward.</Link>
       </p>
       {error && !d && <Failed error={error} what="your investments" onRetry={reload} />}
+      {gains.error && !gains.data && <Failed error={gains.error} what="the gain against cost" onRetry={gains.reload} />}
       {!d && !error && <Loading what="your investments" />}
       {note && <div className="card" role="status" style={{ padding: 10, fontSize: 13 }}>{note}</div>}
       {adding && (
@@ -205,7 +290,15 @@ export function Investments() {
             <div><div className="lab">Retirement</div><div className="num" style={{ fontSize: 22, fontWeight: 800, color: "var(--paycheck-ink)" }}>{money(d.retirement)}</div></div>
             <div><div className="lab">Taxable</div><div className="num" style={{ fontSize: 22, fontWeight: 800 }}>{money(d.taxable)}</div></div>
             {d.contributions.per_paycheck > 0 && <div><div className="lab">From each paycheck</div><div className="num" style={{ fontSize: 22, fontWeight: 800, color: "var(--safe-ink)" }}>{money(d.contributions.per_paycheck)}</div><div style={{ fontSize: 11, color: "var(--muted)" }}>{d.contributions.items.map((c) => `${c.name} ${money(c.last)}`).join(" · ")}</div></div>}
+            {returns && anyKnown && (
+              <div>
+                <div className="lab">Gain against cost</div>
+                <div style={{ fontSize: 18 }}><Direction gain={returns.gain_total} share={null} /></div>
+                <div style={{ fontSize: 11, color: "var(--muted)" }}>on <span className="num">{money(returns.cost_total)}</span> paid</div>
+              </div>
+            )}
             <div style={{ flex: "1 1 260px" }}><Line points={d.history} /></div>
+            {returns && returns.accounts.length > 0 && <div style={{ flexBasis: "100%", fontSize: 12, color: "var(--muted)" }}>{returns.note}</div>}
           </section>
           {d.allocation.length > 0 && (
             <section className="card" style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
@@ -230,6 +323,7 @@ export function Investments() {
                   ? <StatusPill status="warn">as of {shortDate(a.balance_at.slice(0, 10))}, over a month old</StatusPill>
                   : <span style={{ fontSize: 12, color: "var(--muted)" }}>{a.balance_at ? `as of ${shortDate(a.balance_at.slice(0, 10))}` : "no balance yet"}</span>}
               </div>
+              <GainLine r={gainOf.get(a.id)} loading={!gains.data && !gains.error} />
               {a.history.length > 1 && <Line points={a.history} />}
               {a.holdings.length > 0 && (
                 <div style={{ overflowX: "auto" }}>

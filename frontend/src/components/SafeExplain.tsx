@@ -17,6 +17,9 @@ export function SafeExplain({ s, open = false }: { s: Snapshot; open?: boolean }
         <ChevronRight size={14} aria-hidden style={{ transform: isOpen ? "rotate(90deg)" : "none", transition: "transform .15s" }} />How is this worked out?
       </summary>
       <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 8 }}>
+        {s.fresh?.balances_as_of && (
+          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Balances as of {when(s.fresh.balances_as_of)}, the oldest report among your accounts.</div>
+        )}
         <div style={{ overflowX: "auto" }}>
           <table className="ledger" style={{ maxWidth: 560 }}>
             <tbody>

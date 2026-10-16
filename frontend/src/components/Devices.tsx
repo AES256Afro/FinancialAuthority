@@ -1,4 +1,6 @@
-// Signed-in browsers: each with when it was last used and from where; end one, or every one but this.
+// The devices signed in: each browser with a picture of what it runs on, when it was last used and from where;
+// end one, or every one but this.
+import { Monitor, Smartphone, Tablet } from "lucide-react";
 import { useState } from "react";
 import { api, useApi } from "../api";
 import { when } from "../format";
@@ -11,6 +13,12 @@ function device(ua: string): string {
   const os = /iPhone/.test(ua) ? "iPhone" : /iPad/.test(ua) ? "iPad" : /Android/.test(ua) ? "Android" : /Mac OS X/.test(ua) ? "Mac" : /Windows/.test(ua) ? "Windows" : /Linux/.test(ua) ? "Linux" : "A device";
   const browser = /Edg\//.test(ua) ? "Edge" : /Chrome\//.test(ua) ? "Chrome" : /Firefox\//.test(ua) ? "Firefox" : /Safari\//.test(ua) ? "Safari" : "";
   return browser ? `${browser} on ${os}` : os;
+}
+
+// A phone, a tablet or a computer, drawn, so the list is read at a glance.
+function DeviceIcon({ ua }: { ua: string }) {
+  const Icon = /iPhone|Android.*Mobile/.test(ua) ? Smartphone : /iPad|Android/.test(ua) ? Tablet : Monitor;
+  return <Icon size={18} aria-hidden="true" style={{ flexShrink: 0, color: "var(--ink-2)", marginTop: 1 }} />;
 }
 
 export function Devices() {
@@ -29,18 +37,23 @@ export function Devices() {
   const rows = data?.sessions ?? [];
   return (
     <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>Signed-in browsers</h2>
-      <p style={{ margin: 0, color: "var(--ink-2)", fontSize: 13 }}>Every browser signed in as you. Signing out on one ends it for good; a new password signs out all of them.</p>
-      {error && !data && <Failed error={error} what="the signed-in browsers" onRetry={reload} />}
-      {!data && !error && <Loading what="the signed-in browsers" />}
+      <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>Devices signed in</h2>
+      <p style={{ margin: 0, color: "var(--ink-2)", fontSize: 13 }}>Every phone and computer browser signed in as you. Signing one out ends it for good: it needs the password (or a passkey) again. A new password signs out all of them.</p>
+      {error && !data && <Failed error={error} what="the devices signed in" onRetry={reload} />}
+      {!data && !error && <Loading what="the devices signed in" />}
       {data && (
         <div className="card" style={{ padding: "6px 14px", overflowX: "auto" }}>
           <table className="ledger">
-            <thead><tr><th>Browser</th><th>Last used</th><th>Signed in</th><th><span className="sr-only">Sign out</span></th></tr></thead>
+            <thead><tr><th>Device</th><th>Last used</th><th>Signed in</th><th><span className="sr-only">Sign out</span></th></tr></thead>
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
-                  <td>{device(r.user_agent)}{r.this && <strong style={{ marginLeft: 6, fontSize: 12 }}>· this one</strong>}<div style={{ fontSize: 11, color: "var(--muted)" }}>{r.ip}</div></td>
+                  <td>
+                    <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                      <DeviceIcon ua={r.user_agent} />
+                      <div>{device(r.user_agent)}{r.this && <strong style={{ marginLeft: 6, fontSize: 12 }}>· this one</strong>}<div style={{ fontSize: 11, color: "var(--muted)" }}>{r.ip}</div></div>
+                    </div>
+                  </td>
                   <td style={{ whiteSpace: "nowrap" }}>{r.last_seen_at ? when(r.last_seen_at) : "not yet"}</td>
                   <td style={{ whiteSpace: "nowrap" }}>{when(r.created_at)}</td>
                   <td style={{ textAlign: "right" }}>

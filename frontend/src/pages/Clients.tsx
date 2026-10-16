@@ -1,12 +1,12 @@
 // API keys for models and scripts. A key is shown once; the owner keeps it in the client, never in chat.
 import { Copy } from "lucide-react";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { when } from "../format";
 import { ConfirmButton } from "../components/ConfirmButton";
 import { Failed, Loading, Said } from "../components/State";
 import { Where } from "../components/Where";
-import { Devices } from "../components/Devices";
 
 interface KeyRow {
   id: number;
@@ -162,7 +162,9 @@ export function Clients() {
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 900 }}>
       <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Apps and keys</h1>
       <ConnectedApps />
-      <Devices />
+      <p style={{ margin: 0, color: "var(--ink-2)", fontSize: 13 }}>
+        The phones and computers signed in to this app as you are listed on <Link to="/settings/security" style={{ fontWeight: 700 }}>Settings › Sign-in and security</Link>, where you can sign any of them out.
+      </p>
       <h2 style={{ margin: "8px 0 0", fontSize: 16, fontWeight: 800 }}>API keys</h2>
       <p style={{ margin: 0, color: "var(--ink-2)" }}>A key lets a script or a client without a browser read through the MCP endpoint at <code>/mcp</code> or the REST API. Keys read only; approvals stay with you.</p>
       <form onSubmit={create} className="card" style={{ padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end" }}>
