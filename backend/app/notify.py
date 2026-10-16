@@ -25,7 +25,12 @@ DEFAULT: dict[str, Any] = {"kind": "off", "url": "", "topic": "", "token_enc": "
 
 
 def push_settings(session: Session) -> dict[str, Any]:
-    return {**DEFAULT, **(get_setting(session, "push", {}) or {})}
+    s = {**DEFAULT, **(get_setting(session, "push", {}) or {})}
+    s["last_brief_day"] = get_setting(session, BRIEF_DAY, None) or s.get("last_brief_day") or ""
+    return s
+
+
+BRIEF_DAY = "push.brief_day"
 
 
 def push_state(session: Session) -> dict[str, Any]:
@@ -127,7 +132,5 @@ def morning_brief_due(session: Session, now: datetime) -> bool:
 
 
 def mark_brief_sent(session: Session, now: datetime) -> None:
-    s = push_settings(session)
     local = now.astimezone(ZoneInfo(settings.tz) if settings.tz else None)
-    s["last_brief_day"] = local.date().isoformat()
-    set_setting(session, "push", s)
+    set_setting(session, BRIEF_DAY, local.date().isoformat())

@@ -80,8 +80,10 @@ async def import_file(
     else:
         try:
             overrides = json.loads(mapping) if mapping else {}
-        except json.JSONDecodeError as error:
-            raise HTTPException(400, "mapping must be JSON") from error
+            if not isinstance(overrides, dict) or not all(isinstance(v, (str, type(None))) for v in overrides.values()):
+                raise ValueError("not an object of column names")
+        except (json.JSONDecodeError, ValueError) as error:
+            raise HTTPException(400, "mapping must be a JSON object of column names") from error
         rows = parse_csv_rows(text, overrides, sign or None)
         name = account_name.strip() or "Imported"
         vendor = institution.strip()

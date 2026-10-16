@@ -103,7 +103,7 @@ def net_worth(session: Session, today: date) -> dict:
         return {
             "id": d.id, "name": d.name, "kind": d.kind, "balance": d.balance, "apr": d.apr, "minimum": d.minimum, "source": f"debt:{d.id}", "account_id": d.account_id,
             "statement_day": d.statement_day, "due_day": d.due_day, "pay_in_full": d.pay_in_full, "credit_limit": limit,
-            "utilisation": round(d.balance / limit, 4) if limit else None, "interest_month_if_carried": _money(d.balance * d.apr / 100.0 / 12.0) if d.apr else 0.0,
+            "utilisation": round(d.balance / limit, 4) if limit else None, "interest_month_if_carried": _money(max(0.0, d.balance) * d.apr / 100.0 / 12.0) if d.apr else 0.0,
         }
 
     owed = [debt_out(d) for d in debts]
@@ -133,7 +133,7 @@ def debt_mountain(session: Session, today: date) -> dict:
     for d in items:
         d["share"] = round((d["balance"] or 0.0) / total, 4) if total else 0.0
     minimums = sum((d["minimum"] or 0.0) for d in items)
-    rated = [d for d in items if d.get("apr") is not None and d["kind"] in ("card", "loan", "medical")]
+    rated = [d for d in items if d.get("apr") is not None and d["kind"] in ("card", "loan", "medical") and (d["balance"] or 0.0) > 0]
     avalanche = [d["name"] for d in sorted(rated, key=lambda d: (-(d["apr"] or 0.0), d["balance"] or 0.0))]
     snowball = [d["name"] for d in sorted(rated, key=lambda d: (d["balance"] or 0.0))]
     interest_month = sum(((d["balance"] or 0.0) * (d["apr"] or 0.0) / 100.0 / 12.0) for d in rated)

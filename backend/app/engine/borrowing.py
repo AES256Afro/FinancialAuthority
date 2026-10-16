@@ -35,10 +35,15 @@ def _money(v: float) -> float:
     return round(float(v), 2)
 
 
+# A provider whose name is also a first name is known only by how its own charges read.
+PROVIDER_PATTERNS = {"dave": r"(?<![a-z])dave(?:\.com|,?\s+inc\b|\s+extra\s*cash|\s+app\b|\s+advance|\s+membership|\s+express)"}
+
+
 def provider_of(text: str, table: dict[str, str]) -> str | None:
     low = (text or "").lower()
     for key, name in table.items():
-        if re.search(r"(?<![a-z])" + re.escape(key) + r"(?![a-z])", low):
+        pattern = PROVIDER_PATTERNS.get(key) or (r"(?<![a-z])" + re.escape(key) + r"(?![a-z])")
+        if re.search(pattern, low):
             return name
     return None
 
@@ -482,10 +487,31 @@ def refresh_plan_progress(session: Session, today: date) -> int:
     import json
 
     changed = 0
-    plans = [p for p in session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all() if p.schedule and p.schedule != "[]"]  # noqa: E712
-    if not plans:
+    active = session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all()  # noqa: E712
+    plans = [p for p in active if p.schedule and p.schedule != "[]"]
+    unscheduled = [p for p in active if not (p.schedule and p.schedule != "[]") and p.remaining > 0 and p.installment > 0]
+    if not plans and not unscheduled:
         return 0
     rows = session.exec(select(Transaction).where(Transaction.amount > 0)).all()
+    # A plan known only by its installment and next date: each payment of that amount to the lender from five days
+    # before the next date on ticks one off and moves the next date on by the plan's cadence. A payment counts once.
+    used_ids: set[int] = set()
+    for p in unscheduled:
+        pays = sorted((t for t in rows if abs(float(t.amount) - p.installment) <= 0.05 and provider_of(_text(t), INSTALLMENT_PROVIDERS) == p.provider), key=lambda t: t.date)
+        moved = False
+        for t in pays:
+            if p.remaining <= 0:
+                break
+            if t.id in used_ids or t.date < p.next_date - timedelta(days=5) or t.date > today:
+                continue
+            used_ids.add(t.id)
+            p.remaining -= 1
+            p.next_date = p.next_date + timedelta(days=p.cadence_days or 14)
+            moved = True
+        if moved:
+            p.active = p.remaining > 0
+            session.add(p)
+            changed += 1
     paid_to = {}
     for t in rows:
         provider = provider_of(_text(t), INSTALLMENT_PROVIDERS)

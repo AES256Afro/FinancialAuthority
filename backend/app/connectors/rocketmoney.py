@@ -139,6 +139,11 @@ def _account_for(session: Session, r: dict, cache: dict[tuple, Account]) -> Acco
         row = Account(name=r["account_name"] or "Account", institution=r["institution"], kind=ACCOUNT_KINDS.get(r["account_type"], "checking"), connector="rocketmoney", external_id=r["account_number"])
         session.add(row)
         session.flush()
+    elif not row.active:
+        # Closed by an undone import; its rows are back, so it is open again, and this import owns that.
+        row.active = True
+        session.add(row)
+        cache.setdefault("__reopened__", set()).add(row.id)  # type: ignore[union-attr]
     cache[key] = row
     return row
 
@@ -161,9 +166,13 @@ def import_rows(session: Session, rows: list[dict], source_file: str = "upload.c
     inserted = duplicates = merged = 0
     accounts_before = len(session.exec(select(Account.id)).all())
     # What the live connectors hold, by account and amount, each row claimable once.
+    from .files import _words
+
     live_rows: dict[tuple[int, str], list[list]] = {}
+    span = (min(r["date"] for r in rows), max(r["date"] for r in rows)) if rows else None
     for t in session.exec(select(Transaction).where(Transaction.source != "rocketmoney")).all():
-        live_rows.setdefault((t.account_id, f"{t.amount:.2f}"), []).append([t.date, t.id, False])
+        if span is not None and span[0] <= t.date <= span[1]:
+            live_rows.setdefault((t.account_id, f"{t.amount:.2f}"), []).append([t.date, t.id, False, _words(f"{t.merchant} {t.raw_name} {t.description}")])
     for r in rows:
         k = row_key(r)
         repeat = seen_in_file.get(k, 0)
@@ -175,7 +184,10 @@ def import_rows(session: Session, rows: list[dict], source_file: str = "upload.c
         account = _account_for(session, r, cache)
         if account.connector != "rocketmoney":
             twins = live_rows.get((account.id, f"{r['amount']:.2f}"), [])
-            twin = next((x for x in sorted(twins, key=lambda x: abs((x[0] - r["date"]).days)) if not x[2] and abs((x[0] - r["date"]).days) <= MERGE_DAYS), None)
+            words = _words(f"{r['merchant']} {r['name']} {r['description']}")
+            # the same amount, within three days, and by the same name or on the same day; the nearest day first
+            twin = next((x for x in sorted(twins, key=lambda x: abs((x[0] - r["date"]).days))
+                         if not x[2] and abs((x[0] - r["date"]).days) <= MERGE_DAYS and (x[0] == r["date"] or words & x[3])), None)
             if twin is not None:
                 twin[2] = True
                 merged += 1
@@ -193,7 +205,7 @@ def import_rows(session: Session, rows: list[dict], source_file: str = "upload.c
         inserted += 1
     summary = f"{inserted} new, {duplicates} already known" + (f", {merged} already held by the bank link" if merged else "")
     session.flush()
-    created = sorted(set(session.exec(select(Account.id)).all()) - accounts_known)
+    created = sorted((set(session.exec(select(Account.id)).all()) - accounts_known) | set(cache.get("__reopened__", set())))  # type: ignore[arg-type]
     importlog.finish(session, batch, inserted=inserted, duplicates=duplicates, merged=merged, accounts_created=created, summary=summary)
     session.commit()
     accounts_after = len(session.exec(select(Account.id)).all())

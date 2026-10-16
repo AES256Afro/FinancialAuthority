@@ -12,7 +12,7 @@ from sqlmodel import Session, select
 
 from ..models import Account, Advance, Approval, Bill, Debt, ExtractedFact, Income, InstallmentPlan, MessageRef, RecurringSeries, Transaction
 from ..store import get_setting
-from .cadence import next_paydays, next_unpaid_payday, payday_position
+from .cadence import next_paydays, next_unpaid_payday, payday_position, paydays_through
 from .projection import HORIZON_DAYS, assemble, build_events, card_events, cash_of, line_of, next_due, pending_installment_events, project, projection_caveats, set_aside_of, split_windows, wdate  # noqa: F401
 
 PACE_DAYS = 56
@@ -80,7 +80,7 @@ def finance_snapshot(session: Session, today: date) -> dict:
     next_pay = upcoming[0] if upcoming else None
     next_payday = next_pay[0] if next_pay else today + timedelta(days=14)
     cadence = (next_pay[1].cadence if next_pay else "biweekly") or "biweekly"
-    paydays = next_paydays(next_payday, cadence, 6)
+    paydays = paydays_through(next_payday, cadence, today + timedelta(days=HORIZON_DAYS + 31), at_least=6)
     following_payday = paydays[1]
 
     def net_for(payday: date) -> float:
@@ -208,7 +208,7 @@ def finance_snapshot(session: Session, today: date) -> dict:
     from .payments import payments_overview
     from .paystubs import paystubs_overview
 
-    goals = goals_plan(session, today, next_payday)
+    goals = goals_plan(session, today, next_payday, cadence)
 
     payments = payments_overview(session, today)
     paystubs = paystubs_overview(session)
@@ -314,6 +314,9 @@ def _explain_safe(session: Session, accounts: list, before: list[dict], advances
         if a.kind != "card" or not (a.balance or 0):
             continue
         owes = float(a.balance or 0.0)
+        if owes < 0:
+            left_out.append({"name": a.name, "verb": "holds a credit of", "amount": _money(-owes), "why": "A credit on a card pays its next charges; it is not cash to spend."})
+            continue
         counted = any(src == f"account:{a.id}" or card_of.get(src) == a.id for src in paid_before)
         why = ("A card is not money to spend. Its payment before payday is counted above." if counted else
                "A card is not money to spend. Its next payment falls on or after payday, on the paycheck that carries it.")

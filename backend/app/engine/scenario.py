@@ -38,7 +38,9 @@ def load_inputs(session: Session, today: date, horizon_days: int = HORIZON) -> d
     next_pay = upcoming[0] if upcoming else None
     next_payday = next_pay[0] if next_pay else today + timedelta(days=14)
     cadence = (next_pay[1].cadence if next_pay else "biweekly") or "biweekly"
-    paydays = [d for d in next_paydays(next_payday, cadence, 24) if d <= today + timedelta(days=horizon_days + 31)]
+    from .cadence import paydays_through
+
+    paydays = paydays_through(next_payday, cadence, today + timedelta(days=horizon_days + 31), at_least=2)
 
     def net_for(payday: date) -> float:
         if next_pay is None:

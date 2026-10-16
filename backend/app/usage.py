@@ -38,17 +38,33 @@ def flush(session: Session) -> int:
     if not taken:
         return 0
     try:
-        calls: dict[str, dict[str, int]] = get_setting(session, SETTING, {}) or {}
-        for (day, key), n in taken.items():
-            calls.setdefault(day, {})[key] = calls.get(day, {}).get(key, 0) + n
-        cutoff = (local_today() - timedelta(days=KEEP_DAYS)).isoformat()
-        set_setting(session, SETTING, {d: v for d, v in calls.items() if d >= cutoff})
+        with _write_lock:
+            return _write(session, taken)
     except Exception as error:  # noqa: BLE001 - a count is never worth a failed sync; keep it for next time
         log.warning("usage counts not written yet: %s", error)
         with _lock:
             for k, n in taken.items():
                 _pending[k] = _pending.get(k, 0) + n
         return 0
+
+
+_write_lock = threading.Lock()
+
+
+def _write(session: Session, taken: dict[tuple[str, str], int]) -> int:
+    """Add the counts to what is stored, read fresh under the lock, so two writers never lose each other's."""
+    from .models import Setting
+    from .store import get_setting, set_setting
+
+    row = session.get(Setting, SETTING)
+    if row is not None:
+        session.refresh(row)
+    if True:
+        calls: dict[str, dict[str, int]] = get_setting(session, SETTING, {}) or {}
+        for (day, key), n in taken.items():
+            calls.setdefault(day, {})[key] = calls.get(day, {}).get(key, 0) + n
+        cutoff = (local_today() - timedelta(days=KEEP_DAYS)).isoformat()
+        set_setting(session, SETTING, {d: v for d, v in calls.items() if d >= cutoff})
     return sum(taken.values())
 
 

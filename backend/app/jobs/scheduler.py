@@ -6,7 +6,8 @@ import logging
 import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -58,8 +59,24 @@ class Jobs:
         if self.scheduler is not None:
             return
         self.scheduler = BackgroundScheduler(timezone="UTC")
-        for spec in self.specs.values():
-            self.scheduler.add_job(lambda n=spec.name: self.run(n), IntervalTrigger(seconds=spec.seconds), id=spec.name, max_instances=1, coalesce=True)
+        last: dict[str, Any] = {}
+        try:
+            with session_scope() as session:
+                for r in session.exec(select(JobRun).order_by(JobRun.started_at)).all():
+                    last[r.name] = r.started_at
+        except Exception:  # noqa: BLE001 - without the history every job simply starts on its interval
+            last = {}
+        now = datetime.now(timezone.utc)
+        for k, spec in enumerate(self.specs.values()):
+            first = None
+            if spec.seconds >= 6 * 3600:
+                # The daily and six-hourly jobs: due again one interval after their last run, or two minutes
+                # after start (a little apart) when that has passed, so a daily restart never starves them.
+                ran = last.get(spec.name)
+                due = ran.replace(tzinfo=timezone.utc) + timedelta(seconds=spec.seconds) if ran else now
+                first = max(due, now + timedelta(seconds=120 + 30 * k))
+            self.scheduler.add_job(lambda n=spec.name: self.run(n), IntervalTrigger(seconds=spec.seconds), id=spec.name, max_instances=1, coalesce=True,
+                                   **({"next_run_time": first} if first else {}))
         self.scheduler.start()
         log.info("scheduler started with %d jobs", len(self.specs))
 

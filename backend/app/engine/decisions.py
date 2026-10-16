@@ -24,7 +24,8 @@ def ordinal(n: int) -> str:
 def _charges(amount: float, on: date, installments: int | None) -> list[tuple[date, float]]:
     if installments and installments > 1:
         part = round(amount / installments, 2)
-        return [(on + timedelta(days=14 * i), part) for i in range(installments)]
+        last = round(amount - part * (installments - 1), 2)
+        return [(on + timedelta(days=14 * i), part if i < installments - 1 else last) for i in range(installments)]
     return [(on, round(amount, 2))]
 
 
@@ -122,7 +123,10 @@ def _low_finder(session: Session, today: date):
     upcoming = sorted(((next_unpaid_payday(session, i, today), i) for i in incomes), key=lambda p: p[0])
     next_payday = upcoming[0][0] if upcoming else today + timedelta(days=14)
     cadence = (upcoming[0][1].cadence if upcoming else "biweekly") or "biweekly"
-    paydays = next_paydays(next_payday, cadence, 5)
+    from .cadence import paydays_through
+    from .projection import HORIZON_DAYS
+
+    paydays = paydays_through(next_payday, cadence, today + timedelta(days=HORIZON_DAYS + 31), at_least=5)
 
     def net_for(payday: date) -> float:
         if not upcoming:
@@ -134,8 +138,8 @@ def _low_finder(session: Session, today: date):
 
     expected_net = net_for(next_payday)
     following = paydays[1]
-    pay_dates = set(paydays[:4])
-    pay_amounts = {d: net_for(d) for d in paydays[:4]}
+    pay_dates = set(paydays)
+    pay_amounts = {d: net_for(d) for d in paydays}
     bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
     plans = session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all()  # noqa: E712
     advances = session.exec(select(Advance).where(Advance.repaid == False)).all()  # noqa: E712

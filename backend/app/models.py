@@ -94,6 +94,7 @@ class Income(SQLModel, table=True):
     account_id: int | None = Field(default=None, foreign_key="accounts.id")
     series_id: int | None = Field(default=None, foreign_key="recurring_series.id")
     active: bool = True
+    pay_days: str = ""  # semi-monthly only: "" pays the 15th and the last day, "1,15" the 1st and the 15th
 
 
 class Bill(SQLModel, table=True):

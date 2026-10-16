@@ -127,6 +127,7 @@ async def review(session_factory: Callable[[], AbstractContextManager[Session]],
         conf = role_settings(session)["reviewer"]
         chosen = provider or provider_for(session, "reviewer")
         pack = packet(session, today)
+        pending_at_start = get_setting(session, "review.pending", None)
     run = ReviewRun(trigger=trigger, provider=chosen.id if chosen else conf["provider"], model=chosen.model if chosen else conf["model"], packet_hash=hashlib.sha256(json.dumps(pack["plan"], sort_keys=True).encode()).hexdigest()[:16])
     if chosen is None:
         run.ok, run.error = False, "no reviewer is configured; choose one on Settings › Models"
@@ -146,7 +147,8 @@ async def review(session_factory: Callable[[], AbstractContextManager[Session]],
             run.ok, run.error = False, f"{type(error).__name__}: {error}"[:500]
     with session_factory() as session:
         session.add(run)
-        set_setting(session, "review.pending", None)
+        if run.ok and get_setting(session, "review.pending", None) == pending_at_start:
+            set_setting(session, "review.pending", None)
         session.commit()
         session.refresh(run)
         return run

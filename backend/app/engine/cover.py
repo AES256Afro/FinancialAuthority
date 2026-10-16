@@ -107,7 +107,7 @@ def account_cover(session: Session, today: date, *, saving: dict | None = None) 
             for k, (start, end) in enumerate(windows):
                 items = [e for e in mine if start <= e["date"] <= end]
                 inflow = (p1, float(inp["net_for"](p1))) if (k == 1 and a.id == default_id and inp["has_income"]) else None
-                days = (end - start).days + (1 if k == 1 else 0)
+                days = max(0, (end - start).days + (1 if k == 1 else 0))
                 spend = pace * days
                 needs = sum(e["amount"] for e in items) + spend + keep
                 start_balance = running
