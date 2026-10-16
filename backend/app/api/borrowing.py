@@ -86,11 +86,11 @@ def make_plan(body: PlanIn, session: Session = Depends(get_session), _: auth.Pri
 
 
 @router.post("/statement")
-async def import_statement(file: UploadFile = File(...), session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+def import_statement(file: UploadFile = File(...), session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     """Affirm's monthly statement PDF, the lender's own register of every loan: read and applied at once."""
     from ..engine.borrowing import statement_fact_from_file
 
-    raw = await file.read()
+    raw = file.file.read(50 * 1024 * 1024 + 1)
     if len(raw) > 50 * 1024 * 1024:
         raise HTTPException(413, "That file is over 50 MB")
     out = statement_fact_from_file(session, raw, file.filename or "statement.pdf", today(), "upload")

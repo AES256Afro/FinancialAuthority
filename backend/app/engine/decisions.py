@@ -190,10 +190,37 @@ def date_move_check(session: Session, today: date, bill_id: int, day: int) -> di
     }
 
 
+_suggested: dict[tuple, dict] = {}
+
+
 def billing_date_suggestions(session: Session, today: date) -> dict:
     """For every movable bill, the due day that lifts the sixty-day low point the most, each change judged on
-    its own against the registers as they stand. A change that does not lift the low point is not offered."""
-    low_for, bills, caveats = _low_finder(session, today)
+    its own against the registers as they stand. A change that does not lift the low point is not offered.
+    Kept until the data changes: it tries every day for every bill."""
+    import copy
+
+    from ..db import data_version
+
+    key = (today, data_version())
+    if key in _suggested:
+        return copy.deepcopy(_suggested[key])
+    out = _billing_date_suggestions(session, today)
+    if data_version() == key[1]:
+        _suggested.clear()
+        _suggested[key] = out
+    return copy.deepcopy(out)
+
+
+def _billing_date_suggestions(session: Session, today: date) -> dict:
+    finder, bills, caveats = _low_finder(session, today)
+    tried: dict[frozenset, dict] = {}
+
+    def low_for(due_days: dict[int, int]) -> dict:
+        k = frozenset(due_days.items())
+        if k not in tried:
+            tried[k] = finder(due_days)
+        return tried[k]
+
     baseline = low_for({})
     suggestions = []
     for b in bills:

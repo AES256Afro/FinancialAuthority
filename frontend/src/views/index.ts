@@ -1,15 +1,17 @@
 // Views are home layouts. Every view renders the same engine results and computes nothing of its own.
 // Registering one here is all it takes to appear in Settings › Appearance.
-import type { ComponentType } from "react";
+import { lazy, type ComponentType } from "react";
 import type { Snapshot } from "../types";
-import { BillBoard } from "./BillBoard";
-import { Envelopes } from "./Envelopes";
-import { MissionControl } from "./MissionControl";
-import { MonthGrid } from "./MonthGrid";
-import { River } from "./River";
-import { TransitMap } from "./TransitMap";
-import { WhereItGoes } from "./WhereItGoes";
-import { Windows } from "./Windows";
+
+// Each view is its own chunk, loaded when a home shows it.
+const River = lazy(() => import("./River").then((m) => ({ default: m.River })));
+const Windows = lazy(() => import("./Windows").then((m) => ({ default: m.Windows })));
+const MonthGrid = lazy(() => import("./MonthGrid").then((m) => ({ default: m.MonthGrid })));
+const WhereItGoes = lazy(() => import("./WhereItGoes").then((m) => ({ default: m.WhereItGoes })));
+const Envelopes = lazy(() => import("./Envelopes").then((m) => ({ default: m.Envelopes })));
+const BillBoard = lazy(() => import("./BillBoard").then((m) => ({ default: m.BillBoard })));
+const TransitMap = lazy(() => import("./TransitMap").then((m) => ({ default: m.TransitMap })));
+const MissionControl = lazy(() => import("./MissionControl").then((m) => ({ default: m.MissionControl })));
 
 export interface ViewProps {
   snapshot: Snapshot;

@@ -70,7 +70,31 @@ def _mail_facts(session: Session, today: date) -> dict:
     return {"pending": [out(f) for f in pending_rows], "alerts": [out(f) for f in alert_rows]}
 
 
+_cache: dict[tuple, tuple[float, dict]] = {}
+CACHE_SECONDS = 120  # a computed plan is reused until the data changes, and never for more than two minutes
+
+
 def finance_snapshot(session: Session, today: date) -> dict:
+    """The plan, worked out once per change of the data: the home page, the brief, Cover and the tools all ask
+    for it, often several times a page. Each caller gets its own copy."""
+    import copy
+    import time
+
+    from ..db import data_version
+
+    key = (today, data_version())
+    hit = _cache.get(key)
+    now = time.monotonic()
+    if hit is not None and now - hit[0] < CACHE_SECONDS:
+        return copy.deepcopy(hit[1])
+    snap = _finance_snapshot(session, today)
+    if data_version() == key[1]:  # nothing was written while it was worked out
+        _cache.clear()
+        _cache[key] = (now, snap)
+    return copy.deepcopy(snap)
+
+
+def _finance_snapshot(session: Session, today: date) -> dict:
     accounts = session.exec(select(Account).where(Account.active == True)).all()  # noqa: E712
     cash, cash_all = cash_of(accounts)  # the plan spends checking and cash; savings is kept and shown apart
     buffer = float(get_setting(session, "buffer", 200.0))

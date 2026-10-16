@@ -1,6 +1,7 @@
 // Sections: the pieces a home is arranged from. Each has a name, the pictures it can be drawn as, and draws
 // the engine's results only. An arrangement is a list of sections in order, each with its picture, some hidden.
 // The eight home views are presets of the arranger; a new arrangement needs no code.
+import { Suspense } from "react";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "./api";
@@ -231,7 +232,7 @@ export const SECTIONS: SectionDef[] = [
   { key: "next_steps", name: "Next steps", description: "What the app needs from you.", render: () => <NextStepsCard /> },
   { key: "purchase", name: "Should I buy this?", description: "The purchase check.", render: () => <PurchaseCheck /> },
   { key: "goals", name: "Goals", description: "Save-up and pay-down goals.", render: () => <Goals /> },
-  { key: "view", name: "A whole home view", description: "One of the home views, entire.", modes: VIEW_MODES, render: ({ snapshot, showAs }) => { const V = viewById(showAs ?? "river").component; return <V snapshot={snapshot} />; } },
+  { key: "view", name: "A whole home view", description: "One of the home views, entire.", modes: VIEW_MODES, render: ({ snapshot, showAs }) => { const V = viewById(showAs ?? "river").component; return <Suspense fallback={<div className="card" style={{ minHeight: 240 }} aria-busy="true" />}><V snapshot={snapshot} /></Suspense>; } },
 ];
 
 export function sectionByKey(key: string): SectionDef | undefined {

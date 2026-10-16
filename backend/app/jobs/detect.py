@@ -118,26 +118,39 @@ def run_detection(session: Session, today: date, lookback_days: int = 400) -> di
     return {"found": len(found), "created": created, "updated": updated, "linked": linked, "retired": retired, "paying_accounts_filled": filled, "planned_settled": settled}
 
 
-def account_for_series(session: Session, series: RecurringSeries) -> int | None:
-    """The account the series' charges come out of, by the charges themselves: a subscription on the card is
-    paid by the card."""
+def accounts_index(session: Session) -> tuple[dict, dict]:
+    """How many rows each merchant has on each account, by name and by merchant key, from one grouped count."""
     from collections import Counter
 
-    rows = session.exec(select(Transaction.account_id).where(Transaction.merchant == series.merchant)).all()
-    if not rows:
-        rows = [t.account_id for t in session.exec(select(Transaction)).all() if merchant_key(t.merchant) == series.merchant_key]
-    return Counter(rows).most_common(1)[0][0] if rows else None
+    from sqlalchemy import func
+
+    by_name: dict[str, Counter] = {}
+    by_key: dict[str, Counter] = {}
+    for merchant, account_id, n in session.exec(select(Transaction.merchant, Transaction.account_id, func.count()).group_by(Transaction.merchant, Transaction.account_id)).all():
+        by_name.setdefault(merchant, Counter())[account_id] += n
+        by_key.setdefault(merchant_key(merchant), Counter())[account_id] += n
+    return by_name, by_key
+
+
+def account_for_series(session: Session, series: RecurringSeries, index: tuple[dict, dict] | None = None) -> int | None:
+    """The account the series' charges come out of, by the charges themselves: a subscription on the card is
+    paid by the card."""
+    by_name, by_key = index or accounts_index(session)
+    counts = by_name.get(series.merchant) or by_key.get(series.merchant_key)
+    return counts.most_common(1)[0][0] if counts else None
 
 
 def fill_paying_accounts(session: Session) -> int:
     """Every bill with a series and no paying account on file takes the account its charges come out of."""
     filled = 0
     series_by_id = {s.id: s for s in session.exec(select(RecurringSeries)).all()}
+    index = None
     for b in session.exec(select(Bill).where(Bill.active == True, Bill.pay_from_account_id == None)).all():  # noqa: E711, E712
         series = series_by_id.get(b.series_id) if b.series_id else None
         if series is None:
             continue
-        account_id = account_for_series(session, series)
+        index = index or accounts_index(session)
+        account_id = account_for_series(session, series, index)
         if account_id is not None:
             b.pay_from_account_id = account_id
             session.add(b)

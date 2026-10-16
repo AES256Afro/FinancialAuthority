@@ -92,7 +92,7 @@ export function Bills({ onChanged }: { onChanged: () => void }) {
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Bills</h1>
         <span style={{ fontSize: 13, color: "var(--ink-2)" }}>{data ? `${data.bills.length} bills and subscriptions · about ${money(total)} a month` : ""}</span>
       </div>
-      <DateMoves refreshKey={data?.bills.length} />
+      {data && <DateMoves refreshKey={data.bills.length} />}
       <PlannedPayments onChanged={onChanged} />
       <div className="card" style={{ padding: "6px 14px", overflowX: "auto" }}>
         <table className="ledger">

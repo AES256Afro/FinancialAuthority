@@ -243,8 +243,10 @@ def freshness(session: Session = Depends(get_session), _: auth.Principal = Depen
     for link in links:
         if not link.active:
             continue
-        account_ids = [a.id for a in session.exec(select(Account).where(Account.connector == link.provider)).all()]
-        newest = session.exec(select(Transaction.date).where(Transaction.account_id.in_(account_ids)).order_by(Transaction.date.desc())).first() if account_ids else None
+        mine = [x for x in (link.accounts or "").split(",") if x]
+        query = select(Account.id).where(Account.connector == link.provider)
+        account_ids = list(session.exec(query.where(Account.external_id.in_(mine)) if mine else query).all())
+        newest = session.exec(select(Transaction.date).where(Transaction.account_id.in_(account_ids)).order_by(Transaction.date.desc()).limit(1)).first() if account_ids else None
         last = link.last_sync_at.replace(tzinfo=UTC) if link.last_sync_at and not link.last_sync_at.tzinfo else link.last_sync_at
         out_links.append({"id": link.id, "provider": link.provider, "institution": link.institution, "last_sync_at": last.isoformat() if last else None,
                           "next_sync_at": (last + every).isoformat() if last else datetime.now(UTC).isoformat(), "newest_transaction": newest.isoformat() if newest else None,

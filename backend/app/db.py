@@ -20,7 +20,27 @@ def _pragmas(dbapi_connection, _record) -> None:  # noqa: ANN001
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.execute("PRAGMA busy_timeout=5000")
+    cursor.execute("PRAGMA synchronous=NORMAL")  # safe under WAL: a power cut can lose the last commit, never corrupt
+    cursor.execute("PRAGMA cache_size=-32000")  # 32 MB of page cache
+    cursor.execute("PRAGMA temp_store=MEMORY")
     cursor.close()
+
+
+INDEXES = (
+    "CREATE INDEX IF NOT EXISTS ix_transactions_account_date ON transactions (account_id, date)",
+    "CREATE INDEX IF NOT EXISTS ix_transactions_date ON transactions (date)",
+    "CREATE INDEX IF NOT EXISTS ix_job_runs_started_at ON job_runs (started_at)",
+    "CREATE INDEX IF NOT EXISTS ix_job_runs_name_started ON job_runs (name, started_at)",
+)
+
+
+def ensure_indexes() -> None:
+    from sqlalchemy import text
+
+    with engine.begin() as connection:
+        for ddl in INDEXES:
+            connection.execute(text(ddl))
+        connection.execute(text("PRAGMA optimize"))
 
 
 def init_db() -> None:
@@ -29,6 +49,50 @@ def init_db() -> None:
     SQLModel.metadata.create_all(engine)
     add_missing_columns()
     _trim_manual_keys()
+    ensure_indexes()
+    bump_version()
+
+
+# What the engine computes depends on the database; this number moves whenever the data it reads may have
+# changed, so a computed plan can be kept until then.
+_version = [0]
+
+
+def bump_version() -> None:
+    _version[0] += 1
+
+
+def data_version() -> int:
+    return _version[0]
+
+
+# Rows the engine never reads: writing them leaves a computed plan as it was.
+QUIET_TABLES = {"audit_entries", "job_runs", "web_sessions", "oauth_tokens", "oauth_codes", "oauth_clients", "api_keys", "review_runs", "message_refs"}
+QUIET_SETTINGS = {"usage.calls", "selfcheck", "push.brief_day", "reminders.sent", "imports.processed", "review.pending"}
+
+
+def _engine_reads(obj) -> bool:  # noqa: ANN001
+    table = getattr(obj, "__tablename__", "")
+    if table in QUIET_TABLES:
+        return False
+    if table == "settings" and getattr(obj, "key", "") in QUIET_SETTINGS:
+        return False
+    return True
+
+
+@event.listens_for(Session, "after_flush")
+def _after_flush(session, _context) -> None:  # noqa: ANN001
+    if any(_engine_reads(o) for o in (*session.new, *session.dirty, *session.deleted)):
+        bump_version()
+
+
+@event.listens_for(Session, "do_orm_execute")
+def _bulk_write(state) -> None:  # noqa: ANN001
+    # A bulk update or delete never passes through a flush.
+    if state.is_update or state.is_delete or state.is_insert:
+        tables = {getattr(m.class_, "__tablename__", "") for m in state.all_mappers} if state.all_mappers else set()
+        if not tables or tables - QUIET_TABLES:
+            bump_version()
 
 
 def _trim_manual_keys() -> None:

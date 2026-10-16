@@ -164,14 +164,16 @@ def find_items(session: Session, move: AccountMove, today: date) -> list[dict[st
                     "match_key": "|".join(WALLETS[name]), "decision": "move", "note": f"{len(ts)} charges and transfers from it in the last {LOOKBACK} days."})
 
     linked = {b.series_id for b in session.exec(select(Bill)).all() if b.series_id}
-    from ..jobs.detect import account_for_series
+    from ..jobs.detect import account_for_series, accounts_index
+
+    index = accounts_index(session)
 
     for s in session.exec(select(RecurringSeries).where(RecurringSeries.active == True)).all():  # noqa: E712
         if s.id in linked or s.kind in ("ignored", "income", "advance", "installment") or s.merchant_key in covered:
             continue
         if provider_of(s.merchant, INSTALLMENT_PROVIDERS) or _advance_name(s.merchant) or _wallet(s.merchant_key) or CASH.search(s.merchant_key):
             continue
-        if account_for_series(session, s) != src:
+        if account_for_series(session, s, index) != src:
             continue
         covered.add(s.merchant_key)
         out.append({"ref": f"found:{s.merchant_key}", "kind": "found", "name": s.merchant, "amount": float(s.typical_amount), "due_day": s.next_expected.day if s.next_expected else None,
@@ -289,18 +291,19 @@ def set_item(session: Session, move: AccountMove, item: MoveItem, today: date, *
 
 # ---- the ledger confirms ----------------------------------------------------------------------------------------
 
-def _matches(item: MoveItem, t: Transaction) -> bool:
+def _matches(item: MoveItem, t: Transaction, m: str | None = None) -> bool:
+    """Whether a row is this item; `m` is the row's merchant key when the caller has it already."""
     if item.kind == "income":
         return t.is_income and t.amount < 0
     if item.kind == "wallet":
-        return t.amount != 0 and _wallet(merchant_key(t.merchant)) == item.name
+        return t.amount != 0 and _wallet(m if m is not None else merchant_key(t.merchant)) == item.name
     if item.kind == "card_payment":
         text = f"{t.merchant} {t.description}".lower()
         return t.amount > 0 and (t.is_card_payment or "payment" in text) and bool(item.match_key) and any(w in text for w in item.match_key.split() if len(w) > 3)
     key = item.match_key
     if not key:
         return False
-    m = merchant_key(t.merchant)
+    m = m if m is not None else merchant_key(t.merchant)
     return t.amount != 0 and (m == key or (len(key) >= 4 and (key in m or m in key and len(m) >= 4)))
 
 
@@ -312,19 +315,27 @@ def verify(session: Session, move: AccountMove, today: date) -> dict[str, int]:
     ids = [move.source_account_id] + ([move.target_account_id] if move.target_account_id else [])
     rows = session.exec(select(Transaction).where(Transaction.account_id.in_(ids), Transaction.date >= since, Transaction.is_ignored == False)).all()  # noqa: E712
     confirmed = 0
+    changed = False
+    keyed = [(t, merchant_key(t.merchant)) for t in rows]  # each row's key once, not once per item
+    old_rows = [(t, m) for t, m in keyed if t.account_id == move.source_account_id]
+    new_rows = [(t, m) for t, m in keyed if move.target_account_id and t.account_id == move.target_account_id and t.date >= move.started_on]
     for item in items:
-        old = [t.date for t in rows if t.account_id == move.source_account_id and _matches(item, t)]
-        new = [t.date for t in rows if move.target_account_id and t.account_id == move.target_account_id and _matches(item, t) and t.date >= move.started_on]
-        item.last_seen_old = max(old) if old else None
-        item.last_seen_new = max(new) if new else None
+        old = [t.date for t, m in old_rows if _matches(item, t, m)]
+        new = [t.date for t, m in new_rows if _matches(item, t, m)]
+        seen = (max(old) if old else None, max(new) if new else None)
+        if (item.last_seen_old, item.last_seen_new) != seen:
+            item.last_seen_old, item.last_seen_new = seen
+            changed = True
         if item.decision == "move" and item.status != "confirmed" and item.last_seen_new:
             if item.status == "todo":
                 item.switched_on = item.last_seen_new
                 _point(session, item, move.target_account_id)
             item.status, item.confirmed_on = "confirmed", item.last_seen_new
             confirmed += 1
+            changed = True
         session.add(item)
-    session.commit()
+    if changed:
+        session.commit()  # a look at the page writes nothing when nothing moved
     return {"confirmed": confirmed}
 
 

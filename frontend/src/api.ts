@@ -12,6 +12,7 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  if (init.method && init.method.toUpperCase() !== "GET") shared.clear(); // a write makes every answer stale
   const headers = new Headers(init.headers);
   headers.set("X-Requested-With", "FinancialAuthority");
   if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
@@ -37,6 +38,21 @@ export interface Loaded<T> {
   reload: () => void;
 }
 
+// Two components asking for the same path at once share one request; an answer is reused for a moment so a page
+// that asks for it twice loads it once. Reload always asks again.
+const shared = new Map<string, { at: number; promise: Promise<unknown> }>();
+const SHARE_MS = 1500;
+
+function sharedGet<T>(path: string, fresh: boolean): Promise<T> {
+  const now = Date.now();
+  const hit = shared.get(path);
+  if (!fresh && hit && now - hit.at < SHARE_MS) return hit.promise as Promise<T>;
+  const promise = api<T>(path);
+  shared.set(path, { at: now, promise });
+  promise.catch(() => shared.delete(path));
+  return promise;
+}
+
 export function useApi<T>(path: string | null): Loaded<T> {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
@@ -46,7 +62,7 @@ export function useApi<T>(path: string | null): Loaded<T> {
     if (!path) return;
     let alive = true;
     setLoading(true);
-    api<T>(path)
+    sharedGet<T>(path, tick > 0)
       .then((d) => {
         if (alive) {
           setData(d);

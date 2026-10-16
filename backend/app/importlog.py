@@ -20,13 +20,10 @@ BILL_FIELDS = ("amount", "cadence", "due_day", "anchor_date", "autopay", "catego
 
 
 def begin(session: Session, kind: str, source_file: str, via: str = "upload") -> ImportBatch:
-    """Start an import: a restore point of the database as it is now, then the batch the rows will carry."""
-    point = ""
-    try:
-        point = restore.make_point("import", f"Before importing {source_file or kind}")["name"]
-    except Exception as error:  # noqa: BLE001 - a copy that cannot be made must not stop the import; the batch still undoes it
-        log.warning("restore point before an import failed: %s", error)
-    batch = ImportBatch(kind=kind, source_file=(source_file or "")[:200], via=via, restore_point=point)
+    """Start an import: the batch the rows will carry. The restore point is taken in finish(), and only when the
+    import keeps something: the import has not committed then, so the copy, read on a connection of its own, is
+    the database as it was before the import began."""
+    batch = ImportBatch(kind=kind, source_file=(source_file or "")[:200], via=via, restore_point="")
     session.add(batch)
     session.flush()
     return batch
@@ -36,13 +33,13 @@ def finish(session: Session, batch: ImportBatch, *, inserted: int = 0, duplicate
            accounts_created: list[int] | None = None, changes: list[dict] | None = None, summary: str = "") -> None:
     """Record what the import did; the caller commits. Nothing changed: no entry and no restore point."""
     if not inserted and not changes and not accounts_created:
-        if batch.restore_point:
-            try:
-                restore.remove_point(batch.restore_point)
-            except ValueError:
-                pass
         session.delete(batch)
         return
+    if not batch.restore_point:
+        try:
+            batch.restore_point = restore.make_point("import", f"Before importing {batch.source_file or batch.kind}")["name"]
+        except Exception as error:  # noqa: BLE001 - a copy that cannot be made must not stop the import; the batch still undoes it
+            log.warning("restore point before an import failed: %s", error)
     batch.inserted, batch.duplicates, batch.merged, batch.account_id = inserted, duplicates, merged, account_id
     batch.accounts_created = json.dumps(accounts_created or [])
     batch.changes = json.dumps(changes or [], default=str)

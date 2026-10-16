@@ -15,10 +15,10 @@ SETTING = "firstrun"
 def firstrun(session: Session) -> dict:
     state = get_setting(session, SETTING, {}) or {}
     marked = set(state.get("marked", []))
-    has_income = session.exec(select(Income.id).where(Income.active == True)).first() is not None  # noqa: E712
-    has_data = session.exec(select(Transaction.id)).first() is not None or session.exec(select(Account.id).where(Account.active == True, Account.connector != "manual")).first() is not None  # noqa: E712
+    has_income = session.exec(select(Income.id).where(Income.active == True).limit(1)).first() is not None  # noqa: E712
+    has_data = session.exec(select(Transaction.id).limit(1)).first() is not None or session.exec(select(Account.id).where(Account.active == True, Account.connector != "manual").limit(1)).first() is not None  # noqa: E712
     bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
-    unnamed = session.exec(select(RecurringSeries.id).where(RecurringSeries.active == True, RecurringSeries.confirmed == False)).first() is not None  # noqa: E712
+    unnamed = session.exec(select(RecurringSeries.id).where(RecurringSeries.active == True, RecurringSeries.confirmed == False).limit(1)).first() is not None  # noqa: E712
     assigned = bool(bills) and all((b.paid_from or "due") in ("mid", "end") for b in bills)
     picked = session.get(Setting, "appearance") is not None  # a choice saved, not the default
     steps = [

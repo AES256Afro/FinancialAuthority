@@ -39,11 +39,21 @@ def _money(v: float) -> float:
 PROVIDER_PATTERNS = {"dave": r"(?<![a-z])dave(?:\.com|,?\s+inc\b|\s+extra\s*cash|\s+app\b|\s+advance|\s+membership|\s+express)"}
 
 
+_COMPILED: dict[int, list[tuple[str, re.Pattern, str]]] = {}
+
+
+def _patterns(table: dict[str, str]) -> list[tuple[str, re.Pattern, str]]:
+    got = _COMPILED.get(id(table))
+    if got is None:
+        got = [(key.split()[0], re.compile(PROVIDER_PATTERNS.get(key) or (r"(?<![a-z])" + re.escape(key) + r"(?![a-z])")), name) for key, name in table.items()]
+        _COMPILED[id(table)] = got
+    return got
+
+
 def provider_of(text: str, table: dict[str, str]) -> str | None:
     low = (text or "").lower()
-    for key, name in table.items():
-        pattern = PROVIDER_PATTERNS.get(key) or (r"(?<![a-z])" + re.escape(key) + r"(?![a-z])")
-        if re.search(pattern, low):
+    for word, pattern, name in _patterns(table):
+        if word in low and pattern.search(low):
             return name
     return None
 
@@ -142,7 +152,8 @@ def _rows(session: Session, today: date) -> tuple[list[dict], list[dict]]:
     since = today - timedelta(days=LOOKBACK_DAYS)
     advances: list[dict] = []
     installments: list[dict] = []
-    for t in session.exec(select(Transaction).where(Transaction.date >= since, Transaction.is_ignored == False)).all():  # noqa: E712
+    cols = select(Transaction.id, Transaction.date, Transaction.amount, Transaction.merchant, Transaction.raw_name, Transaction.description)
+    for t in session.exec(cols.where(Transaction.date >= since, Transaction.is_ignored == False)).all():  # noqa: E712
         text = _text(t)
         provider = provider_of(text, ADVANCE_PROVIDERS)
         if provider:
