@@ -96,6 +96,12 @@ def calendar(session: Session, today: date, *, amounts: bool = True, name: str =
         tail = f" · ${e['amount']:,.0f}" if amounts else ""
         via = " (on the card)" if e.get("via_card") else ""
         add(f"{re.sub(r'[^a-z0-9:-]', '', (e.get('source') or 'event').lower())}-{e['date'].isoformat()}", e["date"], f"{e['name']}{tail}{via}", f"{what}, from the plan. Not financial advice.")
+    from ..engine.receipts import deadlines
+
+    for d in deadlines(session, today):
+        on = date.fromisoformat(d["on"])
+        add(f"{d['what']}-document-{d['document_id']}", on, ("Last day to return " if d["what"] == "return" else "Warranty ends: ") + (d["merchant"] or d["title"]),
+            "From a receipt you kept." if d["what"] == "return" else "From a receipt you kept: claim before then if anything is wrong with it.")
     lines.append("END:VCALENDAR")
     return ("\r\n".join(lines) + "\r\n").encode()
 

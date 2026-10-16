@@ -126,6 +126,17 @@ def import_file(
         raise HTTPException(400, str(error)) from error
     from ..jobs.detect import run_detection
 
+    if raw.startswith(b"%PDF") and result.details.get("account_id"):
+        # The statement itself is kept with its account and its month.
+        from ..engine.documents import save_document
+
+        last = max((r["date"] for r in rows if r.get("date")), default=None)
+        month = (last.isoformat() if hasattr(last, "isoformat") else str(last or today()))[:7]
+        try:
+            save_document(session, raw, filename=file.filename or "statement.pdf", title=f"Statement · {name} · {month}", kind="statement",
+                          attach_to=f"account:{result.details['account_id']}", period=month, source=f"import:{result.details.get('import_id') or ''}")
+        except ValueError:
+            pass
     detection = run_detection(session, today()) if result.inserted else {}
     return {"ok": True, "summary": result.summary, "inserted": result.inserted, "duplicates": result.duplicates, "merged": result.details.get("merged", 0), "accounts_created": result.accounts,
             "account_id": result.details.get("account_id"), "import_id": result.details.get("import_id"), "detection": detection}

@@ -294,7 +294,14 @@ def list_facts_rows(session: Session, status: str | None, limit: int) -> list[di
         query = query.where(ExtractedFact.status == status)
     rows = session.exec(query.order_by(ExtractedFact.created_at.desc()).limit(limit)).all()
     refs = {r.id: r for r in session.exec(select(MessageRef).where(MessageRef.id.in_([f.message_ref_id for f in rows if f.message_ref_id]))).all()} if rows else {}
-    return [fact_out(f, refs.get(f.message_ref_id)) for f in rows]
+    out = [fact_out(f, refs.get(f.message_ref_id)) for f in rows]
+    for item, f in zip(out, rows):
+        if f.kind == "receipt" and f.status == "pending":
+            from ..engine.receipts import candidates
+
+            got = json.loads(f.fields or "{}")
+            item["candidates"] = candidates(session, got.get("total"), date.fromisoformat(got["bought_on"]) if got.get("bought_on") else None, got.get("merchant", ""))
+    return out
 
 
 @router.get("/facts")
@@ -311,6 +318,9 @@ class ConfirmIn(BaseModel):
     due_date: date | None = None
     autopay: bool | None = None
     remaining: int | None = None
+    transaction_id: int | None = None  # a receipt: the purchase it belongs to (none: the best match, or kept unmatched)
+    return_by: date | None = None
+    warranty_until: date | None = None
 
 
 def apply_fact(session: Session, fact: ExtractedFact, ref: MessageRef | None, body: ConfirmIn, *, owner: bool = False) -> str:
@@ -340,6 +350,8 @@ def apply_fact(session: Session, fact: ExtractedFact, ref: MessageRef | None, bo
         if not applied:
             raise HTTPException(400, "The home this document belongs to is gone")
         return applied
+    if fact.kind == "receipt":
+        return _apply_receipt(session, fact, ref, fields, body)
     if fact.kind == "paystub":
         from ..engine.paystubs import record_paystub
 
@@ -348,6 +360,7 @@ def apply_fact(session: Session, fact: ExtractedFact, ref: MessageRef | None, bo
         if net is None or pay_date is None:
             raise HTTPException(400, "A paystub needs a net amount and a pay date; add them to the confirmation")
         stub = record_paystub(session, fields={**fields, "net": net, "pay_date": pay_date.isoformat()}, source=f"mail:{ref.id}" if ref else "fact", fact_id=fact.id, today=today())
+        _keep_paystub_file(session, ref, fields, stub.id, pay_date)
         return f"paystub:{stub.id}"
     if fact.kind == "investment_balance":
         from ..connectors.banks import record_balance
@@ -416,6 +429,69 @@ def apply_fact(session: Session, fact: ExtractedFact, ref: MessageRef | None, bo
             session.add(bill)
         return f"bill:{bill.id}"
     return ""
+
+
+def _keep_paystub_file(session: Session, ref: MessageRef | None, fields: dict, stub_id: int, pay_date: date) -> None:
+    """The paystub's PDF kept with its month: the one handed over is already kept; one from mail is fetched now."""
+    from ..engine import documents as docs
+    from ..models import Document
+
+    if fields.get("document_id"):
+        doc = session.get(Document, int(fields["document_id"]))
+        if doc is not None:
+            docs.update_document(session, doc, {"attach_to": f"paystub:{stub_id}", "period": pay_date.isoformat()[:7]})
+        return
+    if ref is None or not fields.get("attachment"):
+        return
+    try:
+        _ref, _account, parsed = fetch_parsed(session, ref.id)
+    except HTTPException:
+        return  # the mailbox is away; the stub counts all the same, and the file can be added by hand
+    attachment = next((a for a in parsed.attachments if a.name == fields["attachment"] and a.data), None)
+    if attachment is None:
+        return
+    try:
+        docs.save_document(session, attachment.data, filename=attachment.name, title=f"Paystub · {pay_date:%b} {pay_date.day}, {pay_date.year}", kind="paystub",
+                           attach_to=f"paystub:{stub_id}", period=pay_date.isoformat()[:7], source=f"mail:{ref.id}")
+    except ValueError:
+        return
+
+
+def _apply_receipt(session: Session, fact: ExtractedFact, ref: MessageRef | None, fields: dict, body: ConfirmIn) -> str:
+    """A receipt kept with its purchase: the message's PDF, or its words, fetched live once, read-only."""
+    from ..engine import documents as docs
+    from ..engine.receipts import candidates
+    from ..models import Transaction
+
+    bought = date.fromisoformat(fields["bought_on"]) if fields.get("bought_on") else today()
+    total = body.amount if body.amount is not None else fields.get("total")
+    tid = body.transaction_id
+    if tid is None:
+        found = candidates(session, total, bought, fields.get("merchant", ""), limit=1)
+        tid = found[0]["id"] if found and not found[0]["has_receipt"] else None
+    if tid is not None and session.get(Transaction, tid) is None:
+        raise HTTPException(400, "No such transaction")
+    facts = {"merchant": (body.name or fields.get("merchant") or "").strip(), "amount": total, "bought_on": bought,
+             "return_by": body.return_by or (date.fromisoformat(fields["return_by"]) if fields.get("return_by") else None),
+             "warranty_until": body.warranty_until or (date.fromisoformat(fields["warranty_until"]) if fields.get("warranty_until") else None),
+             "source": f"mail:{ref.id}" if ref else "fact"}
+    title = f"Receipt · {facts['merchant'] or 'store'}" + (f" · order {fields['order_no']}" if fields.get("order_no") else "")
+    attach = f"transaction:{tid}" if tid else ""
+    doc = None
+    if ref is not None:
+        try:
+            _ref, _account, parsed = fetch_parsed(session, ref.id)
+            pdf = next((a for a in parsed.attachments if a.data and (a.content_type == "application/pdf" or a.name.lower().endswith(".pdf"))), None)
+            if pdf is not None:
+                doc = docs.save_document(session, pdf.data, filename=pdf.name, title=title, kind="receipt", attach_to=attach, **facts)
+            else:
+                doc = docs.save_text(session, f"{parsed.subject}\nFrom: {parsed.sender_name or parsed.sender}\n\n{parsed.text}", filename=f"receipt-{fact.id}", title=title, kind="receipt", attach_to=attach, **facts)
+        except (HTTPException, ValueError):
+            doc = None
+    if doc is None:
+        note = "The message could not be fetched just now; these are the words the app kept from it. Open it in Mail to see it whole."
+        doc = docs.save_text(session, fact.excerpt or title, filename=f"receipt-{fact.id}", title=title, kind="receipt", attach_to=attach, note=note, **facts)
+    return f"document:{doc.id}"
 
 
 @router.post("/facts/{fact_id}/confirm")

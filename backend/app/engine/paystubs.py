@@ -10,7 +10,7 @@ from hashlib import sha256
 
 from sqlmodel import Session, select
 
-from ..models import ExtractedFact, Income, Paystub, Transaction
+from ..models import Document, ExtractedFact, Income, Paystub, Transaction
 from .cadence import payday_position
 
 TOLERANCE = 20.0  # dollars under the usual before it is a discrepancy
@@ -48,6 +48,14 @@ def paystub_fact_from_file(session: Session, data: bytes, filename: str, today: 
         return None
     confidence = stub.pop("confidence")
     stub.update({"source": source, "attachment": filename, "sender_name": stub.get("employer") or ""})
+    try:  # the file itself is kept with its month, and joins the paystub when the owner confirms it
+        from .documents import save_document
+
+        pay = stub.get("pay_date") or today.isoformat()
+        doc = save_document(session, data, filename=filename, title=f"Paystub · {pay}", kind="paystub", period=pay[:7], source=source)
+        stub["document_id"] = doc.id
+    except ValueError:
+        pass
     fact = ExtractedFact(kind="paystub", message_ref_id=None, fields=json.dumps(stub), confidence=confidence, status="pending", excerpt=excerpt_for(text, {"amount": stub.get("net"), "due_date": stub.get("pay_date")}), produced_by=f"{source}+parser:paystub")
     session.add(fact)
     session.commit()
@@ -142,6 +150,8 @@ def paystubs_overview(session: Session, limit: int = 8) -> dict:
     out = []
     for p in rows:
         row = paystub_out(p)
+        kept = session.exec(select(Document).where(Document.attach_to == f"paystub:{p.id}")).first()
+        row["document_id"] = kept.id if kept else None
         usual = expected_net(session, p.pay_date)  # judged afresh, by position of the month, against what is known now
         if usual is not None:
             row["expected_net"], row["difference"] = usual, round(p.net - usual, 2)

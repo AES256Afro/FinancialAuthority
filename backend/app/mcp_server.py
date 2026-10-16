@@ -762,6 +762,18 @@ def build_server() -> MCPServer:
             services.audit(session, client=client, client_kind="key", tool="document_read", args={"id": document_id, "page": n}, rows=1, redaction=redaction)
             return {**doc_out(doc), "page": n, "of": len(pages), "boxed": box_untrusted(pages[n - 1], f"document {doc.id}, {doc.title}, page {n} of {len(pages)}")}
 
+    @_tool(server, name="receipts_list", annotations=READ_ONLY)
+    def receipts_list() -> dict:
+        """Receipts kept with their purchases: the store, the total, the day bought, the last day to return and the
+        warranty's end, with the deadlines still open soonest first. Read a receipt's words with document_read."""
+        from .engine.receipts import receipts_overview
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            out = receipts_overview(session, _today())
+            services.audit(session, client=client, client_kind="key", tool="receipts_list", rows=out["count"], redaction=redaction)
+            return out
+
     @_tool(server, name="facts_pending", annotations=READ_ONLY)
     def facts_pending() -> dict:
         """Facts the app took from mail and documents that still wait for the owner: bills due, statements,

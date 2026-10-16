@@ -99,6 +99,9 @@ class RemindersIn(BaseModel):
     statement: bool | None = None
     checkin: bool | None = None
     hour: int | None = None
+    returns_days: int | None = None  # a receipt's last day to return, this many days before (0: off)
+    warranty_days: int | None = None
+    notice: bool | None = None  # the written notice a lease needs, three days before its deadline
 
 
 @router.get("/reminders")

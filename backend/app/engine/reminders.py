@@ -16,7 +16,7 @@ from ..store import get_setting, set_setting
 
 SETTING = "reminders"
 SENT = "reminders.sent"
-DEFAULT: dict[str, Any] = {"bills_days": 2, "payday": True, "statement": True, "checkin": True, "hour": 9}
+DEFAULT: dict[str, Any] = {"bills_days": 2, "payday": True, "statement": True, "checkin": True, "hour": 9, "returns_days": 3, "warranty_days": 14, "notice": True}
 
 
 def _usd(v: float) -> str:
@@ -36,7 +36,11 @@ def save(session: Session, values: dict[str, Any]) -> dict[str, Any]:
     s = reminder_settings(session)
     if values.get("bills_days") is not None:
         s["bills_days"] = max(0, min(7, int(values["bills_days"])))
-    for k in ("payday", "statement", "checkin"):
+    if values.get("returns_days") is not None:
+        s["returns_days"] = max(0, min(14, int(values["returns_days"])))
+    if values.get("warranty_days") is not None:
+        s["warranty_days"] = max(0, min(60, int(values["warranty_days"])))
+    for k in ("payday", "statement", "checkin", "notice"):
         if values.get(k) is not None:
             s[k] = bool(values[k])
     if values.get("hour") is not None:
@@ -81,6 +85,20 @@ def due_today(session: Session, today: date) -> list[dict[str, Any]]:
         for al in move_plan(session, mv, today)["alerts"]:
             if al["severity"] in ("crit", "warn") or al["text"].startswith(("Switch ", "Move ")):
                 out.append({"key": f"move:{mv.id}:{al['ref']}:{today.isoformat()}", "title": al["text"][:110], "body": f"{mv.name}. The Switching banks page has each step.", "link": "/switch", "tag": "move"})
+    from .receipts import deadlines
+
+    for d in deadlines(session, today, within_days=60):
+        days = int(s["returns_days"] if d["what"] == "return" else s["warranty_days"])
+        if days and d["days_left"] <= days:
+            out.append({"key": f"{d['what']}:{d['document_id']}:{d['on']}", "title": d["word"][:110], "body": "Keep it, or take it back before then." if d["what"] == "return" else "If anything is wrong with it, claim before then.",
+                        "link": "/documents#receipts", "tag": "receipt"})
+    if s["notice"]:
+        from .housing import overview as housing_overview
+
+        for h in housing_overview(session, today)["homes"]:
+            n = h["notice"]
+            if n and not n["given_on"] and h["state"] == "current" and n.get("days_left") is not None and n["days_left"] <= 3:
+                out.append({"key": f"notice:{h['id']}:{n['by']}", "title": f"Written notice to {h['name']} by {_short(n['by'])}", "body": "Give it in writing, then mark it given on Housing.", "link": "/housing", "tag": "home"})
     if s["checkin"] and today.weekday() == 6:
         log = get_setting(session, "checkin.log", {}) or {}
         if week_key(today) not in log:
