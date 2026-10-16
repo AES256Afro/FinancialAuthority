@@ -53,6 +53,7 @@ class Transaction(SQLModel, table=True):
     is_income: bool = False
     is_ignored: bool = False
     pending: bool = False  # the bank has it but has not posted it; the posted row replaces it
+    tags: str = ""  # the owner's own words, comma-separated, lower case
     source: str = "manual"  # manual | rocketmoney | csv | ofx | plaid | teller | era | alert | demo
     source_ref: str = ""
     row_hash: str = Field(index=True, unique=True)
@@ -62,6 +63,17 @@ class Transaction(SQLModel, table=True):
     @property
     def is_spending(self) -> bool:
         return not (self.is_transfer or self.is_card_payment or self.is_income or self.is_ignored)
+
+
+class TransactionSplit(SQLModel, table=True):
+    """One part of a transaction split across categories; the parts add up to the transaction."""
+
+    __tablename__ = "transaction_splits"
+    id: int | None = Field(default=None, primary_key=True)
+    transaction_id: int = Field(index=True)
+    category: str = "Uncategorized"
+    amount: float = 0.0
+    note: str = ""
 
 
 class Passkey(SQLModel, table=True):

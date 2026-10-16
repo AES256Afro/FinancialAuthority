@@ -90,12 +90,13 @@ def search_transactions(
     max_amount: float | None = None,
     include_non_spending: bool = False,
     limit: int = Query(50, ge=1, le=500),
+    tag: str | None = None,
     session: Session = Depends(get_session),
     principal: auth.Principal = Depends(auth.require_read),
 ) -> dict:
     result = services.search_transactions(
         session, redaction=principal.redaction, text=text, category=category, account=account, start=start, end=end,
-        min_amount=min_amount, max_amount=max_amount, include_non_spending=include_non_spending, limit=limit,
+        min_amount=min_amount, max_amount=max_amount, include_non_spending=include_non_spending, limit=limit, tag=tag,
     )
     if principal.kind == "key":
         services.audit(session, client=principal.name, client_kind="key", tool="transactions_search", args={"text": text, "category": category}, rows=result["returned"], redaction=principal.redaction)

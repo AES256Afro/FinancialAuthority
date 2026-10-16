@@ -40,10 +40,14 @@ def paycheck_span(session: Session, today: date) -> dict[str, Any]:
 
 
 def _spent(session: Session, start: date, end: date) -> dict[str, float]:
+    from .edits import by_category, splits_by_tx
+
     out: dict[str, float] = defaultdict(float)
-    for t in session.exec(select(Transaction).where(Transaction.date >= start, Transaction.date <= end, Transaction.amount > 0)).all():
-        if t.is_spending:
-            out[t.category or "Uncategorized"] += float(t.amount)
+    rows = [t for t in session.exec(select(Transaction).where(Transaction.date >= start, Transaction.date <= end, Transaction.amount > 0)).all() if t.is_spending]
+    split = splits_by_tx(session, [t.id for t in rows])
+    for t in rows:
+        for category, amount in by_category(t, split):
+            out[category] += float(amount)
     return out
 
 

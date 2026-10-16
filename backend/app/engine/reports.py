@@ -38,6 +38,9 @@ def spending_summary(session: Session, today: date, *, months: int = 6, by: str 
     starts = months_back(today, months)
     start = starts[0]
     rows = session.exec(select(Transaction).where(Transaction.date >= start, Transaction.date <= today)).all()
+    from .edits import by_category, splits_by_tx
+
+    split = splits_by_tx(session, [t.id for t in rows]) if by == "category" else {}
     per_month: dict[str, dict] = {s.strftime("%Y-%m"): {"month": s.strftime("%Y-%m"), "spent": 0.0, "income": 0.0, "count": 0, "partial": s == starts[-1]} for s in starts}
     groups: dict[str, dict] = defaultdict(lambda: {"total": 0.0, "count": 0, "this_month": 0.0, "months": defaultdict(float)})
     merchants: dict[str, dict] = defaultdict(lambda: {"total": 0.0, "count": 0})
@@ -54,13 +57,14 @@ def spending_summary(session: Session, today: date, *, months: int = 6, by: str 
             continue
         bucket["spent"] += t.amount
         bucket["count"] += 1
-        name = t.category if by == "category" else (t.merchant or t.raw_name or "(unknown)")
-        g = groups[name]
-        g["total"] += t.amount
-        g["count"] += 1
-        g["months"][key] += t.amount
-        if key == this_month:
-            g["this_month"] += t.amount
+        parts = list(by_category(t, split)) if by == "category" else [(t.merchant or t.raw_name or "(unknown)", t.amount)]
+        for name, amount in parts:
+            g = groups[name]
+            g["total"] += amount
+            g["count"] += 1
+            g["months"][key] += amount
+            if key == this_month:
+                g["this_month"] += amount
         m = merchants[t.merchant or t.raw_name or "(unknown)"]
         m["total"] += t.amount
         m["count"] += 1

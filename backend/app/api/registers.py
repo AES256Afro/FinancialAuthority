@@ -310,3 +310,87 @@ def delete_budget(category: str, session: Session = Depends(get_session), _: aut
     session.add(row)
     session.commit()
     return budget_plan(session, today())
+
+
+# ---- the owner's own edits: category, note, tags, splits, many at once, a rule tried first --------------------
+
+
+class TxEditIn(BaseModel):
+    category: str | None = None
+    note: str | None = None
+    tags: list[str] | None = None
+    hidden: bool | None = None
+
+
+@router.patch("/transactions/{tx_id}")
+def edit_transaction(tx_id: int, body: TxEditIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    from ..engine.edits import tags_of, update
+
+    try:
+        t = update(session, tx_id, category=body.category, note=body.note, tags=body.tags, hidden=body.hidden)
+    except KeyError as error:
+        raise HTTPException(404, "No such transaction") from error
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    return {"id": t.id, "category": t.category, "note": t.note, "tags": tags_of(t), "hidden": t.is_ignored}
+
+
+class SplitPart(BaseModel):
+    category: str
+    amount: float
+    note: str = ""
+
+
+class SplitIn(BaseModel):
+    parts: list[SplitPart]
+
+
+@router.put("/transactions/{tx_id}/split")
+def split_transaction(tx_id: int, body: SplitIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    from ..engine.edits import set_splits
+
+    try:
+        parts = set_splits(session, tx_id, [p.model_dump() for p in body.parts])
+    except KeyError as error:
+        raise HTTPException(404, "No such transaction") from error
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    return {"id": tx_id, "parts": [{"category": p.category, "amount": p.amount, "note": p.note} for p in parts]}
+
+
+class BulkIn(BaseModel):
+    ids: list[int]
+    category: str | None = None
+    tags_add: list[str] = []
+    tags_remove: list[str] = []
+    hidden: bool | None = None
+
+
+@router.post("/transactions/bulk")
+def bulk_edit(body: BulkIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
+    from .. import services
+    from ..engine.edits import bulk
+
+    try:
+        changed = bulk(session, body.ids, category=body.category, tags_add=body.tags_add, tags_remove=body.tags_remove, hidden=body.hidden)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    services.audit(session, client=principal.name, client_kind=principal.kind, tool="transactions_bulk", args={"n": len(body.ids), "category": body.category}, rows=changed)
+    return {"changed": changed}
+
+
+class RulePreviewIn(BaseModel):
+    kind: str
+    pattern: str
+    value: str = ""
+    match_field: str = "merchant"
+
+
+@router.post("/ledger/rules/preview")
+def rule_preview(body: RulePreviewIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+    from ..engine.edits import preview_rule
+
+    try:
+        return preview_rule(session, today(), kind=body.kind, pattern=body.pattern, value=body.value, match_field=body.match_field)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error

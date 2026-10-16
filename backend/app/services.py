@@ -33,6 +33,7 @@ def search_transactions(
     max_amount: float | None = None,
     include_non_spending: bool = False,
     limit: int = 50,
+    tag: str | None = None,
 ) -> dict:
     limit = max(1, min(int(limit), 500))
     query = select(Transaction, Account).join(Account, Account.id == Transaction.account_id)
@@ -41,6 +42,9 @@ def search_transactions(
         query = query.where((Transaction.merchant.ilike(like)) | (Transaction.raw_name.ilike(like)) | (Transaction.description.ilike(like)) | (Transaction.note.ilike(like)))
     if category:
         query = query.where(Transaction.category == category)
+    if tag:
+        word = tag.strip().lower()
+        query = query.where((Transaction.tags == word) | Transaction.tags.like(f"{word},%") | Transaction.tags.like(f"%,{word}") | Transaction.tags.like(f"%,{word},%"))
     if account:
         like = f"%{account}%"
         query = query.where((Account.name.ilike(like)) | (Account.institution.ilike(like)))
@@ -55,6 +59,9 @@ def search_transactions(
     if not include_non_spending:
         query = query.where(Transaction.is_transfer == False, Transaction.is_card_payment == False, Transaction.is_income == False, Transaction.is_ignored == False)  # noqa: E712
     rows = session.exec(query.order_by(Transaction.date.desc(), Transaction.id.desc()).limit(limit)).all()
+    from .engine.edits import splits_by_tx
+
+    split = splits_by_tx(session, [t.id for t, _ in rows]) if redaction == "full" else {}
     items = []
     for t, a in rows:
         items.append({
@@ -67,6 +74,11 @@ def search_transactions(
             "institution": a.institution,
             "description": t.description if redaction == "full" else "",
             "note": t.note if redaction == "full" else "",
+            "tags": [x for x in (t.tags or "").split(",") if x] if redaction == "full" else [],
+            "pending": t.pending,
+            "hidden": t.is_ignored,
+            "kind": "transfer" if t.is_transfer else "card payment" if t.is_card_payment else "income" if t.is_income else "spending",
+            "splits": [{"category": s.category, "amount": s.amount, "note": s.note} for s in split.get(t.id, [])],
         })
     return {"returned": len(items), "total_amount": round(sum(i["amount"] for i in items), 2), "transactions": items}
 
