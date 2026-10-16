@@ -97,12 +97,26 @@ def next_steps(session: Session, today: date) -> dict:
     if session.exec(select(Paystub.id)).first() is None:
         steps.append(_step("paystub-none", "info", "No paystub yet: forward a pay statement PDF to the mailbox, or drop it into Imports.", "Paystubs", "/paystubs", "paystubs"))
 
+    from .housing import overview as housing_overview
+
+    housing = housing_overview(session, today)
+    for h in housing["homes"]:
+        n = h["notice"]
+        if n and not n["given_on"] and h["state"] == "current":
+            steps.append(_step(f"home-notice-{h['id']}", "critical" if n["status"] == "crit" else "warning", f"{h['name']}: {n['word']}. Then mark it given on Housing.", "Housing", f"/housing#home-{h['id']}", h["source"]))
+        if h["state"] == "upcoming" and (h["missing"] or h["costs_missing"]):
+            what = ", ".join((h["missing"] + h["costs_missing"])[:4])
+            steps.append(_step(f"home-missing-{h['id']}", "info", f"{h['name']}: no amount yet for {what}. Each one you add is counted in the plan.", "Housing", f"/housing#home-{h['id']}", h["source"]))
+    if not housing["homes"]:
+        for b in housing["rent_bills_to_adopt"][:1]:
+            steps.append(_step(f"home-adopt-{b['id']}", "info", f"Make {b['name']} your home on Housing: its fees, due day, lease end and notice then count too.", "Housing", "/housing", f"bill:{b['id']}"))
+
     pending_approvals = len(session.exec(select(Approval.id).where(Approval.status == "pending")).all())
     if pending_approvals:
         steps.append(_step("approvals", "warning", f"{pending_approvals} send{'s' if pending_approvals != 1 else ''} wait{'s' if pending_approvals == 1 else ''} for your approval; nothing goes out until you tap.", "Approve or deny", "/confirm", "approvals"))
     pending_facts = len(session.exec(select(ExtractedFact.id).where(ExtractedFact.status == "pending")).all())
     if pending_facts:
-        steps.append(_step("facts", "warning", f"{pending_facts} thing{'s' if pending_facts != 1 else ''} from the mail need{'s' if pending_facts == 1 else ''} a look.", "Needs you", "/confirm", "facts"))
+        steps.append(_step("facts", "warning", f"{pending_facts} thing{'s' if pending_facts != 1 else ''} from the mail and your documents need{'s' if pending_facts == 1 else ''} a look.", "Needs you", "/confirm", "facts"))
     unnamed = len(session.exec(select(RecurringSeries.id).where(RecurringSeries.active == True, RecurringSeries.confirmed == False)).all())  # noqa: E712
     if unnamed:
         steps.append(_step("series", "warning", f"{unnamed} recurring charge{'s' if unnamed != 1 else ''} need{'s' if unnamed == 1 else ''} a name.", "Name them", "/confirm", "series"))

@@ -195,6 +195,115 @@ class Bill(SQLModel, table=True):
     series_id: int | None = Field(default=None, foreign_key="recurring_series.id")
     active: bool = True
     created_on: dt.date | None = None  # the day it was added; no payment is looked for before it (None: from before this was kept)
+    starts_on: dt.date | None = None  # the first due date: nothing is due before it (a lease whose first full payment is later)
+    ends_on: dt.date | None = None  # the last day it can come due (a lease that ends, a service stopped at a move)
+    home_id: int | None = Field(default=None, index=True)  # made from a home's charges (Housing); edited there
+    utility_id: int | None = Field(default=None, index=True)  # made from a utility; edited there
+
+
+class Home(SQLModel, table=True):
+    """A place lived in: a lease or a mortgage, with its dates. Its charges make the bills every screen counts."""
+
+    __tablename__ = "homes"
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    kind: str = "rent"  # rent | mortgage | other
+    payee: str = ""  # the landlord, the property, the servicer
+    starts_on: dt.date | None = None  # moving in, or the lease's start
+    ends_on: dt.date | None = None  # moving out, or the lease's end
+    first_due: dt.date | None = None  # the first regular payment (later than the start when the move-in check covers the first weeks)
+    due_day: int = 1
+    grace_days: int = 0
+    late_fee: float = 0.0
+    autopay: bool = False
+    notice_days: int | None = None  # written notice the lease needs before moving out
+    notice_given_on: dt.date | None = None
+    deposit: float = 0.0  # held by the landlord, refundable
+    deposit_back_on: dt.date | None = None  # when the deposit is expected back after moving out
+    pay_from_account_id: int | None = Field(default=None, foreign_key="accounts.id")
+    bill_id: int | None = None  # the bill its charges paid with the rent make
+    note: str = ""
+    active: bool = True
+    created_at: dt.datetime = Field(default_factory=utcnow)
+
+
+class HomeCharge(SQLModel, table=True):
+    """One part of what a home costs each month: the rent itself, pet rent, a fee, escrow, insurance."""
+
+    __tablename__ = "home_charges"
+    id: int | None = Field(default=None, primary_key=True)
+    home_id: int = Field(index=True)
+    name: str
+    kind: str = "fee"  # rent | pet | fee | utility | insurance | principal_interest | escrow | pmi | hoa | parking | other
+    amount: float | None = None  # None: not known yet (shown as missing, not counted)
+    estimate: bool = False
+    pays_to: str = "home"  # home: paid with the rent, in one payment; other: its own bill to someone else
+    payee: str = ""  # for "other": who it is paid to
+    due_day: int | None = None  # for "other": its own due day
+    starts_on: dt.date | None = None
+    ends_on: dt.date | None = None
+    bill_id: int | None = None  # for "other": the bill it makes
+    note: str = ""
+    active: bool = True
+
+
+class HomeCost(SQLModel, table=True):
+    """A one-time cost of getting into a home: a deposit, a fee, the move-in check, the truck. It becomes a one-time
+    bill on its date, so every figure counts it, and the bank's payment of it is matched like any bill."""
+
+    __tablename__ = "home_costs"
+    id: int | None = Field(default=None, primary_key=True)
+    home_id: int = Field(index=True)
+    name: str
+    amount: float | None = None  # None: not known yet (shown as missing, not counted)
+    due_on: dt.date | None = None
+    refundable: bool = False  # a deposit that comes back when you leave
+    parts: str = "[]"  # JSON [{name, amount, refundable}]: what one check is made of, as the property itemised it
+    paid: bool = False  # already paid before the app knew (an application fee): shown, not counted
+    bill_id: int | None = None
+    note: str = ""
+    active: bool = True
+
+
+class Utility(SQLModel, table=True):
+    """A service at a home and where it comes from: who provides it and how it is billed."""
+
+    __tablename__ = "utilities"
+    id: int | None = Field(default=None, primary_key=True)
+    home_id: int | None = Field(default=None, index=True)
+    service: str = "electric"  # electric | water | gas | internet | trash | sewer | phone | other
+    provider: str = ""
+    billed: str = "direct"  # direct | landlord | submetered | included
+    billing_company: str = ""  # who sends the bill when it is submetered
+    account_last4_enc: str = ""
+    amount: float | None = None  # a usual month; None: not known yet
+    estimate: bool = True
+    due_day: int | None = None
+    starts_on: dt.date | None = None
+    ends_on: dt.date | None = None
+    moves_with_you: bool = False  # the same account carries on at the new address
+    bill_id: int | None = None  # the bill it makes when it is billed on its own
+    note: str = ""
+    active: bool = True
+
+
+class Document(SQLModel, table=True):
+    """A file the owner keeps with what it belongs to: a lease with its home, terms with a utility, a receipt with
+    its transaction. The file is stored encrypted; its text is kept (encrypted) for search and for the models."""
+
+    __tablename__ = "documents"
+    id: int | None = Field(default=None, primary_key=True)
+    title: str
+    kind: str = "other"  # lease | addendum | charges | welcome | utility_terms | card_agreement | receipt | statement | paystub | other
+    attach_to: str = Field(default="", index=True)  # home:3, utility:2, bill:5, account:1, transaction:9, or empty
+    filename: str = ""
+    content_type: str = ""
+    size: int = 0
+    sha256: str = Field(default="", index=True)
+    pages_enc: str = ""  # the text, page by page, as JSON, encrypted
+    pages: int = 0
+    note: str = ""
+    uploaded_at: dt.datetime = Field(default_factory=utcnow)
 
 
 class Payment(SQLModel, table=True):

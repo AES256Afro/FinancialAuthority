@@ -331,6 +331,15 @@ def apply_fact(session: Session, fact: ExtractedFact, ref: MessageRef | None, bo
         said_due = fields.get("due_date") or fields.get("pay_date")
         if body.due_date is not None and (not said_due or abs((body.due_date - date.fromisoformat(str(said_due)[:10])).days) > 45):
             raise HTTPException(403, "Only the owner moves a date by more than six weeks from what the message said")
+    if fact.kind == "document_terms":
+        from ..engine.documents import apply_terms
+
+        if not owner:
+            raise HTTPException(403, "Only the owner, signed in, applies the terms a document states")
+        applied = apply_terms(session, fields)
+        if not applied:
+            raise HTTPException(400, "The home this document belongs to is gone")
+        return applied
     if fact.kind == "paystub":
         from ..engine.paystubs import record_paystub
 

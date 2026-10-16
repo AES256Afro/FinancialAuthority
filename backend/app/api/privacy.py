@@ -141,6 +141,10 @@ def erase(body: EraseIn, session: Session = Depends(get_session), principal: aut
             points += 1
         except OSError as error:
             log.warning("could not remove %s: %s", path.name, error)
+    from ..engine.documents import folder as documents_folder
+
+    for path in documents_folder().glob("*.bin"):
+        path.unlink(missing_ok=True)
     bump_version()
     left = ["Your sign-in: this browser's session, your passkeys and the second step."]
     if settings.offbox_dir:
