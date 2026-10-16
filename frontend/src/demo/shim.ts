@@ -94,6 +94,9 @@ async function get(path: string): Promise<Response> {
   }
   if (base === "/api/v1/models/catalog") return json({ models: [], error: "The demo has no model server." });
   if (base.startsWith("/api/v1/mail/messages/")) return json({ detail: "This message is not in the demo." }, 404);
+  // A page asked with other choices than the recorded ones gets the recorded answer for that page.
+  const plain = data.responses[`GET ${base}`];
+  if (plain !== undefined) return json(plain);
   return json({ detail: "Not part of the demo." }, 404);
 }
 

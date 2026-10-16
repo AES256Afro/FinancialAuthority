@@ -52,6 +52,9 @@ GETS = [
     "/api/v1/rules", "/api/v1/push", "/api/v1/reviews?limit=3", "/api/v1/approvals?status=all&limit=30", "/api/v1/goals", "/api/v1/watchlist",
     "/api/v1/bills/suggestions", "/api/v1/debts", "/api/v1/borrowing", "/api/v1/planned", "/api/v1/scenarios", "/api/v1/scenarios/readiness", "/api/v1/accounts/overview", "/api/v1/audit?limit=300", "/api/v1/investments", "/api/v1/ledger/rules", "/api/v1/next_steps", "/api/v1/projections", "/api/v1/cover", "/api/v1/saving", "/api/v1/today", "/api/v1/checkin", "/api/v1/firstrun", "/api/v1/paychecks", "/api/v1/appearance", "/api/v1/exports", "/api/v1/push/reminders", "/api/v1/push/devices", "/api/v1/glance", "/api/v1/calendar/feed", "/api/v1/banks/freshness", "/api/v1/restore-points", "/api/v1/imports/history", "/api/v1/setup/check", "/api/v1/moves", *[f"/api/v1/projections/where?amount={x}&years={y}&scenario={sc}" for x in (25, 50, 75, 100, 150, 200, 300, 500) for y in (5, 10, 20, 25, 30) for sc in ("low", "mid", "high")],
     *[f"/api/v1/reports/spending?months={m}&by={b}" for m in (3, 6, 12, 24) for b in ("category", "merchant")],
+    "/api/auth/factors", "/api/auth/sessions", "/api/v1/accounts", "/api/v1/assets", "/api/v1/budgets", "/api/v1/debts/payoff", "/api/v1/goals/sinking", "/api/v1/ha",
+    "/api/v1/pairs", "/api/v1/privacy", "/api/v1/recap", "/api/v1/reports/custom/saved", "/api/v1/reports/custom/tax", "/api/v1/reports/custom/year?year=2026",
+    "/api/v1/reports/custom?rows=category&period=last_365", "/api/v1/restore-points/offbox", "/api/v1/watch", "/api/v1/housing", "/api/v1/utilities", "/api/v1/documents",
 ]
 
 REVIEW = {"notes": [
@@ -113,6 +116,24 @@ def seed_extras(client: TestClient) -> None:
     roles.set_override("reviewer", scripted)
     client.post("/api/v1/reviews")
     # Keep the override while the screens are recorded, so the reviewer card reads as configured.
+    # A move: the rent bill becomes the home now, its lease ends with notice to give; the next home has its charges,
+    # the costs of getting in, its utilities and its lease as a document. All of it synthetic.
+    rent = next(b for b in client.get("/api/v1/housing").json()["rent_bills_to_adopt"] if b["name"] == "Rent")
+    old = client.post("/api/v1/housing/adopt", json={"bill_id": rent["id"], "name": "Example Court 4"}).json()["homes"][0]
+    client.put(f"/api/v1/housing/{old['id']}", json={"name": "Example Court 4", "payee": old["payee"], "due_day": 1, "ends_on": "2026-11-30", "notice_days": 30, "deposit": 400})
+    new = next(h for h in client.post("/api/v1/housing", json={"name": "Example Flats 12", "payee": "Example Flats", "starts_on": "2026-11-30", "first_due": "2027-01-01", "due_day": 1, "deposit": 300}).json()["homes"] if h["name"] == "Example Flats 12")
+    for charge in ({"name": "Rent", "kind": "rent", "amount": 1350}, {"name": "Pet rent", "kind": "pet", "amount": 25}, {"name": "Trash", "kind": "fee", "amount": 30},
+                   {"name": "Amenity fee", "kind": "fee", "amount": 15}, {"name": "Renter's insurance", "kind": "insurance", "pays_to": "other", "payee": "Example Insurer", "due_day": 5}):
+        client.post(f"/api/v1/housing/{new['id']}/charges", json=charge)
+    parts = [{"name": "Security deposit", "amount": 300, "refundable": True}, {"name": "Pet fee", "amount": 200}, {"name": "December rent", "amount": 1350}, {"name": "December fees", "amount": 70}]
+    client.post(f"/api/v1/housing/{new['id']}/costs", json={"name": "Move-in check", "amount": 1920, "due_on": "2026-11-28", "parts": parts})
+    client.post(f"/api/v1/housing/{new['id']}/costs", json={"name": "Truck and help", "due_on": "2026-11-30"})
+    client.post("/api/v1/utilities", json={"home_id": new["id"], "service": "water", "billed": "submetered", "billing_company": "Example Billing Co", "starts_on": "2027-01-15", "due_day": 1})
+    client.post("/api/v1/utilities", json={"home_id": new["id"], "service": "electric", "provider": "Example Power", "moves_with_you": True})
+    lease = ("RESIDENTIAL LEASE AGREEMENT\nExample Flats, Unit 12\nMonthly rent of $1,350.00 is due on or before the 1st day of each month.\n"
+             "Pet rent $25.00 per month.\nA late fee of $75.00 is charged after the 3rd.\nSecurity deposit: $300.00\n"
+             "Lease ends on November 30, 2027. Resident must give 60 days written notice to vacate.\n")
+    client.post("/api/v1/documents", files={"file": ("lease.txt", lease.encode(), "text/plain")}, data={"title": "Lease", "kind": "lease", "attach_to": f"home:{new['id']}"})
     # A send waiting for approval, from the Bills page's date-move request.
     approvals.notify.send = lambda *a, **k: {"ok": True}  # type: ignore[assignment]
     client.post("/api/v1/approvals", json={"to": "billing@example-lender.test", "subject": "Request to move my billing date to the 13th", "body": "Hello,\n\nI would like to move my billing date from the 28th of each month to the 13th, starting with the next cycle. Please confirm the change and any one-time adjustment to the next bill.\n\nThank you.", "reason": "Car loan: 28th to 13th", "source": "bill:13"})
@@ -128,6 +149,9 @@ def main() -> None:
                 print(f"skip {path}: {r.status_code}", file=sys.stderr)
                 continue
             responses[f"GET {path}"] = r.json()
+        for doc in responses["GET /api/v1/documents"]["documents"]:  # type: ignore[index]
+            for n in range(1, doc["pages"] + 1):
+                responses[f"GET /api/v1/documents/{doc['id']}/pages/{n}"] = client.get(f"/api/v1/documents/{doc['id']}/pages/{n}").json()
         for msg in responses["GET /api/v1/mail/messages?limit=200"]["messages"]:  # type: ignore[index]
             r = client.get(f"/api/v1/mail/messages/{msg['id']}")
             if r.status_code == 200:
