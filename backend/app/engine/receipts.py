@@ -62,11 +62,23 @@ def deadlines(session: Session, today: date, *, within_days: int = 3650) -> list
     return out
 
 
+def _purchase(session: Session, doc: Document) -> dict[str, Any] | None:
+    """The purchase a receipt is kept with, named: store, day, amount, account."""
+    if not doc.attach_to.startswith("transaction:"):
+        return None
+    t = session.get(Transaction, int(doc.attach_to.split(":")[1]))
+    if t is None:
+        return None
+    a = session.get(Account, t.account_id)
+    return {"id": t.id, "merchant": t.merchant, "date": t.date.isoformat(), "amount": t.amount, "account": a.name if a else "", "source": f"transaction:{t.id}"}
+
+
 def receipts_overview(session: Session, today: date) -> dict[str, Any]:
     docs = session.exec(select(Document).where(Document.kind == "receipt").order_by(Document.bought_on.desc(), Document.uploaded_at.desc())).all()
-    unmatched = [receipt_out(d) for d in docs if not d.attach_to.startswith("transaction:")]
+    rows = [{**receipt_out(d), "purchase": _purchase(session, d)} for d in docs]
+    unmatched = [r for r in rows if r["purchase"] is None]
     return {
-        "as_of": today.isoformat(), "deadlines": deadlines(session, today), "receipts": [receipt_out(d) for d in docs], "unmatched": unmatched,
+        "as_of": today.isoformat(), "deadlines": deadlines(session, today), "receipts": rows, "unmatched": unmatched,
         "total": round(sum(d.amount or 0.0 for d in docs), 2), "count": len(docs),
         "not_advice": "What your receipts say about returns and warranties. The store's own terms are what hold.",
     }

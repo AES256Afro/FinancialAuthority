@@ -360,7 +360,10 @@ def documents_by_month(session: Session = Depends(get_session), _: auth.Principa
 
     got = months(session)
     undated = session.exec(select(Document).where(Document.period == "").order_by(Document.uploaded_at.desc())).all()
-    return {"months": got, "undated": [docs.doc_out(d) for d in undated]}
+    kinds: dict[str, int] = {}
+    for d in undated:
+        kinds[d.kind] = kinds.get(d.kind, 0) + 1
+    return {"months": got, "undated": [docs.doc_out(d) for d in undated], "undated_kinds": kinds}
 
 
 @router.get("/receipts")

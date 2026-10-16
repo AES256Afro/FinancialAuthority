@@ -120,6 +120,7 @@ def test_a_receipt_from_mail_waits_then_is_kept_with_its_purchase(owner: TestCli
         assert "Last day to return Example Hardware" in ics and "DTSTART;VALUE=DATE:20261108" in ics and "Warranty ends: Example Hardware" in ics
     receipts = owner.get("/api/v1/receipts").json()
     assert [d["what"] for d in receipts["deadlines"]] == ["return", "warranty"] and receipts["count"] == 1 and receipts["unmatched"] == []
+    assert receipts["receipts"][0]["purchase"] == {"id": tx_id, "merchant": "EXAMPLE HARDWARE 0042", "date": "2026-10-11", "amount": 140.71, "account": "Example Card", "source": f"transaction:{tx_id}"}
 
 
 def test_a_receipt_handed_over_by_hand_is_kept_and_can_move(owner: TestClient):

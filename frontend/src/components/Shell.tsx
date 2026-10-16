@@ -1,7 +1,7 @@
 // The app shell: a rail on wide screens, tabs on a phone, and the header with the payday chip. A second person who
 // sees the shared accounts only gets a shell of their own: Shared money, their sign-in, and Sign out; nothing here
 // asks the server for what that sign-in cannot reach.
-import { ArrowLeftRight, BarChart3, BellDot, BookOpen, Clock, Download, Eye, EyeOff, FileText, Gauge, History, Home, KeyRound, Landmark, LayoutGrid, List, LogOut, Mail, MessageSquare, Mountain, PieChart, PiggyBank, Receipt, Repeat, Settings, Telescope, TrendingUp, Truck, UserRound, Wallet, Waves, type LucideIcon } from "lucide-react";
+import { ArrowLeftRight, BarChart3, BellDot, BookOpen, Clock, Download, Eye, EyeOff, FileText, FolderOpen, Gauge, History, Home, KeyRound, Landmark, LayoutGrid, List, LogOut, Mail, MessageSquare, Mountain, PieChart, PiggyBank, Receipt, Repeat, Settings, Telescope, TrendingUp, Truck, UserRound, Wallet, Waves, type LucideIcon } from "lucide-react";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { api, useApi } from "../api";
@@ -45,6 +45,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: "/investments", label: "Investing", icon: TrendingUp, group: "records", phone: false, hint: "Holdings in your investment accounts." },
   { to: "/transactions", label: "Transactions", icon: List, group: "records", phone: false, hint: "Search everything that went in or out." },
   { to: "/paystubs", label: "Paystubs", icon: FileText, group: "records", phone: false, hint: "Your paycheck, gross to net, and each stub." },
+  { to: "/documents", label: "Documents", icon: FolderOpen, group: "records", phone: false, hint: "Receipts, statements, paystubs and your lease, by month, with return and warranty dates." },
   { to: "/mail", label: "Mail", icon: Mail, group: "records", phone: false, hint: "Messages from banks and billers, and what the app took from them." },
   { to: "/reports", label: "Reports", icon: BarChart3, group: "records", phone: false, hint: "Spending by month and by merchant." },
   { to: "/exports", label: "Exports", icon: Download, group: "records", phone: false, hint: "Your data as files, and the calendar feed." },

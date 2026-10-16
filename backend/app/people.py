@@ -32,6 +32,11 @@ ROLES = {
     "everything": "Sees and does what you do, except adding people, erasing everything, restoring a backup, connecting apps, and approving your sends.",
     "shared": "Sees only the accounts you mark shared (and their own), on one page: balances, bills paid from them, recent spending.",
 }
+# The same roles in the words the person reads when they join.
+ROLES_FOR_THEM = {
+    "everything": "You see and do what {owner} does, except adding people, erasing everything, restoring a backup, connecting apps, and approving {owner}'s sends.",
+    "shared": "You see the accounts {owner} marks shared, and your own, on one page: balances, the bills paid from them, recent spending.",
+}
 INVITE_HOURS = 72
 MIN_PASSWORD = 12
 USERNAME = re.compile(r"^[a-z0-9][a-z0-9._-]{1,31}$")

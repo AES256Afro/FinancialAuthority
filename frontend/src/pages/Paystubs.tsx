@@ -1,23 +1,26 @@
 // Paystubs: the latest stub as one bar from gross to net, the last stubs as a strip, and every line with the deposit it matched.
+// A stub the app kept the file of has the PDF one tap away, and its text to read.
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { TriangleAlert } from "lucide-react";
+import { BookOpen, Download, TriangleAlert } from "lucide-react";
 import { useApi } from "../api";
 import { money, monthDay, shortDate } from "../format";
+import { Reader } from "../components/Documents";
 import { PaycheckSetup } from "../components/PaycheckSetup";
 import { Failed, Loading } from "../components/State";
 import { StatusPill } from "../components/Status";
 import { palette } from "../looks";
 import { inkOn } from "../paychecks";
 import { getPrefs } from "../prefs";
-import type { PaystubRow } from "../types";
+import type { PaystubWithFile } from "../types-receipts";
 import { Where } from "../components/Where";
 
 
 export function Paystubs() {
   const c = palette(getPrefs().look);
-  const { data, error, reload } = useApi<{ recent: PaystubRow[]; last: PaystubRow | null; short: PaystubRow[] }>("/api/v1/paystubs");
+  const { data, error, reload } = useApi<{ recent: PaystubWithFile[]; last: PaystubWithFile | null; short: PaystubWithFile[] }>("/api/v1/paystubs");
   const [pick, setPick] = useState<number | null>(null);
+  const [reading, setReading] = useState<{ id: number; page: number } | null>(null);
   const { hash } = useLocation();
   // The header's "Add your paycheck" link lands on the form once the page has loaded.
   useEffect(() => {
@@ -45,7 +48,8 @@ export function Paystubs() {
   const strip = [...data.recent].sort((a, b) => a.pay_date.localeCompare(b.pay_date)).slice(-6);
   const maxNet = Math.max(1, ...strip.map((p) => p.net));
   const pct = stub.net_share !== null ? Math.round(stub.net_share * 1000) / 10 : 0;
-  const isShort = (p: PaystubRow) => Boolean(p.verdict?.short);
+  const isShort = (p: PaystubWithFile) => Boolean(p.verdict?.short);
+  const file = stub.document_id ?? null;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 16 }}>
@@ -61,6 +65,20 @@ export function Paystubs() {
           </StatusPill>
         )}
       </div>
+      {file !== null && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <a className="btn" href={`/api/v1/documents/${file}/file`} download style={{ minHeight: 32, padding: "4px 12px", display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none" }}>
+              <Download size={14} aria-hidden="true" />The PDF
+            </a>
+            <button type="button" className={reading?.id === file ? "btn dark" : "btn"} aria-expanded={reading?.id === file} onClick={() => setReading(reading?.id === file ? null : { id: file, page: 1 })} style={{ minHeight: 32, padding: "4px 12px", display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <BookOpen size={14} aria-hidden="true" />{reading?.id === file ? "Close the text" : "Read it"}
+            </button>
+            <span style={{ fontSize: 12, color: "var(--ink-2)" }}>The {shortDate(stub.pay_date)} stub as the app kept it.</span>
+          </div>
+          {reading && reading.id === file && <Reader open={reading} onMove={(page) => setReading({ id: file, page })} onClose={() => setReading(null)} />}
+        </div>
+      )}
 
       <PaycheckSetup />
 
