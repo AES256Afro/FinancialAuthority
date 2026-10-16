@@ -244,9 +244,9 @@ export function Appearance() {
             <input className="input" value={name} maxLength={40} placeholder="FinancialAuthority" onChange={(e) => setName(e.target.value)} />
           </label>
           <button type="button" className="btn dark" onClick={() => save({ brand: { ...ap.brand, name: name.trim() } }, "Name kept.")}>Keep the name</button>
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", minWidth: 0 }}>
             {ap.brand.mark ? <img src={ap.brand.mark} alt="Your mark" width={40} height={40} style={{ objectFit: "contain", borderRadius: 8, background: "var(--surface-2)" }} /> : <span style={{ fontSize: 12, color: "var(--muted)" }}>No mark yet</span>}
-            <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" aria-label="Upload a mark" onChange={async (e) => {
+            <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" aria-label="Upload a mark" style={{ maxWidth: "100%" }} onChange={async (e) => {
               const f = e.target.files?.[0];
               if (!f) return;
               if (f.size > 300_000) { setNote("The mark is larger than 300 KB; use a smaller image."); return; }

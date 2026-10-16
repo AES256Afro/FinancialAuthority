@@ -143,7 +143,7 @@ export function FileImport({ onDone }: { onDone: (summary: string) => void }) {
             </table>
           )}
           {preview.kind !== "bills" && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px, 100%), 1fr))", gap: 8 }}>
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Into</span>
               <select className="input" value={into} onChange={(e) => setInto(e.target.value)}>
                 <option value="new">A new account, or the one with this name</option>

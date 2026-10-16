@@ -102,7 +102,7 @@ function RoleCard({ role, conf, providers, defaults, onSaved }: { role: string; 
         <strong style={{ fontSize: 15 }}>{ROLE_TEXT[role].title}</strong>
         <div style={{ fontSize: 13, color: "var(--ink-2)", marginTop: 2 }}>{ROLE_TEXT[role].text}</div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(180px, 100%), 1fr))", gap: 10 }}>
         <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <span className="lab">Provider</span>
           <select className="input" value={form.provider} onChange={(e) => pickProvider(e.target.value)}>

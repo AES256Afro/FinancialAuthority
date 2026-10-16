@@ -151,7 +151,7 @@ export function Debts() {
           </section>
 
           {(data.order.avalanche.length > 0 || data.order.snowball.length > 0) && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", gap: 14 }}>
               <section className="card" style={{ padding: 14 }}>
                 <strong>Highest rate first</strong>
                 <div style={{ fontSize: 12, color: "var(--ink-2)", marginBottom: 6 }}>Pays the least interest over time.</div>

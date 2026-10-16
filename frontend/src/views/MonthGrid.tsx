@@ -38,7 +38,7 @@ export function MonthGrid({ snapshot }: ViewProps) {
         </div>
       </div>
       <section style={{ overflowX: "auto" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(120px, 1fr)) 110px", gap: 4, minWidth: 960 }} aria-label="Calendar with paydays and bills">
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(min(120px, 100%), 1fr)) 110px", gap: 4, minWidth: 960 }} aria-label="Calendar with paydays and bills">
           {DOW.map((d) => <div key={d} className="lab" style={{ padding: "0 6px 4px" }}>{d}</div>)}
           <div className="lab" style={{ padding: "0 6px 4px" }}>Week low</div>
           {weeks.map((w) => {

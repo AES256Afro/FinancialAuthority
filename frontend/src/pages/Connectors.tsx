@@ -83,7 +83,7 @@ function MailboxForm({ presets, bridge, onSaved }: { presets: Record<string, Pre
       <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{presets[kind]?.help}</div>
       {kind === "gmail" && <Where id="gmail_app_password" />}
       {kind === "proton" && <BridgeGuide info={bridge} onDesktop={(h, p) => { setHost(h); setPort(p); }} />}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(180px, 100%), 1fr))", gap: 8 }}>
         <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Name</span><input className="input" value={label} onChange={(e) => setLabel(e.target.value)} /></label>
         <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">IMAP host</span><input className="input" value={host} onChange={(e) => setHost(e.target.value)} required /></label>
         <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Port</span><input className="input num" value={port} onChange={(e) => setPort(e.target.value)} inputMode="numeric" /></label>

@@ -200,7 +200,7 @@ function WhereToPut({ retireIn }: { retireIn: number | null }) {
                 : <>Your {data.basis.kind === "gross" ? "gross" : "take-home"} pay on file is {money(data.basis.per_paycheck, { cents: true })} a paycheck ({data.basis.note}), {data.paychecks_per_year ?? 24} paychecks a year{data.basis.kind === "gross" ? `; ${money(data.take_home_per_paycheck)} of take-home for the after-tax places` : ""}.</>}
             </div>
           )}
-          <style>{`.where-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 10px; align-items: start; } @media (max-width: 640px) { .where-row { grid-template-columns: 28px minmax(0, 1fr); } .where-row > a { grid-column: 2; justify-self: start; } }`}</style>
+          <style>{`.where-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 10px; align-items: start; } @media (max-width: 640px) { .where-row { grid-template-columns: 28px minmax(0, 1fr); } .where-row > a { grid-column: 2; justify-self: start; max-width: 100%; } }`}</style>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {data.options.map((o) => (
               <div key={o.id} className="where-row" style={{ borderTop: "1px solid var(--surface-2)", paddingTop: 8 }}>
@@ -220,12 +220,12 @@ function WhereToPut({ retireIn }: { retireIn: number | null }) {
                     kept after tax, of {money(o.value)} · reachable {o.reachable} · {o.tax}{o.note ? ` · ${o.note}` : ""}
                   </div>
                 </div>
-                <Link to={o.link} className="btn" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", minHeight: 34, padding: "4px 10px", fontSize: 12, whiteSpace: "nowrap" }}>{o.action} →</Link>
+                <Link to={o.link} className="btn" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", minHeight: 34, padding: "4px 10px", fontSize: 12, maxWidth: "100%" }}>{o.action} →</Link>
               </div>
             ))}
           </div>
           {(data.milestone_years?.length ?? 0) > 1 && (
-            <div style={{ overflowX: "auto" }}>
+            <div style={{ overflowX: "auto", minWidth: 0, maxWidth: "100%" }}>
               <table className="ledger" style={{ fontSize: 12 }}>
                 <thead><tr><th>Kept after tax</th>{(data.milestone_years ?? []).map((y) => <th key={y} style={{ textAlign: "right" }}>after {y} {y === 1 ? "year" : "years"}</th>)}</tr></thead>
                 <tbody>

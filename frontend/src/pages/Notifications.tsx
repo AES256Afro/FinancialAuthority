@@ -57,7 +57,7 @@ export function Notifications() {
       <p style={{ margin: 0, color: "var(--ink-2)" }}>The morning brief and your reminders, in the engine's own sentences. The app can send them itself to this device, or through ntfy or Gotify below. Nothing is sent to anyone but you; the app never emails anyone without your approval.</p>
       {error && <div style={{ color: "var(--critical)" }}>{error.message}</div>}
       <section className="card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(180px, 100%), 1fr))", gap: 10 }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <span className="lab">Service</span>
             <select className="input" value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
