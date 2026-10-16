@@ -198,7 +198,8 @@ The owner is moving the banking to a credit union over a few months, the card la
 - ✅ **M17.4 The ledger confirms.** A charge or a deposit on the new account confirms a switch; one still landing on the old account after a switch is an alert. A job reads the ledger every six hours and finds anything new on the old account. Alerts reach the one thing today and the reminders.
 - ✅ **M17.5 Close out.** The old account can close once everything that moved is confirmed and nothing has landed on it for 45 days.
 - ☐ **M17.6 The card.** When the credit union's card arrives, a second move from the old card to the new one: the same page, the card as the source.
-- ☐ **M17.7 Real move, by the owner.** Houston FCU added to the app (linked through Plaid, or by hand); the direct deposit form to payroll; each switch tapped as it is made.
+- ✅ **M17.6a What the first real move taught.** An advance left behind still repays from the old account, so its repayment stays in the money table. Card payments switch around the days the plan pays them, not the due date. A wallet (PayPal and the like) is one item, and ATM cash is not a transfer to switch. When the old account is charged within three days of the first paycheck landing in the new one, too soon for a transfer, the plan asks for a payroll split and says how much.
+- ☐ **M17.7 Real move, by the owner.** The credit union added to the app (linked through Plaid, or by hand); the direct deposit form to payroll; each switch tapped as it is made. The move itself is started; specifics are in `docs/INVENTORY.local.md`.
 
 **Done when:** the old checking account closes with every item confirmed on the new one, no payment late, and no window short.
 
