@@ -7,11 +7,12 @@ quarterly, yearly). Pure functions over plain dicts so the tests need no databas
 from __future__ import annotations
 
 import re
+import calendar
 import statistics
 from collections import Counter, defaultdict
 from datetime import date, timedelta
 
-from .cadence import is_semimonthly, next_paydays
+from .cadence import _add_months, next_paydays, semimonthly_days_of
 
 CADENCES = [  # (name, min_days, max_days, charges_per_year)
     ("weekly", 6, 8, 52),
@@ -79,6 +80,7 @@ def detect(rows: list[dict], as_of: date, lookback_days: int = 400, include_inac
                 buckets[round(r["amount"])].append(r)
             series = list(buckets.values())
         for s in series:
+            s = sorted(s, key=lambda r: r["date"])  # an export may list the newest first; the latest is by date
             dates = sorted({r["date"] for r in s})
             amounts = [r["amount"] for r in s]
             if not _consistent(amounts):
@@ -98,9 +100,20 @@ def detect(rows: list[dict], as_of: date, lookback_days: int = 400, include_inac
                 continue
             typical = statistics.median(amounts)
             next_expected = dates[-1] + timedelta(days=round(med_gap))
-            if name == "biweekly" and is_semimonthly(dates):
-                name, per_year = "semimonthly", 24
-                next_expected = next_paydays(dates[-1], "semimonthly", 2)[1]
+            pay_days = ""
+            if name in ("monthly", "quarterly", "yearly"):
+                # a calendar month is not a fixed number of days: step by months and keep the usual day of the
+                # last three (a weekend-shifted charge does not move it; a tie goes to the latest)
+                recent = [d.day for d in dates[-3:]]
+                counts = Counter(recent)
+                usual_day = next(day for day in reversed(recent) if counts[day] == max(counts.values()))
+                stepped = _add_months(dates[-1], {"monthly": 1, "quarterly": 3, "yearly": 12}[name])
+                next_expected = stepped.replace(day=min(usual_day, calendar.monthrange(stepped.year, stepped.month)[1]))
+            if name == "biweekly":
+                days = semimonthly_days_of(dates)
+                if days is not None:
+                    name, per_year, pay_days = "semimonthly", 24, days
+                    next_expected = next_paydays(dates[-1], "semimonthly", 2, days)[1]
             active = (as_of - dates[-1]).days <= med_gap * 1.5
             if not active and not include_inactive:
                 continue
@@ -120,6 +133,7 @@ def detect(rows: list[dict], as_of: date, lookback_days: int = 400, include_inac
                 "next_expected": next_expected,
                 "active": active,
                 "kind": "income" if income else "unknown",
+                "pay_days": pay_days,
             })
     found.sort(key=lambda f: f["yearly_cost"], reverse=True)
     return found

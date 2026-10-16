@@ -20,13 +20,15 @@ from .banks import record_balance, upsert_holding
 from .base import SyncResult
 
 DATE_KEYS = ("date", "transaction date", "posted date", "post date", "trade date", "settlement date", "run date", "posting date", "effective date")
+POSTED_KEYS = ("posted date", "post date", "posting date", "settlement date")
 AMOUNT_KEYS = ("amount", "transaction amount", "amount (usd)", "net amount", "amount ($)")
 DEBIT_KEYS = ("debit", "withdrawal", "withdrawals", "money out", "outflow", "charge", "debit amount")
 CREDIT_KEYS = ("credit", "deposit", "deposits", "money in", "inflow", "credit amount")
 DESC_KEYS = ("description", "merchant", "name", "payee", "memo", "details", "transaction description", "investment name", "narrative", "transaction")
 CATEGORY_KEYS = ("category", "transaction type", "type")
 ACCOUNT_KEYS = ("account", "account name", "account number", "account id")
-INFLOW_WORDS = re.compile(r"deposit|payroll|direct dep|salary|interest|refund|transfer in|paycheck", re.IGNORECASE)
+INFLOW_WORDS = re.compile(r"deposit|payroll|direct dep|salary|interest|refund|transfer in|paycheck|payment thank you|payment received|autopay payment|online payment", re.IGNORECASE)
+PAY_WORDS = re.compile(r"payroll|direct dep|salary|paycheck|wages", re.IGNORECASE)  # income; a refund or a transfer in is not
 
 HOLDING_SYMBOL = ("symbol", "ticker", "fund symbol")
 HOLDING_NAME = ("investment name", "description", "name", "security", "security name", "fund name", "holding")
@@ -103,6 +105,8 @@ def sniff_csv(text: str) -> dict[str, Any]:
     }
     if mapping["amount"] and mapping["amount"] in (mapping["debit"], mapping["credit"]):
         mapping["debit"] = mapping["credit"] = None
+    posted = _pick(columns, POSTED_KEYS)
+    mapping["posted"] = posted if posted and posted != mapping["date"] else None
     rows = list(reader)
     sign = "bank"
     if mapping["amount"] and not (mapping["debit"] and mapping["credit"]):
@@ -131,6 +135,7 @@ def to_row(raw: dict, mapping: dict, sign: str) -> dict | None:
     return {
         "date": when, "amount": round(amount, 2), "description": description, "merchant": re.sub(r"\s+", " ", description)[:80],
         "category": str(raw.get(mapping.get("category") or "", "") or "").strip() or "Uncategorized", "account": str(raw.get(mapping.get("account") or "", "") or "").strip(), "fitid": "",
+        "posted": parse_date(raw.get(mapping.get("posted") or "", "")) if mapping.get("posted") else None,
     }
 
 
@@ -187,7 +192,8 @@ def parse_ofx(text: str) -> dict[str, Any]:
         name = (t.get("NAME") or t.get("MEMO") or t.get("TRNTYPE") or "").strip()
         memo = (t.get("MEMO") or "").strip()
         description = f"{name} {memo}".strip() if memo and memo != name else name
-        rows.append({"date": when, "amount": round(-amount, 2), "description": description, "merchant": name[:80], "category": "Uncategorized", "account": "", "fitid": t.get("FITID", "")})
+        rows.append({"date": when, "amount": round(-amount, 2), "description": description, "merchant": name[:80], "category": "Uncategorized", "account": "", "fitid": t.get("FITID", ""),
+                     "posted": parse_date((t.get("DTPOSTED") or "")[:8])})
     securities = {}
     for s in _ofx_blocks(upper, "SECINFO"):
         securities[s.get("UNIQUEID", "")] = {"name": s.get("SECNAME", ""), "ticker": s.get("TICKER", "")}
@@ -265,13 +271,21 @@ def import_rows(session: Session, rows: list[dict], *, source_file: str, account
     within one file is a real repeat purchase. The import is logged with a restore point, so it can be undone."""
     from .. import importlog
 
-    batch = importlog.begin(session, "file", source_file, via)
     account, created = _target_account(session, account_id=account_id, account_name=account_name, account_number=account_number, institution=institution, kind=kind)
+    batch = importlog.begin(session, "file", source_file, via)
     existing = set(session.exec(select(Transaction.row_hash)).all())
     # What the account already holds, by amount; each row can stand for one row of the file, once.
     held: dict[str, list[list]] = {}
+    # Only what falls inside the file's own dates can be the same row: a purchase the day after the statement ends
+    # is a different purchase, however alike.
+    # A row's day may be when it was bought or when it posted; both count, on either side.
+    file_days = [d for r in rows for d in (r["date"], r.get("posted")) if d]
+    span = (min(file_days), max(file_days)) if file_days else None
     for t in session.exec(select(Transaction).where(Transaction.account_id == account.id)).all():
-        held.setdefault(f"{t.amount:.2f}", []).append([t.date, _words(f"{t.merchant} {t.raw_name} {t.description}"), False])
+        days = {d for d in (t.date, t.posted_date) if d}
+        if span is None or not any(span[0] <= d <= span[1] for d in days):
+            continue
+        held.setdefault(f"{t.amount:.2f}", []).append([days, _words(f"{t.merchant} {t.raw_name} {t.description}"), False])
     rules = rules_for(session)
     inserted = duplicates = merged = 0
     seen: dict[str, int] = {}
@@ -285,13 +299,18 @@ def import_rows(session: Session, rows: list[dict], *, source_file: str, account
             duplicates += 1
             continue
         words = _words(f"{r['merchant']} {r['description']}")
-        near = [x for x in held.get(f"{r['amount']:.2f}", []) if not x[2] and abs((x[0] - r["date"]).days) <= MERGE_DAYS and (x[0] == r["date"] or words & x[1])]
+        mine = {d for d in (r["date"], r.get("posted")) if d}
+
+        def gap(x: list) -> int:
+            return min(abs((a - b).days) for a in x[0] for b in mine)
+
+        near = [x for x in held.get(f"{r['amount']:.2f}", []) if not x[2] and gap(x) <= MERGE_DAYS and (gap(x) == 0 or words & x[1])]
         if near:
-            twin = min(near, key=lambda x: (0 if words & x[1] else 1, abs((x[0] - r["date"]).days)))
+            twin = min(near, key=lambda x: (gap(x), 0 if words & x[1] else 1))
             twin[2] = True
             merged += 1
             continue
-        t = Transaction(account_id=account.id, date=r["date"], posted_date=r["date"], merchant=r["merchant"], raw_name=r["description"], description=r["description"], amount=r["amount"], category=r["category"], is_income=r["amount"] < 0 and bool(INFLOW_WORDS.search(r["description"])), source="file", source_ref=source_file, row_hash=h, import_id=batch.id)
+        t = Transaction(account_id=account.id, date=r["date"], posted_date=r.get("posted") or r["date"], merchant=r["merchant"], raw_name=r["description"], description=r["description"], amount=r["amount"], category=r["category"], is_income=r["amount"] < 0 and bool(PAY_WORDS.search(r["description"])), source="file", source_ref=source_file, row_hash=h, import_id=batch.id)
         apply_rules(rules, t)
         session.add(t)
         existing.add(h)

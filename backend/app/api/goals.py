@@ -36,7 +36,7 @@ class FundIn(BaseModel):
 
 def _plan(session: Session) -> dict:
     snap = finance_snapshot(session, today())
-    return {**goals_plan(session, today(), date.fromisoformat(snap["next_paycheck"]["date"])), "safe_to_spend": snap["safe_to_spend"]}
+    return {**goals_plan(session, today(), date.fromisoformat(snap["next_paycheck"]["date"]), snap["next_paycheck"].get("cadence") or "biweekly"), "safe_to_spend": snap["safe_to_spend"]}
 
 
 @router.get("")

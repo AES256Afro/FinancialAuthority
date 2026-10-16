@@ -220,6 +220,7 @@ class IncomeIn(BaseModel):
     expected_net_end: float | None = None
     next_date: date | None = None
     active: bool | None = None
+    pay_days: str | None = None
 
 
 @router.put("/incomes/{income_id}")
@@ -227,6 +228,10 @@ def update_income(income_id: int, body: IncomeIn, session: Session = Depends(get
     income = session.get(Income, income_id)
     if income is None:
         raise HTTPException(404, "No such income")
+    from ..engine.cadence import PAY_DAYS
+
+    if body.pay_days is not None and body.pay_days not in PAY_DAYS:
+        raise HTTPException(400, 'pay_days is "" (the 15th and the last day) or "1,15" (the 1st and the 15th)')
     for field, value in body.model_dump(exclude_unset=True).items():
         if value is not None:
             setattr(income, field, value)

@@ -73,8 +73,9 @@ def month_label(today: date, offset: int) -> str:
 def savings_outlook(session: Session, today: date, a: dict, per_year: int) -> dict:
     accounts = session.exec(select(Account).where(Account.active == True, Account.kind == "savings")).all()  # noqa: E712
     now = sum((x.balance or 0.0) for x in accounts)
+    cadence = {52: "weekly", 26: "biweekly", 24: "semimonthly", 12: "monthly"}.get(int(per_year), "biweekly")
     snap_next_payday = today + timedelta(days=14)
-    goals = goals_plan(session, today, snap_next_payday)
+    goals = goals_plan(session, today, snap_next_payday, cadence)
     goal_pace = sum(g["per_paycheck"] for g in goals["items"] if g["kind"] == "save")
     per_paycheck = goal_pace + float(a.get("extra_savings_per_paycheck") or 0.0)
     per_month = per_paycheck * per_year / 12.0

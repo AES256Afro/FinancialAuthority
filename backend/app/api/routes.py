@@ -104,7 +104,9 @@ def search_transactions(
 
 @router.get("/check")
 def check_purchase(amount: float, on: str | None = None, installments: int | None = None, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
-    if amount < 0 or amount > 1_000_000:
+    import math
+
+    if not math.isfinite(amount) or amount < 0 or amount > 1_000_000:
         raise HTTPException(400, "amount must be between 0 and a million")
     if installments is not None and not 1 <= installments <= 24:
         raise HTTPException(400, "installments must be between 1 and 24")

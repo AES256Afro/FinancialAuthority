@@ -30,6 +30,7 @@ def run_detection(session: Session, today: date, lookback_days: int = 400) -> di
     incomes = list(session.exec(select(Income).where(Income.active == True)).all())  # noqa: E712
     plans = list(session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all())  # noqa: E712
     created = updated = linked = 0
+    seen_ids: set[int] = set()
     for f in found:
         key = _series_key(f)
         series = existing.get(key)
@@ -44,6 +45,7 @@ def run_detection(session: Session, today: date, lookback_days: int = 400) -> di
                 for inc in incomes:
                     if inc.series_id == series.id:
                         inc.cadence = f["cadence"]
+                        inc.pay_days = f.get("pay_days", "")
                         if f["next_expected"] >= today:
                             inc.next_date = f["next_expected"]
                         session.add(inc)
@@ -65,6 +67,7 @@ def run_detection(session: Session, today: date, lookback_days: int = 400) -> di
                 series.suggested_kind = f.get("suggested_kind", "")
             session.add(series)
             updated += 1
+        seen_ids.add(series.id)
         if not series.confirmed:
             bill = bills.get(series.merchant_key) or bills.get(series.merchant.lower())
             if bill is not None and f["kind"] != "income":
@@ -87,10 +90,19 @@ def run_detection(session: Session, today: date, lookback_days: int = 400) -> di
                     if series.merchant_key == name or series.merchant_key.startswith(name):
                         series.confirmed = True
                         inc.series_id = series.id
+                        if f["cadence"] == "semimonthly" and inc.cadence == "semimonthly":
+                            inc.pay_days = f.get("pay_days", "")
                         inc.next_date = max(inc.next_date, series.next_expected) if inc.next_date < today else inc.next_date
                         session.add_all([series, inc])
                         linked += 1
                         break
+    # A stream nobody confirmed and the ledger no longer shows (its rows were undone or removed) stops counting.
+    retired = 0
+    for series in existing.values():
+        if series.id not in seen_ids and not series.confirmed and series.active:
+            series.active = False
+            session.add(series)
+            retired += 1
     from ..engine.cadence import next_unpaid_payday
 
     for inc in incomes:
@@ -100,7 +112,10 @@ def run_detection(session: Session, today: date, lookback_days: int = 400) -> di
             session.add(inc)
     session.commit()
     filled = fill_paying_accounts(session)
-    return {"found": len(found), "created": created, "updated": updated, "linked": linked, "paying_accounts_filled": filled}
+    from ..engine.planned import settle_planned
+
+    settled = settle_planned(session, today)  # a plan whose payment just arrived stops counting now, not when a page opens
+    return {"found": len(found), "created": created, "updated": updated, "linked": linked, "retired": retired, "paying_accounts_filled": filled, "planned_settled": settled}
 
 
 def account_for_series(session: Session, series: RecurringSeries) -> int | None:

@@ -1,6 +1,9 @@
 """Pay cadences as dates. Weekly and biweekly step by days; monthly keeps the day; semi-monthly pays on the
-15th and the last day of the month, moved to the business day before when either falls on a weekend. Pure
-functions, so the detector, the snapshot and the decisions agree on every payday."""
+15th and the last day of the month, or on the 1st and the 15th, moved to the business day before when either
+falls on a weekend. Pure functions, so the detector, the snapshot and the decisions agree on every payday.
+
+Which semi-monthly days apply is the paycheck's (`Income.pay_days`); next_unpaid_payday sets them for the
+calculation that follows, since every plan starts from it."""
 
 from __future__ import annotations
 
@@ -8,7 +11,14 @@ import calendar
 from datetime import date, timedelta
 
 PAYCHECKS_PER_YEAR = {"weekly": 52, "biweekly": 26, "semimonthly": 24, "monthly": 12, "quarterly": 4, "yearly": 1}
-CADENCE_WORDS = {"weekly": "every week", "biweekly": "every two weeks", "semimonthly": "twice a month, the 15th and the last day", "monthly": "monthly", "quarterly": "quarterly", "yearly": "yearly"}
+CADENCE_WORDS = {"weekly": "every week", "biweekly": "every two weeks", "semimonthly": "twice a month", "monthly": "monthly", "quarterly": "quarterly", "yearly": "yearly"}
+PAY_DAYS = {"": "the 15th and the last day", "1,15": "the 1st and the 15th"}
+_pay_days = [""]
+
+
+def use_pay_days(pay_days: str | None) -> None:
+    """The semi-monthly days for what follows: "" is the 15th and the last day, "1,15" the 1st and the 15th."""
+    _pay_days[0] = pay_days if pay_days in PAY_DAYS else ""
 
 
 def month_end(d: date) -> date:
@@ -21,9 +31,13 @@ def business_day_on_or_before(d: date) -> date:
     return d
 
 
-def semimonthly_anchors(year: int, month: int) -> tuple[date, date]:
-    """The two paydays of a month: the 15th and the last day, each moved before a weekend."""
+def semimonthly_anchors(year: int, month: int, pay_days: str | None = None) -> tuple[date, date]:
+    """The two paydays of a month as (mid, turn of the month), each moved before a weekend: the 15th and the
+    last day, or the 15th and the 1st (which may move back into the month before)."""
+    days = _pay_days[0] if pay_days is None else pay_days
     mid = business_day_on_or_before(date(year, month, 15))
+    if days == "1,15":
+        return mid, business_day_on_or_before(date(year, month, 1))
     end = business_day_on_or_before(month_end(date(year, month, 1)))
     return mid, end
 
@@ -46,15 +60,23 @@ def payday_position(d: date) -> str:
     return "mid" if 8 <= d.day <= 22 else "end"
 
 
-def is_semimonthly(dates: list[date]) -> bool:
-    """Whether every date sits within two days of a 15th-or-month-end payday, which a biweekly run drifts off."""
+def is_semimonthly(dates: list[date], pay_days: str | None = None) -> bool:
+    """Whether every date sits within two days of a semi-monthly payday, which a biweekly run drifts off."""
     if len(dates) < 4:
         return False
     for d in dates:
-        anchors = [a for y, m in _months_around(d) for a in semimonthly_anchors(y, m)]
+        anchors = [a for y, m in _months_around(d) for a in semimonthly_anchors(y, m, pay_days)]
         if min(abs((d - a).days) for a in anchors) > 2:
             return False
     return True
+
+
+def semimonthly_days_of(dates: list[date]) -> str | None:
+    """Which semi-monthly days a run of paydays keeps: "" (15th and last), "1,15", or None for neither."""
+    for days in ("", "1,15"):
+        if is_semimonthly(dates, days):
+            return days
+    return None
 
 
 def _add_months(d: date, n: int) -> date:
@@ -64,14 +86,14 @@ def _add_months(d: date, n: int) -> date:
     return date(year, month, min(d.day, calendar.monthrange(year, month)[1]))
 
 
-def next_paydays(first: date, cadence: str, count: int) -> list[date]:
+def next_paydays(first: date, cadence: str, count: int, pay_days: str | None = None) -> list[date]:
     """`count` paydays starting with `first`, by cadence. Semi-monthly walks the anchors after `first`; the
     others step from it."""
     out = [first]
     if cadence == "semimonthly":
         year, month = first.year, first.month
         while len(out) < count:
-            for anchor in semimonthly_anchors(year, month):
+            for anchor in sorted(semimonthly_anchors(year, month, pay_days)):
                 if anchor > out[-1] and len(out) < count:
                     out.append(anchor)
             month += 1
@@ -98,6 +120,14 @@ def payday_for(due: date, which: str) -> date:
     return max(before) if before else min(candidates)
 
 
+def paydays_through(first: date, cadence: str, end: date, at_least: int = 3) -> list[date]:
+    """Every payday from `first` through `end`, and never fewer than `at_least` (the windows look one or two
+    checks past the end of the line)."""
+    count = max(at_least, (end - first).days // 6 + 3)
+    out = next_paydays(first, cadence, count)
+    return [d for i, d in enumerate(out) if d <= end or i < at_least]
+
+
 def step_payday(d: date, cadence: str) -> date:
     """The payday after `d`."""
     return next_paydays(d, cadence, 2)[1]
@@ -111,6 +141,7 @@ def next_unpaid_payday(session, income, today: date) -> date:  # noqa: ANN001 - 
 
     from ..models import Transaction
 
+    use_pay_days(getattr(income, "pay_days", "") or "")
     d = income.next_date
     for _ in range(400):
         if d >= today:
