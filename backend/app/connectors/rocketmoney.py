@@ -203,19 +203,21 @@ def import_rows(session: Session, rows: list[dict], source_file: str = "upload.c
 
 def export_csv(session: Session) -> str:
     """The ledger in Rocket Money's column shape, so it can go wherever that file goes."""
+    from ..exports import safe
+
     out = io.StringIO()
     writer = csv.DictWriter(out, fieldnames=EXPORT_COLUMNS)
     writer.writeheader()
     accounts = {a.id: a for a in session.exec(select(Account)).all()}
     for t in session.exec(select(Transaction).order_by(Transaction.date.desc())).all():
         a = accounts.get(t.account_id)
-        writer.writerow({
+        writer.writerow(safe.row({
             "Date": t.date.isoformat(), "Original Date": (t.posted_date or t.date).isoformat(),
             "Account Type": {"checking": "Cash", "card": "Credit Card", "loan": "Loan", "investment": "Investment", "savings": "Savings"}.get(a.kind if a else "", "Cash"),
             "Account Name": a.name if a else "", "Account Number": a.external_id if a else "", "Institution Name": a.institution if a else "",
             "Name": t.raw_name or t.merchant, "Custom Name": t.merchant if t.merchant != t.raw_name else "", "Amount": f"{t.amount:.2f}",
             "Description": t.description, "Category": t.category, "Note": t.note, "Ignored From": "ignored" if t.is_ignored else "", "Tax Deductible": "", "Transaction Tags": "",
-        })
+        }))
     return out.getvalue()
 
 

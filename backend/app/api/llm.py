@@ -99,14 +99,25 @@ def put_role(role: str, body: RoleIn, session: Session = Depends(get_session), _
     return models_out(session)
 
 
-@router.get("/models/catalog")
-async def catalog(provider: str, base_url: str = "", session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+class CatalogIn(BaseModel):
+    provider: str
+    base_url: str = ""
+
+
+@router.post("/models/catalog")
+async def catalog(body: CatalogIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
+    if principal.kind != "owner":
+        raise HTTPException(403, "Only the owner, signed in, lists models")
+    provider, base_url = body.provider, body.base_url.strip()
     if provider not in PROVIDER_IDS or provider == "none":
         raise HTTPException(400, "Choose a provider")
     if provider == "ollama":
         p = Ollama("", base_url or settings.ollama_url)
     elif provider == "openai":
-        p = OpenAICompatible("", base_url or settings.openai_base_url or "https://api.openai.com/v1", secret(session, "openai"))
+        saved = {settings.openai_base_url or "https://api.openai.com/v1"} | {r.get("base_url") for r in role_settings(session).values() if r.get("provider") == "openai" and r.get("base_url")}
+        target = base_url or settings.openai_base_url or "https://api.openai.com/v1"
+        # The stored key goes only to an address the owner saved for it, never to one typed into a request.
+        p = OpenAICompatible("", target, secret(session, "openai") if target in saved else "")
     else:
         p = Anthropic("", secret(session, "anthropic"))
     try:

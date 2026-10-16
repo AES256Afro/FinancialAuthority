@@ -98,3 +98,29 @@ def test_the_calendar_edges():
     assert payday_for(date(2027, 1, 1), "end") == date(2026, 12, 31)
     # daylight saving changes no date: paydays step by days, not hours
     assert next_paydays(date(2026, 10, 30), "biweekly", 3) == [date(2026, 10, 30), date(2026, 11, 13), date(2026, 11, 27)]
+
+
+def test_a_stored_model_key_goes_only_where_it_was_saved(owner: TestClient, monkeypatch):
+    """The model list is a POST (so the CSRF header applies) and never sends the stored key to a typed address."""
+    from app.llm import providers
+
+    seen: list[str] = []
+
+    async def fake_list(self):
+        seen.append(self.api_key)
+        return ["m"]
+
+    monkeypatch.setattr(providers.OpenAICompatible, "list_models", fake_list)
+    owner.put("/api/v1/models/secrets", json={"name": "openai", "value": "sk-test-secret"})
+    assert owner.get("/api/v1/models/catalog?provider=openai&base_url=https://evil.example/v1").status_code in (404, 405)
+    owner.post("/api/v1/models/catalog", json={"provider": "openai", "base_url": "https://evil.example/v1"})
+    owner.post("/api/v1/models/catalog", json={"provider": "openai", "base_url": ""})
+    assert seen == ["", "sk-test-secret"]
+
+
+def test_no_signing_secret_is_ever_a_public_constant(monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "session_secret", "")
+    secret = settings.signing_secret()
+    assert secret != "insecure-development-secret" and len(secret) >= 32 and settings.signing_secret() == secret  # made once, kept

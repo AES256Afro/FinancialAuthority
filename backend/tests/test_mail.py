@@ -1,4 +1,5 @@
 import json
+import json
 from datetime import date
 from email.message import EmailMessage
 
@@ -121,8 +122,11 @@ def test_sync_records_messages_facts_alerts_and_the_export():
         assert by_kind["bill_due"].status == "pending" and "142.17" in by_kind["bill_due"].excerpt
         assert by_kind["bank_alert"].status == "auto"
         assert by_kind["past_due"].status == "pending"
-        assert by_kind["export"].status == "applied"
-        assert len(session.exec(select(Transaction)).all()) == 2  # the export was followed and imported
+        assert by_kind["export"].status == "pending" and "files.example" in by_kind["export"].excerpt
+        assert session.exec(select(Transaction)).all() == []  # nothing from a message is acted on by itself
+        from app.connectors.mail import capture_export
+
+        assert capture_export(session, json.loads(by_kind["export"].fields)["url"], fake_fetch)["imported"] == 2
         assert "Ignore all previous instructions" not in by_kind["bill_due"].excerpt or len(by_kind["bill_due"].excerpt) <= 240
         again = connector().sync(session, today=TODAY)
         assert again.inserted == 0
@@ -158,7 +162,7 @@ def test_mail_api_and_fact_confirmation(owner: TestClient, monkeypatch):
     read = owner.get(f"/api/v1/mail/messages/{found['messages'][0]['id']}").json()
     assert read["boxed"].startswith("=== Untrusted message") and read["facts"][0]["kind"] == "bill_due"
     snap = owner.get("/api/v1/snapshot").json()
-    assert snap["pending"]["facts"] == 2 and any("overdraft" in b["text"] for b in snap["brief"])
+    assert snap["pending"]["facts"] == 3 and any("overdraft" in b["text"] for b in snap["brief"])  # the bill, the past-due notice, and the export waiting for an OK
     pending = owner.get("/api/v1/facts").json()
     bill_fact = next(f for f in pending["facts"] if f["kind"] == "bill_due")
     done = owner.post(f"/api/v1/facts/{bill_fact['id']}/confirm", json={"apply": True}).json()
@@ -166,9 +170,9 @@ def test_mail_api_and_fact_confirmation(owner: TestClient, monkeypatch):
     with Session(engine) as session:
         bill = session.exec(select(Bill).where(Bill.name == "Electric Co")).one()
         assert bill.amount == 142.17 and bill.due_day == 20 and bill.amount_mode == "estimate"
-    assert owner.get("/api/v1/facts").json()["pending"] == 1
-    past_due = owner.get("/api/v1/facts").json()["facts"][0]
-    assert owner.post(f"/api/v1/facts/{past_due['id']}/reject").json()["ok"]
+    assert owner.get("/api/v1/facts").json()["pending"] == 2
+    for left in owner.get("/api/v1/facts").json()["facts"]:
+        assert owner.post(f"/api/v1/facts/{left['id']}/reject").json()["ok"]
     assert owner.get("/api/v1/facts").json()["pending"] == 0
 
 
@@ -194,7 +198,7 @@ def test_rocket_money_upcoming_bills_become_one_fact_per_charge(owner: TestClien
         account = add_account(session)
         session.add(Bill(name="Streamflix", kind="subscription", amount=15.99, amount_mode="fixed", cadence="monthly", due_day=15, autopay=True))
         session.commit()
-        parsed = parse_message(raw("Rocket Money <hello@email.rocketmoney.example>", "This week's upcoming bills", text))
+        parsed = parse_message(raw("Rocket Money <hello@email.rocketmoney.com>", "This week's upcoming bills", text))
         outcome = handle_message(session, account, "INBOX", 9001, parsed, TODAY)
         session.commit()
         assert outcome["kind"] == "upcoming_bills" and outcome["charges"] == 3 and outcome["pending"] == 2 and outcome["already_known"] == 1
@@ -240,3 +244,30 @@ def test_a_proton_mailbox_given_the_bridges_own_loopback_means_the_sidecar(owner
     monkeypatch.setattr(mail_api, "in_container", lambda: False)  # outside a container, the loopback is the loopback
     assert mail_api.mailbox_host("proton", "127.0.0.1") == "127.0.0.1"
     assert "the host is bridge" in explain_error("127.0.0.1", ConnectionRefusedError(111, "Connection refused"))
+
+
+def test_an_export_email_waits_for_the_owner_and_only_rocket_moneys_domain_counts(owner: TestClient, client: TestClient, monkeypatch):
+    from app.connectors import CONNECTORS
+    from app.netguard import Refused, check_url
+
+    assert classify("rocketmoney-support@attacker.example", "Transaction export complete")[0] == "none"
+    assert classify("hello@email.rocketmoney.com", "Transaction export complete")[0] == "export"
+    for bad in ("http://example.com/x.csv", "https://127.0.0.1/x", "https://169.254.169.254/latest/meta-data", "https://localhost/x", "https://user:pw@example.com/x"):
+        try:
+            check_url(bad)
+            raise AssertionError(bad)
+        except Refused:
+            pass
+    monkeypatch.setattr(CONNECTORS["mail"], "fetch", fake_fetch)
+    monkeypatch.setattr(CONNECTORS["mail"], "client_factory", FakeClient)
+    with Session(engine) as session:
+        add_account(session)
+        CONNECTORS["mail"].sync(session, today=TODAY)
+        fact = session.exec(select(ExtractedFact).where(ExtractedFact.kind == "export")).one()
+    key = owner.post("/api/v1/keys", json={"name": "model", "scopes": ["read", "confirm"]}).json()["token"]
+    model = TestClient(client.app)
+    assert model.post(f"/api/v1/facts/{fact.id}/confirm", json={"apply": True}, headers={"Authorization": f"Bearer {key}"}).status_code == 403
+    done = owner.post(f"/api/v1/facts/{fact.id}/confirm", json={"apply": True})
+    assert done.status_code == 200, done.text
+    with Session(engine) as session:
+        assert len(session.exec(select(Transaction)).all()) == 2

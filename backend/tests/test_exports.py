@@ -12,7 +12,7 @@ from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app import crypto
 from app.db import engine
@@ -151,3 +151,34 @@ def test_the_calendar_feed_answers_only_to_its_token(owner: TestClient, client: 
     assert owner.get("/api/v1/calendar/feed").json() == {"active": True, "amounts": True, "created": owner.get("/api/v1/calendar/feed").json()["created"]}
     owner.delete("/api/v1/calendar/feed")
     assert anon.get(new_path).status_code == 404
+
+
+def test_text_from_outside_cannot_run_as_a_formula_or_break_a_line(owner: TestClient):
+    import io as _io
+    import zipfile
+
+    from openpyxl import load_workbook
+
+    from app.exports import safe
+    from app.models import Account, Transaction
+
+    assert safe.cell("=HYPERLINK(\"http://x\")") == "'=HYPERLINK(\"http://x\")" and safe.cell("-12.50") == "-12.50" and safe.cell("@SUM(A1)") == "'@SUM(A1)"
+    assert safe.line("a\r\nb\nc") == "a b c"
+    with Session(engine) as session:
+        seed(session)
+        a = session.exec(select(Account)).first()
+        session.add(Transaction(account_id=a.id, date=date(2026, 10, 11), merchant='=HYPERLINK("http://evil.example","x")', raw_name="=cmd|' /C calc'!A0", description="line one\n2026-10-11 * injected", amount=9.99, row_hash="evil-1"))
+        session.commit()
+    xlsx = owner.get("/api/v1/exports/file", params={"format": "xlsx", "layout": "dossier", "sections": ",".join(ALL_SECTIONS)})
+    assert xlsx.status_code == 200
+    wb = load_workbook(_io.BytesIO(xlsx.content))
+    formulas = [c.coordinate for ws in wb.worksheets for r in ws.iter_rows() for c in r if c.data_type == "f" and not str(c.value).startswith("=SUM(")]
+    assert formulas == []
+    zipped = owner.get("/api/v1/exports/file", params={"format": "csv"})
+    with zipfile.ZipFile(_io.BytesIO(zipped.content)) as z:
+        tx = z.read("transactions.csv").decode()
+    assert "'=HYPERLINK" in tx and ",=HYPERLINK" not in tx
+    ledger = owner.get("/api/v1/exports/file", params={"format": "ledger"}).text
+    assert "\n2026-10-11 * injected" not in ledger
+    rm = owner.get("/api/v1/exports/rocketmoney.csv").text
+    assert "'=cmd" in rm

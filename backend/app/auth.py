@@ -40,7 +40,7 @@ def auth_enabled() -> bool:
 
 
 def _serializer() -> URLSafeTimedSerializer:
-    secret = settings.session_secret or "insecure-development-secret"
+    secret = settings.signing_secret()
     return URLSafeTimedSerializer(secret, salt="fa-session-v1")
 
 

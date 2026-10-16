@@ -99,7 +99,7 @@ class SPAStaticFiles(StaticFiles):
         try:
             return await super().get_response(path, scope)
         except StarletteHTTPException as error:
-            if error.status_code == 404 and not path.startswith("api/"):
+            if error.status_code == 404 and not path.replace("\\", "/").lstrip("/").startswith(("api/", "mcp", "oauth/")):
                 return await super().get_response("index.html", scope)
             raise
 

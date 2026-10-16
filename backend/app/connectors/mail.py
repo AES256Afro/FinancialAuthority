@@ -34,16 +34,16 @@ INFORMATIONAL = {"bank_alert", "payday", "payment_confirmation", "upcoming_bills
 
 
 def default_fetch(url: str) -> bytes:
-    with httpx.Client(follow_redirects=True, timeout=60) as client:
-        with client.stream("GET", url) as response:
-            response.raise_for_status()
-            chunks, total = [], 0
-            for chunk in response.iter_bytes():
-                total += len(chunk)
-                if total > 50 * 1024 * 1024:
-                    raise RuntimeError("the export is over 50 MB")
-                chunks.append(chunk)
-            return b"".join(chunks)
+    """A link from an email, fetched only over https, never to an address inside this network, every redirect
+    checked again (app/netguard.py)."""
+    from ..netguard import safe_get
+
+    return safe_get(url)[0]
+
+
+def export_link(parsed: Parsed) -> str | None:
+    links = [l for l in parsed.links if re.search(r"download|export|transactions|csv", l, re.IGNORECASE)] or parsed.links
+    return links[0] if links else None
 
 
 def explain_error(host: str, error: Exception) -> str:
@@ -90,9 +90,18 @@ def handle_message(session: Session, account: MailAccount, folder: str, uid: int
     if kind == "none":
         return outcome
     if kind == "export":
-        outcome.update(capture_export(session, parsed, fetch))
-        status = "applied" if outcome.get("imported") else "rejected"
-        session.add(ExtractedFact(kind="export", message_ref_id=ref.id, fields=json.dumps({"inserted": outcome.get("imported", 0)}), confidence=1.0, status=status, excerpt=outcome.get("note", ""), produced_by=produced_by, resolved_at=utcnow()))
+        # Nothing from a message is acted on by itself: the export waits on Needs you, with where it would come from.
+        url = export_link(parsed)
+        if not url:
+            session.add(ExtractedFact(kind="export", message_ref_id=ref.id, fields=json.dumps({"sender": parsed.sender}), confidence=1.0, status="rejected", excerpt="no download link in the message", produced_by=produced_by, resolved_at=utcnow()))
+            return {**outcome, "note": "no download link in the message"}
+        from urllib.parse import urlsplit
+
+        host = urlsplit(url).hostname or ""
+        session.add(ExtractedFact(kind="export", message_ref_id=ref.id, fields=json.dumps({"url": url, "host": host, "sender": parsed.sender, "subject": parsed.subject[:200]}),
+                                  confidence=1.0, status="pending", excerpt=f"A Rocket Money export is ready. Importing downloads it from {host} and adds its transactions; an import can be undone on Backups.",
+                                  produced_by=produced_by))
+        outcome["fact"] = "pending"
         return outcome
     if kind == "upcoming_bills":
         outcome.update(upcoming_bills_facts(session, ref, parsed, today, produced_by))
@@ -187,16 +196,13 @@ def paystub_from_attachments(session: Session, ref: MessageRef, parsed: Parsed, 
     return found
 
 
-def capture_export(session: Session, parsed: Parsed, fetch: Fetcher) -> dict:
-    """Follow the export email's download link and import the file. The link lives seven days."""
-    links = [l for l in parsed.links if re.search(r"download|export|transactions|csv", l, re.IGNORECASE)] or parsed.links
-    if not links:
-        return {"imported": 0, "note": "no download link in the message"}
-    url = links[0]
+def capture_export(session: Session, url: str, fetch: Fetcher) -> dict:
+    """Follow an export email's download link and import the file, once the owner has confirmed it on Needs you.
+    The link lives seven days."""
     try:
         raw = fetch(url)
     except Exception as error:  # noqa: BLE001
-        return {"imported": 0, "note": f"could not download the export: {type(error).__name__}"}
+        return {"imported": 0, "note": f"could not download the export: {error if str(error) else type(error).__name__}"}
     text = raw.decode("utf-8-sig", errors="replace")
     rows = parse_csv(text, "rocketmoney-export-from-mail.csv")
     if rows is None:

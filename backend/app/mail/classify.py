@@ -28,10 +28,11 @@ class Rule:
 
 
 RULES: list[Rule] = [
-    Rule("export", "export", sender=r"rocketmoney", subject=r"export (complete|ready)"),
-    Rule("rm-upcoming", "upcoming_bills", sender=r"rocketmoney", subject=r"upcoming bills"),
-    Rule("rm-income", "payday", sender=r"rocketmoney", subject=r"received money"),
-    Rule("rm-balance", "bank_alert", sender=r"rocketmoney", subject=r"balance alert", confidence=0.8),
+    # Rocket Money's own domain only: "rocketmoney-support@elsewhere" is not Rocket Money.
+    Rule("export", "export", sender=r"@(?:[\w-]+\.)*(?:rocketmoney|truebill)\.com$", subject=r"export (complete|ready)"),
+    Rule("rm-upcoming", "upcoming_bills", sender=r"@(?:[\w-]+\.)*(?:rocketmoney|truebill)\.com$", subject=r"upcoming bills"),
+    Rule("rm-income", "payday", sender=r"@(?:[\w-]+\.)*(?:rocketmoney|truebill)\.com$", subject=r"received money"),
+    Rule("rm-balance", "bank_alert", sender=r"@(?:[\w-]+\.)*(?:rocketmoney|truebill)\.com$", subject=r"balance alert", confidence=0.8),
     Rule("overdraft", "bank_alert", subject=r"overdrawn|overdraft|negative balance|insufficient funds"),
     Rule("declined", "bank_alert", subject=r"\bdeclined\b"),
     Rule("deposit", "bank_alert", subject=r"deposit (was )?(made|received|posted)|direct deposit|you (just )?received money"),

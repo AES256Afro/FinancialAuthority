@@ -72,7 +72,7 @@ function RoleCard({ role, conf, providers, defaults, onSaved }: { role: string; 
     setBusy("find");
     setCatalogError(null);
     try {
-      const got = await api<{ models: string[]; error?: string }>(`/api/v1/models/catalog?provider=${using.provider}&base_url=${encodeURIComponent(using.base_url)}`);
+      const got = await api<{ models: string[]; error?: string }>("/api/v1/models/catalog", { method: "POST", body: JSON.stringify({ provider: using.provider, base_url: using.base_url }) });
       setCatalog(got.models);
       if (got.error) setCatalogError(got.error);
       if (got.models.length === 0 && !got.error) setCatalogError("No models listed.");
