@@ -37,7 +37,7 @@ export function PartTip({ part, colour, of }: { part: Part; colour: string; of?:
         <span className="sw" style={{ background: colour, margin: 0 }} />{part.label}
         <span className="num" style={{ marginLeft: "auto" }}>{money(part.amount)}</span>
       </div>
-      {of ? <div style={{ color: "var(--muted)" }}>{Math.round((part.amount / of) * 100)}% of the check</div> : null}
+      {of && part.share_of_check != null ? <div style={{ color: "var(--muted)" }}>{Math.round(part.share_of_check * 100)}% of the check</div> : null}
       {part.items.slice(0, 5).map((i, k) => (
         <div key={`${i.source}-${k}`} style={{ display: "flex", gap: 6, color: "var(--ink-2)" }}>
           <span style={{ flexGrow: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{i.name}</span>
@@ -46,7 +46,7 @@ export function PartTip({ part, colour, of }: { part: Part; colour: string; of?:
       ))}
       {part.items.length > 5 && <div style={{ color: "var(--muted)" }}>and {part.items.length - 5} more</div>}
       {part.key === "yours" && part.everyday !== undefined ? <div style={{ color: "var(--muted)" }}>everyday spending {money(part.everyday)}{part.kept !== undefined ? `, kept ${money(part.kept)}` : ""}</div> : null}
-      {part.riding && part.riding.length > 0 ? <div style={{ color: "var(--muted)" }}>riding the card: {part.riding.slice(0, 3).map((r) => r.name).join(", ")}</div> : null}
+      {part.riding && part.riding.length > 0 ? <div style={{ color: "var(--muted)" }}>charged to the card: {part.riding.slice(0, 3).map((r) => r.name).join(", ")}</div> : null}
     </div>
   );
 }
@@ -74,7 +74,7 @@ export function TableTwin({ checks, label = "Check" }: { checks: { title: string
               <td style={{ whiteSpace: "nowrap" }}>{title}</td>
               <td className="num" style={{ textAlign: "right" }}>{money(check.inflow)}</td>
               {keys.map((k) => <td key={k} className="num" style={{ textAlign: "right" }}>{money(check.parts.find((p) => p.key === k)?.amount ?? 0)}</td>)}
-              <td className="num" style={{ textAlign: "right", color: check.short ? "var(--critical)" : "inherit" }}>{check.short ? money(check.short) : "—"}</td>
+              <td className="num" style={{ textAlign: "right", color: check.short ? "var(--critical-ink)" : "inherit", fontWeight: check.short ? 800 : undefined }}>{check.short ? money(check.short) : "—"}</td>
             </tr>
           ))}
         </tbody>
@@ -88,8 +88,8 @@ export function CheckPicker({ checks, value, onChange }: { checks: Check[]; valu
     <div role="tablist" aria-label="Which check" style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
       {checks.map((c, i) => (
         <button key={c.start} type="button" role="tab" aria-selected={value === i} onClick={() => onChange(i)}
-          style={{ font: "inherit", fontSize: 12, fontWeight: 800, padding: "5px 10px", borderRadius: 999, border: "1px solid var(--hairline)", cursor: "pointer", minHeight: 30, background: value === i ? "var(--ink)" : "var(--surface)", color: value === i ? "var(--inverse)" : "var(--ink-2)" }}>
-          {shortDate(c.start)}{c.actual ? "" : " ·  plan"}
+          style={{ font: "inherit", fontSize: 12, fontWeight: 800, padding: "5px 10px", borderRadius: 999, border: "1px solid var(--hairline)", cursor: "pointer", minHeight: 32, background: value === i ? "var(--ink)" : "var(--surface)", color: value === i ? "var(--inverse)" : "var(--ink-2)" }}>
+          {shortDate(c.start)}{c.actual ? "" : " · planned"}
         </button>
       ))}
     </div>

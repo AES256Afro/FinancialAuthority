@@ -1,10 +1,11 @@
 // Beads on a thread: between two paydays, each bill on its day, sized by its amount. A bill whose due day can
-// move is a bead you can drag; the engine judges the new day against the low point and drafts the request. The
-// app never sends it and never moves anything.
+// move is a bead you can drag, or pick from the list under the picture with the keyboard; the engine judges the
+// new day against the lowest balance and drafts the request. The app never sends it and never moves anything.
 import { useRef, useState } from "react";
 import { api } from "../api";
 import { money, monthDay, ordinal, shortDate } from "../format";
 import type { Bead } from "../paychecks";
+import { Said } from "../components/State";
 import { Tip, useColours, useTip } from "./common";
 
 const W = 820;
@@ -39,6 +40,9 @@ export function Beads({ spans }: { spans: { start: string; end: string; before?:
   const [check, setCheck] = useState<MoveCheck | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pickBill, setPickBill] = useState<number | null>(null);
+  const [pickDay, setPickDay] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const { ref, tip, show, hide } = useTip();
   const span = spans[i];
@@ -53,19 +57,35 @@ export function Beads({ spans }: { spans: { start: string; end: string; before?:
     const box = svgRef.current?.getBoundingClientRect();
     return box ? ((clientX - box.left) / box.width) * W : 0;
   };
-  async function drop(b: Bead, px: number) {
-    const when = toDate(Math.max(padL, Math.min(W - padR, px)));
-    const day = Math.min(28, Number(when.slice(8, 10)));
-    if (!b.bill_id || day === b.due_day) return;
+  async function tryDay(b: Bead, day: number) {
+    if (!b.bill_id) return;
+    if (day === b.due_day) {
+      setError(`The ${ordinal(day)} is already its due day. Pick another day.`);
+      return;
+    }
     setBusy(true);
     setCopied(false);
+    setError(null);
     try {
       setCheck(await api<MoveCheck>(`/api/v1/bills/${b.bill_id}/move_check?day=${day}`));
+    } catch (e) {
+      setCheck(null);
+      setError((e as Error).message);
     } finally {
       setBusy(false);
     }
   }
+  async function drop(b: Bead, px: number) {
+    const when = toDate(Math.max(padL, Math.min(W - padR, px)));
+    const day = Math.min(28, Number(when.slice(8, 10)));
+    if (!b.bill_id || day === b.due_day) return;
+    await tryDay(b, day);
+  }
   const items = span.items;
+  // The same choice without a pointer: each bill whose date can move, once, and a day to try.
+  const movable = items.filter((b, k) => b.movable && b.bill_id && items.findIndex((o) => o.bill_id === b.bill_id) === k);
+  const chosen = movable.find((b) => b.bill_id === pickBill) ?? movable[0];
+  const day = pickDay ?? chosen?.due_day ?? 1;
   // Beads on the same day sit side by side; each label takes the first lane, above or below, that is free.
   const byDay: Record<string, number> = {};
   const sameDay: Record<string, number> = {};
@@ -84,8 +104,8 @@ export function Beads({ spans }: { spans: { start: string; end: string; before?:
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <div role="tablist" aria-label="Which stretch between paydays" style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
         {spans.map((s, k) => (
-          <button key={s.start} type="button" role="tab" aria-selected={i === k} onClick={() => { setI(k); setCheck(null); }}
-            style={{ font: "inherit", fontSize: 12, fontWeight: 800, padding: "5px 10px", borderRadius: 999, border: "1px solid var(--hairline)", cursor: "pointer", minHeight: 30, background: i === k ? "var(--ink)" : "var(--surface)", color: i === k ? "var(--inverse)" : "var(--ink-2)" }}>
+          <button key={s.start} type="button" role="tab" aria-selected={i === k} onClick={() => { setI(k); setCheck(null); setError(null); setPickBill(null); setPickDay(null); }}
+            style={{ font: "inherit", fontSize: 12, fontWeight: 800, padding: "5px 10px", borderRadius: 999, border: "1px solid var(--hairline)", cursor: "pointer", minHeight: 32, background: i === k ? "var(--ink)" : "var(--surface)", color: i === k ? "var(--inverse)" : "var(--ink-2)" }}>
             {s.before ? "Until payday" : `${monthDay(s.start)} to ${monthDay(s.end)}`}
           </button>
         ))}
@@ -118,7 +138,7 @@ export function Beads({ spans }: { spans: { start: string; end: string; before?:
             return (
               <g key={key} style={{ cursor: draggable ? "grab" : "default" }}
                 onPointerDown={(e) => { if (draggable) { (e.target as Element).setPointerCapture?.(e.pointerId); setDrag({ key, x: svgX(e.clientX) }); hide(); } }}
-                onMouseMove={(e) => !drag && show(e, <div><strong>{b.name}</strong><div className="num">{money(b.amount, { cents: true })} · {shortDate(b.date)}</div><div style={{ color: "var(--muted)" }}>{b.via_card ? "charged to the card; paid with the card payment" : draggable ? "drag to try another due day" : "its due day is fixed"}</div></div>)}>
+                onMouseMove={(e) => !drag && show(e, <div><strong>{b.name}</strong><div className="num">{money(b.amount, { cents: true })} · {shortDate(b.date)}</div><div style={{ color: "var(--muted)" }}>{b.via_card ? "charged to the card; paid with the card payment" : draggable ? "drag it, or pick it below, to try another due day" : "its due day is fixed"}</div></div>)}>
                 <line x1={cx} x2={cx} y1={up ? yl - r : yl + r} y2={up ? nameY + 14 : nameY - 12} stroke="var(--hairline)" />
                 <circle cx={cx} cy={yl} r={r} fill={b.via_card ? "var(--surface)" : colour} stroke={b.via_card ? colour : "var(--surface)"} strokeWidth={b.via_card ? 3 : 2} />
                 {draggable && <circle cx={cx} cy={yl} r={r + 4} fill="none" stroke={colour} strokeWidth={1.2} strokeDasharray="2 3" />}
@@ -130,13 +150,31 @@ export function Beads({ spans }: { spans: { start: string; end: string; before?:
         </svg>
         <Tip tip={tip} width={ref.current?.clientWidth ?? W} />
       </div>
-      <div style={{ fontSize: 11, color: "var(--muted)" }}>Size is dollars. A dashed ring means the due day can move: drag it. A hollow bead rides the card.</div>
-      {busy && <div style={{ fontSize: 13, color: "var(--muted)" }}>Checking that day…</div>}
+      <div style={{ fontSize: 11, color: "var(--muted)" }}>A bigger bead is a bigger bill. A dashed ring means the due day can move: drag it, or pick it below. A hollow bead is charged to the card.</div>
+      {chosen && (
+        <form onSubmit={(e) => { e.preventDefault(); tryDay(chosen, day); }} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+            <span className="lab">Bill whose date can move</span>
+            <select className="input" value={chosen.bill_id ?? ""} onChange={(e) => { setPickBill(Number(e.target.value)); setPickDay(null); setCheck(null); setError(null); }} style={{ minHeight: 36, padding: "4px 10px" }}>
+              {movable.map((b) => <option key={b.bill_id ?? b.source} value={b.bill_id ?? ""}>{b.name}{b.due_day ? ` (now the ${ordinal(b.due_day)})` : ""}</option>)}
+            </select>
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            <span className="lab">Try another day</span>
+            <select className="input" value={day} onChange={(e) => setPickDay(Number(e.target.value))} style={{ minHeight: 36, padding: "4px 10px" }}>
+              {Array.from({ length: 28 }, (_, k) => k + 1).map((d) => <option key={d} value={d}>the {ordinal(d)}{d === chosen.due_day ? " (now)" : ""}</option>)}
+            </select>
+          </label>
+          <button type="submit" className="btn" disabled={busy} style={{ minHeight: 36, padding: "4px 12px" }}>{busy ? "Checking…" : "Check that day"}</button>
+        </form>
+      )}
+      {busy && <div role="status" style={{ fontSize: 13, color: "var(--muted)" }}>Checking that day…</div>}
+      {error && <Said text={error} tone="error" />}
       {check && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: 12, borderRadius: 10, background: "var(--surface-2)" }}>
           <strong>{check.name} on the {ordinal(check.to_day)} instead of the {ordinal(check.from_day)}</strong>
-          <span className="num" style={{ fontSize: 13, color: check.verdict === "worse" ? "var(--critical)" : check.verdict === "better" ? "var(--safe-ink)" : "var(--ink-2)" }}>
-            {check.verdict === "same" ? "No difference to the low point." : `The lowest point ${check.verdict === "better" ? "rises" : "falls"} by ${money(Math.abs(check.change))}: from ${money(check.low_before)} to ${money(check.low_after)}.`}
+          <span className="num" style={{ fontSize: 13, color: check.verdict === "worse" ? "var(--critical-ink)" : check.verdict === "better" ? "var(--safe-ink)" : "var(--ink-2)" }}>
+            {check.verdict === "same" ? "No difference to your lowest balance." : `${check.verdict === "better" ? "Better" : "Worse"}: your lowest balance ${check.verdict === "better" ? "rises" : "falls"} by ${money(Math.abs(check.change))}: from ${money(check.low_before)} to ${money(check.low_after)}.`}
           </span>
           {check.verdict === "better" && (
             <>

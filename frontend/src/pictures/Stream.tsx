@@ -53,6 +53,7 @@ export function Stream({ months }: { months: Month[] }) {
           const mid = (y(upper[last]) + y(lower[last])) / 2;
           const thick = y(lower[last]) - y(upper[last]);
           const label = months[0].parts.find((p) => p.key === k)?.label ?? k;
+          const lastAmount = months[last].parts.find((p) => p.key === k)?.amount ?? 0;
           return (
             <g key={k}>
               <path d={d} fill={colours[k]} opacity={0.9} stroke="var(--surface)" strokeWidth={2}
@@ -63,7 +64,7 @@ export function Stream({ months }: { months: Month[] }) {
                   const part = months[i].parts.find((p) => p.key === k);
                   if (part) show(e, <><div style={{ fontWeight: 800, marginBottom: 4 }}>{MONTHS[Number(months[i].month.slice(5, 7)) - 1]} {months[i].month.slice(0, 4)}</div><PartTip part={part} colour={colours[k]} of={months[i].income} /></>);
                 }} />
-              {thick > 9 && <text x={W - padR + 8} y={mid + 4} fontSize="11.5" fontWeight="700" fill="var(--ink)">{label} <tspan fill="var(--ink-2)" fontWeight="600">{money(upper[last] - lower[last])}</tspan></text>}
+              {thick > 9 && <text x={W - padR + 8} y={mid + 4} fontSize="11.5" fontWeight="700" fill="var(--ink)">{label} <tspan fill="var(--ink-2)" fontWeight="600">{money(lastAmount)}</tspan></text>}
             </g>
           );
         })}

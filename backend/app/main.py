@@ -126,7 +126,9 @@ class SPAStaticFiles(StaticFiles):
                 response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
             return response
         except StarletteHTTPException as error:
-            if error.status_code == 404 and not path.replace("\\", "/").lstrip("/").startswith(("api/", "mcp", "oauth/")):
+            # A missing built file is a plain 404, never the page: an old tab asking for a renamed piece after an update
+            # must fail cleanly so it can reload, not get HTML where a script belongs.
+            if error.status_code == 404 and not path.replace("\\", "/").lstrip("/").startswith(("api/", "mcp", "oauth/", "assets/")):
                 return await super().get_response("index.html", scope)
             raise
 

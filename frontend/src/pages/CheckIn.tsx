@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
+import { Failed, Loading, Said } from "../components/State";
 import { StatusPill } from "../components/Status";
 import { money, shortDate } from "../format";
 import type { CheckIn as CheckInData } from "../guide";
@@ -12,7 +13,7 @@ function Q({ n, title, children }: { n: number; title: string; children: ReactNo
     <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
       <div style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
         <span className="num" aria-hidden="true" style={{ fontWeight: 800, color: "var(--muted)" }}>{n}</span>
-        <strong style={{ fontSize: 15 }}>{title}</strong>
+        <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{title}</h2>
       </div>
       {children}
     </section>
@@ -34,7 +35,8 @@ export function CheckIn() {
   const [card, setCard] = useState<boolean | null>(null);
   const [saved, setSaved] = useState<boolean | null>(null);
   const [note, setNote] = useState("");
-  const [result, setResult] = useState<string | null>(null);
+  const [result, setResult] = useState<{ text: string; tone: "info" | "error" } | null>(null);
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
     const a = ci.data?.answers;
     if (a) {
@@ -45,16 +47,20 @@ export function CheckIn() {
       setNote(a.note ?? "");
     }
   }, [ci.data]);
-  if (ci.error) return <div style={{ color: "var(--critical)" }}>Could not load the check-in: {ci.error.message}</div>;
-  if (!ci.data) return <div style={{ color: "var(--muted)" }}>Gathering the week…</div>;
+  if (ci.error && !ci.data) return <Failed error={ci.error} what="the check-in" onRetry={ci.reload} />;
+  if (!ci.data) return <Loading what="this week's check-in" />;
   const d = ci.data;
   async function submit() {
+    setBusy(true);
+    setResult(null);
     try {
       await api("/api/v1/checkin", { method: "POST", body: JSON.stringify({ flagged, subscription: sub, card_paid: card, saved, note }) });
-      setResult("Kept. See you next week.");
+      setResult({ tone: "info", text: "Saved. See you next week." });
       ci.reload();
     } catch (e) {
-      setResult((e as Error).message);
+      setResult({ tone: "error", text: `Couldn't save the check-in: ${(e as Error).message}` });
+    } finally {
+      setBusy(false);
     }
   }
   return (
@@ -74,7 +80,7 @@ export function CheckIn() {
             <strong className="num">{money(t.amount, { cents: true })}</strong>
           </label>
         ))}
-        {d.unexpected.length > 0 && <div style={{ fontSize: 12, color: "var(--muted)" }}>Tick any you did not expect; the ledger notes them.</div>}
+        {d.unexpected.length > 0 && <div style={{ fontSize: 12, color: "var(--muted)" }}>Tick any you did not expect; each one gets a note in your transactions.</div>}
       </Q>
 
       <Q n={2} title={d.subscription ? `Still paying for ${d.subscription.name}?` : "Still paying for these?"}>
@@ -83,21 +89,21 @@ export function CheckIn() {
             <div className="num" style={{ fontSize: 13, color: "var(--ink-2)" }}>{money(d.subscription.amount, { cents: true })} a month, {money(d.subscription.yearly)} a year.</div>
             <Choice label="Keep or drop" value={sub} onChange={setSub} options={[{ v: "keep", text: "Keep it" }, { v: "drop", text: "I will cancel it" }, { v: "unsure", text: "Not sure" }]} />
           </>
-        ) : <div style={{ fontSize: 13, color: "var(--ink-2)" }}>No subscriptions on the Bills register.</div>}
+        ) : <div style={{ fontSize: 13, color: "var(--ink-2)" }}>No subscriptions on your bills list.</div>}
       </Q>
 
       <Q n={3} title="The card: paid before the statement?">
         {d.cards.length === 0 ? <div style={{ fontSize: 13, color: "var(--ink-2)" }}>No statement day in the next ten days.</div> : d.cards.map((c) => (
           <div key={c.id} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 13 }}>
             <StatusPill status={c.status} />
-            <span>{c.name}: statement {shortDate(c.statement_on)}{c.statement_balance !== null ? `, about ${money(c.statement_balance)}` : ""}{c.to_target ? `; pay ${money(c.to_target)} by ${c.pay_by ? shortDate(c.pay_by) : "then"} to report under 30%` : ""}</span>
+            <span>{c.name}: statement {shortDate(c.statement_on)}{c.statement_balance !== null ? `, about ${money(c.statement_balance)}` : ""}{c.to_target ? `; pay ${money(c.to_target)} by ${c.pay_by ? shortDate(c.pay_by) : "then"} to report under 30% of your limit` : ""}</span>
           </div>
         ))}
         {d.cards.length > 0 && <Choice label="Card paid" value={card} onChange={setCard} options={[{ v: true, text: "Paid" }, { v: false, text: "Not yet" }]} />}
       </Q>
 
       <Q n={4} title="Savings moved?">
-        <div className="num" style={{ fontSize: 13, color: "var(--ink-2)" }}>{d.saved_14d > 0 ? `${money(d.saved_14d, { cents: true })} went into savings in the last two weeks.` : "Nothing went into savings in the last two weeks."} <Link to="/saving">The ladder</Link></div>
+        <div className="num" style={{ fontSize: 13, color: "var(--ink-2)" }}>{d.saved_14d > 0 ? `${money(d.saved_14d, { cents: true })} went into savings in the last two weeks.` : "Nothing went into savings in the last two weeks."} <Link to="/saving">Open Saving</Link></div>
         <Choice label="Saved" value={saved} onChange={setSaved} options={[{ v: true, text: "Yes" }, { v: false, text: "Not this time" }]} />
       </Q>
 
@@ -105,12 +111,15 @@ export function CheckIn() {
         {d.coming.length === 0 ? <div style={{ fontSize: 13, color: "var(--ink-2)" }}>Nothing big next week.</div> : d.coming.map((e) => (
           <div key={e.source + e.date} style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span>{e.name} · {shortDate(e.date)}</span><strong className="num">{money(e.amount)}</strong></div>
         ))}
-        <textarea className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="A note to yourself, if you like" rows={2} style={{ width: "100%", resize: "vertical" }} aria-label="A note" />
+        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span className="lab">A note to yourself (if you like)</span>
+          <textarea className="input" value={note} onChange={(e) => setNote(e.target.value)} rows={2} style={{ width: "100%", resize: "vertical" }} />
+        </label>
       </Q>
 
-      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-        <button type="button" className="btn dark" onClick={submit}>{d.done ? "Update this week" : "Done for this week"}</button>
-        {result && <span style={{ fontSize: 13, color: "var(--ink-2)" }}>{result}</span>}
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <button type="button" className="btn dark" disabled={busy} onClick={submit}>{busy ? "Saving…" : d.done ? "Update this week" : "Done for this week"}</button>
+        {result && <Said text={result.text} tone={result.tone} />}
       </div>
       <div style={{ fontSize: 11, color: "var(--muted)" }}>{d.not_advice}</div>
     </div>

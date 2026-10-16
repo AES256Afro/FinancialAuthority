@@ -1,7 +1,10 @@
-// Where it goes: the flow of one paycheck into advances, bills, set-asides, the buffer and what is yours.
-import { money, monthDay, shortDate } from "../format";
+// Where it goes: the flow of one paycheck into advances, bills, what is kept for the next paycheck, the safety
+// cushion and what is yours.
+import { Empty } from "../components/State";
+import { money, shortDate } from "../format";
 import { getPrefs } from "../prefs";
 import { palette } from "../looks";
+import { inkOn } from "../paychecks";
 import type { Event } from "../types";
 import type { ViewProps } from "./index";
 
@@ -18,15 +21,16 @@ function ribbon(x1: number, y1: number, h1: number, x2: number, y2: number, h2: 
 export function WhereItGoes({ snapshot }: ViewProps) {
   const c = palette(getPrefs().look);
   const w = snapshot.windows[0];
-  if (!w) return <div className="card" style={{ padding: 18 }}>No paycheck is known yet. Confirm a paycheck on Needs you.</div>;
+  if (!w) return <Empty to="/paystubs#paycheck" action="Add your paycheck">No paycheck is known yet, so there is nothing to follow.</Empty>;
   const entering = w.inflow;
   const short = w.safe < 0;
+  // Text on a fill is dark or white by the fill; the short block is the soft red with dark red words.
   const groups = [
-    { id: "advances", label: `Advances ${money(w.advances.total)}`, amount: w.advances.total, fill: c.debt, text: "#ffffff" },
-    { id: "bills", label: `Bills ${money(w.bills.total)}`, sub: `${monthDay(w.start)} to ${monthDay(w.end)}`, amount: w.bills.total, fill: c.bill, text: "#ffffff" },
-    { id: "aside", label: `Set aside ${money(w.set_aside.total)}`, sub: "for the window after", amount: w.set_aside.total, fill: c.surface, stroke: c.bill, text: c.ink },
-    { id: "buffer", label: `Buffer ${money(w.buffer)}`, amount: w.buffer, fill: c.buffer, text: c.ink },
-    { id: "safe", label: short ? `Short ${money(-w.safe)}` : "Safe to spend", sub: short ? undefined : money(w.safe), amount: Math.abs(w.safe), fill: short ? "#d03b3b" : c.safe, text: "#ffffff" },
+    { id: "advances", label: `Advance apps ${money(w.advances.total)}`, amount: w.advances.total, fill: c.debt, text: inkOn(c.debt) },
+    { id: "bills", label: `Bills ${money(w.bills.total)}`, sub: `${shortDate(w.start)} to ${shortDate(w.end)}`, amount: w.bills.total, fill: c.bill, text: inkOn(c.bill) },
+    { id: "aside", label: `Set aside ${money(w.set_aside.total)}`, sub: "for the next paycheck", amount: w.set_aside.total, fill: c.surface, stroke: c.bill, text: c.ink },
+    { id: "buffer", label: `Safety cushion ${money(w.buffer)}`, amount: w.buffer, fill: c.buffer, text: inkOn(c.buffer) },
+    { id: "safe", label: short ? `Short ${money(-w.safe)}` : "Safe to spend", sub: short ? undefined : money(w.safe), amount: Math.abs(w.safe), fill: short ? "var(--critical-soft)" : c.safe, stroke: short ? "var(--critical)" : undefined, text: short ? "var(--critical-ink)" : inkOn(c.safe) },
   ].filter((g) => g.amount > 0);
   const scale = USABLE / Math.max(1, groups.reduce((s, g) => s + g.amount, 0));
   let ySrc = TOP;
@@ -44,11 +48,11 @@ export function WhereItGoes({ snapshot }: ViewProps) {
   const bills: Event[] = [...w.bills.items].sort((a, b) => b.amount - a.amount);
   const top = bills.slice(0, 8);
   const rest = bills.slice(8);
-  for (const e of top) leaves.push({ label: `${e.name} · ${money(e.amount)} · ${monthDay(e.date)}`, amount: e.amount, fill: e.kind === "installment" ? c.debt : c.bill, group: "bills" });
+  for (const e of top) leaves.push({ label: `${e.name} · ${money(e.amount)} · ${shortDate(e.date)}`, amount: e.amount, fill: e.kind === "installment" ? c.debt : c.bill, group: "bills" });
   if (rest.length) leaves.push({ label: `${w.bills.after_eight.count} smaller · ${money(w.bills.after_eight.total)}`, amount: w.bills.after_eight.total, fill: c.bill, group: "bills" });
   for (const e of [...w.set_aside.items].sort((a, b) => b.amount - a.amount).slice(0, 5)) {
     const kept = e.kept ?? e.amount;
-    leaves.push({ label: `${e.name}${(e.share ?? 1) < 1 ? ", half" : ""} · ${money(kept)} · ${monthDay(e.date)}`, amount: kept, fill: c.surface, stroke: c.bill, group: "aside" });
+    leaves.push({ label: `${e.name}${(e.share ?? 1) < 1 ? ", half" : ""} · ${money(kept)} · ${shortDate(e.date)}`, amount: kept, fill: c.surface, stroke: c.bill, group: "aside" });
   }
   const leafPlaced: (typeof leaves[number] & { y: number; h: number; fromY: number })[] = [];
   for (const g of placed) {
@@ -66,42 +70,45 @@ export function WhereItGoes({ snapshot }: ViewProps) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 16 }}>
-        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, letterSpacing: "-0.01em" }}>Where {shortDate(w.start)}'s paycheck goes</h1>
-        <div style={{ fontSize: 12, color: "var(--muted)" }}>Read left to right: money enters, is spoken for, and what reaches the right edge is yours.</div>
+        <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, letterSpacing: "-0.01em" }}>Where the {shortDate(w.start)} paycheck goes</h2>
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>Read left to right: money comes in, each part goes where it is promised, and what reaches the right edge is yours.</div>
       </div>
       <section className="card" style={{ padding: "16px 20px", display: "flex", flexWrap: "wrap", gap: 20 }}>
-        <svg viewBox={`0 0 ${W} 500`} width="100%" style={{ display: "block", height: "auto", maxWidth: 860, flex: "1 1 600px" }} role="img" aria-label="Flow of the paycheck into advances, bills, set-asides, buffer and safe to spend">
-          <rect x={40} y={TOP} width={150} height={srcHeight} rx={6} fill={c.paycheck} />
-          <text x={115} y={TOP + srcHeight / 2 - 4} textAnchor="middle" fill="#ffffff" fontSize={15} fontWeight={800}>Paycheck</text>
-          <text x={115} y={TOP + srcHeight / 2 + 16} textAnchor="middle" fill="#ffffff" fontSize={13} fontWeight={700}>{money(w.paycheck)}{w.carried_in > 0 ? ` + ${money(w.carried_in)}` : ""}</text>
-          {placed.map((g) => (
-            <path key={`r-${g.id}`} d={ribbon(190, g.ySrc, g.h, 420, g.yMid, g.h)} fill={g.stroke ?? g.fill} fillOpacity={g.id === "aside" ? 0.14 : g.id === "buffer" ? 0.6 : 0.3} />
-          ))}
-          {placed.map((g) => (
-            <g key={g.id}>
-              <rect x={420} y={g.yMid} width={150} height={g.h} rx={5} fill={g.fill} stroke={g.stroke} strokeWidth={g.stroke ? 2 : 0} />
-              {g.h >= 18 && <text x={495} y={g.yMid + g.h / 2 + (g.sub && g.h >= 36 ? -4 : 4)} textAnchor="middle" fill={g.text} fontSize={12} fontWeight={800}>{g.label}</text>}
-              {g.sub && g.h >= 36 && <text x={495} y={g.yMid + g.h / 2 + 14} textAnchor="middle" fill={g.text} fontSize={11} fontWeight={700}>{g.sub}</text>}
-            </g>
-          ))}
-          {leafPlaced.map((l, i) => (
-            <g key={i}>
-              <path d={ribbon(570, l.fromY, l.h, 790, l.y, l.h)} fill={l.stroke ?? l.fill} fillOpacity={l.stroke ? 0.1 : 0.22} />
-              <rect x={790} y={l.y} width={14} height={l.h} rx={3} fill={l.fill} stroke={l.stroke} strokeWidth={l.stroke ? 2 : 0} />
-              <text x={814} y={l.y + Math.min(l.h, 14) / 2 + 4} fontSize={12} fontWeight={700} fill={c.ink}>{l.label}</text>
-            </g>
-          ))}
-        </svg>
-        <div style={{ flex: "1 1 220px", display: "flex", flexDirection: "column", gap: 10, minWidth: 220 }}>
-          <div style={{ fontSize: 13, color: "var(--ink-2)", fontWeight: 600 }}>In the order it leaves</div>
+        {/* On a phone the picture keeps a readable size and scrolls sideways; the list beside it has every part as words. */}
+        <div style={{ flex: "1 1 600px", minWidth: 0, maxWidth: 860, overflowX: "auto" }}>
+          <svg viewBox={`0 0 ${W} 500`} width="100%" style={{ display: "block", height: "auto", minWidth: 640 }} role="img" aria-label="Flow of the paycheck into advance apps, bills, what is kept for the next paycheck, the safety cushion and safe to spend">
+            <rect x={40} y={TOP} width={150} height={srcHeight} rx={6} fill={c.paycheck} />
+            <text x={115} y={TOP + srcHeight / 2 - 4} textAnchor="middle" fill={inkOn(c.paycheck)} fontSize={15} fontWeight={800}>Paycheck</text>
+            <text x={115} y={TOP + srcHeight / 2 + 16} textAnchor="middle" fill={inkOn(c.paycheck)} fontSize={13} fontWeight={700}>{money(w.paycheck)}{w.carried_in > 0 ? ` + ${money(w.carried_in)}` : ""}</text>
+            {placed.map((g) => (
+              <path key={`r-${g.id}`} d={ribbon(190, g.ySrc, g.h, 420, g.yMid, g.h)} fill={g.stroke ?? g.fill} fillOpacity={g.id === "aside" ? 0.14 : g.id === "buffer" ? 0.6 : 0.3} />
+            ))}
+            {placed.map((g) => (
+              <g key={g.id}>
+                <rect x={420} y={g.yMid} width={150} height={g.h} rx={5} fill={g.fill} stroke={g.stroke} strokeWidth={g.stroke ? 2 : 0} />
+                {g.h >= 18 && <text x={495} y={g.yMid + g.h / 2 + (g.sub && g.h >= 36 ? -4 : 4)} textAnchor="middle" fill={g.text} fontSize={12} fontWeight={800}>{g.label}</text>}
+                {g.sub && g.h >= 36 && <text x={495} y={g.yMid + g.h / 2 + 14} textAnchor="middle" fill={g.text} fontSize={11} fontWeight={700}>{g.sub}</text>}
+              </g>
+            ))}
+            {leafPlaced.map((l, i) => (
+              <g key={i}>
+                <path d={ribbon(570, l.fromY, l.h, 790, l.y, l.h)} fill={l.stroke ?? l.fill} fillOpacity={l.stroke ? 0.1 : 0.22} />
+                <rect x={790} y={l.y} width={14} height={l.h} rx={3} fill={l.fill} stroke={l.stroke} strokeWidth={l.stroke ? 2 : 0} />
+                <text x={814} y={l.y + Math.min(l.h, 14) / 2 + 4} fontSize={12} fontWeight={700} fill={c.ink}>{l.label}</text>
+              </g>
+            ))}
+          </svg>
+        </div>
+        <div style={{ flex: "1 1 220px", display: "flex", flexDirection: "column", gap: 10, minWidth: "min(220px, 100%)" }}>
+          <h3 style={{ margin: 0, fontSize: 13, color: "var(--ink-2)", fontWeight: 600 }}>In the order it leaves</h3>
           {placed.map((g) => (
             <div key={g.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "6px 0", borderTop: "1px solid var(--surface-2)", fontSize: 13 }}>
-              <span><span className="sw" style={{ background: g.fill, border: g.stroke ? `1.5px solid ${g.stroke}` : undefined, boxSizing: "border-box" }} />{g.label.replace(/ \$[\d,]+$/, "")}</span>
+              <span><span className="sw" style={{ background: g.fill, border: g.stroke ? `1.5px solid ${g.stroke}` : undefined, boxSizing: "border-box" }} />{g.label.replace(/ \$[\d,]+$/, "")}{g.id === "aside" ? " for the next paycheck" : ""}</span>
               <strong className="num">{money(g.id === "safe" ? w.safe : g.amount)}</strong>
             </div>
           ))}
           <div style={{ marginTop: 8, padding: "12px 14px", borderRadius: 10, background: "var(--surface-2)", fontSize: 12, color: "var(--ink-2)" }}>
-            {entering > 0 ? `${money(entering)} enters this window; ${money(w.spoken_for)} is spoken for.` : ""} The next window carries {money(w.set_aside.total)} in.
+            {entering > 0 ? `${money(entering)} comes in with this paycheck; ${money(w.spoken_for)} of it already has somewhere to go.` : ""} The next paycheck starts with {money(w.set_aside.total)} kept for it.
           </div>
         </div>
       </section>

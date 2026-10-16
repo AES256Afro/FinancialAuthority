@@ -20,6 +20,7 @@ export interface Part {
   riding?: PartItem[];
   everyday?: number;
   kept?: number;
+  share_of_check?: number | null;
 }
 
 export interface Check {
@@ -32,6 +33,8 @@ export interface Check {
   short: number;
   safe: number;
   parts: Part[];
+  parts_total: number;
+  cover_total: number;
   actual: boolean;
   partial?: boolean;
 }
@@ -45,6 +48,8 @@ export interface Month {
   everyday: number;
   short: number;
   parts: Part[];
+  parts_total: number;
+  cover_total: number;
   partial: boolean;
 }
 

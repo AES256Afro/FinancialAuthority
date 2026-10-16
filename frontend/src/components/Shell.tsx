@@ -1,8 +1,8 @@
 // The app shell: a rail on wide screens, tabs on a phone, and the header with the payday chip.
-import { ArrowLeftRight, BarChart3, BellDot, BookOpen, Clock, Download, FileText, Gauge, Landmark, LayoutGrid, List, Mail, MessageSquare, Mountain, PiggyBank, Receipt, Repeat, Settings, Telescope, TrendingUp, Truck, Waves, type LucideIcon } from "lucide-react";
+import { ArrowLeftRight, BarChart3, BellDot, BookOpen, Clock, Download, Eye, EyeOff, FileText, Gauge, Landmark, LayoutGrid, List, Mail, MessageSquare, Mountain, PiggyBank, Receipt, Repeat, Settings, Telescope, TrendingUp, Truck, Waves, type LucideIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
-import { brandMark, brandName, useAppearance } from "../appearance";
+import { brandMark, brandName, saveAppearance, useAppearance } from "../appearance";
 import { DEMO } from "../demo/shim";
 import { NextStepsStrip } from "./NextSteps";
 import { daysWord, longDate, shortDate } from "../format";
@@ -65,19 +65,28 @@ function DemoBanner() {
 }
 
 /** The page's name in the browser tab and the window list, from the section it belongs to. */
-function usePageTitle() {
+function usePageTitle(brand: string) {
   const { pathname } = useLocation();
   useEffect(() => {
     const match = [...NAV_ITEMS].filter((n) => (n.end ? pathname === n.to : pathname === n.to || pathname.startsWith(n.to + "/"))).sort((a, b) => b.to.length - a.to.length)[0];
     const extra: Record<string, string> = { "/glossary": "Words", "/checkin": "Check-in", "/welcome": "Welcome", "/settings/setup": "Setting up", "/settings/appearance": "Appearance", "/settings/connectors": "Connections", "/settings/models": "Models", "/settings/clients": "Apps and keys", "/settings/notifications": "Notifications", "/settings/backups": "Backups", "/settings/jobs": "Jobs", "/settings/audit": "Activity" };
     const page = extra[pathname] ?? match?.label;
     document.title = page ? `${page} · ${brandName()}` : brandName();
-  }, [pathname]);
+  }, [pathname, brand]);
 }
 
 export function Shell({ children, snapshot }: { children: ReactNode; snapshot: Snapshot | null; title?: string }) {
-  useAppearance();
-  usePageTitle();
+  const look = useAppearance();
+  usePageTitle(look.brand.name);
+  const [quietNote, setQuietNote] = useState<string | null>(null);
+  async function toggleQuiet() {
+    try {
+      await saveAppearance({ ...look, quiet: !look.quiet });
+      setQuietNote(null);
+    } catch (e) {
+      setQuietNote((e as Error).message);
+    }
+  }
   const today = snapshot?.as_of ?? new Date().toISOString().slice(0, 10);
   const pending = snapshot ? snapshot.pending.confirmations + snapshot.pending.approvals : 0;
   const item = ({ to, label, icon: Icon, end }: NavItem, size: number) => {
@@ -118,6 +127,10 @@ export function Shell({ children, snapshot }: { children: ReactNode; snapshot: S
           )}
           <div style={{ flexGrow: 1 }} />
           {snapshot && <Link to="/accounts" style={{ fontSize: 12, color: "var(--ink-2)" }}>{snapshot.accounts.length} account{snapshot.accounts.length === 1 ? "" : "s"}</Link>}
+          <button type="button" onClick={toggleQuiet} aria-pressed={look.quiet} title={look.quiet ? "Show every amount" : "Hide every amount: each one shows when tapped"} style={{ display: "inline-flex", alignItems: "center", gap: 4, minHeight: 32, padding: "0 6px", background: "none", border: 0, font: "inherit", fontSize: 12, color: "var(--ink-2)", cursor: "pointer" }}>
+            {look.quiet ? <Eye size={15} aria-hidden="true" /> : <EyeOff size={15} aria-hidden="true" />}{look.quiet ? "Show amounts" : "Hide amounts"}
+          </button>
+          {quietNote && <span role="alert" style={{ fontSize: 12, color: "var(--critical-ink)" }}>{quietNote}</span>}
           <Link to="/glossary" title="The words the app uses" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--ink-2)" }}><BookOpen size={15} aria-hidden="true" />Words</Link>
         </header>
         <NextStepsStrip />

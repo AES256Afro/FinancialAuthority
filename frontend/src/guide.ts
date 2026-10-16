@@ -62,6 +62,7 @@ export interface CoverAccount {
   riding?: CoverItem[];
   payments?: { date: string; amount: number; parts: { balance?: number; bills?: number; spend?: number }; source: string }[];
   per_window?: [number, number];
+  target_amount?: number | null;
   rung?: Rung | null;
   short?: number;
 }

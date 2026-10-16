@@ -2,6 +2,8 @@
 // The strip rides under the header on every screen; the full list sits on Today.
 import { Link, useLocation } from "react-router-dom";
 import { useApi } from "../api";
+import { Failed, Loading } from "./State";
+import { SeverityTag } from "./Status";
 
 export interface Step {
   id: string;
@@ -10,8 +12,6 @@ export interface Step {
   action: string;
   link: string;
 }
-
-const DOT = { info: "var(--paycheck)", warning: "var(--warning)", critical: "var(--critical)" };
 
 export function useNextSteps() {
   const { pathname } = useLocation();
@@ -34,9 +34,10 @@ export function NextStepsStrip() {
   return (
     <nav aria-label="Next steps" style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", fontSize: 12 }}>
       {shown.map((s) => (
-        <Link key={s.id} to={s.link} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 999, border: "1px solid var(--hairline)", background: "var(--surface)", color: "var(--ink)", textDecoration: "none", maxWidth: "100%" }}>
-          <span className="sw" style={{ background: DOT[s.severity], margin: 0, flexShrink: 0 }} />
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 360 }}>{s.text}</span>
+        // The whole text shows: on a narrow screen the chip wraps onto a second line instead of cutting it off.
+        <Link key={s.id} to={s.link} style={{ display: "inline-flex", alignItems: "center", flexWrap: "wrap", gap: 6, padding: "4px 10px", borderRadius: 14, border: "1px solid var(--hairline)", background: "var(--surface)", color: "var(--ink)", textDecoration: "none", maxWidth: "100%", minHeight: 32, boxSizing: "border-box" }}>
+          <SeverityTag severity={s.severity} />
+          <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{s.text}</span>
           <strong style={{ whiteSpace: "nowrap" }}>{s.action} →</strong>
         </Link>
       ))}
@@ -46,16 +47,18 @@ export function NextStepsStrip() {
 }
 
 export function NextStepsCard() {
-  const { data } = useNextSteps();
-  if (!data) return null;
+  const steps = useNextSteps();
+  if (steps.error && !steps.data) return <Failed error={steps.error} what="the next steps" onRetry={steps.reload} />;
+  if (!steps.data) return <Loading what="the next steps" />;
+  const data = steps.data;
   return (
     <section id="steps" className="card" style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 4 }}>
-      <strong style={{ fontSize: 14 }}>Next steps</strong>
-      {data.steps.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)" }}>Nothing needs you. Every source reads, every key is in place.</div>}
+      <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Next steps</h2>
+      {data.steps.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)" }}>Nothing to set up. Every bank and mailbox is reading, and every key is saved.</div>}
       {data.steps.map((s, i) => (
-        <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: i === 0 ? 0 : "1px solid var(--surface-2)" }}>
-          <span className="sw" style={{ background: DOT[s.severity], flexShrink: 0, margin: 0 }} />
-          <div style={{ flexGrow: 1, fontSize: 13, fontWeight: s.severity === "info" ? 500 : 700 }}>{s.text}</div>
+        <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: i === 0 ? 0 : "1px solid var(--surface-2)", flexWrap: "wrap" }}>
+          <SeverityTag severity={s.severity} />
+          <div style={{ flex: "1 1 200px", minWidth: 0, fontSize: 13, fontWeight: s.severity === "info" ? 500 : 700 }}>{s.text}</div>
           <Link to={s.link} className="btn" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", minHeight: 34, padding: "4px 10px", whiteSpace: "nowrap" }}>{s.action} →</Link>
         </div>
       ))}

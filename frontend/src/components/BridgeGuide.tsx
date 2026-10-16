@@ -113,7 +113,7 @@ export function BridgeGuide({ info, onDesktop }: { info: BridgeInfo; onDesktop?:
       )}
 
       <div style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, color: "var(--ink)", borderTop: "1px solid var(--hairline)", paddingTop: 8 }}>
-        <AlertTriangle size={15} color="var(--warning)" aria-hidden style={{ flexShrink: 0, marginTop: 1 }} />
+        <AlertTriangle size={15} color="var(--warning-ink)" aria-hidden style={{ flexShrink: 0, marginTop: 1 }} />
         <span><strong>Two passwords, never swapped.</strong> Your Proton password goes only into the Bridge's sign-in. The Bridge password goes only into this form.
           If Proton answers <em>Incorrect login credentials</em>, check the password at <Out href={PROTON_ACCOUNT}>account.proton.me</Out> in a private window before trying again: several failures in a row block sign-in for a while.</span>
       </div>

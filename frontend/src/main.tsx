@@ -10,6 +10,26 @@ import { getPrefs } from "./prefs";
 
 applyLook(getPrefs().look);
 
+// After an update, a page piece this tab knew may have been renamed. Load the new app once instead of breaking;
+// the flag stops a loop if the piece is truly missing.
+window.addEventListener("vite:preloadError", (event) => {
+  if (sessionStorage.getItem("fa-reloaded-for-update")) return;
+  event.preventDefault();
+  try {
+    sessionStorage.setItem("fa-reloaded-for-update", "1");
+  } catch {
+    // private mode: reload anyway, once per page view
+  }
+  window.location.reload();
+});
+window.setTimeout(() => {
+  try {
+    sessionStorage.removeItem("fa-reloaded-for-update");
+  } catch {
+    // nothing to clear
+  }
+}, 10000);
+
 // The static demo is served from a single page at a fixed address, so its routes live after the hash.
 const Router = DEMO ? HashRouter : BrowserRouter;
 

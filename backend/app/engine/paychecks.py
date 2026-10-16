@@ -217,6 +217,19 @@ def beads(snap: dict) -> list[dict]:
     return out
 
 
+def _totals(checks: list[dict]) -> list[dict]:
+    """What the pictures draw beside each check: all its parts together, the parts it had to cover (everything but
+    what was yours and what was saved), and each part's share of what came in."""
+    for c in checks:
+        parts = c.get("parts") or []
+        c["parts_total"] = _money(sum(p["amount"] for p in parts))
+        c["cover_total"] = _money(sum(p["amount"] for p in parts if p.get("key") not in ("yours", "saving")))
+        base = c.get("inflow") or c.get("income") or 0.0
+        for p in parts:
+            p["share_of_check"] = round(p["amount"] / base, 4) if base else None
+    return checks
+
+
 def paycheck_views(session: Session, today: date, *, snap: dict | None = None, saving: dict | None = None) -> dict:
     from .saving import saving_plan
     from .snapshot import finance_snapshot
@@ -227,7 +240,7 @@ def paycheck_views(session: Session, today: date, *, snap: dict | None = None, s
         saving = saving_plan(session, today, snap=snap)
     return {
         "as_of": today.isoformat(), "parts": [{"key": k, "label": label} for k, label in PARTS],
-        "windows": projected(snap, saving), "history": history(session, today), "months": months_ahead(session, today, saving), "beads": beads(snap),
+        "windows": _totals(projected(snap, saving)), "history": _totals(history(session, today)), "months": _totals(months_ahead(session, today, saving)), "beads": beads(snap),
         "share": saving.get("share_used") if saving.get("chosen") else None,
         "basis": "Each check split by what it pays: the projected checks from the plan, the past checks from the ledger's spending accounts, the months from the registers and the usual pace.",
         "not_advice": NOT_ADVICE,

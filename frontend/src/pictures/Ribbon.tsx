@@ -1,7 +1,8 @@
 // The ribbon: one check splitting into where it goes, width in dollars. Tap a part and it splits again into
 // its bills. Every band is the engine's figure; the ribbon only draws it.
+import { OctagonAlert } from "lucide-react";
 import { useState } from "react";
-import { money } from "../format";
+import { money, shortDate } from "../format";
 import { inkOn, type Check, type Part, type PartKey } from "../paychecks";
 import { CheckPicker, PartTip, Tip, useColours, useTip } from "./common";
 
@@ -82,7 +83,7 @@ export function Ribbon({ checks, initial = 0 }: { checks: Check[]; initial?: num
             );
           })}
           {opened && openNode && itemRows.map((r) => (
-            <g key={r.key} onMouseMove={(e) => show(e, <div><strong>{r.it.name}</strong><div className="num">{money(r.it.amount)} · {r.it.date}</div></div>)}>
+            <g key={r.key} onMouseMove={(e) => show(e, <div><strong>{r.it.name}</strong><div className="num">{money(r.it.amount)} · {shortDate(r.it.date)}</div></div>)}>
               <path d={band(x1 + nodeW, r.ys, x2, r.y, r.hs)} fill={colours[opened.key]} opacity={0.3} />
               <rect x={x2} y={r.y} width={nodeW} height={r.h} rx={2} fill={colours[opened.key]} />
               <text x={x2 + nodeW + 6} y={r.y + r.h / 2 + 4} fontSize="11" fill="var(--ink)">{r.it.name.length > 24 ? `${r.it.name.slice(0, 23)}…` : r.it.name} <tspan fill="var(--ink-2)">{money(r.it.amount)}</tspan></text>
@@ -95,13 +96,13 @@ export function Ribbon({ checks, initial = 0 }: { checks: Check[]; initial?: num
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", fontSize: 12, color: "var(--ink-2)" }}>
         {parts.map((p) => (
           <button key={p.key} type="button" onClick={() => p.items.length && setOpen(open === p.key ? null : p.key)} aria-pressed={open === p.key}
-            style={{ display: "inline-flex", alignItems: "center", gap: 6, font: "inherit", fontSize: 12, padding: "4px 8px", borderRadius: 999, border: "1px solid var(--hairline)", background: open === p.key ? colours[p.key] : "var(--surface)", color: open === p.key ? inkOn(colours[p.key]) : "var(--ink-2)", cursor: p.items.length ? "pointer" : "default" }}>
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, font: "inherit", fontSize: 12, padding: "4px 8px", minHeight: 32, borderRadius: 999, border: "1px solid var(--hairline)", background: open === p.key ? colours[p.key] : "var(--surface)", color: open === p.key ? inkOn(colours[p.key]) : "var(--ink-2)", cursor: p.items.length ? "pointer" : "default" }}>
             <span className="sw" style={{ background: colours[p.key], margin: 0 }} />{p.label} <strong className="num">{money(p.amount)}</strong>
           </button>
         ))}
-        {c.short > 0 && <strong style={{ color: "var(--critical)" }}>Short {money(c.short)}</strong>}
+        {c.short > 0 && <strong style={{ color: "var(--critical-ink)", display: "inline-flex", alignItems: "center", gap: 4 }}><OctagonAlert size={14} aria-hidden="true" />Short {money(c.short)}</strong>}
       </div>
-      <div style={{ fontSize: 11, color: "var(--muted)" }}>Tap a part to split it into its bills. Width is dollars.</div>
+      <div style={{ fontSize: 11, color: "var(--muted)" }}>Tap a part, or its button above, to split it into its bills. The wider the band, the more dollars.</div>
     </div>
   );
 }

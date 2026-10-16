@@ -1,17 +1,42 @@
 // Settings › Setting up: where each part runs, and the few things only the owner can do, in order. Written for
 // someone who installed the app from GitHub with nobody beside them. Each section has an anchor the next steps
-// and the other screens link to.
+// and the other screens link to, and says whether it is done, from the same checks as the list at the top.
 import { ExternalLink } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "../api";
-import { SetupChecklist } from "../components/SetupChecklist";
+import { SetupChecklist, type Check } from "../components/SetupChecklist";
+import { StatusPill } from "../components/Status";
 import { Where } from "../components/Where";
 
-function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
+// Which of the app's own checks speak for each step. Mail and banks have one check per mailbox or link.
+const STEP_CHECKS: Record<string, (id: string) => boolean> = {
+  secrets: (id) => id === "secrets",
+  mail: (id) => id === "mail" || id.startsWith("mail-"),
+  banks: (id) => id === "bank" || id.startsWith("bank-"),
+  publish: (id) => id === "publish",
+  phone: (id) => id === "phone",
+  claude: (id) => id === "models",
+  backups: (id) => id === "backups",
+};
+
+function StepState({ checks }: { checks: Check[] }) {
+  if (!checks.length) return null;
+  const has = (s: Check["state"]) => checks.some((c) => c.state === s);
+  if (has("error")) return <StatusPill status="crit">Not working</StatusPill>;
+  if (has("todo")) return <StatusPill status="warn">Not done yet</StatusPill>;
+  if (has("warn")) return <StatusPill status="warn">Look at this</StatusPill>;
+  return <StatusPill status="good">Done</StatusPill>;
+}
+
+function Section({ id, title, checks, children }: { id: string; title: string; checks?: Check[]; children: ReactNode }) {
+  const mine = (checks ?? []).filter((c) => STEP_CHECKS[id]?.(c.id));
   return (
     <section id={id} className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 8, scrollMarginTop: 16 }}>
-      <strong style={{ fontSize: 15 }}>{title}</strong>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>{title}</h2>
+        <StepState checks={mine} />
+      </div>
       <div style={{ fontSize: 13, color: "var(--ink-2)", display: "flex", flexDirection: "column", gap: 8, maxWidth: "80ch" }}>{children}</div>
     </section>
   );
@@ -44,6 +69,8 @@ function Map() {
 
 export function Setup() {
   const about = useApi<{ version: string; public_url: string | null; install?: string; data_key_set?: boolean }>("/api/v1/about");
+  const check = useApi<{ checks: Check[] }>("/api/v1/setup/check");
+  const checks = check.data?.checks;
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const publicUrl = about.data?.public_url || origin;
   return (
@@ -57,44 +84,44 @@ export function Setup() {
       <SetupChecklist />
       <Map />
 
-      <Section id="secrets" title="1. The app's own secrets">
-        <span>Three values set when the app is installed: <code>FA_PASSWORD</code> (your sign-in), <code>FA_SESSION_SECRET</code> and <code>FA_DATA_KEY</code>. <code>FA_DATA_KEY</code> encrypts the passwords and keys you paste into the app; keep a copy somewhere safe, because a database restored without it keeps your ledger but loses those.</span>
+      <Section id="secrets" title="1. The app's own secrets" checks={checks}>
+        <span>Three values set when the app is installed: <code>FA_PASSWORD</code> (your sign-in), <code>FA_SESSION_SECRET</code> and <code>FA_DATA_KEY</code>. <code>FA_DATA_KEY</code> encrypts the passwords and keys you paste into the app; keep a copy somewhere safe, because a database restored without it keeps your transactions and bills but loses those.</span>
         <span><strong>On BoxPilot:</strong> it makes all three when it installs the app; they are on the app's card, under its settings.</span>
         <span><strong>With Docker Compose:</strong> in the folder with <code>docker-compose.yml</code>, copy <code>.env.example</code> to <code>.env</code> and fill each with a long random value, for example from this command on the server:</span>
         <code style={{ display: "block", padding: "6px 8px", background: "var(--surface-2)", borderRadius: 6 }}>openssl rand -hex 32</code>
         <span>Then <code>docker compose up -d</code> again so the app reads them.</span>
       </Section>
 
-      <Section id="mail" title="2. Your mail">
+      <Section id="mail" title="2. Your mail" checks={checks}>
         <span>Bills, statements and paystubs read themselves from a mailbox. Proton Mail goes through the Proton Mail Bridge, which is signed in once on the server; Gmail and others use an app password. <Link to="/settings/connectors#mail">Connectors › Mailboxes</Link> walks through each, with the commands for this install.</span>
       </Section>
 
-      <Section id="banks" title="3. Your bank">
+      <Section id="banks" title="3. Your bank" checks={checks}>
         <span>Live transactions come through Plaid or Teller, with free developer keys you make once; the bank's own login opens in their window, and the app never sees your bank password. Or import your bank's CSV or OFX download. <Link to="/settings/connectors#banks">Connectors › Banks</Link> has the links for the keys.</span>
       </Section>
 
-      <Section id="publish" title="4. Reach it from anywhere">
+      <Section id="publish" title="4. Reach it from anywhere" checks={checks}>
         <span>On your home network the app is at <code>{origin}</code>. To open it from your phone away from home, and to let Claude on the web reach it, it needs an https address:</span>
         <span><strong>On BoxPilot:</strong> install the Cloudflare Tunnel app, publish FinancialAuthority with it, then put the address it gives (for example <code>https://money.example.com</code>) in the app's <code>FA_PUBLIC_URL</code> setting on its card.</span>
         <span><strong>Elsewhere:</strong> Tailscale gives every device you own a private https address with no ports opened; or any reverse proxy with a certificate. Set <code>FA_PUBLIC_URL</code> to that address.</span>
         <Where id="tailscale" />
       </Section>
 
-      <Section id="phone" title="5. Your phone">
+      <Section id="phone" title="5. Your phone" checks={checks}>
         <span>Open <code>{publicUrl}</code> on the phone and add it to the Home Screen; it then opens like an app and can send you its own notifications. <Link to="/settings/notifications">Notifications</Link> has the button to turn them on and, if you prefer, ntfy or Gotify.</span>
         <Where id="phone_install" />
       </Section>
 
-      <Section id="claude" title="6. Claude, or another model">
+      <Section id="claude" title="6. Claude, or another model" checks={checks}>
         <span>The built-in chat uses a model you choose on <Link to="/settings/models">Models</Link>: Ollama on the server (free), any OpenAI-compatible server, or Claude with an Anthropic key. Separately, Claude on the web, the desktop app or Claude Code can read your plan through the app's own sign-in:</span>
         <Where id="claude_connect" fill={{ url: `${publicUrl}/mcp` }} />
       </Section>
 
-      <Section id="backups" title="7. Backups">
+      <Section id="backups" title="7. Backups" checks={checks}>
         <span>The app keeps its own copies of the database, before every import and once a day; <Link to="/settings/backups">Backups</Link> shows them. On BoxPilot the app's data is also archived with the server's backups. Keep <code>FA_DATA_KEY</code> with your backups.</span>
       </Section>
 
-      <div style={{ fontSize: 12, color: "var(--muted)" }}>
+      <div style={{ fontSize: 12, color: "var(--ink-2)" }}>
         The same guide, with every install route, is in the project's <Out href="https://github.com/AES256Afro/FinancialAuthority/blob/main/docs/SETUP.md">docs/SETUP.md</Out>. Version {about.data?.version ?? ""}.
       </div>
     </div>

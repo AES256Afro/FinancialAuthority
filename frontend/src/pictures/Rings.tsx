@@ -1,6 +1,6 @@
 // Rings: one ring per check, what is yours in the middle. Side by side, the rhythm of the checks shows: the one
 // that carries the rent, the one that carries the card.
-import { money, monthDay } from "../format";
+import { money, monthDay, shortDate } from "../format";
 import type { Check } from "../paychecks";
 import { PartTip, Tip, useColours, useTip } from "./common";
 
@@ -29,7 +29,7 @@ export function Rings({ checks }: { checks: Check[] }) {
         {shown.map((c, k) => {
           const cx = cell * k + cell / 2;
           const cy = 92;
-          const total = Math.max(1, c.parts.reduce((t, p) => t + p.amount, 0) + c.short);
+          const total = Math.max(1, c.parts_total + c.short); // the ring's whole: the parts, and what was short, side by side
           let a = -Math.PI / 2;
           const yours = c.parts.find((p) => p.key === "yours")?.amount ?? 0;
           return (
@@ -38,11 +38,11 @@ export function Rings({ checks }: { checks: Check[] }) {
                 const span = (p.amount / total) * Math.PI * 2;
                 const d = arc(cx, cy, r, ir, a, a + Math.max(0.002, span - 0.02));
                 a += span;
-                return <path key={p.key} d={d} fill={colours[p.key]} onMouseMove={(e) => show(e, <><div style={{ fontWeight: 800, marginBottom: 4 }}>{monthDay(c.start)} check</div><PartTip part={p} colour={colours[p.key]} of={c.inflow} /></>)} />;
+                return <path key={p.key} d={d} fill={colours[p.key]} onMouseMove={(e) => show(e, <><div style={{ fontWeight: 800, marginBottom: 4 }}>The {shortDate(c.start)} check</div><PartTip part={p} colour={colours[p.key]} of={c.inflow} /></>)} />;
               })}
               {c.short > 0 && <path d={arc(cx, cy, r, ir, a, a + (c.short / total) * Math.PI * 2 - 0.02)} fill="var(--critical)" />}
-              <text x={cx} y={cy - 2} fontSize="15" fontWeight="800" textAnchor="middle" fill={c.short > 0 ? "var(--critical)" : "var(--ink)"}>{c.short > 0 ? `−${money(c.short)}` : money(yours)}</text>
-              <text x={cx} y={cy + 14} fontSize="10.5" textAnchor="middle" fill="var(--ink-2)">{c.short > 0 ? "short" : "yours"}</text>
+              <text x={cx} y={cy - 2} fontSize="15" fontWeight="800" textAnchor="middle" fill={c.short > 0 ? "var(--critical-ink)" : "var(--ink)"}>{c.short > 0 ? `−${money(c.short)}` : money(yours)}</text>
+              <text x={cx} y={cy + 14} fontSize="10.5" fontWeight={c.short > 0 ? 800 : 400} textAnchor="middle" fill={c.short > 0 ? "var(--critical-ink)" : "var(--ink-2)"}>{c.short > 0 ? "short" : "yours"}</text>
               <text x={cx} y={cy + r + 24} fontSize="12" fontWeight="800" textAnchor="middle" fill="var(--ink)">{monthDay(c.start)} · {money(c.inflow)}</text>
             </g>
           );
