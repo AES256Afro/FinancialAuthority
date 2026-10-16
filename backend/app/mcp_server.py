@@ -386,6 +386,21 @@ def build_server() -> MCPServer:
             services.audit(session, client=client, client_kind="key", tool="weekly_checkin", args={}, rows=len(out["unexpected"]), redaction=redaction)
             return out
 
+    @server.tool(name="account_move", annotations=READ_ONLY)
+    def account_move_tool() -> dict:
+        """Every bank move under way: the old and new account, each item to move (the paycheck, bills, card
+        payments, pay-later plans, subscriptions, advance apps and recurring charges found in the ledger) with its
+        decision, its status, its switch window and the plain instruction, what each account needs in each pay
+        window during the move with any money to move between them, the alerts, and whether the old account can
+        close. The app never moves money; tell the owner what to switch and when."""
+        from .engine.moves import active_moves, move_plan
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            out = [move_plan(session, m, _today()) for m in active_moves(session)]
+            services.audit(session, client=client, client_kind="key", tool="account_move", args={}, rows=sum(p["progress"]["total"] for p in out), redaction=redaction)
+            return {"moves": out, "count": len(out)}
+
     @server.tool(name="glance", annotations=READ_ONLY)
     def glance_tool() -> dict:
         """The few figures for a quick look: safe to spend and through when, the next payday, the next bill,

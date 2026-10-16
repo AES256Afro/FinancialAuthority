@@ -154,6 +154,45 @@ class Scenario(SQLModel, table=True):
     created_at: dt.datetime = Field(default_factory=utcnow)
 
 
+class AccountMove(SQLModel, table=True):
+    """Moving the banking from one account to another over weeks: the paycheck, the bills, the card payments and
+    the subscriptions, each switched in its own window so nothing is charged to an account with no money in it."""
+
+    __tablename__ = "account_moves"
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    source_account_id: int = Field(foreign_key="accounts.id")
+    target_account_id: int | None = Field(default=None, foreign_key="accounts.id")  # None until the new account is in the app
+    target_name: str = ""
+    started_on: dt.date
+    finish_by: dt.date | None = None
+    debit_card_on: dt.date | None = None  # when the new debit card arrived, for the subscriptions it pays
+    status: str = "moving"  # moving | done | cancelled
+    created_at: dt.datetime = Field(default_factory=utcnow)
+
+
+class MoveItem(SQLModel, table=True):
+    """One thing that has to move: found from the registers and the ledger, decided by the owner, switched by the
+    owner at the payer, and confirmed by the ledger when a charge or a deposit lands on the new account."""
+
+    __tablename__ = "move_items"
+    id: int | None = Field(default=None, primary_key=True)
+    move_id: int = Field(foreign_key="account_moves.id", index=True)
+    ref: str  # income:1 | bill:12 | card:2 | plan:3 | advance:earnin | found:verizon | transfer:paypal
+    kind: str  # income | bill | subscription | card_payment | plan | advance | found | transfer
+    name: str
+    amount: float = 0.0
+    due_day: int | None = None
+    match_key: str = ""  # the merchant the ledger shows it under
+    decision: str = "move"  # move | keep | drop | undecided
+    status: str = "todo"  # todo | switched | confirmed
+    switched_on: dt.date | None = None
+    confirmed_on: dt.date | None = None
+    last_seen_old: dt.date | None = None
+    last_seen_new: dt.date | None = None
+    note: str = ""
+
+
 class PlannedPayment(SQLModel, table=True):
     """Money the owner says is leaving before the ledger sees it; settles itself when the transaction posts."""
 

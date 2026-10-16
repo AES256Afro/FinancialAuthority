@@ -89,6 +89,12 @@ def one_thing(session: Session, today: date, *, snap: dict, cover: dict | None =
                 cands.append((2, {"text": f"{row['action']}: {_usd(row['amount'])} by {_short(row['date'])}.", "why": f"So that {row['so_that']}.", "link": "/cover", "source": row["source"], "amount": row["amount"], "date": row["date"]}))
             elif row["kind"] == "move" and row["date"] <= today.isoformat():
                 cands.append((5, {"text": f"{row['action']}: {_usd(row['amount'])} today.", "why": f"So that {row['so_that']}.", "link": "/saving", "source": row["source"], "amount": row["amount"], "date": row["date"]}))
+    from .moves import active_moves, move_plan
+
+    for mv in active_moves(session):
+        for al in move_plan(session, mv, today)["alerts"][:4]:
+            rank = {"crit": 1, "warn": 3, "info": 5}[al["severity"]]
+            cands.append((rank, {"text": al["text"], "why": f"Part of {mv.name}: switched one at a time so nothing is charged to an account with no money in it.", "link": "/switch", "source": f"move:{mv.id}:{al['ref']}", "amount": None, "date": today.isoformat()}))
     for a in snap["advances"]["items"]:
         if a["date"] <= (today + timedelta(days=3)).isoformat():
             cands.append((3, {"text": f"Keep {_usd(a['amount'])} in checking for {a['name']} on {_short(a['date'])}.", "why": "The app takes it back on its own; a short account turns it into a fee.", "link": "/borrowing", "source": a["source"], "amount": a["amount"], "date": a["date"]}))

@@ -74,6 +74,12 @@ def due_today(session: Session, today: date) -> list[dict[str, Any]]:
                 days = (date.fromisoformat(a["pay_by"]) - today).days
                 if 0 <= days <= 2:
                     out.append({"key": f"statement:{a['id']}:{a['statement_on']}", "title": f"Pay {_usd(a['to_target'])} on {a['name']} by {_short(a['pay_by'])}", "body": f"The statement on {_short(a['statement_on'])} then reports under 30% used.", "link": "/cover", "tag": "card"})
+    from .moves import active_moves, move_plan
+
+    for mv in active_moves(session):
+        for al in move_plan(session, mv, today)["alerts"]:
+            if al["severity"] in ("crit", "warn") or al["text"].startswith(("Switch ", "Move ")):
+                out.append({"key": f"move:{mv.id}:{al['ref']}:{today.isoformat()}", "title": al["text"][:110], "body": f"{mv.name}. The Switching banks page has each step.", "link": "/switch", "tag": "move"})
     if s["checkin"] and today.weekday() == 6:
         log = get_setting(session, "checkin.log", {}) or {}
         if week_key(today) not in log:

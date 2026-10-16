@@ -312,6 +312,24 @@ def reminders() -> str:
         return f"sent {out['sent']}" + (f" ({out['reason']})" if out.get("reason") else "")
 
 
+def moves_verify() -> str:
+    """Read the ledger for every move under way: confirm each switch the new account shows, note what still lands
+    on the old one, and add any new recurring charge found on the old account."""
+    from ..api.routes import today
+    from ..engine.moves import active_moves, refresh_items, verify
+
+    with session_scope() as session:
+        n = c = a = 0
+        for mv in active_moves(session):
+            a += refresh_items(session, mv, today())
+            c += verify(session, mv, today())["confirmed"]
+            n += 1
+        return f"{n} move{'s' if n != 1 else ''} read; {c} confirmed, {a} new"
+
+
+jobs.register("moves_verify", moves_verify, 6 * 3600, "Confirm each switch of a bank move from the ledger, and find what still uses the old account")
+
+
 jobs.register("reminders", reminders, 900, "Send the reminders you switched on, once each, from the chosen hour")
 
 
