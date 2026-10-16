@@ -5,6 +5,7 @@ import { ExternalLink } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "../api";
+import { SetupChecklist } from "../components/SetupChecklist";
 import { Where } from "../components/Where";
 
 function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
@@ -53,6 +54,7 @@ export function Setup() {
           What only you can do, in order. When a step says <strong>on the server</strong>, it means the machine FinancialAuthority is installed on (a BoxPilot box, an Ubuntu server, a Windows or Mac with Docker), reached from your computer over SSH; not the phone or computer you are reading this on.
         </p>
       </div>
+      <SetupChecklist />
       <Map />
 
       <Section id="secrets" title="1. The app's own secrets">
