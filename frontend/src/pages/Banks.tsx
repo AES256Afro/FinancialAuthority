@@ -5,6 +5,8 @@ import { useSearchParams } from "react-router-dom";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { api, useApi } from "../api";
 import { loadScript, openPlaidLink, resumePlaidLink } from "../plaid";
+import { Where } from "../components/Where";
+import { Freshness } from "../components/Freshness";
 
 interface LinkRow {
   id: number;
@@ -176,13 +178,14 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
         </div>
       )}
       {data && !data.can_store_secrets && <div style={{ fontSize: 13, color: "var(--critical)" }}>FA_DATA_KEY is empty, so tokens cannot be stored. Set it in the app's environment first.</div>}
+      <Freshness />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 12 }}>
         <div style={{ border: "1px solid var(--hairline)", borderRadius: 12, padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <strong>Plaid</strong>
             <span style={{ fontSize: 12, color: p?.configured ? "var(--safe)" : "var(--muted)", fontWeight: 700 }}>{p?.configured ? `ready · ${p.environment}` : "not set up"}</span>
           </div>
-          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Free developer account at dashboard.plaid.com; the Trial plan gives ten bank logins, and removing one does not free its slot. Paste the client id and the secret here, never into a chat.</div>
+          <Where id="plaid" fill={{ redirect: data?.public_url?.startsWith("https://") ? `${data.public_url.replace(/\/$/, "")}/settings/connectors` : "(needs the app's https address first: Settings › Setting up › Reach it from anywhere)" }} />
           {p?.keys && (
             <div style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, color: p.keys.result === "ok" ? "var(--safe)" : "var(--warning)" }}>
               {p.keys.result === "ok" ? <CheckCircle2 size={14} style={{ flexShrink: 0, marginTop: 1 }} /> : <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />}
@@ -208,7 +211,7 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
             <strong>Teller</strong>
             <span style={{ fontSize: 12, color: t?.configured ? "var(--safe)" : "var(--muted)", fontWeight: 700 }}>{t?.configured ? `ready · ${t.environment}` : "not set up"}</span>
           </div>
-          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Free developer account at teller.io; the development environment reaches real banks for a hundred enrollments. Paste the application id and the application certificate it issues.</div>
+          <Where id="teller" />
           <Field label="Application id"><input className="input" value={teller.application_id} onChange={(e) => setTeller({ ...teller, application_id: e.target.value })} placeholder={t?.application_id || "app_…"} autoComplete="off" /></Field>
           <Field label={`Certificate (PEM) · ${t?.certificate_set ? "set" : "not set"}`}><textarea className="input" rows={3} value={teller.certificate} onChange={(e) => setTeller({ ...teller, certificate: e.target.value })} placeholder="-----BEGIN CERTIFICATE-----" style={{ fontFamily: "ui-monospace, monospace", fontSize: 11 }} /></Field>
           <Field label={`Private key (PEM) · ${t?.private_key_set ? "set" : "not set"}`}><textarea className="input" rows={3} value={teller.private_key} onChange={(e) => setTeller({ ...teller, private_key: e.target.value })} placeholder="-----BEGIN PRIVATE KEY-----" style={{ fontFamily: "ui-monospace, monospace", fontSize: 11 }} /></Field>

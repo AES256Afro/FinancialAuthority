@@ -3,6 +3,7 @@
 import { AlertTriangle, Check, CheckCircle2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, useApi } from "../api";
+import { Where } from "../components/Where";
 
 interface RoleConf {
   provider: string;
@@ -158,7 +159,9 @@ function RoleCard({ role, conf, providers, defaults, onSaved }: { role: string; 
           <span><strong>{test.ok ? "Works." : "Not working."}</strong> {test.ok ? `${test.model} replied "${test.reply}" in ${test.ms} ms.` : test.error}</span>
         </div>
       )}
-      <div style={{ fontSize: 12, color: "var(--muted)" }}>Prices are optional. With both entered, every chat and review shows its cost in dollars; without them, tokens only.</div>
+      {form.provider === "ollama" && <Where id="ollama" />}
+      {form.provider === "anthropic" && <Where id="anthropic_pricing" />}
+      {form.provider !== "anthropic" && <div style={{ fontSize: 12, color: "var(--muted)" }}>Prices are optional. With both entered, every chat and review shows its cost in dollars; without them, tokens only.</div>}
     </section>
   );
 }
@@ -177,8 +180,8 @@ function Secrets({ state, canStore, onSaved }: { state: Record<string, boolean>;
     }
   }
   const rows = [
-    { name: "anthropic", title: "Anthropic API key", hint: "console.anthropic.com › API keys. Pays per review; the cost shows on each one." },
-    { name: "openai", title: "OpenAI-compatible key", hint: "For OpenAI, OpenRouter, Groq, or any server that wants a bearer key. Leave empty for a local server." },
+    { name: "anthropic", title: "Anthropic API key", where: "anthropic_key" as const },
+    { name: "openai", title: "OpenAI-compatible key", where: "openai_key" as const },
   ];
   return (
     <section className="card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -199,7 +202,7 @@ function Secrets({ state, canStore, onSaved }: { state: Record<string, boolean>;
           <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "1 1 260px" }}>
             <span className="lab">{r.title} · {state[r.name] ? "set" : "not set"}</span>
             <input className="input" type="password" autoComplete="off" value={values[r.name]} onChange={(e) => setValues({ ...values, [r.name]: e.target.value })} placeholder={state[r.name] ? "Paste a new key to replace it, or save empty to remove it" : "Paste the key"} disabled={!canStore} />
-            <span style={{ fontSize: 12, color: "var(--muted)" }}>{r.hint}</span>
+            <Where id={r.where} />
           </label>
           <button className="btn dark" type="submit" disabled={!canStore}>Save</button>
         </form>

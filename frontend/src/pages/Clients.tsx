@@ -1,6 +1,7 @@
 // API keys for models and scripts. A key is shown once; the owner keeps it in the client, never in chat.
 import { useState } from "react";
 import { api, useApi } from "../api";
+import { Where } from "../components/Where";
 
 interface KeyRow {
   id: number;
@@ -40,8 +41,9 @@ function ConnectedApps() {
     <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>Connected apps</h2>
       <p style={{ margin: 0, color: "var(--ink-2)", fontSize: 13 }}>
-        Apps that signed in through the consent page: claude.ai on the phone or the web, Claude Code, Open WebUI. To connect claude.ai: Settings › Connectors › Add custom connector, with the address <code>{window.location.origin}/mcp</code>; this app's sign-in page appears once. Revoking an app signs it out everywhere.
+        Apps that signed in through the consent page: claude.ai on the phone or the web, Claude Code, Open WebUI. Revoking an app signs it out everywhere.
       </p>
+      <Where id="claude_connect" fill={{ url: `${window.location.origin}/mcp` }} />
       <div className="card" style={{ padding: "6px 14px", overflowX: "auto" }}>
         <table className="ledger">
           <thead><tr><th>App</th><th>Scopes</th><th>Sees</th><th>Signed in</th><th>Last used</th><th></th></tr></thead>

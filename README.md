@@ -10,8 +10,9 @@ It answers three questions:
 
 Every morning it says what needs attention. Eight home views and three looks are switchable in Settings › Appearance; all of them render the same numbers. Retirement and investment accounts (a 401(k), an IRA, a brokerage account, an HSA) come in by signing in at the vendor through Plaid's investments product, or by hand from each statement. Everything the app still needs from you is a tappable next step on every screen, landing on the exact button or box. It never moves money. It reads, plans, drafts, and sends only with an approval. It pays nobody to see your own money.
 
-**Status: M0 through M5, first cuts.** The engine's snapshot (windows, calendar, payments, paystubs, the usual pace, the brief), the purchase check and the billing-date optimiser, reports, net worth and the debt mountain; the Rocket Money loader with recurring detection and the export captured from mail; payment matching; live bank links through Plaid and Teller; all eight home views and the Today, Bills, Debts, Accounts, Reports, Paystubs, Mail, Ledger and Chat pages; the Needs-you flow; owner sign-in, the OAuth 2.1 server for claude.ai and Claude Code, API keys, the audit log; the scheduler; the MCP endpoint with sixteen tools; the mail connector for Proton (through the Bridge), Gmail and any IMAP mailbox with a rules-first classifier; and the two model roles, the advisor in the built-in chat and the reviewer with one-tap notes, over Ollama, any OpenAI-compatible server or Claude by API. Not deployed yet; that needs a shell on BigBox and the owner's keys.
+**Status:** running daily for its owner since October 2026; version in `backend/app/version.py`. **To install it, start with [docs/SETUP.md](docs/SETUP.md)**: BoxPilot, Docker Compose on Linux, or Docker Desktop on Windows or Mac, then mail (the Proton Mail Bridge step by step), your bank, your phone and Claude.
 
+- [docs/SETUP.md](docs/SETUP.md): install and set up, step by step, for each kind of server.
 - [docs/PLAN.md](docs/PLAN.md): what it is, how it operates, where the data comes from, the engine, reach from anywhere, views and looks, security, decisions.
 - [docs/ROADMAP.md](docs/ROADMAP.md): milestones M0 to M8 and what comes later.
 - [docs/FEATURES.md](docs/FEATURES.md): what Monarch, Empower, Simplifi, YNAB, Copilot, Cleo, Origin and Rocket Money do, and what this app takes from them.
@@ -46,7 +47,7 @@ One image, published by CI as `ghcr.io/aes256afro/financialauthority` (`:edge` f
 
 ## Any model
 
-The app is its own OAuth 2.1 server. claude.ai (web, desktop, phone): Settings › Connectors › Add custom connector with `https://<your-address>/mcp`; the app's consent page appears once. Claude Code:
+The app is its own OAuth 2.1 server. claude.ai (web, desktop, phone): Customize › Connectors › + Add › Add custom connector with `https://<your-address>/mcp`; the app's consent page appears once. Claude Code:
 
 ```bash
 claude mcp add --transport http financialauthority http://<host>:8430/mcp

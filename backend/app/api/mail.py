@@ -24,9 +24,9 @@ from .routes import today
 router = APIRouter(prefix="/api/v1", tags=["mail"])
 
 PRESETS = {
-    "proton": {"host": "bridge", "port": 143, "use_ssl": False, "starttls": True, "smtp_host": "bridge", "smtp_port": 25, "smtp_ssl": False, "smtp_starttls": True, "help": "The Proton Mail Bridge sidecar. Sign in to the Bridge once on the server with the two commands below; it prints a username and a password of its own, and those go here. Host and port are already right: the Bridge's screen says 1143, and inside the server that is 143."},
-    "gmail": {"host": "imap.gmail.com", "port": 993, "use_ssl": True, "starttls": False, "smtp_host": "smtp.gmail.com", "smtp_port": 465, "smtp_ssl": True, "smtp_starttls": False, "help": "Gmail with an app password (Google Account › Security › 2-Step Verification › App passwords)."},
-    "imap": {"host": "", "port": 993, "use_ssl": True, "starttls": False, "smtp_host": "", "smtp_port": 0, "smtp_ssl": False, "smtp_starttls": True, "help": "Any mailbox over IMAP."},
+    "proton": {"host": "bridge", "port": 143, "use_ssl": False, "starttls": True, "smtp_host": "bridge", "smtp_port": 25, "smtp_ssl": False, "smtp_starttls": True, "help": "Proton Mail through the Proton Mail Bridge. The steps below say where each command runs and which password goes where."},
+    "gmail": {"host": "imap.gmail.com", "port": 993, "use_ssl": True, "starttls": False, "smtp_host": "smtp.gmail.com", "smtp_port": 465, "smtp_ssl": True, "smtp_starttls": False, "help": "Gmail with an app password: a 16-letter password Google makes for one app, not your Google password. It needs 2-Step Verification on."},
+    "imap": {"host": "", "port": 993, "use_ssl": True, "starttls": False, "smtp_host": "", "smtp_port": 0, "smtp_ssl": False, "smtp_starttls": True, "help": "Any mailbox over IMAP: your provider's help pages list its IMAP server (often imap.<provider>.com, port 993). Many providers want an app password rather than your sign-in password."},
 }
 
 
@@ -76,7 +76,9 @@ class MailAccountIn(BaseModel):
 
 @router.get("/mail/presets")
 def presets(_: auth.Principal = Depends(auth.require_read)) -> dict:
-    return {"presets": PRESETS}
+    from ..config import settings
+
+    return {"presets": PRESETS, "bridge": {"container": settings.bridge_container, "install": settings.install, "in_container": in_container()}}
 
 
 @router.get("/mail/accounts")

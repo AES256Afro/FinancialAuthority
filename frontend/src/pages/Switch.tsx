@@ -9,6 +9,7 @@ import { StatusPill } from "../components/Status";
 import { money, monthDay, shortDate } from "../format";
 import { palette } from "../looks";
 import { getPrefs } from "../prefs";
+import { Where } from "../components/Where";
 
 interface Item {
   id: number; ref: string; kind: string; name: string; amount: number; due_day: number | null; decision: string; status: string;
@@ -253,6 +254,7 @@ function MovePlan({ id }: { id: number }) {
               {s.link && !s.done && <Link to={s.link} style={{ marginLeft: "auto" }}>Open</Link>}
             </div>
           ))}
+          {ph.key === "paycheck" && <Where id="direct_deposit" />}
           {ph.key === "ready" && (
             <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, flexWrap: "wrap" }}>
               The new debit card arrived on

@@ -71,6 +71,9 @@ class TellerClient:
         return httpx.Client(**kwargs)
 
     def get(self, access_token: str, path: str, params: dict[str, Any] | None = None) -> Any:
+        from ..usage import record_call
+
+        record_call("teller", path.split("?")[0])
         with self.client(access_token) as client:
             response = client.get(path, params=params)
         if response.status_code >= 400:

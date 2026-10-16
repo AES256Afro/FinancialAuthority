@@ -4,6 +4,7 @@ import { palette } from "../looks";
 import { getPrefs } from "../prefs";
 import type { Event } from "../types";
 import type { ViewProps } from "./index";
+import { SafeExplain } from "../components/SafeExplain";
 
 const W = 1120;
 const DAYS = 28;
@@ -86,6 +87,7 @@ export function TransitMap({ snapshot }: ViewProps) {
           <text x={896} y={58} fontSize={11} fontWeight={800} fill={c.buffer}>SAFE TO SPEND</text>
           <text x={896} y={80} fontSize={20} fontWeight={800} fill={c.surface}>{money(snapshot.safe_to_spend.amount)}</text>
         </svg>
+        <SafeExplain s={snapshot} />
       </section>
       <section style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
         {next && (

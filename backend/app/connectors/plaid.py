@@ -43,6 +43,10 @@ class PlaidClient:
         self.client_factory = client_factory or (lambda: httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)))
 
     def post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
+        from ..usage import record_call
+
+        if self.environment != "sandbox":
+            record_call("plaid", path)
         payload = {"client_id": self.client_id, "secret": self.secret, **body}
         with self.client_factory() as client:
             response = client.post(f"{self.host}{path}", json=payload, headers={"Content-Type": "application/json", "Plaid-Version": PLAID_VERSION})
@@ -276,7 +280,7 @@ class PlaidConnector(Connector):
         access_token, item_id = api.exchange(public_token)
         link = session.exec(select(BankLink).where(BankLink.provider == "plaid", BankLink.external_id == item_id)).first()
         if link is None:
-            link = BankLink(provider="plaid", external_id=item_id, institution=institution)
+            link = BankLink(provider="plaid", external_id=item_id, institution=institution, environment=api.environment)
         link.institution = institution or link.institution
         link.access_token_enc = crypto.encrypt(access_token)
         link.active = True

@@ -31,28 +31,30 @@ export function Shell({ children, snapshot, title }: { children: ReactNode; snap
   useAppearance();
   const today = snapshot?.as_of ?? new Date().toISOString().slice(0, 10);
   const pending = snapshot ? snapshot.pending.confirmations + snapshot.pending.approvals : 0;
+  // Three groups: what is due, what to plan, and the records. Settings is kept apart at the rail's foot.
   const NAV = [
-    { to: "/today", label: "Today", icon: Clock },
-    { to: "/", label: "Home", icon: Waves, end: true },
-    { to: "/bills", label: "Bills", icon: Receipt },
-    { to: "/cover", label: "Cover", icon: Gauge, phone: false },
-    { to: "/saving", label: "Saving", icon: PiggyBank, phone: false },
-    { to: "/confirm", label: "Needs you", icon: BellDot, badge: pending },
-    { to: "/chat", label: "Chat", icon: MessageSquare },
-    { to: "/paystubs", label: "Paystubs", icon: FileText, phone: false },
-    { to: "/debts", label: "Debts", icon: Mountain, phone: false },
-    { to: "/borrowing", label: "Borrowing", icon: Repeat, phone: false },
-    { to: "/move", label: "Move", icon: Truck, phone: false },
-    { to: "/switch", label: "Switch", icon: ArrowLeftRight, phone: false },
-    { to: "/accounts", label: "Accounts", icon: Landmark, phone: false },
-    { to: "/investments", label: "Investing", icon: TrendingUp, phone: false },
-    { to: "/outlook", label: "Outlook", icon: Telescope, phone: false },
-    { to: "/reports", label: "Reports", icon: BarChart3, phone: false },
-    { to: "/transactions", label: "Ledger", icon: List, phone: false },
-    { to: "/mail", label: "Mail", icon: Mail, phone: false },
-    { to: "/exports", label: "Exports", icon: Download, phone: false },
-    { to: "/settings", label: "Settings", icon: Settings },
+    { to: "/today", label: "Today", icon: Clock, group: "daily" },
+    { to: "/", label: "Home", icon: Waves, end: true, group: "daily" },
+    { to: "/bills", label: "Bills", icon: Receipt, group: "daily" },
+    { to: "/confirm", label: "Needs you", icon: BellDot, badge: pending, group: "daily" },
+    { to: "/chat", label: "Chat", icon: MessageSquare, group: "daily" },
+    { to: "/cover", label: "Cover", icon: Gauge, phone: false, group: "plan" },
+    { to: "/saving", label: "Saving", icon: PiggyBank, phone: false, group: "plan" },
+    { to: "/debts", label: "Debts", icon: Mountain, phone: false, group: "plan" },
+    { to: "/borrowing", label: "Borrowing", icon: Repeat, phone: false, group: "plan" },
+    { to: "/move", label: "Move", icon: Truck, phone: false, group: "plan" },
+    { to: "/switch", label: "Switch", icon: ArrowLeftRight, phone: false, group: "plan" },
+    { to: "/outlook", label: "Outlook", icon: Telescope, phone: false, group: "plan" },
+    { to: "/accounts", label: "Accounts", icon: Landmark, phone: false, group: "records" },
+    { to: "/investments", label: "Investing", icon: TrendingUp, phone: false, group: "records" },
+    { to: "/transactions", label: "Ledger", icon: List, phone: false, group: "records" },
+    { to: "/paystubs", label: "Paystubs", icon: FileText, phone: false, group: "records" },
+    { to: "/mail", label: "Mail", icon: Mail, phone: false, group: "records" },
+    { to: "/reports", label: "Reports", icon: BarChart3, phone: false, group: "records" },
+    { to: "/exports", label: "Exports", icon: Download, phone: false, group: "records" },
+    { to: "/settings", label: "Settings", icon: Settings, group: "foot" },
   ];
+  const GROUPS = [{ id: "daily", label: "Every day" }, { id: "plan", label: "Plan" }, { id: "records", label: "Records" }];
   const item = ({ to, label, icon: Icon, end, badge }: (typeof NAV)[number], size: number) => (
     <NavLink key={to} to={to} end={end} className={({ isActive }) => (isActive ? "on" : "")} style={{ position: "relative" }}>
       <Icon size={size} strokeWidth={1.8} aria-hidden="true" />
@@ -64,11 +66,18 @@ export function Shell({ children, snapshot, title }: { children: ReactNode; snap
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--ground)" }}>
     {DEMO && <DemoBanner />}
     <div style={{ flexGrow: 1, display: "flex", flexWrap: "wrap" }}>
-      <nav className="rail hidden md:flex" aria-label="Sections" style={{ flex: "0 0 76px", flexDirection: "column", gap: 2, padding: "14px 8px", boxSizing: "border-box", borderRight: "1px solid var(--hairline)", position: "sticky", top: DEMO ? 30 : 0, maxHeight: "100vh", overflowY: "auto", alignSelf: "flex-start" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 36, marginBottom: 10 }}>
+      <nav className="rail hidden md:flex" aria-label="Sections" style={{ flex: "0 0 76px", flexDirection: "column", boxSizing: "border-box", borderRight: "1px solid var(--hairline)", position: "sticky", top: DEMO ? 30 : 0, height: `calc(100dvh / var(--zoom) - ${DEMO ? 30 : 0}px)`, alignSelf: "flex-start" }}>
+        <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", justifyContent: "center", height: 36, margin: "14px 0 10px" }}>
           <img src={brandMark()} width={28} height={28} alt={brandName()} style={{ objectFit: "contain", borderRadius: 6 }} />
         </div>
-        {NAV.map((n) => item(n, 20))}
+        <div className="rail-list">
+          {GROUPS.map((g) => (
+            <div key={g.id} className="rail-group" role="group" aria-label={g.label}>
+              {NAV.filter((n) => n.group === g.id).map((n) => item(n, 20))}
+            </div>
+          ))}
+        </div>
+        <div className="rail-foot">{NAV.filter((n) => n.group === "foot").map((n) => item(n, 20))}</div>
       </nav>
       <main style={{ flex: "999 1 320px", minWidth: 0, display: "flex", flexDirection: "column", gap: 16, boxSizing: "border-box" }} className="px-4 pt-3.5 pb-24 md:px-6 md:pb-6">
         <header style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, minHeight: 40 }}>

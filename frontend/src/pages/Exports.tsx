@@ -6,6 +6,7 @@ import { ArrowDown, ArrowUp, Download } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api, useApi } from "../api";
 import { DEMO } from "../demo/shim";
+import { Where } from "../components/Where";
 
 interface Catalog {
   formats: { id: string; name: string; kind: "data" | "report"; ext: string; description: string }[];
@@ -229,7 +230,8 @@ export function Exports() {
         </div>
         {feedUrl && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: 10, borderRadius: 10, background: "var(--surface-2)" }}>
-            <span style={{ fontSize: 13 }}>Shown once. On iPhone: Settings, Calendar, Accounts, Add Account, Other, Add Subscribed Calendar, then paste it.</span>
+            <span style={{ fontSize: 13 }}>Shown once: copy it now.</span>
+            <Where id="calendar" />
             <input className="input num" readOnly value={feedUrl} onFocus={(e) => e.target.select()} aria-label="Calendar feed address" style={{ fontSize: 12 }} />
             <button type="button" className="btn" style={{ alignSelf: "flex-start" }} onClick={() => navigator.clipboard?.writeText(feedUrl).then(() => setNote("Copied the feed address."), () => undefined)}>Copy</button>
           </div>

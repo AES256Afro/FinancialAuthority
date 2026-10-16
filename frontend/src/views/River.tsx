@@ -4,6 +4,7 @@ import { RiverChart } from "../components/RiverChart";
 import { daysWord, money, monthDay, shortDate } from "../format";
 import { getPrefs } from "../prefs";
 import type { ViewProps } from "./index";
+import { SafeExplain } from "../components/SafeExplain";
 
 function Tile({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
@@ -31,12 +32,13 @@ export function River({ snapshot }: ViewProps) {
             <div aria-hidden="true" style={{ width: 14, height: 14, borderRadius: 4, background: "var(--safe)" }} />
           </div>
           <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
-            After {s.advances.items.length} advance{s.advances.items.length === 1 ? "" : "s"} repay on payday, {s.window.items.length} bills clear, and {money(s.set_aside.total)} is set aside for the window after. The {money(s.buffer)} buffer is kept.
+            Money in your spending accounts that nothing needs before payday on {shortDate(s.next_paycheck.date)}: what comes out before then and your {money(s.buffer)} buffer are already taken off. Bills after payday are paid from that paycheck.
             {s.usual_pace.per_day > 0 && (
               <span> Your usual pace is {money(s.usual_pace.per_day)} a day, {money(s.usual_pace.per_window)} over two weeks{s.usual_pace.per_window > s.safe_to_spend.amount ? `, which is ${money(s.usual_pace.per_window - s.safe_to_spend.amount)} more than is safe` : ""}.</span>
             )}
             {s.safe_to_spend.version === "v0" && <span style={{ color: "var(--muted)" }}> First-cut arithmetic; the full engine lands in M5.</span>}
           </div>
+          <SafeExplain s={s} />
         </div>
         <Tile
           label="Due before payday"

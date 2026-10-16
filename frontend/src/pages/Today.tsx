@@ -13,6 +13,7 @@ import { NextStepsCard } from "../components/NextSteps";
 import { Watchlist } from "../components/Watchlist";
 import { money, shortDate } from "../format";
 import type { Snapshot } from "../types";
+import { SafeExplain } from "../components/SafeExplain";
 
 const DOT = { info: "var(--paycheck)", warning: "var(--warning)", critical: "var(--critical)" };
 
@@ -36,10 +37,11 @@ export function Today({ snapshot }: { snapshot: Snapshot }) {
           <div aria-hidden="true" style={{ width: 14, height: 14, borderRadius: 4, background: s.safe_to_spend.amount < 0 ? "var(--critical)" : "var(--safe)" }} />
         </div>
         <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
-          Advances take {money(s.advances.total)} first, then {s.window.items.length} bills, then {money(s.set_aside.total)} set aside for the window after. Buffer {money(s.buffer)} kept.
+          Money in your spending accounts that nothing needs before payday on {shortDate(s.next_paycheck.date)}: what comes out before then and your {money(s.buffer)} buffer are already taken off. Bills after payday are paid from that paycheck.
           {s.usual_pace.per_day > 0 ? ` Your usual pace is ${money(s.usual_pace.per_day)} a day.` : ""}
         </div>
         <Why text={s.why?.safe_to_spend} />
+        <SafeExplain s={s} />
       </section>
 
       {cover.data && (

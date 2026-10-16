@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { useApi } from "../api";
 
 const ITEMS = [
+  { to: "/settings/setup", title: "Setting up", text: "What only you can do, in order: the app's secrets, mail, your bank, reaching it from anywhere, your phone, Claude, backups." },
   { to: "/settings/appearance", title: "Appearance", text: "Eight home views, three looks, kept per device." },
   { to: "/settings/connectors", title: "Connectors", text: "Rocket Money export in and out; the import folder; live bank connectors arrive in M1." },
   { to: "/settings/models", title: "Models", text: "The advisor and the reviewer: Ollama, any OpenAI-compatible server, or Claude by API; your rules and goals." },

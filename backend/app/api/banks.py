@@ -219,3 +219,72 @@ def remove_link(link_id: int, session: Session = Depends(get_session), _: auth.P
     else:
         teller().disconnect(session, link)
     return {"ok": True}
+
+
+
+SYNC_CHOICES = (1, 2, 4, 6, 12, 24)
+TRIAL_ITEMS = 10
+
+
+@router.get("/freshness")
+def freshness(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+    """How fresh the bank data is, how often the app reads it, every call it has made, and what that costs."""
+    from datetime import UTC, datetime, timedelta
+
+    from .. import usage
+    from ..models import Transaction
+    from ..store import get_setting
+    from .routes import today
+
+    conf = {"sync_every_hours": 4, "price_per_item": None, **(get_setting(session, "banks.freshness", {}) or {})}
+    every = timedelta(hours=float(conf["sync_every_hours"]))
+    links = session.exec(select(BankLink)).all()
+    out_links = []
+    for link in links:
+        if not link.active:
+            continue
+        account_ids = [a.id for a in session.exec(select(Account).where(Account.connector == link.provider)).all()]
+        newest = session.exec(select(Transaction.date).where(Transaction.account_id.in_(account_ids)).order_by(Transaction.date.desc())).first() if account_ids else None
+        last = link.last_sync_at.replace(tzinfo=UTC) if link.last_sync_at and not link.last_sync_at.tzinfo else link.last_sync_at
+        out_links.append({"id": link.id, "provider": link.provider, "institution": link.institution, "last_sync_at": last.isoformat() if last else None,
+                          "next_sync_at": (last + every).isoformat() if last else datetime.now(UTC).isoformat(), "newest_transaction": newest.isoformat() if newest else None,
+                          "error": link.last_error or None, "needs_login": link.needs_login})
+    environment = bank_state(session, "plaid")["environment"]
+    production_items = [link for link in links if link.provider == "plaid" and (link.environment or environment) == "production"]
+    active_plaid = [link for link in production_items if link.active]
+    price = conf.get("price_per_item")
+    monthly = round(len(active_plaid) * float(price), 2) if price not in (None, "") else None
+    return {
+        "sync_every_hours": conf["sync_every_hours"], "choices": list(SYNC_CHOICES), "links": out_links,
+        "plaid": {"environment": environment, "items_made": len(production_items), "items_active": len(active_plaid), "trial_limit": TRIAL_ITEMS},
+        "calls": usage.calls(session, today()),
+        "cost": {"price_per_item": price, "monthly": monthly, "yearly": round(monthly * 12, 2) if monthly is not None else None,
+                 "plan_note": "On Plaid's free Trial plan this costs nothing, for up to ten bank logins over the life of your account. On a paid plan, Plaid bills transactions as a flat monthly fee per bank login, however often the app reads it. The app never uses Plaid's paid on-demand refresh or real-time balance calls. Plaid shows your actual bill in its dashboard under Billing; it offers apps no way to read it.",
+                 "teller_note": "Teller's development environment is free for up to a hundred bank logins."},
+        "chain": "Your bank posts a purchase, often within minutes as pending. Plaid collects new transactions from the bank on its own schedule, usually a few times a day. The app then reads Plaid at the interval set here, or at once with Sync now. A bank that emails purchase alerts reaches the app sooner: mailboxes are read every fifteen minutes.",
+    }
+
+
+class FreshnessIn(BaseModel):
+    sync_every_hours: int | None = None
+    price_per_item: float | None = None
+    clear_price: bool = False
+
+
+@router.put("/freshness")
+def set_freshness(body: FreshnessIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
+    from ..store import get_setting, set_setting
+
+    conf = {"sync_every_hours": 4, "price_per_item": None, **(get_setting(session, "banks.freshness", {}) or {})}
+    if body.sync_every_hours is not None:
+        if body.sync_every_hours not in SYNC_CHOICES:
+            raise HTTPException(400, f"Choose one of {', '.join(str(c) for c in SYNC_CHOICES)} hours")
+        conf["sync_every_hours"] = body.sync_every_hours
+    if body.clear_price:
+        conf["price_per_item"] = None
+    elif body.price_per_item is not None:
+        if not 0 <= body.price_per_item <= 100:
+            raise HTTPException(400, "A price per bank login a month between 0 and 100 dollars")
+        conf["price_per_item"] = round(float(body.price_per_item), 4)
+    set_setting(session, "banks.freshness", conf)
+    return freshness(session, principal)
