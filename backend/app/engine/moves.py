@@ -544,13 +544,13 @@ def move_plan(session: Session, move: AccountMove, today: date) -> dict[str, Any
     split = next((m for w in windows for m in w["move_money"] if m["how"] == "split" and m["to"] == sname), None)
     if split:
         when = _short(date.fromisoformat(split["on"]))
-        what = " and ".join(split["for"]) or "What still charges there"
+        what = _and(split["for"]) if split["for"] else "what still charges there"
         ask = _split_amount(split["amount"])
-        text = (f"For the {when} paycheck, ask payroll for a split: {_usd(ask)} to {sname}, the rest to {tname}. {what} come{'s' if len(split['for']) == 1 else ''} out of {sname} that day, "
-                f"too soon for a transfer to arrive. Or ask that the change start from the paycheck after.")
+        text = (f"For the {when} paycheck, ask payroll for a split: {_usd(ask)} to {sname}, the rest to {tname}. {what[0].upper() + what[1:]} come{'s' if len(split['for']) == 1 else ''} out of "
+                f"{sname} within {TRANSFER_DAYS} days of it, too soon for a transfer to arrive. Or ask that the change start from the paycheck after.")
         for p in plan_items:
             if p["kind"] == "income" and p["decision"] == "move":
-                p["instruction"] += " " + text
+                p["instruction"] = p["instruction"].replace(f" If payroll allows a split, send a fixed amount to {tname} first.", "") + " " + text
         split_done = any(p["kind"] == "income" and p["status"] == "confirmed" for p in plan_items) or date.fromisoformat(split["on"]) < today
         ready_steps.append({"text": text, "done": split_done, "link": None})
     phases = []
@@ -579,7 +579,11 @@ def _how(needs: list[dict], start: date, paycheck_funds: bool) -> dict[str, Any]
     need = min((date.fromisoformat(x["date"]) for x in needs), default=start)
     tight = (need - start).days < TRANSFER_DAYS
     return {"how": "split" if (paycheck_funds and tight) else "transfer", "need_by": need.isoformat(), "tight": tight,
-            "for": [x["name"] for x in needs if (date.fromisoformat(x["date"]) - start).days < TRANSFER_DAYS][:4]}
+            "for": [f"the {x['name'][:-7]} repayment" if x["name"].endswith(" repays") else x["name"] for x in needs if (date.fromisoformat(x["date"]) - start).days < TRANSFER_DAYS][:4]}
+
+
+def _and(names: list[str]) -> str:
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
 
 
 def _split_amount(v: float) -> float:
@@ -626,7 +630,7 @@ def alerts_for(items: list[dict], windows: list[dict], sname: str, tname: str, t
     income_open = any(p["kind"] == "income" and p["decision"] == "move" and p["status"] != "confirmed" for p in items)
     if split and income_open and 0 <= (date.fromisoformat(split["on"]) - today).days <= 21:
         out.append({"severity": "warn" if (date.fromisoformat(split["on"]) - today).days <= 7 else "info",
-                    "text": f"Keep {_usd(_split_amount(split['amount']))} of the {_short(date.fromisoformat(split['on']))} paycheck going to {sname}: {' and '.join(split['for']) or 'charges'} come out there that day.", "ref": "split"})
+                    "text": f"Keep {_usd(_split_amount(split['amount']))} of the {_short(date.fromisoformat(split['on']))} paycheck going to {sname}: {_and(split['for']) if split['for'] else 'charges'} come out there within {TRANSFER_DAYS} days of it.", "ref": "split"})
     for p in items:
         if p["missed"]:
             out.append({"severity": "crit", "text": f"{p['name']} still charged {sname} on {_short(date.fromisoformat(p['last_seen_old']))}, after you switched it. Check the change took.", "ref": p["ref"]})

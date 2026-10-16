@@ -83,7 +83,7 @@ function MoneyLine({ m }: { m: MoneyMove }) {
     return (
       <div className="num" style={{ fontSize: 13 }}>
         <strong>{money(m.amount, { cents: true })}</strong> of the {shortDate(m.on)} paycheck to {m.to}
-        <div style={{ fontSize: 11, color: "var(--muted)" }}>a payroll split: {(m.for ?? []).join(" and ") || "charges"} come out there that day, too soon for a transfer</div>
+        <div style={{ fontSize: 11, color: "var(--muted)" }}>a payroll split: {(m.for ?? []).join(", ") || "charges"} come out there within days of payday, too soon for a transfer</div>
       </div>
     );
   }
