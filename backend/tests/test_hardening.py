@@ -124,3 +124,25 @@ def test_no_signing_secret_is_ever_a_public_constant(monkeypatch):
     monkeypatch.setattr(settings, "session_secret", "")
     secret = settings.signing_secret()
     assert secret != "insecure-development-secret" and len(secret) >= 32 and settings.signing_secret() == secret  # made once, kept
+
+
+def test_signing_out_ends_the_session_for_good_and_keys_cannot_hold_admin(owner: TestClient, client: TestClient):
+    from app import auth
+
+    stolen = owner.cookies.get(auth.COOKIE)
+    assert owner.get("/api/auth/sessions").json()["sessions"][0]["this"] is True
+    assert owner.post("/api/v1/keys", json={"name": "k", "scopes": ["read", "admin"]}).status_code == 400
+    owner.post("/api/auth/logout", headers={"X-Requested-With": "FinancialAuthority"})
+    replay = TestClient(client.app)
+    replay.cookies.set(auth.COOKIE, stolen)
+    assert replay.get("/api/v1/snapshot").status_code == 401  # the old cookie is dead, not just deleted
+
+
+def test_a_forwarded_address_is_not_believed_from_anyone(client: TestClient):
+    from app import auth
+
+    auth.reset_lockouts()
+    for i in range(12):
+        r = client.post("/api/auth/login", json={"username": "owner", "password": f"wrong-{i}"}, headers={"X-Forwarded-For": f"10.0.0.{i}", "X-Requested-With": "FinancialAuthority"})
+    assert r.status_code == 429  # rotating the header does not reset the count
+    auth.reset_lockouts()

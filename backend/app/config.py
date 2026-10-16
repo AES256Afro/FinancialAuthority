@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     # How the app was installed (boxpilot, compose, docker), and the name of the Proton Mail Bridge's container
     # on the server, so the Bridge's sign-in steps show the commands for this install.
     install: str = ""
+    # Proxies whose forwarding headers are believed for the caller's address (comma-separated addresses or
+    # networks, for example the tunnel container's). Empty: the direct peer is the caller.
+    trusted_proxies: str = ""
     bridge_container: str = "financialauthority-bridge"
 
     host: str = "0.0.0.0"
