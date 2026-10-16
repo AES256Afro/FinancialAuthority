@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useApi } from "../api";
 import { ByCheck } from "../components/ByCheck";
 import { ModeSwitch } from "../components/ModeSwitch";
+import { Failed, Loading } from "../components/State";
 import { money } from "../format";
 import type { PaycheckViews } from "../paychecks";
 import { useShowAs } from "../showas";
@@ -20,11 +21,11 @@ export type PaycheckMode = "ribbon" | "strips" | "waterfall" | "stream" | "rings
 
 export const PAYCHECK_MODES: { id: PaycheckMode; name: string; description: string }[] = [
   { id: "ribbon", name: "Ribbon", description: "One check splitting into where it goes; tap a part for its bills." },
-  { id: "strips", name: "Strips over time", description: "The last checks from the ledger and the next ones planned, with the trend of what was yours." },
+  { id: "strips", name: "Strips over time", description: "The last checks from your transactions and the next ones planned, with the trend of what was yours." },
   { id: "waterfall", name: "Waterfall", description: "A check down to what is yours, one step per part." },
   { id: "stream", name: "Stream", description: "Six months of bands that widen and narrow as plans end." },
   { id: "rings", name: "Rings", description: "One ring per check, what is yours in the middle." },
-  { id: "beads", name: "Beads", description: "Each bill on its day between paydays; drag one to try another due day." },
+  { id: "beads", name: "Beads", description: "Each bill on its day between paydays; drag one, or pick it from the list, to try another due day." },
   { id: "bars", name: "Bars", description: "One bar per check with the card payment in its parts." },
   { id: "table", name: "Table", description: "Every check and every part as figures." },
 ];
@@ -49,7 +50,7 @@ export function PaycheckPicture({ data, mode, snapshot }: { data: PaycheckViews;
       {showLegend && (
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <Legend parts={legendParts} colours={colours} />
-          <button type="button" className="btn" style={{ marginLeft: "auto", minHeight: 30, padding: "4px 10px" }} onClick={() => setTable((t) => !t)}>{table ? "Show the picture" : "Show as a table"}</button>
+          <button type="button" className="btn" aria-pressed={table} style={{ marginLeft: "auto", minHeight: 32, padding: "4px 10px" }} onClick={() => setTable((t) => !t)}>{table ? "Show the picture" : "Show as a table"}</button>
         </div>
       )}
       {table && showLegend ? (mode === "stream" ? (
@@ -72,12 +73,12 @@ export function PaycheckSection({ snapshot, mode: given, onMode, title = "Your p
   return (
     <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <strong style={{ fontSize: 15 }}>{title}</strong>
+        <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{title}</h2>
         <span style={{ fontSize: 12, color: "var(--muted)" }}>{PAYCHECK_MODES.find((m) => m.id === mode)?.description}</span>
         <div style={{ marginLeft: "auto" }}><ModeSwitch label="Show paychecks as" modes={PAYCHECK_MODES} value={mode} onChange={change} /></div>
       </div>
-      {data.error && <div style={{ color: "var(--critical)", fontSize: 13 }}>Could not load the paychecks: {data.error.message}</div>}
-      {!data.data && !data.error && <div style={{ color: "var(--muted)", fontSize: 13 }}>Splitting the checks…</div>}
+      {data.error && !data.data && <Failed error={data.error} what="your paychecks" onRetry={data.reload} card={false} />}
+      {!data.data && !data.error && <Loading what="your paychecks" card={false} />}
       {data.data && <PaycheckPicture data={data.data} mode={mode} snapshot={snapshot} />}
       {data.data && <div style={{ fontSize: 11, color: "var(--muted)" }}>{data.data.not_advice}</div>}
     </section>

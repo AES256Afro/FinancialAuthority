@@ -1,12 +1,16 @@
 // Live bank links through Plaid (Trial plan) and Teller (developer tier): the bank's own login page opens in
 // the vendor's window; the app receives a token and reads with it. Nothing here ever asks for a bank password.
 import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
+import { AlertTriangle, CheckCircle2, OctagonAlert } from "lucide-react";
 import { api, useApi } from "../api";
 import { loadScript, openPlaidLink, resumePlaidLink } from "../plaid";
+import { when } from "../format";
 import { Where } from "../components/Where";
 import { Freshness } from "../components/Freshness";
+import { ConfirmButton } from "../components/ConfirmButton";
+import { Failed, Loading, Said } from "../components/State";
+import { StatusPill } from "../components/Status";
 
 interface LinkRow {
   id: number;
@@ -30,6 +34,9 @@ interface BanksOut {
 
 type TellerGlobal = { setup: (opts: { applicationId: string; environment: string; products: string[]; onSuccess: (enrollment: { accessToken: string; enrollment: { id: string; institution: { name: string } } }) => void; onExit?: () => void }) => { open: () => void } };
 
+// Where a result is said: under the Plaid box, the Teller box, or beside one bank link's buttons.
+type Note = { at: string; text: string; tone: "info" | "error" } | null;
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -40,14 +47,18 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 export function Banks({ onChanged }: { onChanged?: () => void }) {
-  const { data, reload } = useApi<BanksOut>("/api/v1/banks");
+  const state = useApi<BanksOut>("/api/v1/banks");
+  const { data, reload } = state;
   const [plaid, setPlaid] = useState({ client_id: "", secret: "", environment: "" });
   const [teller, setTeller] = useState({ application_id: "", certificate: "", private_key: "", environment: "" });
-  const [note, setNote] = useState<string | null>(null);
+  const [note, setNote] = useState<Note>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState<number | null>(null);
   const [params, setParams] = useSearchParams();
   const wanted = { signin: params.get("signin"), sync: params.get("sync"), connect: params.get("connect") };
   const synced = useRef<string | null>(null);
+  const say = (at: string, text: string, tone: "info" | "error" = "info") => setNote({ at, text, tone });
+  const said = (at: string) => (note?.at === at ? <Said text={note.text} tone={note.tone} /> : null);
   useEffect(() => {
     // A next-step link lands here: a sync runs by itself; a sign-in or a connection is highlighted for the tap it needs.
     if (wanted.sync && data && synced.current !== wanted.sync) {
@@ -60,22 +71,23 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
     // An OAuth bank sent the browser back here mid-sign-in: Plaid Link reopens and finishes with the same token.
     if (resumed.current) return;
     resumed.current = true;
-    resumePlaidLink({ onDone: (m) => { setNote(m); reload(); onChanged?.(); setParams({}, { replace: true }); }, onExit: () => setParams({}, { replace: true }) })
+    resumePlaidLink({ onDone: (m) => { say("plaid", m); reload(); onChanged?.(); setParams({}, { replace: true }); }, onExit: () => setParams({}, { replace: true }) })
       .then((did) => { if (did) setBusy("plaid-connect"); })
-      .catch((e) => setNote((e as Error).message))
+      .catch((e) => say("plaid", (e as Error).message, "error"))
       .finally(() => setBusy(null));
   }, []);  // eslint-disable-line react-hooks/exhaustive-deps
-  const highlight = (on: boolean) => (on ? { outline: "3px solid var(--warning)", outlineOffset: 2 } : {});
+  const highlight = (on: boolean) => (on ? { outline: "3px solid var(--warning-ink)", outlineOffset: 2 } : {});
 
   async function savePlaid() {
     setBusy("plaid-save");
+    setNote(null);
     try {
       await api("/api/v1/banks/plaid/settings", { method: "PUT", body: JSON.stringify({ client_id: plaid.client_id || undefined, secret: plaid.secret || undefined, environment: plaid.environment || undefined }) });
       setPlaid({ ...plaid, secret: "" });
-      setNote("Plaid settings saved; the secret is stored encrypted.");
+      say("plaid", "Plaid settings saved; the secret is stored encrypted.");
       reload();
     } catch (e) {
-      setNote((e as Error).message);
+      say("plaid", (e as Error).message, "error");
     } finally {
       setBusy(null);
     }
@@ -83,25 +95,27 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
 
   async function saveTeller() {
     setBusy("teller-save");
+    setNote(null);
     try {
       await api("/api/v1/banks/teller/settings", { method: "PUT", body: JSON.stringify({ application_id: teller.application_id || undefined, certificate: teller.certificate || undefined, private_key: teller.private_key || undefined, environment: teller.environment || undefined }) });
       setTeller({ ...teller, certificate: "", private_key: "" });
-      setNote("Teller settings saved; the certificate is stored encrypted.");
+      say("teller", "Teller settings saved; the certificate is stored encrypted.");
       reload();
     } catch (e) {
-      setNote((e as Error).message);
+      say("teller", (e as Error).message, "error");
     } finally {
       setBusy(null);
     }
   }
 
   async function connectPlaid(linkId?: number, purpose: "bank" | "investments" = "bank") {
+    const at = linkId ? `link-${linkId}` : "plaid";
     setBusy("plaid-connect");
     setNote(null);
     try {
-      await openPlaidLink({ purpose, linkId, onNote: (m) => setNote(m), onDone: (m) => { setNote(m); reload(); onChanged?.(); }, onExit: () => setBusy(null) });
+      await openPlaidLink({ purpose, linkId, onNote: (m) => say(at, m), onDone: (m) => { say(at, m); reload(); onChanged?.(); }, onExit: () => setBusy(null) });
     } catch (e) {
-      setNote((e as Error).message);
+      say(at, (e as Error).message, "error");
     } finally {
       setBusy(null);
     }
@@ -120,26 +134,38 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
         environment: data.providers.teller.environment,
         products: ["transactions", "balance"],
         onSuccess: async (enrollment) => {
-          const r = await api<{ link: LinkRow; sync: { summary: string } }>("/api/v1/banks/teller/enroll", { method: "POST", body: JSON.stringify({ access_token: enrollment.accessToken, enrollment_id: enrollment.enrollment.id, institution: enrollment.enrollment.institution?.name ?? "" }) });
-          setNote(`${r.link.institution || "The bank"} is linked. ${r.sync.summary}`);
-          reload();
-          onChanged?.();
+          try {
+            const r = await api<{ link: LinkRow; sync: { summary: string } }>("/api/v1/banks/teller/enroll", { method: "POST", body: JSON.stringify({ access_token: enrollment.accessToken, enrollment_id: enrollment.enrollment.id, institution: enrollment.enrollment.institution?.name ?? "" }) });
+            say("teller", `${r.link.institution || "The bank"} is linked. ${r.sync.summary}`);
+            reload();
+            onChanged?.();
+          } catch (e) {
+            say("teller", (e as Error).message, "error");
+          }
         },
         onExit: () => setBusy(null),
       });
       connect.open();
     } catch (e) {
-      setNote((e as Error).message);
+      say("teller", (e as Error).message, "error");
     } finally {
       setBusy(null);
     }
   }
 
   async function sync(id: number) {
-    const r = await api<{ summary: string }>(`/api/v1/banks/${id}/sync`, { method: "POST" });
-    setNote(r.summary);
-    reload();
-    onChanged?.();
+    setSyncing(id);
+    setNote(null);
+    try {
+      const r = await api<{ ok?: boolean; summary: string }>(`/api/v1/banks/${id}/sync`, { method: "POST" });
+      say(`link-${id}`, r.summary, r.ok === false ? "error" : "info");
+      reload();
+      onChanged?.();
+    } catch (e) {
+      say(`link-${id}`, (e as Error).message, "error");
+    } finally {
+      setSyncing(null);
+    }
   }
 
   async function remove(id: number) {
@@ -151,25 +177,41 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
   const p = data?.providers.plaid;
   const t = data?.providers.teller;
   return (
-    <section id="banks" className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+    <section id="banks" className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12, scrollMarginTop: 16 }}>
       <div>
-        <strong>Banks, live</strong>
-        <div style={{ fontSize: 13, color: "var(--ink-2)" }}>Transactions and balances straight from the bank, every four hours. Two free doors: Plaid's Trial plan (ten logins) and Teller's developer tier (a hundred). The bank's own login page opens in the vendor's window; this app only ever holds a read token, encrypted.</div>
+        <h2 style={{ margin: 0, fontSize: 14, fontWeight: 800 }}>Banks, live</h2>
+        <div style={{ fontSize: 13, color: "var(--ink-2)" }}>Transactions and balances straight from the bank, as often as you choose below. Two free ways to connect: Plaid's Trial plan (ten logins) and Teller's developer tier (a hundred). The bank's own login page opens in the vendor's window; this app only ever holds a read token, encrypted.</div>
       </div>
+      {state.error && !data && <Failed error={state.error} what="your bank links" onRetry={reload} card={false} />}
+      {!data && !state.error && <Loading what="your bank links" card={false} />}
       {data && data.links.length > 0 && (
         <div style={{ overflowX: "auto" }}>
           <table className="ledger">
-            <thead><tr><th>Bank</th><th>Through</th><th>Accounts</th><th>Last read</th><th></th></tr></thead>
+            <thead><tr><th>Bank</th><th>Through</th><th>Accounts</th><th>Last read</th><th><span className="sr-only">Sync or remove</span></th></tr></thead>
             <tbody>
               {data.links.map((l) => (
                 <tr key={l.id}>
-                  <td><strong>{l.institution || "Bank"}</strong>{l.needs_login && <div style={{ fontSize: 11, color: "var(--critical)" }}>Needs a new sign-in</div>}</td>
+                  <td><strong>{l.institution || "Bank"}</strong>{l.needs_login && <div style={{ marginTop: 4 }}><StatusPill status="crit">Needs a new sign-in</StatusPill></div>}</td>
                   <td style={{ color: "var(--ink-2)" }}>{l.provider === "plaid" ? "Plaid" : "Teller"}</td>
                   <td style={{ color: "var(--ink-2)" }}>{l.accounts.map((a) => `${a.name} (${a.kind})`).join(", ") || "none yet"}</td>
-                  <td style={{ color: l.last_error ? "var(--critical)" : "var(--ink-2)" }}>{l.last_error || (l.last_sync_at ? l.last_sync_at.slice(0, 16).replace("T", " ") : "not yet")}</td>
-                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                    {l.needs_login && l.provider === "plaid" && <button className="btn dark" type="button" style={highlight(wanted.signin === String(l.id))} onClick={() => connectPlaid(l.id)}>Sign in again at {l.institution || "the bank"}</button>}{" "}
-                    <button className="btn" type="button" onClick={() => sync(l.id)}>Sync now</button> <button className="btn" type="button" onClick={() => remove(l.id)}>Remove</button>
+                  <td>
+                    {l.last_error
+                      ? <span style={{ display: "inline-flex", gap: 4, alignItems: "flex-start", color: "var(--critical-ink)" }}><OctagonAlert size={14} aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }} /><span><strong>Last read failed.</strong> {l.last_error}</span></span>
+                      : <span style={{ color: "var(--ink-2)", whiteSpace: "nowrap" }}>{l.last_sync_at ? when(l.last_sync_at) : "not yet"}</span>}
+                  </td>
+                  <td style={{ textAlign: "right" }}>
+                    <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "flex-start" }}>
+                      {l.needs_login && l.provider === "plaid" && <button className="btn dark" type="button" style={highlight(wanted.signin === String(l.id))} onClick={() => connectPlaid(l.id)}>Sign in again at {l.institution || "the bank"}</button>}
+                      <button className="btn" type="button" disabled={syncing !== null} onClick={() => sync(l.id)}>{syncing === l.id ? "Reading…" : "Sync now"}</button>
+                      <ConfirmButton
+                        label="Remove"
+                        question={l.provider === "plaid" ? "Remove this bank link? Plaid does not give the trial login slot back." : "Remove this bank link? The app stops reading it; you can link it again."}
+                        yes="Yes, remove it"
+                        no="Keep it"
+                        onConfirm={() => remove(l.id)}
+                      />
+                    </span>
+                    {note?.at === `link-${l.id}` && <div style={{ marginTop: 4, textAlign: "left" }}>{said(`link-${l.id}`)}</div>}
                   </td>
                 </tr>
               ))}
@@ -177,18 +219,23 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
           </table>
         </div>
       )}
-      {data && !data.can_store_secrets && <div style={{ fontSize: 13, color: "var(--critical)" }}>FA_DATA_KEY is empty, so tokens cannot be stored. Set it in the app's environment first.</div>}
+      {data && !data.can_store_secrets && (
+        <div role="alert" style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 13, color: "var(--critical-ink)" }}>
+          <OctagonAlert size={15} aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }} />
+          <span><strong>FA_DATA_KEY is empty, so tokens cannot be stored.</strong> Set it in the app's environment first: <Link to="/settings/setup#secrets">Setting up › The app's own secrets</Link>.</span>
+        </div>
+      )}
       <Freshness />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))", gap: 12 }}>
-        <div style={{ border: "1px solid var(--hairline)", borderRadius: 12, padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <strong>Plaid</strong>
-            <span style={{ fontSize: 12, color: p?.configured ? "var(--safe)" : "var(--muted)", fontWeight: 700 }}>{p?.configured ? `ready · ${p.environment}` : "not set up"}</span>
+        <div style={{ border: "1px solid var(--hairline)", borderRadius: 12, padding: 12, display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800 }}>Plaid</h3>
+            {p?.configured ? <StatusPill status="good">Ready · {p.environment}</StatusPill> : <span style={{ fontSize: 12, color: "var(--ink-2)", fontWeight: 700 }}>not set up</span>}
           </div>
           <Where id="plaid" fill={{ redirect: data?.public_url?.startsWith("https://") ? `${data.public_url.replace(/\/$/, "")}/settings/connectors` : "(needs the app's https address first: Settings › Setting up › Reach it from anywhere)" }} />
           {p?.keys && (
-            <div style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, color: p.keys.result === "ok" ? "var(--safe)" : "var(--warning)" }}>
-              {p.keys.result === "ok" ? <CheckCircle2 size={14} style={{ flexShrink: 0, marginTop: 1 }} /> : <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />}
+            <div style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, color: p.keys.result === "ok" ? "var(--safe-ink)" : "var(--warning-ink)" }}>
+              {p.keys.result === "ok" ? <CheckCircle2 size={14} aria-hidden="true" style={{ flexShrink: 0, marginTop: 1 }} /> : <AlertTriangle size={14} aria-hidden="true" style={{ flexShrink: 0, marginTop: 1 }} />}
               <span><strong>{p.keys.result === "ok" ? "Keys accepted" : "Keys refused"}</strong> · {p.keys.message}</span>
             </div>
           )}
@@ -201,15 +248,16 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
             </select>
           </Field>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button className="btn dark" type="button" disabled={busy !== null} onClick={savePlaid}>Save</button>
+            <button className="btn dark" type="button" disabled={busy !== null} onClick={savePlaid}>{busy === "plaid-save" ? "Saving…" : "Save"}</button>
             <button className="btn" type="button" disabled={!p?.configured || busy !== null} style={highlight(wanted.connect === "plaid")} onClick={() => connectPlaid()}>{busy === "plaid-connect" ? "Opening…" : "Connect a bank through Plaid"}</button>
             <button className="btn" type="button" disabled={!p?.configured || busy !== null} onClick={() => connectPlaid(undefined, "investments")}>Connect a 401(k) or brokerage</button>
           </div>
+          {said("plaid")}
         </div>
-        <div style={{ border: "1px solid var(--hairline)", borderRadius: 12, padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <strong>Teller</strong>
-            <span style={{ fontSize: 12, color: t?.configured ? "var(--safe)" : "var(--muted)", fontWeight: 700 }}>{t?.configured ? `ready · ${t.environment}` : "not set up"}</span>
+        <div style={{ border: "1px solid var(--hairline)", borderRadius: 12, padding: 12, display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800 }}>Teller</h3>
+            {t?.configured ? <StatusPill status="good">Ready · {t.environment}</StatusPill> : <span style={{ fontSize: 12, color: "var(--ink-2)", fontWeight: 700 }}>not set up</span>}
           </div>
           <Where id="teller" />
           <Field label="Application id"><input className="input" value={teller.application_id} onChange={(e) => setTeller({ ...teller, application_id: e.target.value })} placeholder={t?.application_id || "app_…"} autoComplete="off" /></Field>
@@ -223,13 +271,13 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
             </select>
           </Field>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button className="btn dark" type="button" disabled={busy !== null} onClick={saveTeller}>Save</button>
+            <button className="btn dark" type="button" disabled={busy !== null} onClick={saveTeller}>{busy === "teller-save" ? "Saving…" : "Save"}</button>
             <button className="btn" type="button" disabled={!t?.configured || busy !== null} style={highlight(wanted.connect === "teller")} onClick={connectTeller}>{busy === "teller-connect" ? "Opening…" : "Connect a bank through Teller"}</button>
           </div>
+          {said("teller")}
         </div>
       </div>
-      {note && <div style={{ fontSize: 13, color: "var(--ink-2)" }}>{note}</div>}
-      <div style={{ fontSize: 12, color: "var(--muted)" }}>Also free: the bank's own email alerts, read from the mailbox the same quarter-hour, and the Rocket Money export below.</div>
+      <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Also free: the bank's own email alerts, read from the mailbox every fifteen minutes, and the Rocket Money export below.</div>
     </section>
   );
 }

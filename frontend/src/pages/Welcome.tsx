@@ -1,7 +1,9 @@
 // The first run: five steps, each done when the registers say so. Skip any; come back from Today.
 import { CircleCheck } from "lucide-react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
+import { Failed, Loading, Said } from "../components/State";
 import type { FirstRun } from "../guide";
 
 export function FirstRunBanner() {
@@ -21,12 +23,22 @@ export function FirstRunBanner() {
 
 export function Welcome() {
   const fr = useApi<FirstRun>("/api/v1/firstrun");
-  if (!fr.data) return <div style={{ color: "var(--muted)" }}>Opening…</div>;
+  const [note, setNote] = useState<{ at: string; text: string; tone: "info" | "error" } | null>(null);
+  if (fr.error && !fr.data) return <Failed error={fr.error} what="the first steps" onRetry={fr.reload} />;
+  if (!fr.data) return <Loading what="the first steps" />;
   const d = fr.data;
-  const put = async (body: Record<string, unknown>) => {
-    await api("/api/v1/firstrun", { method: "PUT", body: JSON.stringify(body) });
-    fr.reload();
+  // Says the outcome beside the button that asked: a step's Mark done, or the Today switch at the foot.
+  const put = async (at: string, body: Record<string, unknown>, done: string) => {
+    setNote(null);
+    try {
+      await api("/api/v1/firstrun", { method: "PUT", body: JSON.stringify(body) });
+      setNote({ at, text: done, tone: "info" });
+      fr.reload();
+    } catch (e) {
+      setNote({ at, text: (e as Error).message, tone: "error" });
+    }
   };
+  const said = (at: string) => (note?.at === at ? <Said text={note.text} tone={note.tone} /> : null);
   const current = d.steps.find((s) => !s.done);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 720 }}>
@@ -43,20 +55,22 @@ export function Welcome() {
             <span aria-hidden="true" style={{ width: 28, height: 28, borderRadius: 14, display: "grid", placeItems: "center", flexShrink: 0, background: s.done ? "var(--safe-soft)" : "var(--surface-2)", color: s.done ? "var(--safe-ink)" : "var(--ink-2)", fontWeight: 800 }}>
               {s.done ? <CircleCheck size={18} /> : i + 1}
             </span>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, flexGrow: 1 }}>
-              <strong style={{ fontSize: 15 }}>{s.title}{s.done ? <span style={{ fontWeight: 600, color: "var(--safe-ink)" }}> · done</span> : null}</strong>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, flexGrow: 1, minWidth: 0 }}>
+              <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>{s.title}{s.done ? <span style={{ fontWeight: 600, color: "var(--safe-ink)" }}> · done</span> : null}</h2>
               <span style={{ fontSize: 13, color: "var(--ink-2)" }}>{s.text}</span>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                 <Link to={s.link} className={`btn${current?.id === s.id ? " dark" : ""}`} style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}>{s.done ? "Look again" : "Do this"}</Link>
-                {!s.done && <button type="button" className="btn" onClick={() => put({ mark: s.id })}>Mark done</button>}
+                {!s.done && <button type="button" className="btn" onClick={() => put(s.id, { mark: s.id }, "Marked done.")}>Mark done</button>}
+                {said(s.id)}
               </div>
             </div>
           </li>
         ))}
       </ol>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button type="button" className="btn" onClick={() => put({ dismissed: !d.dismissed })}>{d.dismissed ? "Show this on Today again" : "Hide this from Today"}</button>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <button type="button" className="btn" onClick={() => put("today", { dismissed: !d.dismissed }, d.dismissed ? "It shows on Today again." : "Hidden from Today.")}>{d.dismissed ? "Show this on Today again" : "Hide this from Today"}</button>
         <Link to="/today" className="btn" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Go to Today</Link>
+        {said("today")}
       </div>
     </div>
   );

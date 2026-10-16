@@ -2,6 +2,7 @@
 // merchants. Every number is the engine's; the charts draw them and add nothing.
 import { useState } from "react";
 import { useApi } from "../api";
+import { Failed, Loading } from "../components/State";
 import { money } from "../format";
 
 interface Spending {
@@ -9,7 +10,7 @@ interface Spending {
   from: string;
   by: "category" | "merchant";
   months: { month: string; spent: number; income: number; count: number; partial: boolean }[];
-  groups: { name: string; total: number; count: number; this_month: number; average: number; share: number }[];
+  groups: { name: string; total: number; count: number; this_month: number; average: number; share: number; over_usual: boolean }[];
   top_merchants: { name: string; total: number; count: number }[];
   totals: { spent: number; income: number; kept: number; savings_rate: number | null; months: number; full_months: number };
   not_advice: string;
@@ -18,6 +19,22 @@ interface Spending {
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 function monthName(key: string): string {
   return MONTHS[Number(key.slice(5, 7)) - 1];
+}
+
+// The same months as the bars, as rows: readable on a phone and by a screen reader.
+function MonthTable({ months }: { months: Spending["months"] }) {
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table className="ledger">
+        <thead><tr><th>Month</th><th style={{ textAlign: "right" }}>Income</th><th style={{ textAlign: "right" }}>Spent</th></tr></thead>
+        <tbody>
+          {months.map((m) => (
+            <tr key={m.month}><td>{monthName(m.month)} {m.month.slice(0, 4)}{m.partial ? " (so far)" : ""}</td><td className="num" style={{ textAlign: "right" }}>{money(m.income)}</td><td className="num" style={{ textAlign: "right" }}>{money(m.spent)}</td></tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function MonthBars({ months }: { months: Spending["months"] }) {
@@ -57,32 +74,37 @@ function MonthBars({ months }: { months: Spending["months"] }) {
 export function Reports() {
   const [months, setMonths] = useState(6);
   const [by, setBy] = useState<"category" | "merchant">("category");
-  const { data, error, loading } = useApi<Spending>(`/api/v1/reports/spending?months=${months}&by=${by}`);
+  const { data, error, reload } = useApi<Spending>(`/api/v1/reports/spending?months=${months}&by=${by}`);
+  const [table, setTable] = useState(false);
   const groupMax = Math.max(1, ...(data?.groups.map((g) => Math.max(g.this_month, g.average)) ?? [1]));
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 980 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Reports</h1>
         <div style={{ flexGrow: 1 }} />
-        <select className="input" value={months} onChange={(e) => setMonths(Number(e.target.value))} aria-label="Months" style={{ minHeight: 36, padding: "4px 10px" }}>
-          {[3, 6, 12, 24].map((n) => <option key={n} value={n}>{n} months</option>)}
-        </select>
-        <div style={{ display: "flex", gap: 4 }}>
-          {(["category", "merchant"] as const).map((k) => <button key={k} type="button" className={`btn${by === k ? " dark" : ""}`} style={{ minHeight: 36, padding: "4px 12px" }} onClick={() => setBy(k)}>By {k}</button>)}
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span className="lab">Show the last</span>
+          <select className="input" value={months} onChange={(e) => setMonths(Number(e.target.value))} style={{ minHeight: 36, padding: "4px 10px" }}>
+            {[3, 6, 12, 24].map((n) => <option key={n} value={n}>{n} months</option>)}
+          </select>
+        </label>
+        <div role="group" aria-label="Group spending" style={{ display: "flex", gap: 4 }}>
+          {(["category", "merchant"] as const).map((k) => <button key={k} type="button" aria-pressed={by === k} className={`btn${by === k ? " dark" : ""}`} style={{ minHeight: 36, padding: "4px 12px" }} onClick={() => setBy(k)}>By {k}</button>)}
         </div>
       </div>
-      {error && <div style={{ color: "var(--critical)" }}>{error.message}</div>}
-      {loading && !data && <div style={{ color: "var(--muted)" }}>Computing…</div>}
+      {error && !data && <Failed error={error} what="the report" onRetry={reload} />}
+      {!data && !error && <Loading what="the report" />}
       {data && (
         <>
           <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
             <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "baseline" }}>
-              <strong style={{ fontSize: 15 }}>Spent and income, by month</strong>
+              <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Spent and income, by month</h2>
               <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--ink-2)" }}><span className="sw" style={{ background: "var(--paycheck)", margin: 0 }} />Income</span>
               <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--ink-2)" }}><span className="sw" style={{ background: "var(--bill)", margin: 0 }} />Spent</span>
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>· the dotted month is still running</span>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>· the paler bars are this month, still running</span>
+              <button type="button" className="btn" aria-pressed={table} style={{ marginLeft: "auto", minHeight: 32, padding: "4px 10px" }} onClick={() => setTable((t) => !t)}>{table ? "Show the chart" : "Show as a table"}</button>
             </div>
-            <MonthBars months={data.months} />
+            {table ? <MonthTable months={data.months} /> : <MonthBars months={data.months} />}
             <div style={{ display: "flex", gap: 18, flexWrap: "wrap", fontSize: 13 }}>
               <span>Income <strong className="num">{money(data.totals.income)}</strong></span>
               <span>Spent <strong className="num">{money(data.totals.spent)}</strong></span>
@@ -92,21 +114,29 @@ export function Reports() {
 
           <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
             <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "baseline" }}>
-              <strong style={{ fontSize: 15 }}>This month against the usual, by {by}</strong>
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>the bar is this month so far; the tick is the average of the {data.totals.full_months} full months</span>
+              <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>This month against the usual, by {by}</h2>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>the bar is this month so far; the black tick is the usual, the average of the {data.totals.full_months} full months</span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div aria-hidden="true" style={{ display: "grid", gridTemplateColumns: "minmax(0, 180px) minmax(40px, 1fr) 72px 72px", gap: 10, alignItems: "end" }}>
+                <span /><span />
+                <span className="lab" style={{ textAlign: "right" }}>This month</span>
+                <span className="lab" style={{ textAlign: "right" }}>Usual</span>
+              </div>
               {data.groups.slice(0, 14).map((g) => {
-                const over = g.this_month > g.average && g.average > 0;
+                const over = g.over_usual;
                 return (
-                  <div key={g.name} style={{ display: "grid", gridTemplateColumns: "minmax(0, 180px) minmax(40px, 1fr) auto auto", gap: 10, alignItems: "center", fontSize: 13 }}>
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={g.name}>{g.name}</span>
+                  <div key={g.name} style={{ display: "grid", gridTemplateColumns: "minmax(0, 180px) minmax(40px, 1fr) 72px 72px", gap: 10, alignItems: "center", fontSize: 13 }}>
+                    <span style={{ minWidth: 0, display: "flex", flexDirection: "column" }}>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={g.name}>{g.name}</span>
+                      {over && <span style={{ fontSize: 11, fontWeight: 800, color: "var(--bill-ink)" }}><span aria-hidden="true">▲ </span>over the usual</span>}
+                    </span>
                     <div style={{ position: "relative", height: 14, background: "var(--surface-2)", borderRadius: 4 }} title={`${g.name}: ${money(g.this_month)} this month, ${money(g.average)} usual`}>
                       <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${(g.this_month / groupMax) * 100}%`, background: over ? "var(--bill)" : "var(--paycheck)", borderRadius: 4 }} />
                       <div style={{ position: "absolute", left: `${(g.average / groupMax) * 100}%`, top: -3, bottom: -3, width: 2, background: "var(--ink)", borderRadius: 1 }} />
                     </div>
-                    <span className="num" style={{ textAlign: "right", fontWeight: 700 }}>{money(g.this_month)}</span>
-                    <span className="num" style={{ textAlign: "right", color: "var(--muted)" }}>{money(g.average)}</span>
+                    <span className="num" style={{ textAlign: "right", fontWeight: 700 }}><span className="sr-only">This month </span>{money(g.this_month)}</span>
+                    <span className="num" style={{ textAlign: "right", color: "var(--muted)" }}><span className="sr-only">Usual </span>{money(g.average)}</span>
                   </div>
                 );
               })}
@@ -116,7 +146,7 @@ export function Reports() {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))", gap: 14 }}>
             <section className="card" style={{ padding: "6px 14px", overflowX: "auto" }}>
               <table className="ledger">
-                <thead><tr><th>{by === "category" ? "Category" : "Merchant"}</th><th style={{ textAlign: "right" }}>Total</th><th style={{ textAlign: "right" }}>Share</th><th style={{ textAlign: "right" }}>Rows</th></tr></thead>
+                <thead><tr><th>{by === "category" ? "Category" : "Merchant"}</th><th style={{ textAlign: "right" }}>Total</th><th style={{ textAlign: "right" }}>Share</th><th style={{ textAlign: "right" }}>Purchases</th></tr></thead>
                 <tbody>
                   {data.groups.map((g) => (
                     <tr key={g.name}><td>{g.name}</td><td className="num" style={{ textAlign: "right" }}>{money(g.total)}</td><td className="num" style={{ textAlign: "right", color: "var(--ink-2)" }}>{(g.share * 100).toFixed(0)}%</td><td className="num" style={{ textAlign: "right", color: "var(--muted)" }}>{g.count}</td></tr>

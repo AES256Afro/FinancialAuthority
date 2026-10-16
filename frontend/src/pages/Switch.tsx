@@ -5,7 +5,9 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
-import { StatusPill } from "../components/Status";
+import { ConfirmButton } from "../components/ConfirmButton";
+import { Failed, Loading, Said } from "../components/State";
+import { SeverityTag, StatusPill } from "../components/Status";
 import { money, monthDay, shortDate } from "../format";
 import { palette } from "../looks";
 import { getPrefs } from "../prefs";
@@ -37,7 +39,7 @@ interface MoveList {
   accounts: { id: number; name: string; kind: string; institution: string }[];
 }
 
-const KIND_WORD: Record<string, string> = { income: "Paycheck", bill: "Bill", subscription: "Subscription", card_payment: "Card payment", plan: "Pay-later", advance: "Advance app", wallet: "Wallet", found: "Found in the ledger", transfer: "Transfer" };
+const KIND_WORD: Record<string, string> = { income: "Paycheck", bill: "Bill", subscription: "Subscription", card_payment: "Card payment", plan: "Pay-later", advance: "Advance app", wallet: "Wallet", found: "Found in your transactions", transfer: "Transfer" };
 
 function StartForm({ list, onStarted }: { list: MoveList; onStarted: () => void }) {
   const spend = list.accounts.filter((a) => a.kind === "checking" || a.kind === "savings" || a.kind === "card");
@@ -46,23 +48,28 @@ function StartForm({ list, onStarted }: { list: MoveList; onStarted: () => void 
   const [name, setName] = useState("");
   const [finish, setFinish] = useState("");
   const [note, setNote] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   async function start() {
+    setBusy(true);
+    setNote(null);
     try {
       await api("/api/v1/moves", { method: "POST", body: JSON.stringify({ source_account_id: source, target_account_id: target === "new" ? null : Number(target), target_name: target === "new" ? name : "", finish_by: finish || null }) });
       onStarted();
     } catch (e) {
-      setNote((e as Error).message);
+      setNote(`Couldn't start: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
     }
   }
   return (
     <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12, maxWidth: 760 }}>
-      <strong style={{ fontSize: 15 }}>Start a move</strong>
-      <span style={{ fontSize: 13, color: "var(--ink-2)" }}>The app finds everything on the old account (the paycheck, every bill it pays, the cards it pays, pay-later plans, wallets like PayPal, advance apps, and recurring charges no register names), gives each a window to switch in, and confirms each switch from the ledger.</span>
+      <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Start switching banks</h2>
+      <span style={{ fontSize: 13, color: "var(--ink-2)" }}>The app finds everything on the old account (the paycheck, every bill it pays, the cards it pays, pay-later plans, wallets like PayPal, advance apps, and repeating charges your bills list does not name), gives each the days to switch in, and confirms each switch from your transactions.</span>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 10 }}>
-        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Move from</span>
+        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Switch from</span>
           <select className="input" value={source} onChange={(e) => setSource(Number(e.target.value))}>{spend.map((a) => <option key={a.id} value={a.id}>{a.name}{a.institution ? ` · ${a.institution}` : ""}</option>)}</select>
         </label>
-        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Move to</span>
+        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Switch to</span>
           <select className="input" value={target} onChange={(e) => setTarget(e.target.value)}>
             <option value="new">An account not in the app yet</option>
             {list.accounts.filter((a) => a.id !== source).map((a) => <option key={a.id} value={a.id}>{a.name}{a.institution ? ` · ${a.institution}` : ""}</option>)}
@@ -71,9 +78,9 @@ function StartForm({ list, onStarted }: { list: MoveList; onStarted: () => void 
         {target === "new" && <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Its name</span><input className="input" value={name} maxLength={80} onChange={(e) => setName(e.target.value)} placeholder="Credit union checking" /></label>}
         <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Finish by (optional)</span><input className="input" type="date" value={finish} onChange={(e) => setFinish(e.target.value)} /></label>
       </div>
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <button type="button" className="btn dark" disabled={!source || (target === "new" && !name.trim())} onClick={start}>Find everything to move</button>
-        {note && <span style={{ fontSize: 13, color: "var(--critical)" }}>{note}</span>}
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <button type="button" className="btn dark" disabled={busy || !source || (target === "new" && !name.trim())} onClick={start}>{busy ? "Looking…" : "Find everything to switch"}</button>
+        <Said text={note} tone="error" />
       </div>
     </section>
   );
@@ -110,7 +117,9 @@ function Timeline({ p }: { p: Plan }) {
   const x = (iso: string) => labelW + ((W - labelW - 12) * (new Date(`${iso}T12:00:00`).getTime() - start)) / Math.max(1, end - start);
   const firstNew = x(p.first_new_payday);
   const ticks: string[] = [];
-  for (let t = start; t <= end; t += 14 * 86400000) ticks.push(new Date(t).toISOString().slice(0, 10));
+  // Local dates, never the UTC date, so a tick never lands on tomorrow.
+  const localIso = (t: number) => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  for (let t = start; t <= end; t += 14 * 86400000) ticks.push(localIso(t));
   const colourOf = (r: Item) => (r.status === "confirmed" ? c.safe : r.status === "switched" ? c.paycheck : "var(--muted)");
   return (
     <div style={{ overflowX: "auto" }}>
@@ -122,7 +131,7 @@ function Timeline({ p }: { p: Plan }) {
           </g>
         ))}
         <line x1={firstNew} x2={firstNew} y1={16} y2={H - 4} stroke={c.paycheck} strokeDasharray="4 3" />
-        <text x={firstNew + 4} y={H - 6} fontSize="10.5" fill={c.paycheck}>first paycheck in the new account</text>
+        <text x={firstNew + 4} y={H - 6} fontSize="10.5" fill="var(--paycheck-ink)">first paycheck in the new account</text>
         {rows.map((r, i) => {
           const y = 24 + i * rowH;
           const eff = x(r.effective as string);
@@ -134,7 +143,7 @@ function Timeline({ p }: { p: Plan }) {
               <rect x={labelW} y={y + 3} width={Math.max(2, eff - labelW)} height={12} rx={3} fill={c.bill} opacity={0.55} />
               {r.switch_after && r.switch_by && <rect x={x(r.switch_after)} y={y + 1} width={Math.max(3, x(r.switch_by) - x(r.switch_after))} height={16} rx={3} fill="none" stroke="var(--ink)" strokeDasharray="2 2" />}
               {!drop && <rect x={eff} y={y + 3} width={Math.max(2, W - 12 - eff)} height={12} rx={3} fill={colourOf(r)} opacity={r.status === "todo" ? 0.45 : 0.9} />}
-              {drop && <text x={eff + 4} y={y + 13} fontSize="11" fontWeight="800" fill="var(--critical)">✕ left behind</text>}
+              {drop && <text x={eff + 4} y={y + 13} fontSize="11" fontWeight="800" fill="var(--critical-ink)">✕ left behind</text>}
             </g>
           );
         })}
@@ -143,18 +152,31 @@ function Timeline({ p }: { p: Plan }) {
         <span><span className="sw" style={{ background: c.bill, opacity: 0.55 }} />on {p.source.name}</span>
         <span><span className="sw" style={{ background: "var(--muted)", opacity: 0.45 }} />on {p.target.name}, planned</span>
         <span><span className="sw" style={{ background: c.paycheck }} />switched</span>
-        <span><span className="sw" style={{ background: c.safe }} />confirmed by the ledger</span>
-        <span>dashed box: the window to switch in</span>
+        <span><span className="sw" style={{ background: c.safe }} />confirmed by your transactions</span>
+        <span>dashed box: the days to switch in</span>
       </div>
     </div>
   );
 }
 
-function ItemCard({ it, p, onChange }: { it: Item; p: Plan; onChange: (body: Record<string, unknown>) => void }) {
-  const badge = it.missed ? <StatusPill status="crit">Still charging {p.source.name} ({monthDay(it.last_seen_old as string)})</StatusPill>
-    : it.status === "confirmed" ? <StatusPill status="good">Confirmed {monthDay(it.confirmed_on as string)}</StatusPill>
-    : it.status === "switched" ? <StatusPill status="good">Switched {monthDay(it.switched_on as string)}, waiting for the first charge</StatusPill>
-    : it.overdue ? <StatusPill status="warn">Past its window</StatusPill>
+function ItemCard({ it, p, onChange }: { it: Item; p: Plan; onChange: (body: Record<string, unknown>) => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function act(body: Record<string, unknown>) {
+    setBusy(true);
+    setError(null);
+    try {
+      await onChange(body);
+    } catch (e) {
+      setError(`Couldn't save that: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+  const badge = it.missed ? <StatusPill status="crit">Still charging {p.source.name} ({shortDate(it.last_seen_old as string)})</StatusPill>
+    : it.status === "confirmed" ? <StatusPill status="good">Confirmed {shortDate(it.confirmed_on as string)}</StatusPill>
+    : it.status === "switched" ? <StatusPill status="good">Switched {shortDate(it.switched_on as string)}, waiting for the first charge</StatusPill>
+    : it.overdue ? <StatusPill status="warn">Past its switch dates</StatusPill>
     : it.decision === "undecided" ? <StatusPill status="warn">Decide</StatusPill> : null;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: 12, borderRadius: 12, border: "1px solid var(--hairline)", background: "var(--surface)" }}>
@@ -169,33 +191,57 @@ function ItemCard({ it, p, onChange }: { it: Item; p: Plan; onChange: (body: Rec
         <div className="num" style={{ fontSize: 12, fontWeight: 700 }}>Switch between {shortDate(it.switch_after)} and {shortDate(it.switch_by)}</div>
       )}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-        {it.decision === "move" && it.status === "todo" && <button type="button" className="btn dark" style={{ minHeight: 32, padding: "4px 10px" }} onClick={() => onChange({ status: "switched" })}>I switched it</button>}
-        {it.status === "switched" && <button type="button" className="btn" style={{ minHeight: 32, padding: "4px 10px" }} onClick={() => onChange({ status: "todo" })}>Not yet</button>}
+        {it.decision === "move" && it.status === "todo" && <button type="button" className="btn dark" disabled={busy} style={{ minHeight: 32, padding: "4px 10px" }} onClick={() => act({ status: "switched" })}>I switched it</button>}
+        {it.status === "switched" && <button type="button" className="btn" disabled={busy} style={{ minHeight: 32, padding: "4px 10px" }} onClick={() => act({ status: "todo" })}>Not yet</button>}
         {it.kind !== "income" && it.status !== "confirmed" && (
-          <select className="input" value={it.decision} onChange={(e) => onChange({ decision: e.target.value })} aria-label={`What to do with ${it.name}`} style={{ minHeight: 32, padding: "2px 8px", fontSize: 12 }}>
+          <select className="input" value={it.decision} disabled={busy} onChange={(e) => act({ decision: e.target.value })} aria-label={`What to do with ${it.name}`} style={{ minHeight: 32, padding: "2px 8px", fontSize: 12 }}>
             <option value="move">Move it</option>
             <option value="keep">Keep it on {p.source.name}</option>
             <option value="drop">Drop it</option>
             <option value="undecided">Decide later</option>
           </select>
         )}
+        <Said text={error} tone="error" />
       </div>
     </div>
   );
 }
 
-function MovePlan({ id }: { id: number }) {
+function MovePlan({ id, onFinished }: { id: number; onFinished: () => void }) {
   const plan = useApi<Plan>(`/api/v1/moves/${id}`);
   const [p, setP] = useState<Plan | null>(null);
+  const [cardNote, setCardNote] = useState<string | null>(null);
+  const [lookNote, setLookNote] = useState<{ text: string; tone: "info" | "error" } | null>(null);
+  const [looking, setLooking] = useState(false);
   const data = p ?? plan.data;
-  if (plan.error) return <div style={{ color: "var(--critical)" }}>{plan.error.message}</div>;
-  if (!data) return <div style={{ color: "var(--muted)" }}>Reading the ledger…</div>;
+  if (plan.error && !data) return <Failed error={plan.error} what="the switch plan" onRetry={plan.reload} />;
+  if (!data) return <Loading what="the switch plan from your transactions" />;
   const pr = data.progress;
   async function change(itemId: number, body: Record<string, unknown>) {
     setP(await api<Plan>(`/api/v1/moves/${id}/items/${itemId}`, { method: "PUT", body: JSON.stringify(body) }));
   }
   async function patch(body: Record<string, unknown>) {
     setP(await api<Plan>(`/api/v1/moves/${id}`, { method: "PUT", body: JSON.stringify(body) }));
+  }
+  async function setCardDay(value: string) {
+    setCardNote(null);
+    try {
+      await patch({ debit_card_on: value || null });
+    } catch (e) {
+      setCardNote(`Couldn't save the date: ${(e as Error).message}`);
+    }
+  }
+  async function lookAgain() {
+    setLooking(true);
+    setLookNote(null);
+    try {
+      setP(await api<Plan>(`/api/v1/moves/${id}/refresh`, { method: "POST" }));
+      setLookNote({ tone: "info", text: "Looked again; the plan above is up to date." });
+    } catch (e) {
+      setLookNote({ tone: "error", text: `Couldn't look again: ${(e as Error).message}` });
+    } finally {
+      setLooking(false);
+    }
   }
   const seg = (n: number, fill: string, label: string) => (n > 0 ? <div key={label} title={`${label}: ${n}`} style={{ flex: n, background: fill, minWidth: 6 }} /> : null);
   const c = palette(getPrefs().look);
@@ -207,7 +253,7 @@ function MovePlan({ id }: { id: number }) {
           <span style={{ fontSize: 13, color: "var(--ink-2)" }}>started {shortDate(data.move.started_on)}{data.move.finish_by ? ` · finish by ${shortDate(data.move.finish_by)}` : ""} · first paycheck there expected {shortDate(data.first_new_payday)}</span>
         </div>
         <div role="img" aria-label={`${pr.confirmed} confirmed, ${pr.switched} switched, ${pr.todo} to do, ${pr.undecided} to decide`} style={{ display: "flex", height: 14, borderRadius: 7, overflow: "hidden", gap: 2, background: "var(--surface-2)" }}>
-          {seg(pr.confirmed, c.safe, "Confirmed")}{seg(pr.switched, c.paycheck, "Switched")}{seg(pr.todo, "var(--muted)", "To do")}{seg(pr.undecided, "var(--warning)", "To decide")}
+          {seg(pr.confirmed, c.safe, "Confirmed")}{seg(pr.switched, c.paycheck, "Switched")}{seg(pr.todo, "var(--muted)", "To do")}{seg(pr.undecided, c.later, "To decide")}
         </div>
         <div className="num" style={{ fontSize: 13, display: "flex", gap: 14, flexWrap: "wrap" }}>
           <span><strong>{pr.confirmed}</strong> confirmed</span><span><strong>{pr.switched}</strong> switched</span><span><strong>{pr.todo}</strong> to do</span>
@@ -215,24 +261,31 @@ function MovePlan({ id }: { id: number }) {
         </div>
         {data.alerts.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {data.alerts.map((a, i) => <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}><StatusPill status={a.severity === "crit" ? "crit" : a.severity === "warn" ? "warn" : "good"}>{a.severity === "info" ? "Next" : undefined}</StatusPill>{a.text}</div>)}
+            {data.alerts.map((a, i) => <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}><SeverityTag severity={a.severity} word={a.severity === "info" ? "Next" : undefined} /><span>{a.text}</span></div>)}
           </div>
         )}
         <Timeline p={data} />
       </section>
 
       <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
-        <strong style={{ fontSize: 15 }}>The money through the move</strong>
-        <span style={{ fontSize: 13, color: "var(--ink-2)" }}>Each pay window: what lands in and leaves each account with the switches as planned, and what to move between them so neither runs short.</span>
+        <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>The money through the switch</h2>
+        <span style={{ fontSize: 13, color: "var(--ink-2)" }}>Each paycheck: what comes into and goes out of each account with the switches as planned, what is left, and what to move between them so neither runs short.</span>
         <div style={{ overflowX: "auto" }}>
           <table className="ledger">
-            <thead><tr><th>Window</th><th style={{ textAlign: "right" }}>{data.source.name}: in, out, left</th><th style={{ textAlign: "right" }}>{data.target.name}: in, out, left</th><th>Move between them</th></tr></thead>
+            <thead>
+              <tr><th rowSpan={2} style={{ verticalAlign: "bottom" }}>Paycheck period</th><th colSpan={3} style={{ textAlign: "center", borderBottom: "1px solid var(--surface-2)" }}>{data.source.name}</th><th colSpan={3} style={{ textAlign: "center", borderBottom: "1px solid var(--surface-2)" }}>{data.target.name}</th><th rowSpan={2} style={{ verticalAlign: "bottom" }}>Move between them</th></tr>
+              <tr><th style={{ textAlign: "right" }}>In</th><th style={{ textAlign: "right" }}>Out</th><th style={{ textAlign: "right" }}>Left</th><th style={{ textAlign: "right" }}>In</th><th style={{ textAlign: "right" }}>Out</th><th style={{ textAlign: "right" }}>Left</th></tr>
+            </thead>
             <tbody>
               {data.windows.map((w) => (
                 <tr key={w.start}>
-                  <td style={{ whiteSpace: "nowrap" }}>{monthDay(w.start)} to {monthDay(w.end)}{w.paycheck_in ? <div style={{ fontSize: 11, color: "var(--muted)" }}>paycheck into {w.paycheck_in === "target" ? data.target.name : data.source.name}</div> : null}</td>
-                  <td className="num" style={{ textAlign: "right" }}>{money(w.source.in)} · {money(w.source.out)} · <strong style={{ color: w.source.end < 0 ? "var(--critical)" : "inherit" }}>{money(w.source.end)}</strong></td>
-                  <td className="num" style={{ textAlign: "right" }}>{money(w.target.in)} · {money(w.target.out)} · <strong style={{ color: w.target.end < 0 ? "var(--critical)" : "inherit" }}>{money(w.target.end)}</strong></td>
+                  <td style={{ whiteSpace: "nowrap" }}>{shortDate(w.start)} to {shortDate(w.end)}{w.paycheck_in ? <div style={{ fontSize: 11, color: "var(--muted)" }}>paycheck into {w.paycheck_in === "target" ? data.target.name : data.source.name}</div> : null}</td>
+                  <td className="num" style={{ textAlign: "right" }}>{money(w.source.in)}</td>
+                  <td className="num" style={{ textAlign: "right" }}>{money(w.source.out)}</td>
+                  <td className="num" style={{ textAlign: "right", fontWeight: 800, color: w.source.end < 0 ? "var(--critical-ink)" : "inherit" }}>{money(w.source.end)}{w.source.end < 0 ? <div style={{ fontSize: 11 }}>short</div> : null}</td>
+                  <td className="num" style={{ textAlign: "right" }}>{money(w.target.in)}</td>
+                  <td className="num" style={{ textAlign: "right" }}>{money(w.target.out)}</td>
+                  <td className="num" style={{ textAlign: "right", fontWeight: 800, color: w.target.end < 0 ? "var(--critical-ink)" : "inherit" }}>{money(w.target.end)}{w.target.end < 0 ? <div style={{ fontSize: 11 }}>short</div> : null}</td>
                   <td>{w.move_money.length ? w.move_money.map((m, i) => <MoneyLine key={i} m={m} />) : <span style={{ color: "var(--muted)" }}>nothing</span>}</td>
                 </tr>
               ))}
@@ -244,22 +297,25 @@ function MovePlan({ id }: { id: number }) {
       {data.phases.map((ph) => (ph.items.length || ph.steps?.length ? (
         <section key={ph.key} className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-            <strong style={{ fontSize: 15 }}>{ph.title}</strong>
+            <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{ph.title}</h2>
             <span style={{ fontSize: 12, color: "var(--muted)" }}>{ph.text}</span>
           </div>
           {ph.steps?.map((s, i) => (
             <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
               <StatusPill status={s.done ? "good" : "warn"}>{s.done ? "Done" : "To do"}</StatusPill>
               <span>{s.text}</span>
-              {s.link && !s.done && <Link to={s.link} style={{ marginLeft: "auto" }}>Open</Link>}
+              {s.link && !s.done && <Link to={s.link} aria-label={`Open: ${s.text}`} style={{ marginLeft: "auto" }}>Open</Link>}
             </div>
           ))}
           {ph.key === "paycheck" && <Where id="direct_deposit" />}
           {ph.key === "ready" && (
-            <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, flexWrap: "wrap" }}>
-              The new debit card arrived on
-              <input className="input" type="date" value={data.move.debit_card_on ?? ""} onChange={(e) => patch({ debit_card_on: e.target.value || null })} style={{ minHeight: 32 }} />
-            </label>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, flexWrap: "wrap" }}>
+                The new debit card arrived on
+                <input className="input" type="date" value={data.move.debit_card_on ?? ""} onChange={(e) => setCardDay(e.target.value)} style={{ minHeight: 32 }} />
+              </label>
+              <Said text={cardNote} tone="error" />
+            </div>
           )}
           {ph.key === "ready" && !data.target.in_app && <AttachTarget moveId={id} onDone={(np) => setP(np)} />}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 420px), 1fr))", gap: 10 }}>
@@ -267,9 +323,10 @@ function MovePlan({ id }: { id: number }) {
           </div>
         </section>
       ) : null))}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button type="button" className="btn" onClick={async () => setP(await api<Plan>(`/api/v1/moves/${id}/refresh`, { method: "POST" }))}>Look for anything new</button>
-        {data.close.ready && <button type="button" className="btn dark" onClick={() => patch({ status: "done" })}>Mark the move done</button>}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <button type="button" className="btn" disabled={looking} onClick={lookAgain}>{looking ? "Looking…" : "Look for anything new"}</button>
+        {data.close.ready && <ConfirmButton className="btn dark" label="Mark the switch finished" question="Mark this switch finished? It moves to Earlier switches." yes="Yes, it's finished" no="Not yet" onConfirm={async () => { await patch({ status: "done" }); onFinished(); }} />}
+        {lookNote && <Said text={lookNote.text} tone={lookNote.tone} />}
       </div>
       <div style={{ fontSize: 11, color: "var(--muted)" }}>{data.not_advice}</div>
     </div>
@@ -279,33 +336,44 @@ function MovePlan({ id }: { id: number }) {
 function AttachTarget({ moveId, onDone }: { moveId: number; onDone: (p: Plan) => void }) {
   const list = useApi<MoveList>("/api/v1/moves");
   const [pick, setPick] = useState("");
-  if (!list.data) return null;
+  const [error, setError] = useState<string | null>(null);
+  if (list.error && !list.data) return <Failed error={list.error} what="your accounts" onRetry={list.reload} card={false} />;
+  if (!list.data) return <Loading what="your accounts" card={false} />;
+  async function use() {
+    setError(null);
+    try {
+      onDone(await api<Plan>(`/api/v1/moves/${moveId}`, { method: "PUT", body: JSON.stringify({ target_account_id: Number(pick) }) }));
+    } catch (e) {
+      setError(`Couldn't use it: ${(e as Error).message}`);
+    }
+  }
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 13 }}>
-      Already in the app?
-      <select className="input" value={pick} onChange={(e) => setPick(e.target.value)} style={{ minHeight: 32 }}>
+      <label htmlFor={`attach-${moveId}`}>Already in the app?</label>
+      <select id={`attach-${moveId}`} className="input" value={pick} onChange={(e) => setPick(e.target.value)} style={{ minHeight: 32 }}>
         <option value="">Pick the new account…</option>
         {list.data.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}{a.institution ? ` · ${a.institution}` : ""}</option>)}
       </select>
-      <button type="button" className="btn" disabled={!pick} onClick={async () => onDone(await api<Plan>(`/api/v1/moves/${moveId}`, { method: "PUT", body: JSON.stringify({ target_account_id: Number(pick) }) }))}>Use it</button>
+      <button type="button" className="btn" disabled={!pick} onClick={use}>Use it</button>
+      <Said text={error} tone="error" />
     </div>
   );
 }
 
 export function Switch() {
   const list = useApi<MoveList>("/api/v1/moves");
-  if (list.error) return <div style={{ color: "var(--critical)" }}>{list.error.message}</div>;
-  if (!list.data) return <div style={{ color: "var(--muted)" }}>Opening…</div>;
+  if (list.error && !list.data) return <Failed error={list.error} what="Switch banks" onRetry={list.reload} />;
+  if (!list.data) return <Loading what="Switch banks" />;
   const active = list.data.moves.find((m) => m.status === "moving");
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 1200 }}>
       <div>
-        <h1 style={{ margin: "0 0 4px", fontSize: 20, fontWeight: 800 }}>Switching banks</h1>
-        <p style={{ margin: 0, color: "var(--ink-2)", maxWidth: "80ch" }}>Moving the paycheck, the bills, the card payments and the subscriptions to another account, one at a time, each in its own window, so nothing is charged to an account with no money in it and nothing is forgotten. The app never moves money; it says what to switch and when, and the ledger confirms each switch.</p>
+        <h1 style={{ margin: "0 0 4px", fontSize: 20, fontWeight: 800 }}>Switch banks</h1>
+        <p style={{ margin: 0, color: "var(--ink-2)", maxWidth: "80ch" }}>Moving the paycheck, the bills, the card payments and the subscriptions to another account, one at a time, each in the days that suit its due date, so nothing is charged to an account with no money in it and nothing is forgotten. The app never moves money; it says what to switch and when, and your transactions confirm each switch.</p>
       </div>
-      {active ? <MovePlan id={active.id} /> : <StartForm list={list.data} onStarted={list.reload} />}
+      {active ? <MovePlan id={active.id} onFinished={list.reload} /> : <StartForm list={list.data} onStarted={list.reload} />}
       {list.data.moves.filter((m) => m.status !== "moving").length > 0 && (
-        <div style={{ fontSize: 12, color: "var(--muted)" }}>Earlier moves: {list.data.moves.filter((m) => m.status !== "moving").map((m) => `${m.name} (${m.status})`).join(", ")}</div>
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>Earlier switches: {list.data.moves.filter((m) => m.status !== "moving").map((m) => `${m.name} (${m.status})`).join(", ")}</div>
       )}
     </div>
   );

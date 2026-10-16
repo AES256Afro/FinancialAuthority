@@ -161,7 +161,7 @@ def account_cover(session: Session, today: date, *, saving: dict | None = None) 
                 headline = f"Next payment {_usd(mine_pay[0]['amount'])} on {_short(mine_pay[0]['date'])}" + (" (the minimum)" if mine_pay[0]["name"].endswith("minimum") else "")
             else:
                 headline = "Nothing owed" if balance <= 0 else f"{_usd(balance)} owed"
-            out_accounts.append({**base, "role": "card", "status": status, "headline": headline, "limit": _money(limit) if limit else None, "utilisation": round(util_now, 3) if util_now is not None else None,
+            out_accounts.append({**base, "role": "card", "status": status, "headline": headline, "limit": _money(limit) if limit else None, "target_amount": _money(UTILISATION_TARGET * limit) if limit else None, "utilisation": round(util_now, 3) if util_now is not None else None,
                                  "statement_on": statement.isoformat() if statement else None, "statement_balance": _money(proj_statement) if proj_statement is not None else None,
                                  "statement_utilisation": round(util_statement, 3) if util_statement is not None else None, "to_target": _money(to_target), "pay_by": pay_by.isoformat() if pay_by else None,
                                  "planned": _money(planned_off), "riding": [{"name": e["name"], "amount": e["amount"], "date": e["date"].isoformat(), "source": e.get("source", "")} for e in riding if e["date"] < p2],

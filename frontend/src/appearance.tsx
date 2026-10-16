@@ -62,7 +62,6 @@ function apply(a: AppearanceState): void {
   if (a.quiet) root.dataset.quiet = "1";
   else delete root.dataset.quiet;
   setServerShowAs(a.saved ? a.show_as : null);
-  document.title = a.brand.name || "FinancialAuthority";
   const icon = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
   if (icon) icon.href = a.brand.mark || DEFAULT_ICON;
   setPrefs({ look: a.look });

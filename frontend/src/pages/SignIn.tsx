@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "../api";
+import { Said } from "../components/State";
 
 export function SignIn({ onDone }: { onDone: () => void }) {
   const [username, setUsername] = useState("owner");
@@ -26,7 +27,7 @@ export function SignIn({ onDone }: { onDone: () => void }) {
       <form onSubmit={submit} className="card" style={{ padding: 24, width: "min(100%, 380px)", display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <img src={`${import.meta.env.BASE_URL}favicon.svg`} width={28} height={28} alt="" />
-          <strong style={{ fontSize: 18 }}>FinancialAuthority</strong>
+          <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>FinancialAuthority</h1>
         </div>
         <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <span className="lab">Username</span>
@@ -36,9 +37,9 @@ export function SignIn({ onDone }: { onDone: () => void }) {
           <span className="lab">Password</span>
           <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
         </label>
-        {error && <div style={{ color: "var(--critical)", fontSize: 13 }}>{error}</div>}
-        <button className="btn dark" type="submit" disabled={busy}>Sign in</button>
-        <div style={{ fontSize: 12, color: "var(--muted)" }}>BoxPilot generated the password; it is on the app's card there.</div>
+        {error && <Said text={error} tone="error" />}
+        <button className="btn dark" type="submit" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
+        <div style={{ fontSize: 12, color: "var(--ink-2)" }}>The password is the app's <code>FA_PASSWORD</code> setting. On BoxPilot it was made for you and is on the app's card; with Docker Compose it is in the <code>.env</code> file.</div>
       </form>
     </div>
   );

@@ -104,6 +104,7 @@ export interface PaystubRow {
   taxes_total: number;
   benefits_total: number;
   net_share: number | null;
+  verdict?: { status: "good" | "warn"; short: boolean; word: string };
   source: string;
   transaction_id: number | null;
   matched: boolean;
@@ -175,7 +176,7 @@ export interface Snapshot {
   window: { start: string; end: string; total: number; items: Event[] };
   set_aside: { total: number; items: Event[] };
   safe_to_spend: {
-    amount: number; after_goals: number; through: string; version: string;
+    amount: number; after_goals: number; share_of_cash?: number; through: string; version: string;
     parts?: { cash: number; due_before_payday: number; advances: number; advances_on_payday: number; buffer: number; next_window_shortfall: number };
     steps?: { label: string; amount: number; note?: string; as_of?: string | null; items?: { name: string; amount: number; date: string; source?: string }[] }[];
     by_account?: { id: number; name: string; kind: string; balance: number; as_of: string | null; from_bank: boolean; paycheck_lands: boolean; due: number; buffer: number; advances: number; shortfall: number; goes_out: number; safe: number; items: { name: string; amount: number; date: string }[] }[];
@@ -186,7 +187,10 @@ export interface Snapshot {
   usual_pace: { per_day: number; per_window: number; basis_days: number; transactions: number; over_safe: number };
   board: { problems: { total: number; items: PaymentRow[] }; due_7: { total: number; items: Event[] }; later: { total: number; items: Event[] }; paid: { total: number; items: PaymentRow[] } };
   debts: { id: number; name: string; kind: string; balance: number; apr: number; minimum: number; due_day: number | null }[];
-  pending: { confirmations: number; series: number; facts: number; approvals: number; past_due: number };
+  pending: { total: number; confirmations: number; series: number; facts: number; pairs?: number; approvals: number; past_due: number };
+  debts_total: number;
+  fresh?: { balances_as_of: string | null; accounts: { id: number; name: string; kind: string; as_of: string | null; connector: string }[]; newest_transaction: string | null };
+  in_flight?: { pending: { total: number; items: { id: number; date: string; merchant: string; amount: number; account: string; source: string }[] }; mail: { total: number; counted: boolean; items: { amount: number; merchant: string; last4: string; date: string; source: string }[] } };
   mail: { pending: { id: number; kind: string; sender_name: string; subject: string; date: string | null }[]; alerts: { id: number; kind: string; fields: Record<string, string | number>; sender_name: string; date: string | null }[] };
   projection: { date: string; available: number; at_pace: number; cash: number }[];
   not_advice: string;

@@ -23,6 +23,8 @@ export function Home({ snapshot }: { snapshot: Snapshot }) {
   const shown = chosen.sections.filter((s) => !s.hidden);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
+      {/* The page's one h1; each section and home view titles itself with an h2. */}
+      <h1 className="sr-only">Home: {chosen.name}</h1>
       {shown.map((s, i) => <Placed key={`${chosen.id}-${s.key}-${i}`} s={s} at={`home.${chosen.id}.${i}`} snapshot={snapshot} />)}
       <div style={{ fontSize: 12, color: "var(--muted)" }}>
         {chosen.name} · <Link to="/settings/appearance">arrange this home</Link>

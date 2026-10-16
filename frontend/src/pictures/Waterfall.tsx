@@ -63,10 +63,10 @@ export function Waterfall({ checks, initial = 0 }: { checks: Check[]; initial?: 
             const xi = x(n - 1);
             const fill = end < 0 ? "var(--critical)" : colours.yours;
             return (
-              <g onMouseMove={(e) => yours && show(e, end < 0 ? <div><strong>Short {money(-end)}</strong><div>The check does not cover its window.</div></div> : <PartTip part={yours} colour={colours.yours} of={c.inflow} />)}>
+              <g onMouseMove={(e) => yours && show(e, end < 0 ? <div><strong>Short {money(-end)}</strong><div>The check does not cover the days until the next one.</div></div> : <PartTip part={yours} colour={colours.yours} of={c.inflow} />)}>
                 <line x1={xi - (cw - bw)} x2={xi} y1={y(level)} y2={y(level)} stroke="var(--muted)" strokeDasharray="3 3" />
                 <rect x={xi} y={y(Math.max(0, end))} width={bw} height={Math.max(1, Math.abs(y(end) - y(0)))} rx={4} fill={fill} />
-                <text x={xi + bw / 2} y={y(Math.max(0, end)) - 6} fontSize="12" fontWeight="800" textAnchor="middle" fill="var(--ink)">{end < 0 ? `short ${money(-end)}` : money(end)}</text>
+                <text x={xi + bw / 2} y={y(Math.max(0, end)) - 6} fontSize="12" fontWeight="800" textAnchor="middle" fill={end < 0 ? "var(--critical-ink)" : "var(--ink)"}>{end < 0 ? `short ${money(-end)}` : money(end)}</text>
                 <text x={xi + bw / 2} y={H - padB + 16} fontSize="11" fontWeight="800" textAnchor="middle" fill="var(--ink)">{end < 0 ? "short" : "yours"}</text>
               </g>
             );

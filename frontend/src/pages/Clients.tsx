@@ -1,6 +1,10 @@
 // API keys for models and scripts. A key is shown once; the owner keeps it in the client, never in chat.
+import { Copy } from "lucide-react";
 import { useState } from "react";
 import { api, useApi } from "../api";
+import { when } from "../format";
+import { ConfirmButton } from "../components/ConfirmButton";
+import { Failed, Loading, Said } from "../components/State";
 import { Where } from "../components/Where";
 import { Devices } from "../components/Devices";
 
@@ -27,15 +31,64 @@ interface OAuthClientRow {
   sessions: number;
 }
 
+/** What a client may see, in words: the redaction level the server applies to everything it reads. */
+export const SEES: Record<string, string> = {
+  full: "Everything, with descriptions and notes",
+  merchants: "Merchant names, no descriptions or notes",
+  aggregates: "Totals only, no merchant names",
+};
+
+const SCOPE_WORD: Record<string, string> = { read: "read your plan", confirm: "confirm details on Needs you", approve: "approve emails", admin: "change settings" };
+
+function scopesInWords(scopes: string[]): string {
+  const words = scopes.filter(Boolean).map((s) => SCOPE_WORD[s] ?? s);
+  return words.length ? words.join(", ") : "nothing";
+}
+
+function SeesSelect({ value, onChange, label }: { value: string; onChange: (v: string) => void; label?: string }) {
+  return (
+    <select className="input" style={{ minHeight: 32, padding: "4px 8px" }} value={value} onChange={(e) => onChange(e.target.value)} aria-label={label}>
+      {Object.entries(SEES).map(([k, w]) => <option key={k} value={k}>{w}</option>)}
+    </select>
+  );
+}
+
+function CopyButton({ text, label }: { text: string; label: string }) {
+  const [said, setSaid] = useState<{ text: string; tone: "info" | "error" } | null>(null);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setSaid({ text: "Copied.", tone: "info" });
+      window.setTimeout(() => setSaid(null), 2000);
+    } catch {
+      setSaid({ text: "This browser would not copy; select the text and copy it by hand.", tone: "error" });
+    }
+  }
+  return (
+    <span style={{ display: "inline-flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+      <button type="button" className="btn" onClick={copy} style={{ minHeight: 32, padding: "4px 10px", display: "inline-flex", gap: 4, alignItems: "center" }}><Copy size={13} aria-hidden="true" />{label}</button>
+      {said && <Said text={said.text} tone={said.tone} />}
+    </span>
+  );
+}
+
 function ConnectedApps() {
-  const { data, reload } = useApi<{ clients: OAuthClientRow[] }>("/api/v1/oauth/clients");
+  const state = useApi<{ clients: OAuthClientRow[] }>("/api/v1/oauth/clients");
+  const { data, reload } = state;
+  const [note, setNote] = useState<{ id: string; text: string; tone: "info" | "error" } | null>(null);
   async function revoke(id: string) {
     await api(`/api/v1/oauth/clients/${id}`, { method: "DELETE" });
     reload();
   }
   async function setRedaction(id: string, redaction: string) {
-    await api(`/api/v1/oauth/clients/${id}`, { method: "PUT", body: JSON.stringify({ redaction }) });
-    reload();
+    setNote(null);
+    try {
+      await api(`/api/v1/oauth/clients/${id}`, { method: "PUT", body: JSON.stringify({ redaction }) });
+      setNote({ id, text: "Saved.", tone: "info" });
+      reload();
+    } catch (e) {
+      setNote({ id, text: (e as Error).message, tone: "error" });
+    }
   }
   const rows = (data?.clients ?? []).filter((c) => !c.revoked);
   return (
@@ -45,49 +98,55 @@ function ConnectedApps() {
         Apps that signed in through the consent page: claude.ai on the phone or the web, Claude Code, Open WebUI. Revoking an app signs it out everywhere.
       </p>
       <Where id="claude_connect" fill={{ url: `${window.location.origin}/mcp` }} />
-      <div className="card" style={{ padding: "6px 14px", overflowX: "auto" }}>
-        <table className="ledger">
-          <thead><tr><th>App</th><th>Scopes</th><th>Sees</th><th>Signed in</th><th>Last used</th><th></th></tr></thead>
-          <tbody>
-            {rows.map((c) => (
-              <tr key={c.client_id}>
-                <td><strong>{c.name}</strong></td>
-                <td>{c.scopes}</td>
-                <td>
-                  <select className="input" style={{ minHeight: 32, padding: "4px 8px" }} value={c.redaction} onChange={(e) => setRedaction(c.client_id, e.target.value)} aria-label={`What ${c.name} sees`}>
-                    <option value="full">Full detail</option>
-                    <option value="merchants">Merchants only</option>
-                    <option value="aggregates">Aggregates only</option>
-                  </select>
-                </td>
-                <td className="num">{c.sessions}</td>
-                <td style={{ color: "var(--ink-2)" }}>{c.last_used_at ? c.last_used_at.slice(0, 16).replace("T", " ") : "never"}</td>
-                <td style={{ textAlign: "right" }}><button className="btn" type="button" onClick={() => revoke(c.client_id)}>Revoke</button></td>
-              </tr>
-            ))}
-            {rows.length === 0 && <tr><td colSpan={6} style={{ color: "var(--muted)" }}>No app has signed in yet.</td></tr>}
-          </tbody>
-        </table>
-      </div>
+      {state.error && !data && <Failed error={state.error} what="the connected apps" onRetry={reload} />}
+      {!data && !state.error && <Loading what="the connected apps" />}
+      {data && (
+        <div className="card" style={{ padding: "6px 14px", overflowX: "auto" }}>
+          <table className="ledger">
+            <thead><tr><th>App</th><th>Can</th><th>What it can see</th><th>Sign-ins</th><th>Last used</th><th><span className="sr-only">Revoke</span></th></tr></thead>
+            <tbody>
+              {rows.map((c) => (
+                <tr key={c.client_id}>
+                  <td><strong>{c.name}</strong></td>
+                  <td>{scopesInWords(c.scopes.split(/[\s,]+/))}</td>
+                  <td>
+                    <SeesSelect value={c.redaction} onChange={(v) => setRedaction(c.client_id, v)} label={`What ${c.name} can see`} />
+                    {note?.id === c.client_id && <div style={{ marginTop: 4 }}><Said text={note.text} tone={note.tone} /></div>}
+                  </td>
+                  <td className="num">{c.sessions}</td>
+                  <td style={{ color: "var(--ink-2)", whiteSpace: "nowrap" }}>{c.last_used_at ? when(c.last_used_at) : "never"}</td>
+                  <td style={{ textAlign: "right" }}><ConfirmButton label="Revoke" question={`Sign ${c.name} out everywhere? It must connect again to read your plan.`} yes="Yes, revoke it" no="Keep it" onConfirm={() => revoke(c.client_id)} /></td>
+                </tr>
+              ))}
+              {rows.length === 0 && <tr><td colSpan={6} style={{ color: "var(--ink-2)" }}>No app has signed in yet.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   );
 }
 
 export function Clients() {
-  const { data, reload, error } = useApi<{ keys: KeyRow[] }>("/api/v1/keys");
+  const state = useApi<{ keys: KeyRow[] }>("/api/v1/keys");
+  const { data, reload, error } = state;
   const [name, setName] = useState("");
   const [redaction, setRedaction] = useState("full");
   const [token, setToken] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
 
   async function create(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
+    setNote(null);
     try {
       const made = await api<{ token: string }>("/api/v1/keys", { method: "POST", body: JSON.stringify({ name: name || "client", scopes: ["read"], redaction }) });
       setToken(made.token);
       setName("");
       reload();
+    } catch (err) {
+      setNote((err as Error).message);
     } finally {
       setBusy(false);
     }
@@ -98,9 +157,10 @@ export function Clients() {
     reload();
   }
 
+  const command = token ? `claude mcp add --transport http financialauthority ${window.location.origin}/mcp --header "Authorization: Bearer ${token}"` : "";
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 900 }}>
-      <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Clients</h1>
+      <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Apps and keys</h1>
       <ConnectedApps />
       <Devices />
       <h2 style={{ margin: "8px 0 0", fontSize: 16, fontWeight: 800 }}>API keys</h2>
@@ -111,41 +171,46 @@ export function Clients() {
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="claude-code" />
         </label>
         <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <span className="lab">Redaction</span>
-          <select className="input" value={redaction} onChange={(e) => setRedaction(e.target.value)}>
-            <option value="full">Full detail</option>
-            <option value="merchants">Merchants only</option>
-            <option value="aggregates">Aggregates only</option>
-          </select>
+          <span className="lab">What it can see</span>
+          <SeesSelect value={redaction} onChange={setRedaction} />
         </label>
-        <button className="btn dark" type="submit" disabled={busy}>Make a key</button>
+        <button className="btn dark" type="submit" disabled={busy}>{busy ? "Making…" : "Make a key"}</button>
+        {note && <Said text={note} tone="error" />}
       </form>
       {token && (
-        <div className="card" style={{ padding: 14, borderColor: "var(--safe)" }}>
+        <div className="card" style={{ padding: 14, borderColor: "var(--safe)", display: "flex", flexDirection: "column", gap: 8 }}>
           <div className="lab">Copy it now; it is not shown again</div>
-          <code style={{ display: "block", wordBreak: "break-all", marginTop: 6, fontSize: 13 }}>{token}</code>
-          <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 8 }}>Claude Code: <code>claude mcp add --transport http financialauthority {window.location.origin}/mcp --header "Authorization: Bearer {token.slice(0, 10)}…"</code></div>
+          <code style={{ display: "block", wordBreak: "break-all", fontSize: 13 }}>{token}</code>
+          <CopyButton text={token} label="Copy the key" />
+          <div style={{ fontSize: 12, color: "var(--ink-2)", display: "flex", flexDirection: "column", gap: 6 }}>
+            <span>For Claude Code, run this in a terminal on your computer. It already holds the whole key:</span>
+            <code style={{ display: "block", wordBreak: "break-all", padding: "6px 8px", background: "var(--surface-2)", borderRadius: 6 }}>{command}</code>
+            <CopyButton text={command} label="Copy the command" />
+          </div>
         </div>
       )}
-      {error && <div style={{ color: "var(--critical)" }}>{error.message}</div>}
-      <div className="card" style={{ padding: "6px 14px", overflowX: "auto" }}>
-        <table className="ledger">
-          <thead><tr><th>Name</th><th>Prefix</th><th>Scopes</th><th>Redaction</th><th>Last used</th><th></th></tr></thead>
-          <tbody>
-            {(data?.keys ?? []).map((k) => (
-              <tr key={k.id} style={{ opacity: k.revoked ? 0.5 : 1 }}>
-                <td>{k.name}</td>
-                <td><code>{k.prefix}…</code></td>
-                <td>{k.scopes.join(", ")}</td>
-                <td>{k.redaction}</td>
-                <td style={{ color: "var(--ink-2)" }}>{k.last_used_at ? k.last_used_at.slice(0, 16).replace("T", " ") : "never"}</td>
-                <td style={{ textAlign: "right" }}>{!k.revoked && <button className="btn" type="button" onClick={() => revoke(k.id)}>Revoke</button>}</td>
-              </tr>
-            ))}
-            {data && data.keys.length === 0 && <tr><td colSpan={6} style={{ color: "var(--muted)" }}>No keys yet.</td></tr>}
-          </tbody>
-        </table>
-      </div>
+      {error && !data && <Failed error={error} what="your keys" onRetry={reload} />}
+      {!data && !error && <Loading what="your keys" />}
+      {data && (
+        <div className="card" style={{ padding: "6px 14px", overflowX: "auto" }}>
+          <table className="ledger">
+            <thead><tr><th>Name</th><th>Starts with</th><th>Can</th><th>What it can see</th><th>Last used</th><th><span className="sr-only">Revoke</span></th></tr></thead>
+            <tbody>
+              {data.keys.map((k) => (
+                <tr key={k.id} style={{ opacity: k.revoked ? 0.5 : 1 }}>
+                  <td>{k.name}{k.revoked && <div style={{ fontSize: 11, color: "var(--ink-2)" }}>revoked</div>}</td>
+                  <td><code>{k.prefix}…</code></td>
+                  <td>{scopesInWords(k.scopes)}</td>
+                  <td>{SEES[k.redaction] ?? k.redaction}</td>
+                  <td style={{ color: "var(--ink-2)", whiteSpace: "nowrap" }}>{k.last_used_at ? when(k.last_used_at) : "never"}</td>
+                  <td style={{ textAlign: "right" }}>{!k.revoked && <ConfirmButton label="Revoke" question={`Revoke ${k.name}? Anything using this key stops reading at once.`} yes="Yes, revoke it" no="Keep it" onConfirm={() => revoke(k.id)} />}</td>
+                </tr>
+              ))}
+              {data.keys.length === 0 && <tr><td colSpan={6} style={{ color: "var(--ink-2)" }}>No keys yet.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,11 @@
-// Month grid: the calendar with paydays, due dates and each week's low point.
+// Month grid: the calendar with paydays, due dates and each week's lowest balance. On a phone the same weeks
+// show as an agenda: each week's lowest balance, then each day that has something on it, then its items.
+import { TriangleAlert } from "lucide-react";
 import { Link } from "react-router-dom";
 import { money, parseIso, shortDate } from "../format";
+import { palette } from "../looks";
+import { inkOn } from "../paychecks";
+import { getPrefs } from "../prefs";
 import type { Event } from "../types";
 import type { ViewProps } from "./index";
 import { SafeExplain } from "../components/SafeExplain";
@@ -12,42 +17,81 @@ function iso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function chipStyle(e: Event): React.CSSProperties {
-  if (e.kind === "paycheck") return { background: "var(--paycheck)", color: "#ffffff" };
-  if (e.kind === "installment" || e.kind === "advance") return { background: "var(--debt)", color: "#ffffff" };
-  return { background: "var(--bill)", color: "#ffffff" };
+function daysOf(start: string): string[] {
+  const first = parseIso(start);
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(first);
+    d.setDate(first.getDate() + i);
+    return iso(d);
+  });
 }
 
 export function MonthGrid({ snapshot }: ViewProps) {
+  const c = palette(getPrefs().look);
+  // A chip's text is dark or white by its fill, checked per colour.
+  const chipStyle = (e: Event): React.CSSProperties => {
+    const fill = e.kind === "paycheck" ? c.paycheck : e.kind === "installment" || e.kind === "advance" ? c.debt : c.bill;
+    return { background: fill, color: inkOn(fill) };
+  };
+  const chipText = (e: Event) => (e.kind === "paycheck" ? `Payday ${money(-e.amount, { sign: true })}` : `${e.name} ${money(e.amount)}`);
   const weeks = snapshot.calendar.weeks.slice(0, 6);
   const byDate = new Map<string, Event[]>();
   for (const e of snapshot.calendar.events) byDate.set(e.date, [...(byDate.get(e.date) ?? []), e]);
   const today = snapshot.as_of;
   const firstBad = weeks.find((w) => w.low !== null && w.low < 0);
   const title = weeks.length ? `${MONTHS[parseIso(weeks[0].start).getMonth()]} to ${MONTHS[parseIso(weeks[weeks.length - 1].end).getMonth()]} ${parseIso(weeks[weeks.length - 1].end).getFullYear()}` : "";
+  const lowWords = (w: (typeof weeks)[number]) => {
+    const bad = w.low !== null && w.low < 0;
+    return w.low_date ? (bad ? `${shortDate(w.low_date)}, under your safety cushion` : shortDate(w.low_date)) : "";
+  };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 16 }}>
-        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, letterSpacing: "-0.01em" }}>{title}</h1>
+        <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, letterSpacing: "-0.01em" }}>{title}</h2>
         <div style={{ flexGrow: 1 }} />
         <div style={{ display: "flex", gap: 16, fontSize: 12, color: "var(--ink-2)", fontWeight: 600, flexWrap: "wrap" }}>
-          <span><span className="sw" style={{ background: "var(--paycheck)" }} />Paycheck</span>
-          <span><span className="sw" style={{ background: "var(--bill)" }} />Bill</span>
-          <span><span className="sw" style={{ background: "var(--debt)" }} />Advance or installment</span>
-          <span><span className="sw" style={{ background: "var(--surface-2)" }} />Past</span>
+          <span><span className="sw" style={{ background: c.paycheck }} />Paycheck</span>
+          <span><span className="sw" style={{ background: c.bill }} />Bill</span>
+          <span><span className="sw" style={{ background: c.debt }} />Advance or installment</span>
+          <span className="hidden md:inline"><span className="sw" style={{ background: "var(--surface-2)" }} />Past</span>
         </div>
       </div>
-      <section style={{ overflowX: "auto" }}>
+
+      {/* Below the md breakpoint: an agenda, date first, then what happens that day. */}
+      <section className="flex flex-col md:hidden" aria-label="Agenda with paydays and bills" style={{ gap: 10 }}>
+        {weeks.map((w) => {
+          const days = daysOf(w.start).filter((day) => day >= today && (byDate.get(day) ?? []).length > 0);
+          const bad = w.low !== null && w.low < 0;
+          if (w.end < today) return null;
+          return (
+            <div key={w.start} className="card" style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, flexWrap: "wrap", padding: "6px 8px", borderRadius: 8, background: bad ? "var(--warning-soft)" : "var(--surface-2)" }}>
+                <span className="lab">Week of {shortDate(w.start)}</span>
+                <span style={{ fontSize: 12, color: bad ? "var(--warning-ink)" : "var(--ink-2)", fontWeight: bad ? 700 : 500 }}>
+                  {bad && <TriangleAlert size={13} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 4 }} />}
+                  Lowest <strong className="num">{w.low === null ? "—" : money(w.low)}</strong>{w.low_date ? ` · ${lowWords(w)}` : ""}
+                </span>
+              </div>
+              {days.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)" }}>Nothing due this week.</div>}
+              {days.map((day) => (
+                <div key={day} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <strong style={{ fontSize: 13 }}>{shortDate(day)}{day === today ? " · today" : ""}</strong>
+                  {(byDate.get(day) ?? []).map((e, i) => (
+                    <span key={`${e.source}-${i}`} style={{ ...chipStyle(e), alignSelf: "flex-start", maxWidth: "100%", fontSize: 12, fontWeight: 700, borderRadius: 5, padding: "3px 8px", overflowWrap: "anywhere" }}>{chipText(e)}</span>
+                  ))}
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </section>
+
+      <section className="hidden md:block" style={{ overflowX: "auto" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(min(120px, 100%), 1fr)) 110px", gap: 4, minWidth: 960 }} aria-label="Calendar with paydays and bills">
           {DOW.map((d) => <div key={d} className="lab" style={{ padding: "0 6px 4px" }}>{d}</div>)}
-          <div className="lab" style={{ padding: "0 6px 4px" }}>Week low</div>
+          <div className="lab" style={{ padding: "0 6px 4px" }}>Lowest balance</div>
           {weeks.map((w) => {
-            const start = parseIso(w.start);
-            const cells = Array.from({ length: 7 }, (_, i) => {
-              const d = new Date(start);
-              d.setDate(start.getDate() + i);
-              return iso(d);
-            });
+            const cells = daysOf(w.start);
             const bad = w.low !== null && w.low < 0;
             return [
               ...cells.map((day) => {
@@ -62,31 +106,31 @@ export function MonthGrid({ snapshot }: ViewProps) {
                     <span style={{ fontSize: 12, fontWeight: 800 }}>{label}{isToday ? " · today" : ""}</span>
                     {events.map((e, i) => (
                       <span key={`${e.source}-${i}`} style={{ ...chipStyle(e), fontSize: 11, fontWeight: 700, borderRadius: 5, padding: "2px 6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={`${e.name} ${money(Math.abs(e.amount))}`}>
-                        {e.kind === "paycheck" ? `Payday ${money(-e.amount, { sign: true })}` : `${e.name} ${money(e.amount)}`}
+                        {chipText(e)}
                       </span>
                     ))}
                   </div>
                 );
               }),
               <div key={`low-${w.start}`} style={{ display: "flex", flexDirection: "column", justifyContent: "center", gap: 2, padding: "6px 8px", borderRadius: 10, background: bad ? "var(--warning-soft)" : "var(--surface-2)" }}>
-                <span className="lab">low</span>
+                <span className="lab">lowest</span>
                 <span className="num" style={{ fontSize: 18, fontWeight: 800 }}>{w.low === null ? "—" : money(w.low)}</span>
-                <span style={{ fontSize: 11, color: bad ? "var(--warning-ink)" : "var(--muted)", fontWeight: bad ? 700 : 400 }}>{w.low_date ? (bad ? `${shortDate(w.low_date)}, under the buffer` : shortDate(w.low_date)) : ""}</span>
+                <span style={{ fontSize: 11, color: bad ? "var(--warning-ink)" : "var(--muted)", fontWeight: bad ? 700 : 400 }}>{bad && <TriangleAlert size={12} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 3 }} />}{lowWords(w)}</span>
               </div>,
             ];
           })}
         </div>
       </section>
       <section style={{ display: "flex", flexWrap: "wrap", gap: 14, fontSize: 13 }}>
-        <div className="card" style={{ flex: "1 1 360px", padding: "12px 16px", display: "flex", gap: 14, alignItems: "center" }}>
+        <div className="card" style={{ flex: "1 1 360px", padding: "12px 16px", display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
           <div className="num" style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.02em" }}>{money(snapshot.safe_to_spend.amount)}</div>
-          <div><strong>Safe to spend through {shortDate(snapshot.safe_to_spend.through)}.</strong><br /><span style={{ color: "var(--ink-2)" }}>Lows are at your usual pace of {money(snapshot.usual_pace.per_day)} a day.</span></div>
+          <div style={{ flex: "1 1 200px" }}><strong>Safe to spend through {shortDate(snapshot.safe_to_spend.through)}.</strong><br /><span style={{ color: "var(--ink-2)" }}>The lowest balances assume you spend your usual {money(snapshot.usual_pace.per_day)} a day.</span></div>
           <SafeExplain s={snapshot} />
         </div>
         {firstBad && (
           <div className="card" style={{ flex: "1 1 360px", padding: "12px 16px", display: "flex", gap: 14, alignItems: "center", borderColor: "var(--warning)" }}>
-            <svg width="26" height="26" viewBox="0 0 26 26" role="img" aria-label="Warning"><path d="M13 3 L24 22 H2 Z" fill="var(--warning)" /><path d="M13 10v6M13 18.5v1" stroke="#141518" strokeWidth="2" strokeLinecap="round" /></svg>
-            <div><strong>The week of {shortDate(firstBad.start)} dips {money(-(firstBad.low ?? 0))} under the buffer.</strong><br /><span style={{ color: "var(--ink-2)" }}>At your usual pace. The date mover (M5.5) will suggest what to shift; until then, </span><Link to="/bills">see the bills</Link>.</div>
+            <TriangleAlert size={26} color="var(--warning-ink)" aria-label="Watch" style={{ flexShrink: 0 }} />
+            <div><strong>The week of {shortDate(firstBad.start)} dips {money(-(firstBad.low ?? 0))} under your safety cushion.</strong><br /><span style={{ color: "var(--ink-2)" }}>That is at your usual spending. </span><Link to="/bills">Open Bills</Link><span style={{ color: "var(--ink-2)" }}> to see which bill dates could move to help.</span></div>
           </div>
         )}
       </section>

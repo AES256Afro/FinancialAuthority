@@ -275,7 +275,7 @@ def _finance_snapshot(session: Session, today: date) -> dict:
         "window": {"start": next_payday.isoformat(), "end": (following_payday - timedelta(days=1)).isoformat(), "total": _money(window_total), "items": [{**e, "date": e["date"].isoformat()} for e in window]},
         "set_aside": {"total": _money(set_aside), "items": [{**e, "date": e["date"].isoformat()} for e in next_window]},
         "safe_to_spend": {
-            "amount": _money(safe), "after_goals": _money(safe - goals["per_paycheck"]), "through": max(today, next_payday - timedelta(days=1)).isoformat(), "version": "v1",
+            "amount": _money(safe), "after_goals": _money(safe - goals["per_paycheck"]), "share_of_cash": round(max(0.0, min(1.0, safe / cash)), 4) if cash > 0 else 0.0, "through": max(today, next_payday - timedelta(days=1)).isoformat(), "version": "v1",
             "basis": "cash in checking, less what is due before payday, advances, the buffer, and any shortfall the next paycheck leaves in its own window",
             "parts": {"cash": _money(cash), "due_before_payday": _money(due_before), "advances": _money(advances_before), "advances_on_payday": _money(advances_on_payday), "buffer": _money(buffer), "next_window_shortfall": _money(next_window_shortfall)},
             **explain,
@@ -286,7 +286,8 @@ def _finance_snapshot(session: Session, today: date) -> dict:
         "fresh": _freshness(session, accounts),
         "in_flight": _in_flight(session, today),
         "debts": [{"id": d.id, "name": d.name, "kind": d.kind, "balance": d.balance, "apr": d.apr, "minimum": d.minimum, "due_day": d.due_day} for d in debts],
-        "pending": {"confirmations": unconfirmed + len(facts["pending"]) + pairs_waiting, "series": unconfirmed, "facts": len(facts["pending"]), "pairs": pairs_waiting, "approvals": approvals_waiting, "past_due": len(payments["past_due"])},
+        "debts_total": _money(sum((d.balance or 0.0) for d in debts)),
+        "pending": {"total": unconfirmed + len(facts["pending"]) + pairs_waiting + approvals_waiting, "confirmations": unconfirmed + len(facts["pending"]) + pairs_waiting, "series": unconfirmed, "facts": len(facts["pending"]), "pairs": pairs_waiting, "approvals": approvals_waiting, "past_due": len(payments["past_due"])},
         "mail": facts,
         "projection": projection,
         "not_advice": "Computed by the engine from the registers above. Not financial advice.",

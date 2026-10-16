@@ -2,13 +2,15 @@
 // the same engine result: a gauge per account, the payday sheet to tick off, and needs-against-has columns.
 // Every figure is the engine's; the pictures only draw them. The app never moves money; the sheet says what
 // you would move.
-import { useState } from "react";
+import { OctagonAlert } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import { money, monthDay, shortDate } from "../format";
+import { money, shortDate } from "../format";
 import type { Cover, CoverAccount, SheetRow } from "../guide";
 import { palette } from "../looks";
 import { getPrefs } from "../prefs";
+import { Said } from "./State";
 import { StatusPill } from "./Status";
 
 export type CoverMode = "gauges" | "sheet" | "columns";
@@ -24,21 +26,29 @@ function dayBefore(iso: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+// A mark is a line across the bar; its words sit in a key under the bar, so two close marks never overlap and
+// a long one is never cut off. The first mark is a solid line, the second a dashed one.
 function Meter({ value, max, marks, tone, label }: { value: number; max: number; marks: { at: number; text: string }[]; tone: "fill" | "short" | "card"; label: string }) {
   const scale = Math.max(1, max);
   const fill = tone === "short" ? "var(--critical)" : tone === "card" ? "var(--debt)" : "var(--safe)";
+  const stroke = (k: number) => `2px ${k === 0 ? "solid" : "dashed"} var(--ink)`;
   return (
-    <div role="img" aria-label={label} style={{ position: "relative", height: 14, borderRadius: 7, background: "var(--surface-2)", marginTop: 18 }}>
-      <div style={{ position: "absolute", inset: "0 auto 0 0", width: `${Math.min(100, Math.max(0, (value / scale) * 100))}%`, borderRadius: 7, background: fill }} />
-      {marks.map((m) => {
-        const pct = Math.min(100, Math.max(0, (m.at / scale) * 100));
-        const right = pct > 55;
-        return (
-          <div key={m.text} style={{ position: "absolute", top: -4, bottom: -4, left: `${pct}%`, width: 2, background: "var(--ink)" }}>
-            <span style={{ position: "absolute", top: -17, [right ? "right" : "left"]: -2, whiteSpace: "nowrap", fontSize: 10.5, fontWeight: 700, color: "var(--ink-2)" }}>{m.text}</span>
-          </div>
-        );
-      })}
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <div role="img" aria-label={label} style={{ position: "relative", height: 14, borderRadius: 7, background: "var(--surface-2)", margin: "4px 0" }}>
+        <div style={{ position: "absolute", inset: "0 auto 0 0", width: `${Math.min(100, Math.max(0, (value / scale) * 100))}%`, borderRadius: 7, background: fill }} />
+        {marks.map((m, k) => (
+          <div key={m.text} style={{ position: "absolute", top: -4, bottom: -4, left: `calc(${Math.min(100, Math.max(0, (m.at / scale) * 100))}% - 1px)`, width: 0, borderLeft: stroke(k) }} />
+        ))}
+      </div>
+      {marks.length > 0 && (
+        <div aria-hidden="true" style={{ display: "flex", flexWrap: "wrap", gap: "2px 12px", fontSize: 11, fontWeight: 700, color: "var(--ink-2)" }}>
+          {marks.map((m, k) => (
+            <span key={m.text} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              <span style={{ display: "inline-block", height: 12, borderLeft: stroke(k) }} />{m.text}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -48,16 +58,18 @@ function SpendGauge({ a, paydays }: { a: CoverAccount; paydays: [string, string]
     <>
       {(a.windows ?? []).map((w, k) => {
         const has = w.has_total;
-        const label = k === 0 ? `Before ${monthDay(paydays[0])}` : `${monthDay(w.start)} to ${monthDay(w.end)}`;
+        const label = k === 0 ? `Before ${shortDate(paydays[0])}` : `${shortDate(w.start)} to ${shortDate(w.end)}`;
+        const short = w.left < 0;
         return (
           <div key={w.start} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <Meter value={has} max={Math.max(has, w.needs) * 1.05} marks={[{ at: w.needs, text: `needs ${money(w.needs)}` }]} tone={w.left < 0 ? "short" : "fill"} label={`${label}: has ${money(has)}, needs ${money(w.needs)}`} />
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", fontSize: 12 }}>
-              <span style={{ fontWeight: 700 }}>{label}</span>
-              <span className="num" style={{ color: "var(--ink-2)" }}>
-                has {money(w.has)}{w.inflow ? ` + ${money(w.inflow)} paycheck` : ""} · bills {money(w.bills)} · everyday {money(w.everyday)}{w.buffer ? ` · buffer ${money(w.buffer)}` : ""} · <strong style={{ color: w.left < 0 ? "var(--critical)" : "var(--ink)" }}>{w.left < 0 ? "short" : "over"} {money(Math.abs(w.left))}</strong>
-              </span>
-            </div>
+            <span style={{ fontWeight: 700, fontSize: 12 }}>{label}</span>
+            <Meter value={has} max={Math.max(has, w.needs) * 1.05} marks={[{ at: w.needs, text: `needs ${money(w.needs)}` }]} tone={short ? "short" : "fill"} label={`${label}: has ${money(has)}, needs ${money(w.needs)}`} />
+            <span className="num" style={{ fontSize: 12, color: "var(--ink-2)" }}>
+              Has {money(w.has)}{w.inflow ? ` (+${money(w.inflow)} paycheck)` : ""} · Needs: bills {money(w.bills)}, everyday {money(w.everyday)}{w.buffer ? `, cushion ${money(w.buffer)}` : ""} ·{" "}
+              <strong style={{ color: short ? "var(--critical-ink)" : "var(--ink)", whiteSpace: "nowrap" }}>
+                {short ? <><OctagonAlert size={13} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 3 }} />{money(Math.abs(w.left))} short</> : `${money(w.left)} to spare`}
+              </strong>
+            </span>
           </div>
         );
       })}
@@ -68,33 +80,34 @@ function SpendGauge({ a, paydays }: { a: CoverAccount; paydays: [string, string]
 function CardGauge({ a }: { a: CoverAccount }) {
   const owed = a.balance ?? 0;
   if (a.limit) {
-    const marks = [{ at: a.limit * 0.3, text: "30% of the line" }];
-    if (a.statement_balance !== null && a.statement_balance !== undefined && a.statement_on) marks.push({ at: a.statement_balance, text: `${monthDay(a.statement_on)} statement ${money(a.statement_balance)}` });
+    const marks = a.target_amount ? [{ at: a.target_amount, text: "30% of your limit" }] : [];
+    if (a.statement_balance !== null && a.statement_balance !== undefined && a.statement_on) marks.push({ at: a.statement_balance, text: `${shortDate(a.statement_on)} statement ${money(a.statement_balance)}` });
     return (
       <>
-        <Meter value={owed} max={a.limit} marks={marks} tone="card" label={`${money(owed)} owed of a ${money(a.limit)} line`} />
+        <Meter value={owed} max={a.limit} marks={marks} tone="card" label={`${money(owed)} owed of a ${money(a.limit)} credit limit`} />
         <div style={{ fontSize: 12, color: "var(--ink-2)" }} className="num">
-          {money(owed)} owed of {money(a.limit)} · {Math.round((a.utilisation ?? 0) * 100)}% used now{a.statement_utilisation !== null && a.statement_utilisation !== undefined ? ` · ${Math.round(a.statement_utilisation * 100)}% on the statement` : ""}
-          {a.pay_by && (a.to_target ?? 0) > 0 ? ` · pay ${money(a.to_target ?? 0)} by ${monthDay(a.pay_by)}` : ""}
+          {money(owed)} owed of a {money(a.limit)} credit limit · {Math.round((a.utilisation ?? 0) * 100)}% of your limit used now{a.statement_utilisation !== null && a.statement_utilisation !== undefined ? ` · ${Math.round(a.statement_utilisation * 100)}% on the statement` : ""}
+          {a.pay_by && (a.to_target ?? 0) > 0 ? ` · pay ${money(a.to_target ?? 0)} by ${shortDate(a.pay_by)}` : ""}
         </div>
       </>
     );
   }
   return (
     <div style={{ fontSize: 12, color: "var(--ink-2)", display: "flex", flexDirection: "column", gap: 2 }}>
-      <span className="num">{money(owed)} owed · no line on file, so utilisation is unknown (add the line on Debts)</span>
-      {(a.payments ?? []).slice(0, 2).map((p, i) => <span key={`${p.date}-${i}`} className="num">{money(p.amount)} on {shortDate(p.date)}</span>)}
+      <span className="num">{money(owed)} owed.</span>
+      <span>No credit limit saved, so the share used is unknown. <Link to="/debts">Add the limit on Debts</Link></span>
+      {(a.payments ?? []).slice(0, 2).map((p, i) => <span key={`${p.date}-${i}`} className="num">Card payment {money(p.amount)} on {shortDate(p.date)}</span>)}
     </div>
   );
 }
 
 function SaveGauge({ a }: { a: CoverAccount }) {
   const r = a.rung;
-  if (!r) return <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Kept, not spent.</div>;
+  if (!r) return <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Savings, not counted as spending money.</div>;
   return (
     <>
       <Meter value={a.balance ?? 0} max={r.target} marks={[{ at: r.target, text: `rung ${r.n} · ${money(r.target)}` }]} tone={(a.short ?? 0) > 0 && (a.balance ?? 0) <= 0 ? "short" : "fill"} label={`${money(a.balance ?? 0)} saved of ${money(r.target)}`} />
-      <div style={{ fontSize: 12, color: "var(--ink-2)" }}><Link to="/saving">The ladder</Link> · {r.eta ? `reached ${shortDate(r.eta)} at the chosen share` : "not reached within six years at this share"}</div>
+      <div style={{ fontSize: 12, color: "var(--ink-2)" }}><Link to="/saving">Open Saving</Link> · {r.eta ? `reached ${shortDate(r.eta)} at the chosen share` : "not reached within six years at this share"}</div>
     </>
   );
 }
@@ -119,17 +132,21 @@ function Gauges({ cover }: { cover: Cover }) {
   );
 }
 
+function ShortWord() {
+  return <><OctagonAlert size={14} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 4 }} />Short: </>;
+}
+
 function Sheet({ rows, onTick }: { rows: SheetRow[]; onTick?: (row: SheetRow, done: boolean) => void }) {
   if (!rows.length) return <div style={{ fontSize: 13, color: "var(--ink-2)" }}>Nothing to move before the next two paydays.</div>;
   return (
     <>
-    <ul className="md:hidden" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+    <ul className="flex flex-col md:hidden" style={{ listStyle: "none", margin: 0, padding: 0, gap: 8 }}>
       {rows.map((r) => (
         <li key={r.id} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: 10, borderRadius: 10, background: "var(--surface-2)", opacity: r.done ? 0.55 : 1 }}>
           <input type="checkbox" checked={r.done} disabled={!onTick} onChange={(e) => onTick?.(r, e.target.checked)} aria-label={`Done: ${r.action}`} style={{ width: 22, height: 22, marginTop: 2, accentColor: "var(--safe)", flexShrink: 0 }} />
           <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0, flexGrow: 1 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-              <strong style={{ textDecoration: r.done ? "line-through" : "none", color: r.kind === "short" ? "var(--critical)" : "var(--ink)" }}>{r.action}</strong>
+              <strong style={{ textDecoration: r.done ? "line-through" : "none", color: r.kind === "short" ? "var(--critical-ink)" : "var(--ink)" }}>{r.kind === "short" && <ShortWord />}{r.action}</strong>
               <strong className="num" style={{ whiteSpace: "nowrap" }}>{money(r.amount, { cents: true })}</strong>
             </div>
             <span style={{ fontSize: 12, color: "var(--ink-2)" }}>{shortDate(r.date)} · so that {r.so_that}</span>
@@ -145,7 +162,7 @@ function Sheet({ rows, onTick }: { rows: SheetRow[]; onTick?: (row: SheetRow, do
             <tr key={r.id} style={{ opacity: r.done ? 0.55 : 1 }}>
               <td><input type="checkbox" checked={r.done} disabled={!onTick} onChange={(e) => onTick?.(r, e.target.checked)} aria-label={`Done: ${r.action}`} style={{ width: 18, height: 18, accentColor: "var(--safe)" }} /></td>
               <td className="num" style={{ whiteSpace: "nowrap" }}>{shortDate(r.date)}</td>
-              <td style={{ textDecoration: r.done ? "line-through" : "none" }}>{r.kind === "short" ? <strong style={{ color: "var(--critical)" }}>{r.action}</strong> : r.action}</td>
+              <td style={{ textDecoration: r.done ? "line-through" : "none" }}>{r.kind === "short" ? <strong style={{ color: "var(--critical-ink)" }}><ShortWord />{r.action}</strong> : r.action}</td>
               <td className="num" style={{ textAlign: "right", fontWeight: 800 }}>{money(r.amount, { cents: true })}</td>
               <td style={{ color: "var(--ink-2)" }}>{r.so_that}</td>
             </tr>
@@ -167,8 +184,8 @@ function Columns({ cover }: { cover: Cover }) {
       return { name: a.name, w1: a.per_window?.[0] ?? 0, w2: a.per_window?.[1] ?? 0, has: null as number | null };
     });
   const series = [
-    { key: "w1" as const, label: `needs before ${monthDay(cover.paydays[0])}`, fill: c.bill },
-    { key: "w2" as const, label: `needs before ${monthDay(cover.paydays[1])}`, fill: c.debt },
+    { key: "w1" as const, label: `needs before ${shortDate(cover.paydays[0])}`, fill: c.bill },
+    { key: "w2" as const, label: `needs before ${shortDate(cover.paydays[1])}`, fill: c.debt },
     { key: "has" as const, label: "has now", fill: c.safe },
   ];
   const max = Math.max(1, ...rows.flatMap((r) => [r.w1, r.w2, r.has ?? 0]));
@@ -185,16 +202,19 @@ function Columns({ cover }: { cover: Cover }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 12, color: "var(--ink-2)", alignItems: "center" }}>
         {series.map((s) => <span key={s.key}><span className="sw" style={{ background: s.fill }} />{s.label}</span>)}
-        <button type="button" className="btn" style={{ marginLeft: "auto", minHeight: 30, padding: "4px 10px" }} onClick={() => setTable((t) => !t)}>{table ? "Show the chart" : "Show as a table"}</button>
+        <button type="button" className="btn" aria-pressed={table} style={{ marginLeft: "auto", minHeight: 32, padding: "4px 10px" }} onClick={() => setTable((t) => !t)}>{table ? "Show the chart" : "Show as a table"}</button>
       </div>
       {table ? (
-        <table className="ledger">
-          <thead><tr><th>Account</th>{series.map((s) => <th key={s.key} style={{ textAlign: "right" }}>{s.label}</th>)}</tr></thead>
-          <tbody>{rows.map((r) => <tr key={r.name}><td>{r.name}</td><td className="num" style={{ textAlign: "right" }}>{money(r.w1)}</td><td className="num" style={{ textAlign: "right" }}>{money(r.w2)}</td><td className="num" style={{ textAlign: "right" }}>{r.has === null ? "—" : money(r.has)}</td></tr>)}</tbody>
-        </table>
-      ) : (
         <div style={{ overflowX: "auto" }}>
-          <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="Needs against has, per account" style={{ display: "block", maxWidth: 820, height: "auto" }}>
+          <table className="ledger">
+            <thead><tr><th>Account</th>{series.map((s) => <th key={s.key} style={{ textAlign: "right" }}>{s.label}</th>)}</tr></thead>
+            <tbody>{rows.map((r) => <tr key={r.name}><td>{r.name}</td><td className="num" style={{ textAlign: "right" }}>{money(r.w1)}</td><td className="num" style={{ textAlign: "right" }}>{money(r.w2)}</td><td className="num" style={{ textAlign: "right" }}>{r.has === null ? "—" : money(r.has)}</td></tr>)}</tbody>
+          </table>
+        </div>
+      ) : (
+        // On a phone the chart keeps a readable size and scrolls sideways inside its card.
+        <div style={{ overflowX: "auto" }}>
+          <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label="Needs against has, per account" style={{ display: "block", maxWidth: 820, minWidth: 480, height: "auto" }}>
             {ticks.map((t) => (
               <g key={t}>
                 <line x1={padL} x2={W - 8} y1={y(t)} y2={y(t)} stroke="var(--hairline)" />
@@ -230,16 +250,28 @@ function Columns({ cover }: { cover: Cover }) {
 
 export function CoverPanel({ cover, mode, onTicked }: { cover: Cover; mode: CoverMode; onTicked?: () => void }) {
   const [rows, setRows] = useState(cover.sheet);
+  const [failed, setFailed] = useState(false);
+  // A fresh answer from the server replaces the ticks shown here.
+  useEffect(() => setRows(cover.sheet), [cover.sheet]);
   async function tick(row: SheetRow, done: boolean) {
+    setFailed(false);
     setRows((rs) => rs.map((r) => (r.id === row.id ? { ...r, done } : r)));
     try {
       await api("/api/v1/cover/sheet", { method: "PUT", body: JSON.stringify({ id: row.id, done }) });
       onTicked?.();
     } catch {
       setRows((rs) => rs.map((r) => (r.id === row.id ? { ...r, done: !done } : r)));
+      setFailed(true);
     }
   }
-  if (mode === "sheet") return <Sheet rows={rows} onTick={tick} />;
+  if (mode === "sheet") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {failed && <div><Said text="Couldn't save that tick. Try again." tone="error" /></div>}
+        <Sheet rows={rows} onTick={tick} />
+      </div>
+    );
+  }
   if (mode === "columns") return <Columns cover={cover} />;
   return <Gauges cover={cover} />;
 }
@@ -249,6 +281,6 @@ export function coverSummary(cover: Cover): string {
   const short = cover.accounts.filter((a) => a.status === "crit").length;
   const watch = cover.accounts.filter((a) => a.status === "warn").length;
   if (short) return `${short} account${short === 1 ? "" : "s"} short before payday`;
-  if (watch) return `${watch} account${watch === 1 ? "" : "s"} to watch before ${monthDay(dayBefore(cover.paydays[1]))}`;
-  return `Every account covered through ${monthDay(dayBefore(cover.paydays[1]))} · next payday ${monthDay(p1)}`;
+  if (watch) return `${watch} account${watch === 1 ? "" : "s"} to watch before ${shortDate(dayBefore(cover.paydays[1]))}`;
+  return `Every account covered through ${shortDate(dayBefore(cover.paydays[1]))} · next payday ${shortDate(p1)}`;
 }

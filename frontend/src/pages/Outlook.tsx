@@ -3,8 +3,10 @@
 // you name the year. The engine computed every number; a rate is a guess, and the page says so.
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { TriangleAlert } from "lucide-react";
 import { api, useApi } from "../api";
-import { money } from "../format";
+import { Failed, Loading, Said } from "../components/State";
+import { money, parseMoney } from "../format";
 
 interface YearRow {
   year: number;
@@ -144,15 +146,28 @@ function WhereToPut({ retireIn }: { retireIn: number | null }) {
   const [years, setYears] = useState(retireIn ? String(retireIn) : "10");
   const [scenario, setScenario] = useState("mid");
   const [asked, setAsked] = useState({ mode: "dollars" as "dollars" | "percent", amount: "50", percent: "20", basis: "net" as "net" | "gross", years: retireIn ? String(retireIn) : "10", scenario: "mid" });
+  const [typo, setTypo] = useState<string | null>(null);
   const query = asked.mode === "percent" ? `percent=${encodeURIComponent(asked.percent || "0")}&basis=${asked.basis}` : `amount=${encodeURIComponent(asked.amount || "0")}`;
-  const { data, error } = useApi<Where>(`/api/v1/projections/where?${query}&years=${asked.years}&scenario=${asked.scenario}`);
+  const { data, error, reload } = useApi<Where>(`/api/v1/projections/where?${query}&years=${asked.years}&scenario=${asked.scenario}`);
   const best = data?.options[0]?.after_tax ?? 1;
   return (
     <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+      <h2 className="sr-only">Where a paycheck amount does the most</h2>
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          setAsked({ mode, amount, percent, basis, years, scenario });
+          const dollars = parseMoney(amount);
+          const share = Number(percent.trim());
+          if (mode === "dollars" && dollars === null) {
+            setTypo("Type an amount like 120 or 1200.50");
+            return;
+          }
+          if (mode === "percent" && (percent.trim() === "" || Number.isNaN(share))) {
+            setTypo("Type a share like 10 or 12.5");
+            return;
+          }
+          setTypo(null);
+          setAsked({ mode, amount: dollars === null ? amount : String(dollars), percent, basis, years, scenario });
         }}
         style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}
       >
@@ -188,15 +203,16 @@ function WhereToPut({ retireIn }: { retireIn: number | null }) {
         </select>
         <span style={{ fontSize: 14 }}>return, where does it do the most?</span>
         <button className="btn dark" type="submit">Compare</button>
+        <Said text={typo} tone="error" />
       </form>
-      {error && <div style={{ fontSize: 13, color: "var(--critical)" }}>{error.message}</div>}
+      {error && !data && <Failed error={error} what="the comparison" onRetry={reload} card={false} />}
       {data && (
         <>
           <div style={{ fontSize: 13, color: "var(--ink-2)" }}>{data.summary}</div>
           {data.basis && (
-            <div style={{ fontSize: 12, color: data.basis.per_paycheck === null ? "var(--warning)" : "var(--ink-2)" }}>
+            <div style={{ fontSize: 12, color: data.basis.per_paycheck === null ? "var(--warning-ink)" : "var(--ink-2)" }}>
               {data.basis.per_paycheck === null
-                ? <>{data.basis.note}. <Link to="/confirm">Needs you</Link> · <Link to="/paystubs">Paystubs</Link></>
+                ? <><TriangleAlert size={13} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 4 }} />{data.basis.note}. <Link to="/confirm">Needs you</Link> · <Link to="/paystubs">Paystubs</Link></>
                 : <>Your {data.basis.kind === "gross" ? "gross" : "take-home"} pay on file is {money(data.basis.per_paycheck, { cents: true })} a paycheck ({data.basis.note}), {data.paychecks_per_year ?? 24} paychecks a year{data.basis.kind === "gross" ? `; ${money(data.take_home_per_paycheck)} of take-home for the after-tax places` : ""}.</>}
             </div>
           )}
@@ -204,7 +220,7 @@ function WhereToPut({ retireIn }: { retireIn: number | null }) {
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {data.options.map((o) => (
               <div key={o.id} className="where-row" style={{ borderTop: "1px solid var(--surface-2)", paddingTop: 8 }}>
-                <div className="num" style={{ fontWeight: 800, fontSize: 16, color: o.rank === 1 ? "var(--safe)" : "var(--muted)" }}>{o.rank}</div>
+                <div className="num" style={{ fontWeight: 800, fontSize: 16, color: o.rank === 1 ? "var(--safe-ink)" : "var(--muted)" }}>{o.rank}</div>
                 <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
                   <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
                     <strong style={{ fontSize: 14 }}>{o.name}</strong>
@@ -250,7 +266,7 @@ export function Outlook() {
   const { data, reload, error } = useApi<Outlook>("/api/v1/projections");
   const [real, setReal] = useState(false);
   const [form, setForm] = useState({ savings_apy: "", low: "", mid: "", high: "", inflation: "", years_to_retirement: "", extra_savings: "", contribution: "", match: "", withdrawal: "" });
-  const [note, setNote] = useState<string | null>(null);
+  const [note, setNote] = useState<{ text: string; tone: "info" | "error" } | null>(null);
   useEffect(() => {
     if (data) {
       const a = data.assumptions;
@@ -265,24 +281,33 @@ export function Outlook() {
   async function save(e: React.FormEvent) {
     e.preventDefault();
     const num = (s: string) => (s.trim() === "" ? null : Number(s));
+    const dollars = (s: string) => (s.trim() === "" ? null : parseMoney(s));
+    if ([form.extra_savings, form.match, form.contribution].some((s) => s.trim() !== "" && parseMoney(s) === null)) {
+      setNote({ tone: "error", text: "Type an amount like 120 or 1200.50" });
+      return;
+    }
+    if ([form.savings_apy, form.low, form.mid, form.high, form.inflation, form.withdrawal, form.years_to_retirement].some((s) => s.trim() !== "" && Number.isNaN(Number(s)))) {
+      setNote({ tone: "error", text: "Type each rate as a number, like 4 or 6.5." });
+      return;
+    }
     const body: Record<string, unknown> = {
       savings_apy: num(form.savings_apy) === null ? null : Number(form.savings_apy) / 100,
       returns: { low: num(form.low) === null ? null : Number(form.low) / 100, mid: num(form.mid) === null ? null : Number(form.mid) / 100, high: num(form.high) === null ? null : Number(form.high) / 100 },
       inflation: num(form.inflation) === null ? null : Number(form.inflation) / 100,
       withdrawal_rate: num(form.withdrawal) === null ? null : Number(form.withdrawal) / 100,
-      extra_savings_per_paycheck: num(form.extra_savings) ?? 0,
-      employer_match_per_paycheck: num(form.match) ?? 0,
+      extra_savings_per_paycheck: dollars(form.extra_savings) ?? 0,
+      employer_match_per_paycheck: dollars(form.match) ?? 0,
     };
     if (form.years_to_retirement.trim() === "") body.clear_retirement = true;
     else body.years_to_retirement = Number(form.years_to_retirement);
     if (form.contribution.trim() === "") body.use_paystubs_for_contributions = true;
-    else body.investment_contribution_per_paycheck = Number(form.contribution);
+    else body.investment_contribution_per_paycheck = dollars(form.contribution);
     try {
       await api("/api/v1/projections/assumptions", { method: "PUT", body: JSON.stringify(body) });
-      setNote("Assumptions kept; the outlook is recomputed.");
+      setNote({ tone: "info", text: "Saved. The outlook above is worked out again with these." });
       reload();
     } catch (err) {
-      setNote((err as Error).message);
+      setNote({ tone: "error", text: `Couldn't save: ${(err as Error).message}` });
     }
   }
 
@@ -303,13 +328,14 @@ export function Outlook() {
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Outlook</h1>
         <span style={{ fontSize: 13, color: "var(--ink-2)" }}>Savings and investments carried forward at rates you set. A rate is a guess; the contributions and balances are real.</span>
       </div>
-      {error && <div style={{ color: "var(--critical)" }}>{error.message}</div>}
+      {error && !d && <Failed error={error} what="the outlook" onRetry={reload} />}
+      {!d && !error && <Loading what="the outlook" />}
       {d && (
         <>
           <WhereToPut retireIn={d.investments.years_to_retirement} />
           <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "baseline" }}>
-              <strong style={{ fontSize: 15 }}>Investments</strong>
+              <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Investments</h2>
               <span style={{ fontSize: 13, color: "var(--ink-2)" }}>
                 {money(d.investments.now)} today, {money(d.investments.per_paycheck)} a paycheck
                 {d.investments.contribution_source === "paystubs" ? ` from the paystubs (${d.investments.paystub_lines.map((l) => l.name).join(", ")})` : d.investments.contribution_source === "assumption" ? " as you set it" : " (no contribution on record)"}
@@ -359,7 +385,7 @@ export function Outlook() {
 
           <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "baseline" }}>
-              <strong style={{ fontSize: 15 }}>Savings</strong>
+              <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Savings</h2>
               <span style={{ fontSize: 13, color: "var(--ink-2)" }}>
                 {money(d.savings.now)} today in {d.savings.accounts.length} savings account{d.savings.accounts.length === 1 ? "" : "s"}, {money(d.savings.per_paycheck)} a paycheck
                 {d.savings.goals_per_paycheck > 0 ? ` (${money(d.savings.goals_per_paycheck)} from your goals${d.savings.extra_per_paycheck > 0 ? ` and ${money(d.savings.extra_per_paycheck)} more` : ""})` : d.savings.extra_per_paycheck > 0 ? " as you set it" : ""}
@@ -376,7 +402,7 @@ export function Outlook() {
 
           <form onSubmit={save} className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
             <div>
-              <strong style={{ fontSize: 15 }}>Assumptions</strong>
+              <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Assumptions</h2>
               <div style={{ fontSize: 13, color: "var(--ink-2)" }}>Yours to set. Leave the contribution empty to take it from the paystubs; leave retirement empty for no line.</div>
             </div>
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
@@ -391,9 +417,9 @@ export function Outlook() {
               {field("Extra savings", "extra_savings", "a paycheck", "0")}
               {field("Withdrawal rate", "withdrawal", "% a year")}
             </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <button className="btn dark" type="submit">Keep the assumptions</button>
-              {note && <span style={{ fontSize: 13, color: "var(--ink-2)" }}>{note}</span>}
+              {note && <Said text={note.text} tone={note.tone} />}
             </div>
           </form>
           <div style={{ fontSize: 12, color: "var(--muted)" }}>{d.not_advice}</div>
