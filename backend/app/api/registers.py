@@ -30,7 +30,7 @@ def series_out(s: RecurringSeries) -> dict:
 
 def bill_out(b: Bill) -> dict:
     return {
-        "id": b.id, "name": b.name, "kind": b.kind, "amount": b.amount, "amount_mode": b.amount_mode, "cadence": b.cadence, "due_day": b.due_day, "autopay": b.autopay,
+        "id": b.id, "name": b.name, "kind": b.kind, "amount": b.amount, "amount_mode": b.amount_mode, "cadence": b.cadence, "due_day": b.due_day, "anchor_date": b.anchor_date.isoformat() if b.anchor_date else None, "autopay": b.autopay,
         "pay_from_account_id": b.pay_from_account_id, "grace_days": b.grace_days, "late_fee": b.late_fee, "movable": b.movable, "move_window": b.move_window,
         "category": b.category, "series_id": b.series_id, "active": b.active, "paid_from": getattr(b, "paid_from", "due") or "due",
     }
@@ -92,12 +92,12 @@ def classify(series_id: int, body: ClassifyIn, session: Session = Depends(get_se
     amount = body.amount if body.amount is not None else series.typical_amount
     created: dict = {}
     if body.kind in ("bill", "subscription"):
-        due_day = body.due_day or series.next_expected.day
-        cadence = series.cadence if series.cadence in ("weekly", "biweekly", "monthly", "quarterly", "yearly") else "monthly"
+        due_day = max(1, min(31, int(body.due_day or series.next_expected.day)))
+        cadence = series.cadence if series.cadence in ("weekly", "biweekly", "monthly", "quarterly", "semiannual", "yearly") else "monthly"
         from ..jobs.detect import account_for_series
 
         bill = Bill(name=name, kind=body.kind, amount=round(amount, 2), amount_mode="fixed", cadence=cadence, due_day=due_day, autopay=body.autopay or body.kind == "subscription", movable=body.movable, pay_from_account_id=account_for_series(session, series),
-                    move_window="1-28" if body.movable else "", category=series.category, series_id=series.id)
+                    move_window="1-28" if body.movable else "", category=series.category, series_id=series.id, anchor_date=series.next_expected if cadence != "monthly" else None)
         session.add(bill)
         session.flush()
         created = {"bill": bill_out(bill)}
@@ -145,9 +145,12 @@ class BillIn(BaseModel):
     active: bool | None = None
     paid_from: str | None = None  # due | mid | end
     pay_from_account_id: int | None = None  # the account the bill is charged to; a card means it rides the card payment
+    cadence: str | None = None  # weekly | biweekly | monthly | quarterly | semiannual | yearly
+    anchor_date: date | None = None  # the next due date, for a bill that is not monthly
 
 
 PAID_FROM = {"due", "mid", "end"}
+CADENCES = ("weekly", "biweekly", "monthly", "quarterly", "semiannual", "yearly")
 
 
 @router.post("/bills")
@@ -156,7 +159,10 @@ def create_bill(body: BillIn, session: Session = Depends(get_session), _: auth.P
         raise HTTPException(400, "A bill needs a name, an amount and a due day")
     if body.paid_from and body.paid_from not in PAID_FROM:
         raise HTTPException(400, "paid_from is due, mid or end")
+    if body.cadence and body.cadence not in CADENCES:
+        raise HTTPException(400, f"cadence is one of {', '.join(CADENCES)}")
     bill = Bill(name=body.name, kind=body.kind or "bill", amount=body.amount, amount_mode=body.amount_mode or "fixed", due_day=max(1, min(31, body.due_day)), paid_from=body.paid_from or "due",
+                cadence=body.cadence or "monthly", anchor_date=body.anchor_date,
                 autopay=bool(body.autopay), movable=body.movable if body.movable is not None else True, grace_days=body.grace_days or 0, late_fee=body.late_fee or 0.0, category=body.category or "")
     session.add(bill)
     session.commit()
@@ -181,6 +187,10 @@ def update_bill(bill_id: int, body: BillIn, session: Session = Depends(get_sessi
             raise HTTPException(400, "paid_from is due, mid or end")
         if field == "kind" and value not in ("bill", "subscription"):
             raise HTTPException(400, "kind must be bill or subscription")
+        if field == "cadence" and value not in CADENCES:
+            raise HTTPException(400, f"cadence is one of {', '.join(CADENCES)}")
+        if field in ("cadence", "anchor_date"):
+            rematch = True
         setattr(bill, field, value)
     session.add(bill)
     if rematch:

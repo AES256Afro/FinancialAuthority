@@ -49,7 +49,9 @@ def readiness(session: Session, today: date, *, move_date: date | None = None, n
 
     income = session.exec(select(Income).where(Income.active == True)).first()  # noqa: E712
     cadence = (income.cadence if income else "biweekly") or "biweekly"
-    next_payday = income.next_date if income and income.next_date >= today else today + timedelta(days=14)
+    from .cadence import next_unpaid_payday
+
+    next_payday = next_unpaid_payday(session, income, today) if income else today + timedelta(days=14)
     paydays = next_paydays(next_payday, cadence, 8)
 
     # 1. a buffer of one pay period's advances

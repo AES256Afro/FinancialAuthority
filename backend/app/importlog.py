@@ -16,7 +16,7 @@ from . import restore
 from .models import Account, Bill, ImportBatch, Payment, Paystub, PlannedPayment, Transaction, utcnow
 
 log = logging.getLogger(__name__)
-BILL_FIELDS = ("amount", "cadence", "due_day", "autopay", "category")
+BILL_FIELDS = ("amount", "cadence", "due_day", "anchor_date", "autopay", "category")
 
 
 def begin(session: Session, kind: str, source_file: str, via: str = "upload") -> ImportBatch:
@@ -88,7 +88,7 @@ def undo(session: Session, batch_id: int, today: date) -> dict[str, Any]:
         elif c.get("op") == "bill_updated":
             for k, v in (c.get("before") or {}).items():
                 if k in BILL_FIELDS:
-                    setattr(bill, k, v)
+                    setattr(bill, k, date.fromisoformat(v) if k == "anchor_date" and isinstance(v, str) else v)
             bills_restored += 1
         session.add(bill)
     session.flush()

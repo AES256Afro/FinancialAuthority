@@ -21,12 +21,9 @@ AFTER_DAYS = 4
 
 
 def _due_dates(bill: Bill, start: date, end: date) -> list[date]:
-    out = []
-    d = next_due(bill.due_day, start)
-    while d <= end:
-        out.append(d)
-        d = next_due(bill.due_day, d + timedelta(days=1))
-    return out
+    from .billdates import bill_dates
+
+    return bill_dates(bill, start, end)
 
 
 def _looks_like(bill_key: str, series_key: str | None, t_key: str) -> bool:

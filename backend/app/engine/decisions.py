@@ -117,7 +117,9 @@ def _low_finder(session: Session, today: date):
     cash, _all_cash = cash_of(accounts)
     buffer = float(get_setting(session, "buffer", 200.0))
     incomes = session.exec(select(Income).where(Income.active == True)).all()  # noqa: E712
-    upcoming = sorted(((i.next_date, i) for i in incomes if i.next_date >= today), key=lambda p: p[0])
+    from .cadence import next_unpaid_payday
+
+    upcoming = sorted(((next_unpaid_payday(session, i, today), i) for i in incomes), key=lambda p: p[0])
     next_payday = upcoming[0][0] if upcoming else today + timedelta(days=14)
     cadence = (upcoming[0][1].cadence if upcoming else "biweekly") or "biweekly"
     paydays = next_paydays(next_payday, cadence, 5)

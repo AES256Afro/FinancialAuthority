@@ -175,7 +175,7 @@ def weekly_checkin(session: Session, today: date, *, snap: dict, cover: dict | N
     return {
         "as_of": today.isoformat(), "week": week, "done": week in log, "answers": log.get(week, {}).get("answers", {}),
         "unexpected": [{"id": t.id, "date": t.date.isoformat(), "merchant": t.merchant, "amount": t.amount, "category": t.category, "source": f"txn:{t.id}"} for t in unexpected],
-        "subscription": {"id": sub.id, "name": sub.name, "amount": sub.amount, "yearly": round(sub.amount * 12, 2), "source": f"bill:{sub.id}"} if sub else None,
+        "subscription": {"id": sub.id, "name": sub.name, "amount": sub.amount, "yearly": round(sub.amount * __import__("app.engine.billdates", fromlist=["per_year"]).per_year(sub), 2), "source": f"bill:{sub.id}"} if sub else None,
         "cards": cards, "saved_14d": round(moved, 2), "coming": [{"name": e["name"], "amount": e["amount"], "date": e["date"], "source": e.get("source", "")} for e in coming],
         "line": line, "not_advice": NOT_ADVICE,
     }

@@ -52,3 +52,19 @@ def test_snapshot_carries_payments_funded_lines_and_a_brief():
     texts = " ".join(b["text"] for b in brief)
     assert "clears before payday" in texts and "Safe to spend" in texts
     assert build_brief(snap) == brief
+
+
+def test_a_yearly_bill_comes_due_once_a_year_not_every_month():
+    from datetime import date
+
+    from app.engine.billdates import bill_dates
+    from app.models import Bill
+
+    yearly = Bill(name="Annual Membership", amount=139.0, cadence="yearly", due_day=20, anchor_date=date(2026, 11, 20))
+    assert bill_dates(yearly, date(2026, 10, 14), date(2027, 12, 31)) == [date(2026, 11, 20), date(2027, 11, 20)]
+    quarterly = Bill(name="Water", amount=60.0, cadence="quarterly", due_day=5, anchor_date=date(2026, 9, 5))
+    assert bill_dates(quarterly, date(2026, 10, 14), date(2027, 6, 30)) == [date(2026, 12, 5), date(2027, 3, 5), date(2027, 6, 5)]
+    biweekly = Bill(name="Lawn", amount=40.0, cadence="biweekly", due_day=1, anchor_date=date(2026, 10, 2))
+    assert bill_dates(biweekly, date(2026, 10, 14), date(2026, 11, 14)) == [date(2026, 10, 16), date(2026, 10, 30), date(2026, 11, 13)]
+    monthly = Bill(name="Phone", amount=96.0, due_day=31)
+    assert bill_dates(monthly, date(2027, 1, 30), date(2027, 3, 31)) == [date(2027, 1, 31), date(2027, 2, 28), date(2027, 3, 31)]
