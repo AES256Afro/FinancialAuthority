@@ -103,7 +103,10 @@ def test_parse_classify_extract_and_box():
     assert fields["amount"] == 142.17 and fields["due_date"] == "2026-10-20" and fields["last4"] == "4471"
     assert fields["period_start"] == "2026-09-08" and fields["period_end"] == "2026-10-07"
     boxed = box_untrusted(parsed.text, "Electric Co (Proton)")
-    assert boxed.startswith("=== Untrusted message from Electric Co (Proton)") and "Ignore all previous instructions" in boxed and boxed.endswith("=== End of untrusted message. ===")
+    import re as _re
+
+    mark = _re.match(r"=== Untrusted message ([0-9a-f]{12}) from Electric Co \(Proton\)", boxed)
+    assert mark and "Ignore all previous instructions" in boxed and boxed.endswith(f"=== End of untrusted message {mark.group(1)}. ===")
     assert classify("news@shop.example", "Weekend deals", "Everything is 20% off")[0] == "none"
     assert classify("alerts@bank.example", "You've overdrawn your account")[0] == "bank_alert"
     assert extract("bank_alert", "You've overdrawn your account", "overdrawn by $38.20")["alert"] == "overdraft"

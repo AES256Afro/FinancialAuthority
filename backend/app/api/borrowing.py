@@ -45,7 +45,7 @@ def sync_now(session: Session = Depends(get_session), _: auth.Principal = Depend
 
 
 @router.post("/plan")
-def make_plan(body: PlanIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_scope("confirm"))) -> dict:
+def make_plan(body: PlanIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     """An installment stream becomes a plan with an end date: from a bill that was really a plan, or from a
     pending series. The payments left come from the owner; the lender's app shows them."""
     if body.remaining < 1 or body.remaining > 120:

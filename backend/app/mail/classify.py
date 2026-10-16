@@ -15,7 +15,7 @@ AMOUNT = re.compile(r"\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?|\d+(?:\.\d{2})?)")
 DATE_WORDS = re.compile(r"\b((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4})\b", re.IGNORECASE)
 DATE_WORDS_NOYEAR = re.compile(r"\b((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?)\b", re.IGNORECASE)
 DATE_NUM = re.compile(r"\b(\d{1,2}/\d{1,2}/\d{2,4}|\d{4}-\d{2}-\d{2})\b")
-LAST4 = re.compile(r"(?:ending in|ending|last four|x{2,}|\*{2,}|\.{3,})\s*(\d{4})\b", re.IGNORECASE)
+LAST4 = re.compile(r"(?:ending in|ending|last four|xx|\*\*|\.\.\.)\s*(\d{4})\b", re.IGNORECASE)  # linear: no repeated run before the digits
 
 
 @dataclass

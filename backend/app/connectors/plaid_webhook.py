@@ -77,14 +77,24 @@ def verify(token: str, body: bytes, fetch_key: Callable[[str], dict[str, Any]], 
     return claims
 
 
+_unknown: dict[str, float] = {}
+
+
 def _key(kid: str, fetch_key: Callable[[str], dict[str, Any]], now: float) -> dict[str, Any]:
     with _lock:
         cached = _keys.get(kid)
+        missed = _unknown.get(kid)
     if cached and now - cached[0] < 24 * 3600:
         return cached[1]
+    if missed and now - missed < 600:
+        raise Refused(f"key {kid[:12]} was not found a moment ago")  # no call to Plaid for every forged notice
     try:
         jwk = fetch_key(kid)
     except Exception as error:  # noqa: BLE001 - an unknown key is a refusal, whatever went wrong fetching it
+        with _lock:
+            _unknown[str(kid)[:64]] = now
+            if len(_unknown) > 1000:
+                _unknown.clear()
         raise Refused(f"key {kid[:12]} not found: {type(error).__name__}") from error
     with _lock:
         _keys[kid] = (now, jwk)

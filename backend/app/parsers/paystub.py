@@ -151,7 +151,7 @@ def parse_columns_layout(text: str, ref: date | None = None) -> dict | None:
             if net_m.group(2):
                 fields["net_ytd"] = round(float(net_m.group(2).replace(",", "")), 2)
             continue
-        run = NUMBER_RUN.match(line)
+        run = NUMBER_RUN.match(line) if len(line) <= 500 else None  # a stub's line is short; a long one is not a row
         if not run:
             continue
         label = run.group(1).strip()

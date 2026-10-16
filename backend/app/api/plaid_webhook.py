@@ -60,10 +60,14 @@ async def plaid_webhook_route(request: Request) -> JSONResponse:
     if len(recent) >= LIMIT:
         return JSONResponse({"ok": False}, status_code=429)
     _hits[ip] = [*recent, now]
-    body = await request.body()
     token = request.headers.get("plaid-verification", "")
-    if len(body) > MAX_BODY or not token:
+    if not token:
         return JSONResponse({"ok": False}, status_code=401)
+    body = b""
+    async for chunk in request.stream():
+        body += chunk
+        if len(body) > MAX_BODY:
+            return JSONResponse({"ok": False}, status_code=401)
     import json
 
     from starlette.concurrency import run_in_threadpool

@@ -14,7 +14,7 @@ from .templates import LAYOUTS, MASCOTS, draw_pdf, part_colours, png, set_svg
 
 # ---- shared --------------------------------------------------------------------------------------------------
 
-CSS_REFUSED = re.compile(r"</|<|@import|url\s*\(|expression\s*\(|javascript:|behavior\s*:|-moz-binding", re.IGNORECASE)
+CSS_REFUSED = re.compile(r"</|<|\\|@import|url\s*\(|image-set\s*\(|image\s*\(|expression\s*\(|javascript:|behavior\s*:|-moz-binding", re.IGNORECASE)
 
 
 def clean_css(css: str) -> str:

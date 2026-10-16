@@ -12,6 +12,8 @@ from __future__ import annotations
 from typing import Any
 
 MAX_BODY = 60 * 1024 * 1024  # uploads are refused above 50 MB by their routes; this stops anything larger early
+MAX_JSON = 1024 * 1024  # every other body: a form or a JSON object is never near a megabyte
+UPLOAD_PREFIXES = ("/api/v1/imports", "/api/v1/borrowing/statement", "/api/v1/imports/rocketmoney", "/api/v1/appearance", "/api/v1/exports/templates")
 
 APP_CSP = (
     "default-src 'self'; script-src 'self' https://cdn.plaid.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; "
@@ -46,8 +48,10 @@ class SecurityMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
+        path_now: str = scope.get("path", "")
+        ceiling = MAX_BODY if path_now.startswith(UPLOAD_PREFIXES) else MAX_JSON
         for k, v in scope.get("headers", []):
-            if k == b"content-length" and v.isdigit() and int(v) > MAX_BODY:
+            if k == b"content-length" and v.isdigit() and int(v) > ceiling:
                 await send({"type": "http.response.start", "status": 413, "headers": [(b"content-type", b"application/json"), *COMMON]})
                 await send({"type": "http.response.body", "body": b'{"detail":"That request is too large"}'})
                 return
@@ -59,7 +63,7 @@ class SecurityMiddleware:
             message = await receive()
             if message.get("type") == "http.request":
                 state["received"] += len(message.get("body", b""))
-                if state["received"] > MAX_BODY and not state["refused"]:
+                if state["received"] > ceiling and not state["refused"]:
                     state["refused"] = True
                     if not state["started"]:
                         state["started"] = True

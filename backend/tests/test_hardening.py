@@ -186,7 +186,7 @@ def test_a_summary_key_reads_through_the_tools_and_a_full_key_is_logged(owner: T
 def test_a_body_without_a_length_is_still_counted(owner: TestClient, monkeypatch):
     from app import security
 
-    monkeypatch.setattr(security, "MAX_BODY", 1024)
+    monkeypatch.setattr(security, "MAX_JSON", 1024)
 
     def chunks():
         for _ in range(8):
@@ -295,3 +295,46 @@ def test_a_spent_refresh_token_used_again_ends_the_clients_tokens():
     assert asyncio.run(provider.load_refresh_token(_C(), tokens.refresh_token)) is None
     with Session(engine) as session:
         assert session.exec(select(OAuthToken).where(OAuthToken.token_hash == _hash(live.access_token))).first().revoked_at is not None
+
+
+def test_round_two_holds(owner: TestClient, client: TestClient):
+    """Security sweep 2: keys confirm what a message said and no more; every tool answer is redacted for the
+    caller; registration is bounded; the consent form comes only from the app; a restore keeps allowances."""
+    import json as _json
+
+    from sqlmodel import select
+
+    from app.mcp_server import redact
+    from app.models import Bill, ExtractedFact, OAuthClient
+
+    # a confirm key cannot import an export or rename a bill through the REST door either
+    key = owner.post("/api/v1/keys", json={"name": "c", "scopes": ["read", "confirm"]}).json()
+    reader = TestClient(client.app)
+    auth_h = {"Authorization": f"Bearer {key['token']}"}
+    with Session(engine) as session:
+        session.add(Bill(name="Rent", amount=1295.0, due_day=1))
+        export = ExtractedFact(kind="export", fields=_json.dumps({"url": "https://files.example/t.csv"}))
+        rename = ExtractedFact(kind="bill_due", fields=_json.dumps({"name": "Water", "amount": 40.0, "due_date": "2026-10-20"}))
+        session.add_all([export, rename])
+        session.commit()
+        export_id, rename_id = export.id, rename.id
+    assert reader.post(f"/api/v1/facts/{export_id}/confirm", json={"apply": True}, headers=auth_h).status_code == 403
+    assert reader.post(f"/api/v1/facts/{rename_id}/confirm", json={"apply": True, "name": "Rent", "amount": 1}, headers=auth_h).status_code == 403
+    with Session(engine) as session:
+        assert session.exec(select(Bill).where(Bill.name == "Rent")).one().amount == 1295.0
+    # redaction applies to every key in every answer
+    out = redact({"bills": [{"name": "Rent", "amount": 1295.0, "note": "landlord", "kind": "bill"}]}, "aggregates")
+    assert out == {"bills": [{"name": "(redacted)", "amount": 1295.0, "note": "(redacted)", "kind": "bill"}]}
+    assert redact({"name": "Rent", "description": "CHECK 101"}, "merchants") == {"name": "Rent", "description": "(redacted)"}
+    # registration: a long name is refused, nothing huge is stored
+    big = client.post("/register", json={"client_name": "x" * 5000, "redirect_uris": ["https://claude.ai/cb"], "token_endpoint_auth_method": "none", "grant_types": ["authorization_code"], "response_types": ["code"]})
+    assert big.status_code == 400
+    with Session(engine) as session:
+        assert session.exec(select(OAuthClient)).first() is None
+    # the consent form refuses another site
+    refused = client.post("/oauth/consent", data={"req": "x", "decision": "allow"}, headers={"Origin": "https://other-app.example.test", "Sec-Fetch-Site": "same-site"})
+    assert "did not come from this app" in refused.text
+    # a restore keeps who may be emailed without asking
+    from app import restore
+
+    assert "send.allowances" in restore.CARRIED_SETTINGS and "webpush.subs" in restore.CARRIED_SETTINGS

@@ -82,10 +82,15 @@ def match_now(session: Session = Depends(get_session), _: auth.Principal = Depen
 
 
 @router.post("/recurring/{series_id}/classify")
-def classify(series_id: int, body: ClassifyIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_scope("confirm"))) -> dict:
+def classify(series_id: int, body: ClassifyIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_scope("confirm"))) -> dict:
     series = session.get(RecurringSeries, series_id)
     if series is None:
         raise HTTPException(404, "No such series")
+    if principal.kind != "owner":
+        if series.confirmed:
+            raise HTTPException(403, "Only the owner changes a charge that is already named")
+        if body.amount is not None and abs(body.amount - series.typical_amount) > max(1.0, 0.25 * series.typical_amount):
+            raise HTTPException(403, "Only the owner names a charge at an amount far from what was seen")
     if body.kind not in KINDS:
         raise HTTPException(400, f"kind must be one of {', '.join(sorted(KINDS))}")
     name = (body.name or series.merchant).strip()

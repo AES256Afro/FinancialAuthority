@@ -31,7 +31,8 @@ def check_url(url: str) -> str:
         raise Refused(f"{host} does not resolve") from error
     for info in infos:
         address = ipaddress.ip_address(info[4][0])
-        if not address.is_global or address.is_multicast:
+        nat64 = address.version == 6 and (address in ipaddress.ip_network("64:ff9b::/96") or address in ipaddress.ip_network("64:ff9b:1::/48"))
+        if not address.is_global or address.is_multicast or nat64:
             raise Refused(f"{host} points inside a private network")
     return host
 

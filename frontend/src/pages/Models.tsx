@@ -14,6 +14,7 @@ interface RoleConf {
   base_url: string;
   price_in: number | null;
   price_out: number | null;
+  sees?: "full" | "merchants" | "aggregates";
 }
 
 interface ModelsOut {
@@ -130,6 +131,16 @@ function RoleCard({ role, conf, providers, defaults, onSaved }: { role: string; 
           <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <span className="lab">{form.provider === "ollama" ? "Ollama address" : "Server address"}</span>
             <input className="input" value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} placeholder={providers.find((p) => p.id === form.provider)?.url ?? ""} />
+          </label>
+        )}
+        {role === "advisor" && (
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span className="lab">What this model sees</span>
+            <select className="input" value={form.sees ?? "full"} onChange={(e) => setForm({ ...form, sees: e.target.value as RoleConf["sees"] })}>
+              <option value="full">Everything the chat can read</option>
+              <option value="merchants">Names of payees, not notes or message text</option>
+              <option value="aggregates">Totals only, no names</option>
+            </select>
           </label>
         )}
         <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>

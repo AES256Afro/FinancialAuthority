@@ -31,6 +31,7 @@ class RoleIn(BaseModel):
     base_url: str | None = None
     price_in: float | None = None
     price_out: float | None = None
+    sees: str | None = None
 
 
 class SecretIn(BaseModel):

@@ -294,6 +294,9 @@ class MailConnector(Connector):
                     if outcome.get("fact") or outcome.get("imported"):
                         facts += 1
                     last = max(last, uid)
+                    done = uids.index(uid) + 1
+                    if done % 25 == 0:
+                        set_setting(session, uid_key(account.id, folder), last)
                 set_setting(session, uid_key(account.id, folder), last)
                 session.commit()
         finally:
