@@ -119,7 +119,7 @@ def next_steps(session: Session, today: date) -> dict:
         for b in housing["rent_bills_to_adopt"][:1]:
             steps.append(_step(f"home-adopt-{b['id']}", "info", f"Make {b['name']} your home on Housing: its fees, due day, lease end and notice then count too.", "Housing", "/housing", f"bill:{b['id']}"))
 
-    pending_approvals = len(session.exec(select(Approval.id).where(Approval.status == "pending")).all())
+    pending_approvals = len(session.exec(select(Approval.id).where(Approval.status == "pending", Approval.for_person_id == None)).all())  # noqa: E711
     if pending_approvals:
         steps.append(_step("approvals", "warning", f"{pending_approvals} send{'s' if pending_approvals != 1 else ''} wait{'s' if pending_approvals == 1 else ''} for your approval; nothing goes out until you tap.", "Approve or deny", "/confirm", "approvals"))
     pending_facts = len(session.exec(select(ExtractedFact.id).where(ExtractedFact.status == "pending")).all())

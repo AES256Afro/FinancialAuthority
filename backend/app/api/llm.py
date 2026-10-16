@@ -107,8 +107,8 @@ class CatalogIn(BaseModel):
 
 @router.post("/models/catalog")
 async def catalog(body: CatalogIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
-    if principal.kind != "owner":
-        raise HTTPException(403, "Only the owner, signed in, lists models")
+    if not principal.full:
+        raise HTTPException(403, "Only a person signed in lists models")
     provider, base_url = body.provider, body.base_url.strip()
     if provider not in PROVIDER_IDS or provider == "none":
         raise HTTPException(400, "Choose a provider")
@@ -161,8 +161,8 @@ def put_rules(body: RulesIn, session: Session = Depends(get_session), _: auth.Pr
 
 @router.post("/chat")
 async def chat(body: ChatIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> StreamingResponse:
-    if principal.kind != "owner":
-        raise HTTPException(403, "The built-in chat is the owner's; a connected app talks to its own model through /mcp")
+    if not principal.full:
+        raise HTTPException(403, "The built-in chat is for a person signed in; a connected app talks to its own model through /mcp")
     if not body.messages or len(body.messages) > 60:
         raise HTTPException(400, "Between one and sixty messages")
     history = []

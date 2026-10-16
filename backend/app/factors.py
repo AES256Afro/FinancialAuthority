@@ -9,7 +9,10 @@ or PIN). Passkeys work at an https address or on this computer (localhost), beca
 else; each passkey belongs to the address it was made at.
 
 The secret behind the codes is stored encrypted with the data key; recovery codes are stored hashed; a passkey
-is stored as its public key only. Wrong codes count toward the same lockout as wrong passwords."""
+is stored as its public key only. Wrong codes count toward the same lockout as wrong passwords.
+
+The owner and a second person each have their own: the owner's second step is kept in the settings, a person's on
+their row; each passkey names whose it is."""
 
 from __future__ import annotations
 
@@ -28,7 +31,7 @@ from sqlmodel import Session, select
 from . import auth, crypto
 from .config import settings
 from .db import get_session
-from .models import Passkey, utcnow
+from .models import Passkey, Person, utcnow
 from .store import get_setting, set_setting
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -46,8 +49,52 @@ def totp_state(session: Session) -> dict[str, Any]:
     return get_setting(session, TOTP_KEY, {}) or {}
 
 
-def second_step_on(session: Session) -> bool:
-    return bool(totp_state(session).get("enabled"))
+def _state(session: Session, person_id: int | None) -> dict[str, Any]:
+    """The second step's state for the owner (person_id None) or a second person."""
+    if person_id is None:
+        return totp_state(session)
+    import json
+
+    p = session.get(Person, person_id)
+    if p is None:
+        return {}
+    return {"enabled": bool(p.totp_enc), "secret_enc": p.totp_enc, "pending_enc": p.totp_pending_enc, "recovery": json.loads(p.totp_recovery or "[]"), "since": p.totp_since}
+
+
+def _save_state(session: Session, person_id: int | None, state: dict[str, Any]) -> None:
+    if person_id is None:
+        set_setting(session, TOTP_KEY, state)
+        return
+    import json
+
+    p = session.get(Person, person_id)
+    p.totp_enc = state.get("secret_enc", "") if state.get("enabled") else ""
+    p.totp_pending_enc = state.get("pending_enc", "")
+    p.totp_recovery = json.dumps(state.get("recovery", []))
+    p.totp_since = state.get("since", "") or ""
+    session.add(p)
+    session.commit()
+
+
+def _last_step(session: Session, person_id: int | None) -> int:
+    if person_id is None:
+        return int(get_setting(session, LAST_STEP_KEY, 0) or 0)
+    p = session.get(Person, person_id)
+    return int(p.totp_last_step or 0) if p else 0
+
+
+def _set_last_step(session: Session, person_id: int | None, step: int) -> None:
+    if person_id is None:
+        set_setting(session, LAST_STEP_KEY, step)
+        return
+    p = session.get(Person, person_id)
+    p.totp_last_step = step
+    session.add(p)
+    session.commit()
+
+
+def second_step_on(session: Session, person_id: int | None = None) -> bool:
+    return bool(_state(session, person_id).get("enabled"))
 
 
 def _totp(secret: str):  # noqa: ANN202
@@ -60,34 +107,35 @@ def _hash_code(code: str) -> str:
     return hashlib.sha256((settings.signing_secret() + "\x00" + code.strip().lower().replace(" ", "")).encode()).hexdigest()
 
 
-def check_code(session: Session, code: str) -> bool:
+def check_code(session: Session, code: str, person_id: int | None = None) -> bool:
     """A current authenticator code (once only) or an unused recovery code. A recovery code is used up."""
-    state = totp_state(session)
+    state = _state(session, person_id)
     if not state.get("enabled"):
         return False
     code = (code or "").strip().replace(" ", "")
     if code.isdigit() and len(code) == 6:
         totp = _totp(crypto.decrypt(state["secret_enc"]))
         now = int(time.time())
-        last = int(get_setting(session, LAST_STEP_KEY, 0) or 0)
+        last = _last_step(session, person_id)
         for drift in (0, -1, 1):
             step = now // 30 + drift
             if step > last and hmac.compare_digest(totp.at(step * 30), code):
-                set_setting(session, LAST_STEP_KEY, step)
+                _set_last_step(session, person_id, step)
                 return True
         return False
     hashed = _hash_code(code)
     left = list(state.get("recovery", []))
     if hashed in left:
         left.remove(hashed)
-        set_setting(session, TOTP_KEY, {**state, "recovery": left})
+        _save_state(session, person_id, {**state, "recovery": left})
         return True
     return False
 
 
 def _owner(request: Request, session: Session) -> auth.Principal:
+    """The person signed in (the owner or the second person), managing their own sign-in."""
     principal = auth.principal_from_request(request, session)
-    if principal is None or principal.kind != "owner":
+    if principal is None or principal.kind not in ("owner", "person"):
         raise HTTPException(401, "Sign in")
     if request.method != "GET" and request.headers.get(auth.CSRF_HEADER, "") != auth.CSRF_VALUE:
         raise HTTPException(403, "Missing the request header the app sends")
@@ -96,10 +144,10 @@ def _owner(request: Request, session: Session) -> auth.Principal:
 
 @router.get("/factors")
 def factors(request: Request, session: Session = Depends(get_session)) -> dict:
-    _owner(request, session)
-    state = totp_state(session)
+    who = _owner(request, session)
+    state = _state(session, who.person_id)
     rp = _rp_or_none(request)
-    keys = session.exec(select(Passkey).order_by(Passkey.created_at)).all()
+    keys = session.exec(select(Passkey).where(Passkey.person_id == who.person_id).order_by(Passkey.created_at)).all()
     return {
         "totp": {"enabled": bool(state.get("enabled")), "recovery_left": len(state.get("recovery", [])), "since": state.get("since")},
         "passkeys": [{"id": k.id, "name": k.name, "address": k.rp_id, "created_at": k.created_at.isoformat(), "last_used_at": k.last_used_at.isoformat() if k.last_used_at else None} for k in keys],
@@ -114,13 +162,14 @@ def totp_start(request: Request, session: Session = Depends(get_session)) -> dic
     import pyotp
     import segno
 
-    _owner(request, session)
-    state = totp_state(session)
+    who = _owner(request, session)
+    state = _state(session, who.person_id)
     if state.get("enabled"):
         raise HTTPException(409, "The second step is on already. Turn it off first to make a new one.")
     secret = pyotp.random_base32()
-    uri = pyotp.TOTP(secret).provisioning_uri(name=settings.username, issuer_name="FinancialAuthority")
-    set_setting(session, TOTP_KEY, {**state, "pending_enc": crypto.encrypt(secret)})
+    person = session.get(Person, who.person_id) if who.person_id else None
+    uri = pyotp.TOTP(secret).provisioning_uri(name=person.username if person else settings.username, issuer_name="FinancialAuthority")
+    _save_state(session, who.person_id, {**state, "pending_enc": crypto.encrypt(secret)})
     qr = segno.make(uri, error="m").svg_inline(scale=5, dark="#141518", light="#ffffff")
     return {"secret": secret, "uri": uri, "qr_svg": qr}
 
@@ -131,29 +180,31 @@ class CodeIn(BaseModel):
 
 @router.post("/totp/confirm")
 def totp_confirm(body: CodeIn, request: Request, session: Session = Depends(get_session)) -> dict:
-    _owner(request, session)
-    state = totp_state(session)
+    who = _owner(request, session)
+    state = _state(session, who.person_id)
     if not state.get("pending_enc"):
         raise HTTPException(409, "Start again: no code is waiting to be confirmed.")
     secret = crypto.decrypt(state["pending_enc"])
     if not _totp(secret).verify((body.code or "").strip().replace(" ", ""), valid_window=1):
         raise HTTPException(400, "That code does not match. Check the time on your phone, then type the code it shows now.")
     codes = [f"{secrets.token_hex(2)}-{secrets.token_hex(2)}-{secrets.token_hex(2)}" for _ in range(10)]
-    set_setting(session, TOTP_KEY, {"enabled": True, "secret_enc": crypto.encrypt(secret), "recovery": [_hash_code(c) for c in codes], "since": utcnow().isoformat()})
+    _save_state(session, who.person_id, {"enabled": True, "secret_enc": crypto.encrypt(secret), "pending_enc": "", "recovery": [_hash_code(c) for c in codes], "since": utcnow().isoformat()})
     return {"ok": True, "recovery_codes": codes, "note": "Each recovery code signs in once, when the phone is not at hand. They are shown only now: keep them somewhere safe, away from this computer."}
 
 
 @router.post("/totp/disable")
 def totp_disable(body: CodeIn, request: Request, session: Session = Depends(get_session)) -> dict:
-    _owner(request, session)
-    if not check_code(session, body.code):
+    who = _owner(request, session)
+    if not check_code(session, body.code, who.person_id):
         raise HTTPException(400, "That code does not match. Type the code your app shows, or a recovery code.")
-    set_setting(session, TOTP_KEY, {"enabled": False})
+    _save_state(session, who.person_id, {"enabled": False})
     return {"ok": True}
 
 
-def ticket_for() -> str:
+def ticket_for(person: Person | None = None) -> str:
     """Proof that the password was right, good for five minutes, for the second step."""
+    if person is not None:
+        return _tickets().dumps({"u": person.username, "p": person.id, "n": secrets.token_hex(8)})
     return _tickets().dumps({"u": settings.username, "n": secrets.token_hex(8)})
 
 
@@ -177,14 +228,19 @@ def login_second(body: SecondIn, request: Request, response: Response, session: 
         raise HTTPException(401, "That took too long. Sign in with your password again.") from error
     except BadSignature as error:
         raise HTTPException(401, "Sign in with your password again.") from error
-    if data.get("u") != settings.username:
+    person = None
+    if data.get("p") is not None:
+        person = session.get(Person, int(data["p"]))
+        if person is None or not person.active or data.get("u") != person.username:
+            raise HTTPException(401, "Sign in with your password again.")
+    elif data.get("u") != settings.username:
         raise HTTPException(401, "Sign in with your password again.")
-    if not check_code(session, body.code):
+    if not check_code(session, body.code, person.id if person else None):
         auth._record_failure(ip)
         raise HTTPException(401, "That code does not match. Type the code your app shows now, or a recovery code.")
     auth.clear_failures(ip)
-    _set_cookie(response, request, auth.start_session(session, request))
-    return {"ok": True, "user": settings.username}
+    _set_cookie(response, request, auth.start_session(session, request, person))
+    return {"ok": True, "user": person.username if person else settings.username}
 
 
 def _set_cookie(response: Response, request: Request, token: str) -> None:
@@ -236,12 +292,15 @@ def passkey_register_options(request: Request, session: Session = Depends(get_se
     from webauthn.helpers import base64url_to_bytes
     from webauthn.helpers.structs import AuthenticatorSelectionCriteria, PublicKeyCredentialDescriptor, ResidentKeyRequirement, UserVerificationRequirement
 
-    _owner(request, session)
+    who = _owner(request, session)
     rp_id, _origin = _rp(request)
-    existing = [PublicKeyCredentialDescriptor(id=base64url_to_bytes(k.credential_id)) for k in session.exec(select(Passkey).where(Passkey.rp_id == rp_id)).all()]
+    person = session.get(Person, who.person_id) if who.person_id else None
+    name = person.username if person else settings.username
+    user_id = hashlib.sha256((f"fa-person:{person.id}:{person.username}" if person else "fa-owner:" + settings.username).encode()).digest()[:16]
+    existing = [PublicKeyCredentialDescriptor(id=base64url_to_bytes(k.credential_id)) for k in session.exec(select(Passkey).where(Passkey.rp_id == rp_id, Passkey.person_id == who.person_id)).all()]
     options = generate_registration_options(
-        rp_id=rp_id, rp_name="FinancialAuthority", user_name=settings.username, user_id=hashlib.sha256(("fa-owner:" + settings.username).encode()).digest()[:16],
-        user_display_name=settings.username, exclude_credentials=existing,
+        rp_id=rp_id, rp_name="FinancialAuthority", user_name=name, user_id=user_id,
+        user_display_name=(person.display_name or person.username) if person else settings.username, exclude_credentials=existing,
         authenticator_selection=AuthenticatorSelectionCriteria(resident_key=ResidentKeyRequirement.PREFERRED, user_verification=UserVerificationRequirement.REQUIRED),
     )
     return {"key": _remember("reg", options.challenge, rp_id), "options": json.loads(options_to_json(options))}
@@ -258,7 +317,7 @@ def passkey_register(body: PasskeyIn, request: Request, session: Session = Depen
     from webauthn import verify_registration_response
     from webauthn.helpers import bytes_to_base64url
 
-    _owner(request, session)
+    who = _owner(request, session)
     challenge, rp_id = _recall(body.key, "reg")
     _rp_id, origin = _rp(request)
     if _rp_id != rp_id:
@@ -268,7 +327,7 @@ def passkey_register(body: PasskeyIn, request: Request, session: Session = Depen
     except Exception as error:  # noqa: BLE001 - any failure to verify is a refusal
         raise HTTPException(400, f"The passkey was not accepted: {type(error).__name__}") from error
     row = Passkey(credential_id=bytes_to_base64url(verified.credential_id), public_key=bytes_to_base64url(verified.credential_public_key), sign_count=verified.sign_count,
-                  name=(body.name or "Passkey").strip()[:60], rp_id=rp_id)
+                  name=(body.name or "Passkey").strip()[:60], rp_id=rp_id, person_id=who.person_id)
     session.add(row)
     session.commit()
     return {"ok": True, "id": row.id, "name": row.name}
@@ -276,9 +335,9 @@ def passkey_register(body: PasskeyIn, request: Request, session: Session = Depen
 
 @router.delete("/passkeys/{passkey_id}")
 def passkey_remove(passkey_id: int, request: Request, session: Session = Depends(get_session)) -> dict:
-    _owner(request, session)
+    who = _owner(request, session)
     row = session.get(Passkey, passkey_id)
-    if row is None:
+    if row is None or row.person_id != who.person_id:
         raise HTTPException(404, "No such passkey")
     session.delete(row)
     session.commit()
@@ -322,9 +381,15 @@ def passkey_login(body: PasskeyIn, request: Request, response: Response, session
     except Exception as error:  # noqa: BLE001 - any failure to verify is a refusal
         auth._record_failure(ip)
         raise HTTPException(401, "The passkey did not verify.") from error
+    person = None
+    if row.person_id is not None:
+        person = session.get(Person, row.person_id)
+        if person is None or not person.active or not person.password_hash:
+            auth._record_failure(ip)
+            raise HTTPException(401, "That passkey's sign-in was turned off.")
     row.sign_count, row.last_used_at = verified.new_sign_count, utcnow()
     session.add(row)
     session.commit()
     auth.clear_failures(ip)
-    _set_cookie(response, request, auth.start_session(session, request))
-    return {"ok": True, "user": settings.username}
+    _set_cookie(response, request, auth.start_session(session, request, person))
+    return {"ok": True, "user": person.username if person else settings.username, "kind": "person" if person else "owner"}

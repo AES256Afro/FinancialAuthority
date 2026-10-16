@@ -168,5 +168,5 @@ def undo_import(import_id: int, session: Session = Depends(get_session), princip
         done = importlog.undo(session, import_id, today())
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
-    services.audit(session, client=principal.name, client_kind="owner" if principal.kind == "owner" else "key", tool="import_undo", args={"id": import_id}, rows=done["removed"])
+    services.audit(session, client=principal.name, client_kind=principal.kind, tool="import_undo", args={"id": import_id}, rows=done["removed"])
     return {**done, "imports": importlog.history(session)}

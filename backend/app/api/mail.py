@@ -424,7 +424,7 @@ def confirm_fact(fact_id: int, body: ConfirmIn, session: Session = Depends(get_s
     if fact is None:
         raise HTTPException(404, "No such fact")
     ref = session.get(MessageRef, fact.message_ref_id) if fact.message_ref_id else None
-    applied = apply_fact(session, fact, ref, body, owner=principal.kind == "owner") if body.apply else ""
+    applied = apply_fact(session, fact, ref, body, owner=principal.full) if body.apply else ""
     fact.status = "applied" if applied else "confirmed"
     fact.applied_to = applied
     fact.resolved_at = utcnow()

@@ -34,6 +34,8 @@ class Account(SQLModel, table=True):
     external_id: str = Field(default="", index=True)
     active: bool = True
     created_at: dt.datetime = Field(default_factory=utcnow)
+    person_id: int | None = Field(default=None, index=True)  # whose account: None is the owner's, otherwise the second person's
+    shared: bool = False  # shared between the owner and the second person: a "shared accounts only" sign-in sees it
 
 
 class Transaction(SQLModel, table=True):
@@ -106,6 +108,7 @@ class Passkey(SQLModel, table=True):
     rp_id: str = ""
     created_at: dt.datetime = Field(default_factory=utcnow)
     last_used_at: dt.datetime | None = None
+    person_id: int | None = Field(default=None, index=True)  # None: the owner's; otherwise the second person's
 
 
 class CategoryBudget(SQLModel, table=True):
@@ -306,6 +309,13 @@ class Document(SQLModel, table=True):
     pages: int = 0
     note: str = ""
     uploaded_at: dt.datetime = Field(default_factory=utcnow)
+    period: str = Field(default="", index=True)  # YYYY-MM: the month a statement, paystub or receipt belongs to
+    merchant: str = ""  # a receipt's store
+    amount: float | None = None  # a receipt's total
+    bought_on: dt.date | None = None
+    return_by: dt.date | None = None  # the last day to return it
+    warranty_until: dt.date | None = None
+    source: str = ""  # upload | mail:<message> | import:<batch> | paystub upload
 
 
 class Payment(SQLModel, table=True):
@@ -496,6 +506,32 @@ class WebSession(SQLModel, table=True):
     user_agent: str = ""
     ip: str = ""
     revoked_at: dt.datetime | None = None
+    person_id: int | None = Field(default=None, index=True)  # None: the owner signed in; otherwise the second person
+
+
+class Person(SQLModel, table=True):
+    """A second person the owner lets in, with a role: everything, or the shared accounts only. The person sets
+    their own password from a one-time invitation; the owner never sees it. Their second step and passkeys are
+    their own, and so are their sends: each person approves only their own."""
+
+    __tablename__ = "people"
+    id: int | None = Field(default=None, primary_key=True)
+    username: str = Field(index=True, unique=True)  # lower case
+    display_name: str = ""
+    role: str = "shared"  # everything | shared
+    password_hash: str = ""  # scrypt; empty until the invitation is used
+    password_set_at: dt.datetime | None = None
+    invite_hash: str = Field(default="", index=True)
+    invite_expires_at: dt.datetime | None = None
+    totp_enc: str = ""
+    totp_pending_enc: str = ""
+    totp_recovery: str = "[]"  # hashed one-time codes
+    totp_last_step: int = 0
+    totp_since: str = ""
+    allowances: str = "[]"  # recipients this person's sends go to without asking
+    active: bool = True
+    created_at: dt.datetime = Field(default_factory=utcnow)
+    last_sign_in_at: dt.datetime | None = None
 
 
 class ApiKey(SQLModel, table=True):
@@ -731,7 +767,8 @@ class Approval(SQLModel, table=True):
     reason: str = ""
     source: str = ""
     created_by: str = "owner"
-    created_kind: str = "owner"  # owner | key | oauth
+    created_kind: str = "owner"  # owner | person | key | oauth
+    for_person_id: int | None = Field(default=None, index=True)  # whose send: None is the owner's; each person approves only their own
     account_id: int | None = Field(default=None, foreign_key="mail_accounts.id")
     created_at: dt.datetime = Field(default_factory=utcnow, index=True)
     decided_by: str = ""

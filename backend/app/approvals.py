@@ -22,21 +22,43 @@ Sender = Callable[..., str]
 SENDER: Sender = smtp.send_message  # tests replace this; nothing else does
 
 
-def allowances(session: Session) -> list[str]:
+def allowances(session: Session, person_id: int | None = None) -> list[str]:
+    """The recipients a person's sends go to without asking: the owner's in the settings, a second person's on
+    their own row. One person's allowance never lets the other's sends through."""
+    if person_id is not None:
+        from .models import Person
+        from .people import allowances as person_allowances
+
+        person = session.get(Person, person_id)
+        return person_allowances(person) if person else []
     return [a.lower() for a in (get_setting(session, "send.allowances", []) or [])]
 
 
-def allow(session: Session, recipient: str) -> list[str]:
-    current = allowances(session)
+def _store(session: Session, person_id: int | None, values: list[str]) -> None:
+    if person_id is None:
+        set_setting(session, "send.allowances", values)
+        return
+    import json
+
+    from .models import Person
+
+    person = session.get(Person, person_id)
+    person.allowances = json.dumps(values)
+    session.add(person)
+    session.commit()
+
+
+def allow(session: Session, recipient: str, person_id: int | None = None) -> list[str]:
+    current = allowances(session, person_id)
     if recipient.lower() not in current:
         current.append(recipient.lower())
-    set_setting(session, "send.allowances", current)
+    _store(session, person_id, current)
     return current
 
 
-def disallow(session: Session, recipient: str) -> list[str]:
-    current = [a for a in allowances(session) if a != recipient.lower()]
-    set_setting(session, "send.allowances", current)
+def disallow(session: Session, recipient: str, person_id: int | None = None) -> list[str]:
+    current = [a for a in allowances(session, person_id) if a != recipient.lower()]
+    _store(session, person_id, current)
     return current
 
 
@@ -47,7 +69,8 @@ def sending_account(session: Session, account_id: int | None) -> MailAccount | N
     return session.exec(select(MailAccount).where(MailAccount.active == True, MailAccount.smtp_host != "").order_by(MailAccount.id)).first()  # noqa: E712
 
 
-def create(session: Session, *, to: str, subject: str, body: str, reason: str = "", source: str = "", created_by: str = "owner", created_kind: str = "owner", account_id: int | None = None) -> Approval:
+def create(session: Session, *, to: str, subject: str, body: str, reason: str = "", source: str = "", created_by: str = "owner", created_kind: str = "owner", account_id: int | None = None,
+           for_person_id: int | None = None) -> Approval:
     from email.utils import getaddresses
 
     to = to.strip()
@@ -56,11 +79,12 @@ def create(session: Session, *, to: str, subject: str, body: str, reason: str = 
         raise ValueError("the recipient must be one email address")
     if not subject.strip() or not body.strip():
         raise ValueError("a subject and a body are needed")
-    row = Approval(kind="send", to=to, subject=subject.strip()[:200], body=body.strip()[:20000], reason=reason[:300], source=source[:100], created_by=created_by, created_kind=created_kind, account_id=account_id)
+    row = Approval(kind="send", to=to, subject=subject.strip()[:200], body=body.strip()[:20000], reason=reason[:300], source=source[:100], created_by=created_by, created_kind=created_kind, account_id=account_id,
+                   for_person_id=for_person_id)
     session.add(row)
     session.commit()
     session.refresh(row)
-    if to.lower() in allowances(session):
+    if to.lower() in allowances(session, for_person_id):
         row.decided_by = "allowance"
         row.decided_at = datetime.now(timezone.utc)
         row.status = "approved"
@@ -82,7 +106,7 @@ def approve(session: Session, row: Approval, *, decided_by: str = "owner", allow
     session.add(row)
     session.commit()
     if allow_always:
-        allow(session, row.to)
+        allow(session, row.to, row.for_person_id)
     send(session, row)
     session.refresh(row)
     return row
@@ -123,4 +147,5 @@ def out(row: Approval) -> dict:
         "id": row.id, "kind": row.kind, "status": row.status, "to": row.to, "subject": row.subject, "body": row.body, "reason": row.reason, "source": row.source,
         "created_by": row.created_by, "created_kind": row.created_kind, "created_at": row.created_at.isoformat(), "decided_by": row.decided_by,
         "decided_at": row.decided_at.isoformat() if row.decided_at else None, "sent_at": row.sent_at.isoformat() if row.sent_at else None, "error": row.error, "account_id": row.account_id,
+        "for_person_id": row.for_person_id,
     }

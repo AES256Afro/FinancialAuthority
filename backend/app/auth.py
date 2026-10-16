@@ -2,8 +2,10 @@
 for models and scripts.
 
 Scopes: read (every read tool), confirm (facts.confirm), approve (sends), admin (keys, settings, jobs).
-Keys and connected apps hold read and confirm at most: never approve, never admin, so only the owner, signed
-in, changes settings. The owner's session carries every scope.
+Keys and connected apps hold read and confirm at most: never approve, never admin, so only a person, signed
+in, changes settings. The owner's session carries every scope. A second person (people.py) signs in the same
+way: with the role "everything" they hold every scope and approve only their own sends; with "shared" they
+reach one page, the shared accounts.
 """
 
 from __future__ import annotations
@@ -50,14 +52,26 @@ def _serializer() -> URLSafeTimedSerializer:
 
 @dataclass
 class Principal:
-    kind: str  # owner | key
+    kind: str  # owner | person | key
     name: str
     scopes: set[str] = field(default_factory=set)
     redaction: str = "full"
     via_cookie: bool = False
+    person_id: int | None = None  # the second person, when kind is person
+    role: str = ""  # a person's role: everything | shared
 
     def has(self, scope: str) -> bool:
         return scope in self.scopes or "admin" in self.scopes and scope != "approve"
+
+    @property
+    def full(self) -> bool:
+        """A person signed in who may do what the owner does (the owner, or a second person with everything)."""
+        return self.kind == "owner" or (self.kind == "person" and self.role == "everything")
+
+
+# What a "shared accounts only" sign-in may reach through require_scope; its own sign-in settings live under
+# /api/auth and check for themselves.
+SHARED_PATHS = {"/api/v1/shared", "/api/v1/about", "/api/v1/appearance"}
 
 
 # ---- lockout -------------------------------------------------------------------------------
@@ -193,15 +207,31 @@ def principal_from_request(request: Request, session: Session) -> Principal | No
     row = session_row(request, session)
     if row is None:
         return None
+    if row.person_id is not None:
+        from .models import Person
+
+        person = session.get(Person, row.person_id)
+        if person is None or not person.active:
+            return None
+        scopes = set(ALL_SCOPES) if person.role == "everything" else {"read"}
+        return Principal(kind="person", name=person.display_name or person.username, scopes=scopes, via_cookie=True, person_id=person.id, role=person.role)
     return Principal(kind="owner", name=settings.username, scopes=set(ALL_SCOPES), via_cookie=True)
 
 
-def start_session(session: Session, request: Request) -> str:
+def start_session(session: Session, request: Request, person=None) -> str:  # noqa: ANN001 - a Person, for the second person
     """Record a new signed-in browser and return the cookie that names it."""
     from .models import WebSession
 
     sid = secrets.token_urlsafe(32)
-    session.add(WebSession(sid_hash=hash_key(sid), user_agent=(request.headers.get("user-agent") or "")[:200], ip=_client_ip(request)[:64], last_seen_at=utcnow()))
+    session.add(WebSession(sid_hash=hash_key(sid), user_agent=(request.headers.get("user-agent") or "")[:200], ip=_client_ip(request)[:64], last_seen_at=utcnow(),
+                           person_id=person.id if person is not None else None))
+    if person is not None:
+        from . import people
+
+        person.last_sign_in_at = utcnow()
+        session.add(person)
+        session.commit()
+        return _serializer().dumps({"u": person.username, "p": person.id, "sid": sid, "pw": people.password_mark(person), "iat": int(time.time())})
     session.commit()
     return _serializer().dumps({"u": settings.username, "sid": sid, "pw": _password_mark(), "iat": int(time.time())})
 
@@ -222,10 +252,19 @@ def session_row(request: Request, session: Session):  # noqa: ANN201
         data = _serializer().loads(raw, max_age=SESSION_MAX_AGE)
     except BadSignature:
         return None
-    if data.get("u") != settings.username or data.get("pw") != _password_mark() or not data.get("sid"):
+    if not data.get("sid"):
+        return None
+    if data.get("p") is not None:
+        from . import people
+        from .models import Person
+
+        person = session.get(Person, int(data["p"]))
+        if person is None or not person.active or data.get("u") != person.username or not person.password_hash or data.get("pw") != people.password_mark(person):
+            return None
+    elif data.get("u") != settings.username or data.get("pw") != _password_mark():
         return None
     row = session.exec(select(WebSession).where(WebSession.sid_hash == hash_key(data["sid"]))).first()
-    if row is None or row.revoked_at is not None:
+    if row is None or row.revoked_at is not None or row.person_id != data.get("p"):
         return None
     now = utcnow()
     seen = row.last_seen_at.replace(tzinfo=now.tzinfo) if row.last_seen_at and row.last_seen_at.tzinfo is None else row.last_seen_at
@@ -241,13 +280,19 @@ def require_scope(scope: str):
         principal = principal_from_request(request, session)
         if principal is None:
             raise HTTPException(401, "Sign in, or send an API key")
-        if scope == "approve" and principal.kind != "owner":
-            raise HTTPException(403, "Only the owner can approve")
+        if scope == "approve" and principal.kind not in ("owner", "person"):
+            raise HTTPException(403, "Only a person signed in can approve")
+        if principal.role == "shared" and request.url.path.rstrip("/") not in SHARED_PATHS:
+            raise HTTPException(403, "This sign-in shows the shared accounts only.")
         if not principal.has(scope):
             raise HTTPException(403, f"This needs the {scope} scope")
         if principal.via_cookie and request.method not in ("GET", "HEAD", "OPTIONS"):
             if request.headers.get(CSRF_HEADER, "") != CSRF_VALUE:
                 raise HTTPException(403, "Missing the request header the app sends")
+            if principal.kind == "person":
+                from . import services
+
+                services.audit(session, client=principal.name, client_kind="person", tool=f"rest {request.method} {request.url.path}"[:120], args=dict(request.query_params), rows=0)
         if principal.kind == "key" and request.url.path.startswith("/api/"):
             if principal.redaction != "full" and request.url.path.rstrip("/") != "/api/v1/ha":
                 raise HTTPException(403, "This key hides some details, so it reads through the tools at /mcp, which hold them back; the REST routes show everything")
@@ -288,15 +333,31 @@ def login(body: LoginIn, request: Request, response: Response, session: Session 
         raise HTTPException(429, f"Too many failed sign-ins. Try again in {int(wait) + 1} seconds.")
     user_ok = hmac.compare_digest(body.username.encode(), settings.username.encode())
     pass_ok = hmac.compare_digest(body.password.encode(), settings.password.encode())
-    if not (user_ok and pass_ok):
-        _record_failure(ip)
-        raise HTTPException(401, "Wrong username or password")
     from .factors import second_step_on, ticket_for
 
-    if second_step_on(session):
+    person = None
+    if not user_ok:
+        from . import people, services
+
+        person = people.by_username(session, body.username)
+        pass_ok = person is not None and people.check_password(person.password_hash, body.password)
+        if person is None:
+            people.check_nobody(body.password)
+        if person is not None:
+            services.audit(session, client=person.display_name or person.username, client_kind="person", tool="sign_in" if pass_ok else "sign_in_refused", rows=0)
+        if not pass_ok:
+            person = None
+    if not ((user_ok or person is not None) and pass_ok):
+        _record_failure(ip)
+        raise HTTPException(401, "Wrong username or password")
+    if second_step_on(session, person.id if person else None):
         # The password was right; the session waits for the code.
-        return {"ok": False, "second_step": "code", "ticket": ticket_for()}
+        return {"ok": False, "second_step": "code", "ticket": ticket_for(person)}
     clear_failures(ip)
+    if person is not None:
+        token = start_session(session, request, person)
+        response.set_cookie(COOKIE, token, max_age=SESSION_MAX_AGE, httponly=True, samesite="lax", secure=request_is_https(request), path="/")
+        return {"ok": True, "user": person.username, "kind": "person", "role": person.role}
     token = start_session(session, request)
     response.set_cookie(
         COOKIE,
@@ -334,13 +395,20 @@ def list_sessions(request: Request, session: Session = Depends(get_session)) -> 
     """Every browser signed in as the owner, the one asking marked."""
     from .models import WebSession
 
+    from .models import Person
+
     principal = principal_from_request(request, session)
-    if principal is None or principal.kind != "owner":
+    if principal is None or principal.kind not in ("owner", "person"):
         raise HTTPException(401, "Sign in")
     here = session_row(request, session)
-    rows = session.exec(select(WebSession).where(WebSession.revoked_at == None).order_by(WebSession.id.desc())).all()  # noqa: E711
+    query = select(WebSession).where(WebSession.revoked_at == None)  # noqa: E711
+    if principal.kind == "person":
+        query = query.where(WebSession.person_id == principal.person_id)
+    rows = session.exec(query.order_by(WebSession.id.desc())).all()
+    names = {p.id: p.display_name or p.username for p in session.exec(select(Person)).all()}
     return {"sessions": [{"id": r.id, "created_at": r.created_at.isoformat(), "last_seen_at": r.last_seen_at.isoformat() if r.last_seen_at else None,
-                          "user_agent": r.user_agent, "ip": r.ip, "this": bool(here and here.id == r.id)} for r in rows]}
+                          "user_agent": r.user_agent, "ip": r.ip, "this": bool(here and here.id == r.id),
+                          "who": "you" if r.person_id == principal.person_id else names.get(r.person_id, "someone") if r.person_id else settings.username, "person_id": r.person_id} for r in rows]}
 
 
 class EndIn(BaseModel):
@@ -354,13 +422,16 @@ def end_sessions(body: EndIn, request: Request, session: Session = Depends(get_s
     from .models import WebSession
 
     principal = principal_from_request(request, session)
-    if principal is None or principal.kind != "owner":
+    if principal is None or principal.kind not in ("owner", "person"):
         raise HTTPException(401, "Sign in")
     if principal.via_cookie and request.headers.get(CSRF_HEADER, "") != CSRF_VALUE:
         raise HTTPException(403, "Missing the request header the app sends")
     here = session_row(request, session)
     ended = 0
-    for r in session.exec(select(WebSession).where(WebSession.revoked_at == None)).all():  # noqa: E711
+    query = select(WebSession).where(WebSession.revoked_at == None)  # noqa: E711
+    if principal.kind == "person":
+        query = query.where(WebSession.person_id == principal.person_id)  # a person ends only their own
+    for r in session.exec(query).all():
         if (body.all_others and (here is None or r.id != here.id)) or (body.session_id is not None and r.id == body.session_id):
             r.revoked_at = utcnow()
             session.add(r)
@@ -399,4 +470,59 @@ def me(request: Request, session: Session = Depends(get_session)) -> dict:
     if principal is None:
         raise HTTPException(401, "Not signed in")
     note_public_sighting(request, session)
-    return {"kind": principal.kind, "name": principal.name, "scopes": sorted(principal.scopes), "auth_enabled": auth_enabled()}
+    return {"kind": principal.kind, "name": principal.name, "scopes": sorted(principal.scopes), "auth_enabled": auth_enabled(), "person_id": principal.person_id,
+            "role": principal.role or ("owner" if principal.kind == "owner" else ""), "owner": settings.username}
+
+
+# ---- joining: the second person sets their own password from the owner's invitation ------------------------------
+
+
+class JoinCheckIn(BaseModel):
+    token: str
+
+
+@router.post("/join/check")
+def join_check(body: JoinCheckIn, request: Request, session: Session = Depends(get_session)) -> dict:
+    """Who an invitation is for, so the page can greet them. Nothing secret."""
+    from . import people
+
+    ip = _client_ip(request)
+    if _locked(ip):
+        raise HTTPException(429, "Too many tries. Wait fifteen minutes.")
+    person = people.by_invite(session, body.token)
+    if person is None:
+        _record_failure(ip)
+        raise HTTPException(400, f"This invitation has expired or was used already. Ask {settings.username} for a new one.")
+    return {"username": person.username, "display_name": person.display_name or person.username, "role": person.role, "role_words": people.ROLES.get(person.role, ""),
+            "expires_at": person.invite_expires_at.isoformat() if person.invite_expires_at else None, "min_length": people.MIN_PASSWORD}
+
+
+class JoinIn(BaseModel):
+    token: str
+    password: str
+
+
+@router.post("/join")
+def join(body: JoinIn, request: Request, response: Response, session: Session = Depends(get_session)) -> dict:
+    """The invitation used once: the person's own password set, and the person signed in."""
+    from . import people, services
+
+    ip = _client_ip(request)
+    if _locked(ip):
+        raise HTTPException(429, "Too many tries. Wait fifteen minutes.")
+    person = people.by_invite(session, body.token)
+    if person is None:
+        _record_failure(ip)
+        raise HTTPException(400, f"This invitation has expired or was used already. Ask {settings.username} for a new one.")
+    problem = people.password_problem(person.username, body.password)
+    if problem:
+        raise HTTPException(400, problem)
+    person.password_hash, person.password_set_at = people.hash_password(body.password), utcnow()
+    person.invite_hash, person.invite_expires_at = "", None
+    session.add(person)
+    session.commit()
+    services.audit(session, client=person.display_name or person.username, client_kind="person", tool="joined", rows=0)
+    clear_failures(ip)
+    token = start_session(session, request, person)
+    response.set_cookie(COOKIE, token, max_age=SESSION_MAX_AGE, httponly=True, samesite="lax", secure=request_is_https(request), path="/")
+    return {"ok": True, "user": person.username, "role": person.role}
