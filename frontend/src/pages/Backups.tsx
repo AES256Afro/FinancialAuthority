@@ -5,7 +5,7 @@ import { type ReactElement, useState } from "react";
 import { api, useApi } from "../api";
 
 interface Point { name: string; kind: string; reason: string; created_at: string; bytes: number; verified: boolean; transactions: number | null }
-interface Status { count: number; bytes: number; latest_age_hours: number | null; database: { ok: boolean; result: string; bytes: number }; keep: Record<string, number> }
+interface Status { count: number; bytes: number; latest_age_hours: number | null; database: { ok: boolean; result: string; bytes: number }; keep: Record<string, number>; last_check: { at: string; by: string; database: string; points_ok: boolean } | null }
 interface Batch { id: number; kind: string; source_file: string; via: string; account: string | null; inserted: number; duplicates: number; merged: number; summary: string; status: string; created_at: string; undone_at: string | null; restore_point: string | null }
 
 const KIND_WORD: Record<string, string> = { import: "Before an import", daily: "Daily", manual: "By hand", "before-restore": "Before a put-back" };
@@ -105,6 +105,7 @@ export function Backups() {
             <span style={{ color: "var(--ink-2)" }}>
               {s.count} {s.count === 1 ? "copy" : "copies"}, {size(s.bytes)} in all{s.latest_age_hours !== null ? `; the newest is ${s.latest_age_hours < 1 ? "under an hour" : `${Math.round(s.latest_age_hours)} hours`} old` : "; none yet"}.
               The database {s.database.ok ? "passes its check" : `did not pass its check (${s.database.result})`}.
+              {s.last_check ? ` Last checked by ${s.last_check.by} ${when(s.last_check.at)}: ${s.last_check.database === "ok" && s.last_check.points_ok ? "all read back" : "something did not read back"}.` : ""}
             </span>
             <button className="btn dark" type="button" style={{ marginLeft: "auto" }} disabled={busy} onClick={takeNow}>{busy ? "Working…" : "Take a copy now"}</button>
           </div>

@@ -105,8 +105,13 @@ def status() -> dict[str, Any]:
     age_hours = None
     if latest and latest["created_at"]:
         age_hours = round((datetime.now(UTC) - datetime.fromisoformat(latest["created_at"])).total_seconds() / 3600, 1)
+    note = folder() / "last-check.json"
+    try:
+        last_check = json.loads(note.read_text(encoding="utf-8")) if note.exists() else None
+    except ValueError:
+        last_check = None
     return {"folder": str(folder()), "count": len(points), "bytes": sum(p["bytes"] for p in points), "newest": newest, "latest_age_hours": age_hours,
-            "database": {"bytes": settings.db_path.stat().st_size if settings.db_path.exists() else 0, **live}, "keep": KEEP}
+            "database": {"bytes": settings.db_path.stat().st_size if settings.db_path.exists() else 0, **live}, "keep": KEEP, "last_check": last_check}
 
 
 def _path(name: str) -> Path:
@@ -155,6 +160,9 @@ def main(argv: list[str] | None = None) -> int:
             out = make_point("manual", " ".join(args[1:]) or "Taken by the backup manager")
         elif command == "check":
             out = {"database": check(settings.db_path), "points": {p["name"]: check(folder() / p["name"])["result"] for p in list_points()[:3]}}
+            note = {"at": datetime.now(UTC).isoformat(), "by": " ".join(args[1:])[:60] or "a backup manager", "database": out["database"]["result"],
+                    "points_ok": all(r == "ok" for r in out["points"].values()), "points": len(out["points"])}
+            (folder() / "last-check.json").write_text(json.dumps(note), encoding="utf-8")
         else:
             print(json.dumps({"error": f"unknown command {command}; use status, list, make or check"}))
             return 2

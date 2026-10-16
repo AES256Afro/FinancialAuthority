@@ -229,5 +229,6 @@ def test_each_copy_reads_back_and_a_backup_manager_can_ask(capsys):
     assert restore.main(["status"]) == 0
     status = _json.loads(capsys.readouterr().out)
     assert status["database"]["ok"] and status["newest"]["manual"]["name"] == made["name"] and status["latest_age_hours"] < 1
-    assert restore.main(["check"]) == 0 and _json.loads(capsys.readouterr().out)["database"]["result"] == "ok"
+    assert restore.main(["check", "BoxPilot"]) == 0 and _json.loads(capsys.readouterr().out)["database"]["result"] == "ok"
+    assert restore.status()["last_check"]["by"] == "BoxPilot" and restore.status()["last_check"]["database"] == "ok"
     assert restore.main(["restore", made["name"]]) == 2  # restoring stays in the app
