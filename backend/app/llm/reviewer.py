@@ -123,11 +123,11 @@ def parse_notes(text: str, allowed: set[float]) -> list[dict]:
 
 
 async def review(session_factory: Callable[[], AbstractContextManager[Session]], today: date, trigger: str, *, provider: Provider | None = None) -> ReviewRun:
-    with session_factory() as session:
-        conf = role_settings(session)["reviewer"]
-        chosen = provider or provider_for(session, "reviewer")
-        pack = packet(session, today)
-        pending_at_start = get_setting(session, "review.pending", None)
+    def prepare() -> tuple:
+        with session_factory() as session:
+            return role_settings(session)["reviewer"], provider or provider_for(session, "reviewer"), packet(session, today), get_setting(session, "review.pending", None)
+
+    conf, chosen, pack, pending_at_start = await asyncio.to_thread(prepare)  # off the event loop
     run = ReviewRun(trigger=trigger, provider=chosen.id if chosen else conf["provider"], model=chosen.model if chosen else conf["model"], packet_hash=hashlib.sha256(json.dumps(pack["plan"], sort_keys=True).encode()).hexdigest()[:16])
     if chosen is None:
         run.ok, run.error = False, "no reviewer is configured; choose one on Settings › Models"
@@ -145,13 +145,17 @@ async def review(session_factory: Callable[[], AbstractContextManager[Session]],
         except Exception as error:  # noqa: BLE001 - a review failing must never take a job down
             log.exception("review failed")
             run.ok, run.error = False, f"{type(error).__name__}: {error}"[:500]
-    with session_factory() as session:
-        session.add(run)
-        if run.ok and get_setting(session, "review.pending", None) == pending_at_start:
-            set_setting(session, "review.pending", None)
-        session.commit()
-        session.refresh(run)
-        return run
+    def save() -> ReviewRun:
+        with session_factory() as session:
+            session.add(run)
+            if run.ok and get_setting(session, "review.pending", None) == pending_at_start:
+                set_setting(session, "review.pending", None)
+            session.commit()
+            session.refresh(run)
+            session.expunge(run)
+            return run
+
+    return await asyncio.to_thread(save)
 
 
 def review_sync(session_factory: Callable[[], AbstractContextManager[Session]], today: date, trigger: str) -> ReviewRun:

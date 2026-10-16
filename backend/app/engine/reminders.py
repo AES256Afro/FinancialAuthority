@@ -92,6 +92,8 @@ def run(session: Session, now: datetime, today: date) -> dict[str, Any]:
     from .. import notify
 
     s = reminder_settings(session)
+    if not (notify.push_state(session)["configured"] or notify.has_devices(session)):
+        return {"sent": 0, "reason": "no channel is set up"}  # nothing to compute when nothing can be sent
     local = now.astimezone(ZoneInfo(settings.tz) if settings.tz else None)
     if local.hour < int(s["hour"]):
         return {"sent": 0, "reason": "before the hour"}

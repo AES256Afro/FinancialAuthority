@@ -121,8 +121,13 @@ async def advise(
     tools: bool = True,
 ) -> AsyncIterator[dict]:
     """Run one turn of the chat: the model, its tool calls, its reply; yield events for the screen."""
-    with session_factory() as session:
-        system, allowed = system_prompt(session, today)
+    import asyncio
+
+    def prepare() -> tuple[str, set[float]]:
+        with session_factory() as session:
+            return system_prompt(session, today)
+
+    system, allowed = await asyncio.to_thread(prepare)  # the plan is worked out off the event loop
     messages: list[dict] = [{"role": "system", "content": system}, *history]
     specs = tool_specs() if tools else []
     reply_parts: list[str] = []

@@ -228,8 +228,8 @@ def snapshot(session: Session = Depends(get_session), _: auth.Principal = Depend
 
 
 @router.post("/imports/rocketmoney")
-async def import_rocketmoney(file: UploadFile = File(...), session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
-    raw = await file.read()
+def import_rocketmoney(file: UploadFile = File(...), session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    raw = file.file.read(50 * 1024 * 1024 + 1)
     if len(raw) > 50 * 1024 * 1024:
         raise HTTPException(413, "That file is over 50 MB")
     text = raw.decode("utf-8-sig", errors="replace")
@@ -380,5 +380,7 @@ def write_setting(key: str, body: SettingIn, session: Session = Depends(get_sess
 
 @router.get("/about")
 def about(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
-    tx = session.exec(select(Transaction.id)).all()
-    return {"version": __version__, "demo": settings.demo, "transactions": len(tx), "today": today().isoformat(), "tz": settings.tz, "public_url": settings.public_url or None, "started": json.dumps(datetime.now().isoformat())}
+    from sqlalchemy import func
+
+    count = session.exec(select(func.count()).select_from(Transaction)).one()
+    return {"version": __version__, "demo": settings.demo, "transactions": int(count), "today": today().isoformat(), "tz": settings.tz, "public_url": settings.public_url or None, "started": json.dumps(datetime.now().isoformat())}

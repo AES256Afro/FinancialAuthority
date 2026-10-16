@@ -33,11 +33,12 @@ def folder() -> Path:
     return path
 
 
-def check(path: Path) -> dict[str, Any]:
-    """Open a copy on its own and have SQLite check every page of it: a copy counts only once it reads back."""
+def check(path: Path, quick: bool = False) -> dict[str, Any]:
+    """Open a copy on its own and have SQLite check every page of it (or, quick, the structure without the
+    indexes' contents): a copy counts only once it reads back."""
     con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     try:
-        result = con.execute("PRAGMA integrity_check").fetchone()[0]
+        result = con.execute("PRAGMA quick_check" if quick else "PRAGMA integrity_check").fetchone()[0]
         tables = con.execute("SELECT count(*) FROM sqlite_master WHERE type = 'table'").fetchone()[0]
         try:
             rows = con.execute("SELECT count(*) FROM transactions").fetchone()[0]
@@ -66,7 +67,7 @@ def make_point(kind: str, reason: str) -> dict[str, Any]:
     name = f"{now:%Y%m%d-%H%M%S-%f}-{kind}.db"
     path = folder() / name
     _copy(settings.db_path, path)
-    verdict = check(path)
+    verdict = check(path, quick=kind == "import")  # the daily copy and the drill check every page
     if not verdict["ok"] or not verdict["tables"]:
         path.unlink(missing_ok=True)
         raise RuntimeError(f"The copy did not read back ({verdict['result']}); nothing was kept")
@@ -99,12 +100,24 @@ def list_points() -> list[dict[str, Any]]:
     return sorted(out, key=lambda p: p["name"], reverse=True)
 
 
-def status() -> dict[str, Any]:
+_live: dict[str, Any] = {}
+LIVE_SECONDS = 3 * 3600  # the hourly self-check keeps this fresh; a page shows its last answer
+
+
+def status(fresh: bool = False) -> dict[str, Any]:
     """What a backup manager needs at a glance: the newest copy of each kind, how many, how much space, and
-    whether the live database itself reads back."""
+    whether the live database itself reads back (checked again when asked, else the last answer of the hour)."""
+    import time
+
     points = list_points()
     newest = {kind: next((p for p in points if p["kind"] == kind), None) for kind in KEEP}
-    live = check(settings.db_path) if settings.db_path.exists() else {"ok": False, "result": "no database yet", "tables": 0, "transactions": None}
+    if not settings.db_path.exists():
+        live = {"ok": False, "result": "no database yet", "tables": 0, "transactions": None}
+    elif fresh or not _live or time.monotonic() - _live["at"] > LIVE_SECONDS or _live.get("path") != str(settings.db_path):
+        live = check(settings.db_path, quick=True)
+        _live.update({"at": time.monotonic(), "path": str(settings.db_path), "result": live})
+    else:
+        live = _live["result"]
     latest = points[0] if points else None
     age_hours = None
     if latest and latest["created_at"]:
@@ -145,6 +158,9 @@ def restore(name: str) -> dict[str, Any]:
     init_db()  # a point from an older version gains the columns this version added
     _carry_forward(folder() / before["name"], settings.db_path)
     engine.dispose()
+    from .db import bump_version
+
+    bump_version()  # every computed plan is of the database that was just replaced
     with (folder() / "restores.log").open("a", encoding="utf-8") as log:
         log.write(json.dumps({"at": datetime.now(UTC).isoformat(), "restored": name, "before": before["name"]}) + "\n")
     return {"restored": name, "before": before}
@@ -181,7 +197,7 @@ def main(argv: list[str] | None = None) -> int:
     command = args[0] if args else "status"
     try:
         if command == "status":
-            out: Any = status()
+            out: Any = status(fresh=True)
         elif command == "list":
             out = list_points()
         elif command == "make":

@@ -141,7 +141,7 @@ def self_check() -> str:
         from .. import restore
 
         try:
-            backups = restore.status()
+            backups = restore.status(fresh=True)
             if backups["latest_age_hours"] is None or backups["latest_age_hours"] > 48:
                 problems.append("no restore point in the last two days")
             if not backups["database"]["ok"]:
@@ -175,6 +175,7 @@ def import_watch() -> str:
     settings.ensure_dirs()
     with session_scope() as session:
         processed = {tuple(p) for p in get_setting(session, "imports.processed", [])}
+        processed_before = set(processed)
         taken: list[str] = []
         for path in sorted(settings.import_root.rglob("*.pdf")):
             stamp = (str(path.relative_to(settings.import_root)), int(path.stat().st_mtime))
@@ -215,7 +216,8 @@ def import_watch() -> str:
                     result = import_rows(session, rows, source_file=path.name, account_name=path.stem, via="folder") if rows else None
             taken.append(f"{path.name}: {result.summary if result else 'no rows found'}")
             processed.add(stamp)
-        set_setting(session, "imports.processed", sorted(processed))
+        if processed != processed_before:
+            set_setting(session, "imports.processed", sorted(processed))
     if taken:
         detect_recurring()
     return "; ".join(taken) if taken else "nothing new"
@@ -407,6 +409,34 @@ def restore_point_daily() -> str:
 
 
 jobs.register("restore_point_daily", restore_point_daily, 6 * 3600, "Keep a copy of the whole database once a day, the last seven kept")
+
+IDLE = ("nothing new", "not due", "reviewer off", "sent 0", "today's copy is there", "no off-box folder", "not due yet")
+
+
+def prune_job_runs() -> str:
+    """Keep the job record useful and small: runs that did nothing for two days, every other run for thirty."""
+    from datetime import timedelta as _td
+
+    from sqlmodel import delete
+
+    now = utcnow()
+    with session_scope() as session:
+        old = session.exec(delete(JobRun).where(JobRun.started_at < now - _td(days=30))).rowcount or 0
+        idle = 0
+        for r in session.exec(select(JobRun).where(JobRun.started_at < now - _td(days=2), JobRun.ok == True)).all():  # noqa: E712
+            if (r.summary or "").startswith(IDLE):
+                session.delete(r)
+                idle += 1
+        session.commit()
+    from ..db import engine as _engine
+    from sqlalchemy import text as _text
+
+    with _engine.begin() as connection:
+        connection.execute(_text("PRAGMA optimize"))
+    return f"removed {old + idle} old job record{'s' if old + idle != 1 else ''}"
+
+
+jobs.register("prune_job_runs", prune_job_runs, 24 * 3600, "Keep job records for thirty days, and quiet runs that did nothing for two")
 
 
 def offbox_copy() -> str:

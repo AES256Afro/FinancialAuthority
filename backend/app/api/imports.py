@@ -19,8 +19,8 @@ router = APIRouter(prefix="/api/v1/imports", tags=["imports"])
 LIMIT = 50 * 1024 * 1024
 
 
-async def _text(file: UploadFile) -> str:
-    raw = await file.read()
+def _text(file: UploadFile) -> str:
+    raw = file.file.read(LIMIT + 1)
     if len(raw) > LIMIT:
         raise HTTPException(413, "That file is over 50 MB")
     return raw.decode("utf-8-sig", errors="replace")
@@ -37,17 +37,17 @@ def _serial(value):  # noqa: ANN001, ANN202
 
 
 @router.post("/preview")
-async def preview(file: UploadFile = File(...), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+def preview(file: UploadFile = File(...), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     """What the file is, which column is which, and the first rows as they would land. Nothing is written."""
-    text = await _text(file)
+    text = _text(file)
     found = detect(text)
     return _serial({**found, "filename": file.filename or "upload", "rows": None, "positions": found.get("positions", [])[:5] if found["kind"] == "ofx" else None})
 
 
 @router.post("/paystub")
-async def import_paystub(file: UploadFile = File(...), session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+def import_paystub(file: UploadFile = File(...), session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     """A paystub PDF handed over by hand: read, then queued on Needs you to confirm with one tap."""
-    raw = await file.read()
+    raw = file.file.read(LIMIT + 1)
     if len(raw) > LIMIT:
         raise HTTPException(413, "That file is over 50 MB")
     fact = paystub_fact_from_file(session, raw, file.filename or "paystub.pdf", today(), "upload")
@@ -58,11 +58,11 @@ async def import_paystub(file: UploadFile = File(...), session: Session = Depend
 
 
 @router.post("/file")
-async def import_file(
+def import_file(
     file: UploadFile = File(...), account_name: str = Form(""), institution: str = Form(""), kind: str = Form("checking"), sign: str = Form(""), mapping: str = Form(""),
     account_id: int | None = Form(None), session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin),
 ) -> dict:
-    text = await _text(file)
+    text = _text(file)
     found = detect(text)
     if found["kind"] == "bills":
         bill_rows = parse_bills_rows(text, found["mapping"])
@@ -102,11 +102,11 @@ async def import_file(
 
 
 @router.post("/holdings/{account_id}")
-async def import_holdings_file(account_id: int, file: UploadFile = File(...), as_of: str = Form(""), session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+def import_holdings_file(account_id: int, file: UploadFile = File(...), as_of: str = Form(""), session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     account = session.get(Account, account_id)
     if account is None or account.kind != "investment":
         raise HTTPException(404, "No such investment account")
-    text = await _text(file)
+    text = _text(file)
     found = detect(text)
     positions = parse_ofx(text)["positions"] if found["kind"] == "ofx" else sniff_holdings_csv(text)["positions"]
     if not positions:

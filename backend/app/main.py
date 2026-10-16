@@ -72,6 +72,9 @@ _docs = {} if not auth.auth_enabled() else {"docs_url": None, "redoc_url": None,
 app = FastAPI(title="FinancialAuthority", version=__version__, lifespan=lifespan, **_docs)
 if settings.cors_origins:
     app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+from starlette.middleware.gzip import GZipMiddleware  # noqa: E402
+
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(SecurityMiddleware)
 app.include_router(auth.router)
 app.include_router(routes.router)
@@ -115,7 +118,10 @@ class SPAStaticFiles(StaticFiles):
 
     async def get_response(self, path: str, scope):  # noqa: ANN001
         try:
-            return await super().get_response(path, scope)
+            response = await super().get_response(path, scope)
+            if path.replace("\\", "/").lstrip("/").startswith("assets/") and response.status_code == 200:
+                response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            return response
         except StarletteHTTPException as error:
             if error.status_code == 404 and not path.replace("\\", "/").lstrip("/").startswith(("api/", "mcp", "oauth/")):
                 return await super().get_response("index.html", scope)

@@ -25,8 +25,8 @@ def _short(d: date | str) -> str:
 
 def streaks(session: Session, today: date, snap: dict) -> list[dict]:
     out: list[dict] = []
-    last_adv = session.exec(select(Advance).order_by(Advance.taken_on.desc())).first()
-    first_txn = session.exec(select(Transaction).order_by(Transaction.date)).first()
+    last_adv = session.exec(select(Advance).order_by(Advance.taken_on.desc()).limit(1)).first()
+    first_txn = session.exec(select(Transaction).order_by(Transaction.date).limit(1)).first()
     if last_adv:
         days = (today - last_adv.taken_on).days
         out.append({"key": "no_advance", "label": f"{days} day{'s' if days != 1 else ''} without an advance", "value": days, "unit": "days", "since": last_adv.taken_on.isoformat(), "good": days >= 14, "source": f"advance:{last_adv.id}"})
