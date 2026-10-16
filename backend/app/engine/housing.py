@@ -257,10 +257,11 @@ def move_check(session: Session, today: date, home_id: int) -> dict[str, Any]:
     low = min(path, key=lambda p: p["at_pace"]) if path else None
     out = home_out(session, home, today)
     holds = low is None or low["at_pace"] >= 0
+    on = f"{date.fromisoformat(low['date']):%a %b} {date.fromisoformat(low['date']).day}" if low else ""
     return {
         "home": out, "move_on": home.starts_on.isoformat(), "low": low, "holds": holds,
         "status": "good" if holds else "crit",
-        "word": (f"Covered: at your usual spending the lowest balance before a month after the move is ${low['at_pace']:,.2f} on {low['date']}." if holds and low else
-                 f"Short: at your usual spending the balance falls ${-low['at_pace']:,.2f} below the cushion on {low['date']}." if low else "No paycheck on file to check against."),
+        "word": (f"Covered: at your usual spending the lowest balance before a month after the move is ${low['at_pace']:,.2f}, on {on}." if holds and low else
+                 f"Short: at your usual spending the balance falls ${-low['at_pace']:,.2f} below the cushion on {on}." if low else "No paycheck on file to check against."),
         "path": path, "caveats": run["caveats"],
     }

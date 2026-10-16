@@ -9,7 +9,7 @@ Nothing here can change anything: the key is read-only.
 ## 1. Make a key (in the app)
 
 1. Open FinancialAuthority, then **Settings › Apps and keys**.
-2. Under **Keys for scripts**, name it `Home Assistant`, tick **Read** only, and choose what it can see:
+2. Under **API keys**, name it `Home Assistant` (a key reads only; it can never approve or change settings), and choose what it can see:
    - **Everything**: the next bill's name and the one-line sentence show on the dashboard.
    - **Totals only**: amounts and dates, never a name. Choose this if other people see the dashboard.
 3. Press **Make a key** and copy the key it shows once. It starts with `fa_`.
@@ -77,7 +77,8 @@ entities:
 
 ## 4. The iPhone widget
 
-The same figures come from `/api/v1/glance`, which also carries a sentence to speak.
+The same figures come from `/api/v1/glance`, which also carries a sentence to speak. It needs a key that sees
+**Everything**: a **Totals only** key is refused there, because the sentence names things.
 
 1. On the iPhone, open **Shortcuts**, tap **+**, and add **Get Contents of URL**.
 2. URL: your app's address followed by `/api/v1/glance`. Tap **Show More**, add a header `Authorization` with the
@@ -86,5 +87,6 @@ The same figures come from `/api/v1/glance`, which also carries a sentence to sp
 4. Name it `Money`. Add it to the Home Screen as a widget (long-press the Home Screen, **+**, **Shortcuts**).
    "Hey Siri, Money" reads the sentence aloud.
 
-If a sensor shows `unavailable`, open the address from step 2 in a browser on the same network: a `401` means the
-key was mistyped or revoked (make a new one); no answer means the address or port is wrong.
+If a sensor shows `unavailable`, open the address from step 2 in a browser on the same network. Any answer (a browser
+has no key, so it gets `401`) means the address is right and the key is the problem: check it was pasted whole, or
+make a new one. No answer at all means the address or port is wrong.

@@ -106,6 +106,10 @@ The app ships with approve-each: a draft, from a model or from the Bills page, w
 
 Optional. An Anthropic API key pasted into Settings › Models (never into chat) makes Claude the reviewer; set the reviewer's provider to Anthropic and press Test. Enter the model's prices per million tokens there and every review shows its cost in dollars; without them, tokens only. Any OpenAI-compatible endpoint works the same way. With no key, Ollama on BigBox advises and can review for nothing; the advisor uses it by default.
 
+### 12. Housing and documents (M37, M38)
+
+Housing (in the menu under Plan) holds each home: what is paid with the rent each month, the bills of its own, the lease's end and the notice it needs, and each utility and where it comes from. Moving home shows only the cost of getting into the next place. What only you can add: amounts the app cannot know (a renter's insurance quote, the first water bill), whether a fee was already paid, the day you gave notice (tap "I gave notice"), and your documents: open a home on Housing, choose Documents, and upload the lease or the property's charge sheet (PDF, photo, spreadsheet or text, 25 MB at most). The terms a lease states then wait on Needs you until you tap Apply.
+
 ## What the coding agent never asks for
 
 Passwords, second factors, bank logins, card numbers, government identifiers. Anything that must be typed into a sign-in form is typed by the owner. Values for the app's own test accounts come from the fixture, never from the owner.
