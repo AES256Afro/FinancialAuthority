@@ -17,7 +17,8 @@ const memory: { approvals: Record<string, unknown>[]; nextId: number } = { appro
 
 function load(): Promise<DemoData> {
   if (!loaded) {
-    loaded = fetch(new URL("demo-data.json", document.baseURI).toString()).then((r) => r.json() as Promise<DemoData>);
+    // Asked fresh each visit (a quick "unchanged" when it is): an old copy would not match a newer build.
+    loaded = fetch(new URL("demo-data.json", document.baseURI).toString(), { cache: "no-cache" }).then((r) => r.json() as Promise<DemoData>);
   }
   return loaded;
 }
