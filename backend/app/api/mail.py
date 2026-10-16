@@ -377,7 +377,7 @@ def apply_fact(session: Session, fact: ExtractedFact, ref: MessageRef | None, bo
         if bill is None:
             if amount is None or due is None:
                 raise HTTPException(400, "A new bill needs an amount and a due date; add them to the confirmation")
-            bill = Bill(name=name, amount=round(float(amount), 2), amount_mode="estimate", due_day=due.day, autopay=bool(body.autopay), movable=True, move_window="1-28", category="")
+            bill = Bill(name=name, amount=round(float(amount), 2), amount_mode="estimate", due_day=due.day, anchor_date=due, autopay=bool(body.autopay), movable=True, move_window="1-28", category="")
             session.add(bill)
             session.flush()
         else:

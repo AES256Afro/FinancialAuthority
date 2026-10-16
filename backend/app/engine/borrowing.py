@@ -153,7 +153,9 @@ def _next_payday(session: Session, today: date) -> date | None:
     from ..models import Income
 
     incomes = session.exec(select(Income).where(Income.active == True)).all()  # noqa: E712
-    upcoming = sorted(i.next_date for i in incomes if i.next_date >= today)
+    from .cadence import next_unpaid_payday
+
+    upcoming = sorted(next_unpaid_payday(session, i, today) for i in incomes)
     return upcoming[0] if upcoming else None
 
 

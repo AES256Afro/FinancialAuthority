@@ -96,3 +96,35 @@ def payday_for(due: date, which: str) -> date:
         return min(near, key=lambda c: (abs((c - due).days), c))
     before = [c for c in candidates if c <= due]
     return max(before) if before else min(candidates)
+
+
+def step_payday(d: date, cadence: str) -> date:
+    """The payday after `d`."""
+    return next_paydays(d, cadence, 2)[1]
+
+
+def next_unpaid_payday(session, income, today: date) -> date:  # noqa: ANN001 - a Session and an Income
+    """The next payday whose check has not landed yet. The income's date is rolled forward past every payday
+    already gone, and past today's (or an early one) once a deposit near the usual amount has posted from two
+    days before it: that check is in the balance already and must not be counted again."""
+    from sqlmodel import select
+
+    from ..models import Transaction
+
+    d = income.next_date
+    for _ in range(400):
+        if d >= today:
+            break
+        d = step_payday(d, income.cadence or "biweekly")
+    expected = abs(float(income.expected_net or 0.0))
+    if expected <= 0:
+        return d
+    for _ in range(3):
+        window_start = d - timedelta(days=2)
+        if window_start > today:
+            break
+        landed = session.exec(select(Transaction.amount).where(Transaction.date >= window_start, Transaction.date <= today, Transaction.amount < 0, Transaction.is_income == True)).all()  # noqa: E712
+        if not any(abs(abs(a) - expected) <= max(50.0, expected * 0.4) for a in landed):
+            break
+        d = step_payday(d, income.cadence or "biweekly")
+    return d

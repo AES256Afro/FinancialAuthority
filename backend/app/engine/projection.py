@@ -7,6 +7,7 @@ import calendar
 from datetime import date, timedelta
 
 from ..models import Account, Advance, Bill, InstallmentPlan
+from .billdates import bill_dates
 from .cadence import payday_for, payday_position
 
 SPENDABLE_KINDS = {"checking", "cash"}
@@ -69,13 +70,11 @@ def build_events(bills: list[Bill], plans: list[InstallmentPlan], advances: list
     horizon = today + timedelta(days=horizon_days)
     for b in bills:
         due_day = (due_days or {}).get(b.id, b.due_day)
-        d = next_due(due_day, today)
         paid_from = getattr(b, "paid_from", "due") or "due"
         payer = (accounts or {}).get(b.pay_from_account_id) if b.pay_from_account_id else None
         from_kind = "card" if payer is not None and payer.kind == "card" else "cash"
-        while d <= horizon:
+        for d in bill_dates(b, today, horizon, due_day=due_day):
             events.append({"date": d, "window_date": window_date(d, paid_from), "name": b.name, "amount": _money(b.amount), "kind": b.kind, "autopay": b.autopay, "source": f"bill:{b.id}", "line": line_of(b.category, b.kind), "bill_id": b.id, "paid_from": paid_from, "from_kind": from_kind, "from_account_id": b.pay_from_account_id, "category": b.category or "", "movable": bool(b.movable), "due_day": due_day})
-            d = next_due(due_day, d + timedelta(days=1))
     for p in plans:
         payer = (accounts or {}).get(getattr(p, "pay_from_account_id", None)) if getattr(p, "pay_from_account_id", None) else None
         plan_kind = "card" if payer is not None and payer.kind == "card" else "cash"

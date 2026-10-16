@@ -70,6 +70,8 @@ def run_detection(session: Session, today: date, lookback_days: int = 400) -> di
             if bill is not None and f["kind"] != "income":
                 series.kind, series.confirmed = bill.kind, True
                 bill.series_id = series.id
+                if (bill.cadence or "monthly") != "monthly" and bill.anchor_date is None and series.next_expected:
+                    bill.anchor_date = series.next_expected
                 session.add_all([series, bill])
                 linked += 1
                 continue
@@ -89,6 +91,13 @@ def run_detection(session: Session, today: date, lookback_days: int = 400) -> di
                         session.add_all([series, inc])
                         linked += 1
                         break
+    from ..engine.cadence import next_unpaid_payday
+
+    for inc in incomes:
+        rolled = next_unpaid_payday(session, inc, today)
+        if rolled != inc.next_date:
+            inc.next_date = rolled
+            session.add(inc)
     session.commit()
     filled = fill_paying_accounts(session)
     return {"found": len(found), "created": created, "updated": updated, "linked": linked, "paying_accounts_filled": filled}

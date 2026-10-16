@@ -103,8 +103,9 @@ class Bill(SQLModel, table=True):
     kind: str = "bill"  # bill | subscription
     amount: float
     amount_mode: str = "fixed"  # fixed | estimate
-    cadence: str = "monthly"
+    cadence: str = "monthly"  # weekly | biweekly | monthly | quarterly | semiannual | yearly
     due_day: int = 1
+    anchor_date: dt.date | None = None  # the next due date, which places a weekly, quarterly or yearly bill
     autopay: bool = False
     pay_from_account_id: int | None = Field(default=None, foreign_key="accounts.id")
     grace_days: int = 0

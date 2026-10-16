@@ -40,7 +40,7 @@ BILL_NEXT_KEYS = ("next due", "next date", "next payment", "due date", "next cha
 BILL_CADENCE_KEYS = ("frequency", "cadence", "repeats", "billing cycle", "cycle", "every", "interval", "period", "schedule")
 BILL_AUTOPAY_KEYS = ("autopay", "auto pay", "auto-pay", "automatic")
 BILL_CATEGORY_KEYS = ("category", "type", "kind")
-CADENCE_WORDS = (("biweekly", "biweekly"), ("bi-weekly", "biweekly"), ("every 2 weeks", "biweekly"), ("every two weeks", "biweekly"), ("fortnight", "biweekly"), ("2 weeks", "biweekly"), ("weekly", "weekly"), ("week", "weekly"), ("quarterly", "quarterly"), ("quarter", "quarterly"), ("3 months", "quarterly"), ("annual", "yearly"), ("yearly", "yearly"), ("year", "yearly"), ("12 months", "yearly"), ("monthly", "monthly"), ("month", "monthly"))
+CADENCE_WORDS = (("semiannual", "semiannual"), ("semi-annual", "semiannual"), ("6 months", "semiannual"), ("six months", "semiannual"), ("half year", "semiannual"), ("biweekly", "biweekly"), ("bi-weekly", "biweekly"), ("every 2 weeks", "biweekly"), ("every two weeks", "biweekly"), ("fortnight", "biweekly"), ("2 weeks", "biweekly"), ("weekly", "weekly"), ("week", "weekly"), ("quarterly", "quarterly"), ("quarter", "quarterly"), ("3 months", "quarterly"), ("annual", "yearly"), ("yearly", "yearly"), ("year", "yearly"), ("12 months", "yearly"), ("monthly", "monthly"), ("month", "monthly"))
 PLAIN_DATE_COLUMNS = ("date", "transaction date", "posted date", "post date", "posting date", "trade date")
 HOLDING_KINDS = {"etf": "etf", "mutual fund": "mutual fund", "fund": "mutual fund", "stock": "equity", "equity": "equity", "bond": "fixed income", "fixed income": "fixed income", "cash": "cash", "money market": "cash", "crypto": "cryptocurrency"}
 
@@ -395,7 +395,7 @@ def import_bills(session: Session, rows: list[dict], *, source_file: str) -> Syn
         bill = next((b for b in bills if merchant_key(b.name) == key), None)
         kind = "subscription" if suggest_kind(r["category"], r["name"]) == "subscription" else "bill"
         if bill is None:
-            bill = Bill(name=r["name"], kind=kind, amount=r["amount"], amount_mode="fixed", cadence=r["cadence"], due_day=r["due_day"], autopay=r["autopay"], movable=True, move_window="1-28", category=r["category"])
+            bill = Bill(name=r["name"], kind=kind, amount=r["amount"], amount_mode="fixed", cadence=r["cadence"], due_day=r["due_day"], anchor_date=r.get("next_date"), autopay=r["autopay"], movable=True, move_window="1-28", category=r["category"])
             session.add(bill)
             session.flush()
             bills.append(bill)
@@ -404,6 +404,8 @@ def import_bills(session: Session, rows: list[dict], *, source_file: str) -> Syn
         else:
             changes.append({"op": "bill_updated", "id": bill.id, "before": importlog.bill_before(bill)})
             bill.amount, bill.cadence, bill.due_day = r["amount"], r["cadence"], r["due_day"]
+            if r.get("next_date"):
+                bill.anchor_date = r["next_date"]
             bill.autopay = r["autopay"] or bill.autopay
             if r["category"]:
                 bill.category = r["category"]

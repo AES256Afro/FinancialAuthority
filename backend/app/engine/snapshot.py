@@ -12,7 +12,7 @@ from sqlmodel import Session, select
 
 from ..models import Account, Advance, Approval, Bill, Debt, ExtractedFact, Income, InstallmentPlan, MessageRef, RecurringSeries, Transaction
 from ..store import get_setting
-from .cadence import next_paydays, payday_position
+from .cadence import next_paydays, next_unpaid_payday, payday_position
 from .projection import HORIZON_DAYS, assemble, build_events, card_events, cash_of, line_of, next_due, pending_installment_events, project, projection_caveats, set_aside_of, split_windows, wdate  # noqa: F401
 
 PACE_DAYS = 56
@@ -76,7 +76,7 @@ def finance_snapshot(session: Session, today: date) -> dict:
     buffer = float(get_setting(session, "buffer", 200.0))
 
     incomes = session.exec(select(Income).where(Income.active == True)).all()  # noqa: E712
-    upcoming = sorted(((i.next_date, i) for i in incomes if i.next_date >= today), key=lambda p: p[0])
+    upcoming = sorted(((next_unpaid_payday(session, i, today), i) for i in incomes), key=lambda p: p[0])
     next_pay = upcoming[0] if upcoming else None
     next_payday = next_pay[0] if next_pay else today + timedelta(days=14)
     cadence = (next_pay[1].cadence if next_pay else "biweekly") or "biweekly"

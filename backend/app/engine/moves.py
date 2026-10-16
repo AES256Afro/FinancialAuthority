@@ -402,8 +402,14 @@ def move_plan(session: Session, move: AccountMove, today: date) -> dict[str, Any
 
     plan_items: list[dict[str, Any]] = []
     effective: dict[str, date | None] = {}
+    from .billdates import bill_dates
+
     for i in items:
         nxt = _occurrences(i.due_day, today, horizon)
+        if i.ref.startswith("bill:") and i.ref[5:].isdigit():
+            bill = session.get(Bill, int(i.ref[5:]))
+            if bill is not None:
+                nxt = bill_dates(bill, today, horizon)
         amount = float(i.amount)
         pays: list[dict] = []
         if i.kind == "card_payment":

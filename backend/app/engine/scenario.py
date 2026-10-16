@@ -32,7 +32,9 @@ def load_inputs(session: Session, today: date, horizon_days: int = HORIZON) -> d
     cash, _all = cash_of(accounts)
     buffer = float(get_setting(session, "buffer", 200.0))
     incomes = session.exec(select(Income).where(Income.active == True)).all()  # noqa: E712
-    upcoming = sorted(((i.next_date, i) for i in incomes if i.next_date >= today), key=lambda p: p[0])
+    from .cadence import next_unpaid_payday
+
+    upcoming = sorted(((next_unpaid_payday(session, i, today), i) for i in incomes), key=lambda p: p[0])
     next_pay = upcoming[0] if upcoming else None
     next_payday = next_pay[0] if next_pay else today + timedelta(days=14)
     cadence = (next_pay[1].cadence if next_pay else "biweekly") or "biweekly"
