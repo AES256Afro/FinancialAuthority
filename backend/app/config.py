@@ -63,6 +63,35 @@ class Settings(BaseSettings):
     def import_root(self) -> Path:
         return (self.import_dir or self.data_dir / "imports").resolve()
 
+    def signing_secret(self) -> str:
+        """FA_SESSION_SECRET, or, when it is not set, a random one made once and kept in the data folder (only
+        this app's user can read it). Never a value anyone else could know."""
+        if self.session_secret:
+            return self.session_secret
+        path = self.data_dir / ".session_secret"
+        try:
+            if path.exists():
+                kept = path.read_text(encoding="utf-8").strip()
+                if len(kept) >= 32:
+                    return kept
+            import secrets as _secrets
+
+            made = _secrets.token_urlsafe(48)
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+            path.write_text(made, encoding="utf-8")
+            try:
+                path.chmod(0o600)
+            except OSError:
+                pass
+            return made
+        except OSError:
+            import secrets as _secrets
+
+            # The data folder cannot be written: a secret for this run only (sessions end at a restart).
+            cached = getattr(self, "_run_secret", None) or _secrets.token_urlsafe(48)
+            object.__setattr__(self, "_run_secret", cached)
+            return cached
+
     def ensure_dirs(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.import_root.mkdir(parents=True, exist_ok=True)

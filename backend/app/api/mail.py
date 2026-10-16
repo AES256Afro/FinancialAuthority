@@ -357,6 +357,16 @@ def apply_fact(session: Session, fact: ExtractedFact, ref: MessageRef | None, bo
         if plan is None:
             raise HTTPException(400, "A plan needs the lender's schedule, or an amount and the payments left; add them to the confirmation")
         return f"plan:{plan.id}"
+    if fact.kind == "export":
+        from ..connectors.mail import capture_export
+
+        url = fields.get("url")
+        if not url:
+            raise HTTPException(400, "This message has no download link")
+        result = capture_export(session, url, mail_connector().fetch)
+        if not result.get("imported") and not result.get("duplicates"):
+            raise HTTPException(400, result.get("note") or "The export could not be imported")
+        return f"import:{result.get('note', '')}"[:120]
     if fact.kind in ("bill_due", "past_due", "price_change"):
         name = (body.name or fields.get("name") or fields.get("sender_name") or (ref.sender_name if ref else "") or "Bill").strip()
         amount = body.amount if body.amount is not None else fields.get("amount")
@@ -383,10 +393,12 @@ def apply_fact(session: Session, fact: ExtractedFact, ref: MessageRef | None, bo
 
 
 @router.post("/facts/{fact_id}/confirm")
-def confirm_fact(fact_id: int, body: ConfirmIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_scope("confirm"))) -> dict:
+def confirm_fact(fact_id: int, body: ConfirmIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_scope("confirm"))) -> dict:
     fact = session.get(ExtractedFact, fact_id)
     if fact is None:
         raise HTTPException(404, "No such fact")
+    if fact.kind == "export" and principal.kind != "owner":
+        raise HTTPException(403, "Only the owner, signed in, imports an export from mail")
     ref = session.get(MessageRef, fact.message_ref_id) if fact.message_ref_id else None
     applied = apply_fact(session, fact, ref, body) if body.apply else ""
     fact.status = "applied" if applied else "confirmed"

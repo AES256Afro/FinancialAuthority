@@ -117,6 +117,8 @@ async function write(path: string, method: string, body: unknown): Promise<Respo
   const data = await load();
   const [base] = split(path);
   if (base === "/api/auth/login" || base === "/api/auth/logout") return json({ ok: true });
+  if (base === "/api/v1/models/catalog") return json({ models: [], error: "The demo has no model server." });
+  if (base === "/api/v1/setup/test") return json({ ...(data.responses["GET /api/v1/setup/check"] as object), tests: [] });
   if (base === "/api/v1/chat") {
     const lines = data.chat.brief.map((b) => `• ${b}`).join("\n");
     const chunks = (data.chat.intro + "\n" + lines).match(/[^\n]*\n?/g)?.filter(Boolean) ?? [];

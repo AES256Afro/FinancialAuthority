@@ -9,6 +9,7 @@ import io
 import re
 from typing import Any
 
+from . import safe
 from .templates import LAYOUTS, MASCOTS, draw_pdf, part_colours, png, set_svg
 
 # ---- shared --------------------------------------------------------------------------------------------------
@@ -477,29 +478,29 @@ def xlsx(report: dict, regs: dict[str, list[dict]], layout: str = "board", palet
     wb = Workbook()
     ws = wb.active
     ws.title = "Plan"
-    ws["A1"] = report["title"]
+    ws["A1"] = safe.cell(report["title"])
     ws["A1"].font = Font(bold=True, size=16, color=accent)
     ws["A2"] = f"{report['as_of_words']} · {report['brand']}"
     row = 4
     for s in report["sections"]:
         if s["key"] == "summary":
             for k in s["kpis"]:
-                ws.cell(row=row, column=1, value=k["label"]).font = Font(bold=True)
-                ws.cell(row=row, column=2, value=k["value"])
-                ws.cell(row=row, column=3, value=k.get("note", ""))
+                safe.put(ws, row=row, column=1, value=k["label"]).font = Font(bold=True)
+                safe.put(ws, row=row, column=2, value=k["value"])
+                safe.put(ws, row=row, column=3, value=k.get("note", ""))
                 row += 1
             row += 1
     check = next((s for s in report["sections"] if s["key"] == "this_check"), None)
     if check and check["bars"]:
-        ws.cell(row=row, column=1, value=check["title"]).font = Font(bold=True, size=13, color=accent)
+        safe.put(ws, row=row, column=1, value=check["title"]).font = Font(bold=True, size=13, color=accent)
         row += 1
         first = row
         for i, h in enumerate(["Part", "Amount"], start=1):
-            c = ws.cell(row=row, column=i, value=h)
+            c = safe.put(ws, row=row, column=i, value=h)
             c.font, c.fill = head_font, head_fill
         for b in check["bars"]:
             row += 1
-            ws.cell(row=row, column=1, value=b["label"])
+            safe.put(ws, row=row, column=1, value=b["label"])
             ws.cell(row=row, column=2, value=round(b["value"], 2)).number_format = money
         last = row
         row += 1
@@ -521,7 +522,7 @@ def xlsx(report: dict, regs: dict[str, list[dict]], layout: str = "board", palet
         chart.height, chart.width = 7.5, 15
         ws.add_chart(chart, "E4")
         row += 2
-    ws.cell(row=row, column=1, value=report["not_advice"]).font = Font(italic=True, color="666666")
+    safe.put(ws, row=row, column=1, value=report["not_advice"]).font = Font(italic=True, color="666666")
     ws.column_dimensions["A"].width = 30
     ws.column_dimensions["B"].width = 16
     ws.column_dimensions["C"].width = 28
@@ -547,7 +548,7 @@ def xlsx(report: dict, regs: dict[str, list[dict]], layout: str = "board", palet
         for r_i, r in enumerate(rows, start=2):
             for i, c in enumerate(cols, start=1):
                 v = r.get(c)
-                cell = sh.cell(row=r_i, column=i, value=v)
+                cell = safe.put(sh, row=r_i, column=i, value=v)
                 if c in money_fields and isinstance(v, (int, float)):
                     cell.number_format = money
         for i, c in enumerate(cols, start=1):

@@ -15,6 +15,7 @@ from typing import Any
 from sqlmodel import Session, select
 
 from ..models import Account, Transaction
+from . import safe
 from .model import registers
 
 
@@ -27,7 +28,7 @@ def csv_zip(session: Session, today: date) -> bytes:
             if rows:
                 w = csv.DictWriter(buf, fieldnames=list(rows[0].keys()), extrasaction="ignore")
                 w.writeheader()
-                w.writerows(rows)
+                w.writerows(safe.row(r) for r in rows)
             z.writestr(f"{name}.csv", buf.getvalue())
         z.writestr("README.txt", f"FinancialAuthority export, {today.isoformat()}. One file per register. Amounts are positive for money out. No passwords, keys or tokens are included.\n")
     return out.getvalue()
@@ -54,7 +55,7 @@ def everything_json(session: Session, today: date) -> bytes:
 # ---- the calendar --------------------------------------------------------------------------------------------
 
 def _ics_text(s: str) -> str:
-    return s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+    return s.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\r\n", "\\n").replace("\n", "\\n").replace("\r", "\\n")
 
 
 def _fold(line: str) -> str:
@@ -122,7 +123,7 @@ def _counter(t: Transaction) -> str:
 
 
 def _q(s: str) -> str:
-    return (s or "").replace('"', "'").replace("\\", "/")[:120]
+    return safe.line(s).replace('"', "'").replace("\\", "/")[:120]
 
 
 def beancount(session: Session, today: date) -> bytes:
@@ -175,8 +176,8 @@ def qif(session: Session, today: date) -> bytes:
             continue
         if current != a.id:
             current = a.id
-            lines += ["!Account", f"N{a.name}", f"T{'CCard' if a.kind == 'card' else 'Bank'}", "^", f"!Type:{'CCard' if a.kind == 'card' else 'Bank'}"]
-        lines += [f"D{t.date:%m/%d/%Y}", f"T{-t.amount:.2f}", f"P{_q(t.merchant)}", f"L{t.category or 'Uncategorized'}", "^"]
+            lines += ["!Account", f"N{safe.line(a.name)}", f"T{'CCard' if a.kind == 'card' else 'Bank'}", "^", f"!Type:{'CCard' if a.kind == 'card' else 'Bank'}"]
+        lines += [f"D{t.date:%m/%d/%Y}", f"T{-t.amount:.2f}", f"P{_q(t.merchant)}", f"L{safe.line(t.category) or 'Uncategorized'}", "^"]
     return ("\n".join(lines) + "\n").encode()
 
 

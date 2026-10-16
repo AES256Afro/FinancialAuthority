@@ -90,7 +90,7 @@ export const WHERE = {
     note: "Google offers no app passwords for work or school accounts, for Advanced Protection, or when security keys are the only second step. Changing your Google password cancels them; make a new one.",
   },
   rocketmoney_export: {
-    what: "Rocket Money has no way in for other apps; its export file carries your history (the export needs Rocket Money Premium). With a mailbox connected, the app opens the export email itself.",
+    what: "Rocket Money has no way in for other apps; its export file carries your history (the export needs Rocket Money Premium). With a mailbox connected, the export email appears on Needs you, to import with one tap.",
     get: [
       { label: "Rocket Money on the web", href: "https://app.rocketmoney.com" },
       { label: "Rocket Money: exporting", href: "https://help.rocketmoney.com/en/articles/10296106-exporting-transactions" },
@@ -98,7 +98,7 @@ export const WHERE = {
     steps: [
       "Sign in to Rocket Money on the web, on a computer, and open Transactions.",
       "Choose Export, pick all time, and confirm. Rocket Money emails you a Download File link, which works on a computer.",
-      "Download the file and import it here, or leave it: a connected mailbox brings it in by itself.",
+      "Download the file and import it here, or, with a mailbox connected, tap Import it on Needs you.",
     ],
   },
   bank_file: {

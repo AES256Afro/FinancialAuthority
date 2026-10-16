@@ -6,7 +6,7 @@ import { Approvals } from "../components/Approvals";
 import { money, shortDate } from "../format";
 import type { FactRow, SeriesRow } from "../types";
 
-const FACT_LABEL: Record<string, string> = { bill_due: "Bill due", statement: "Statement", paystub: "Paystub", installment: "Installment plan", advance: "Advance", price_change: "Price change", past_due: "Past-due notice" };
+const FACT_LABEL: Record<string, string> = { export: "Rocket Money export, ready to import", bill_due: "Bill due", statement: "Statement", paystub: "Paystub", installment: "Installment plan", advance: "Advance", price_change: "Price change", past_due: "Past-due notice" };
 
 function FactCard({ f, onDone }: { f: FactRow; onDone: () => void }) {
   const [busy, setBusy] = useState(false);
@@ -39,9 +39,15 @@ function FactCard({ f, onDone }: { f: FactRow; onDone: () => void }) {
         </div>
         {f.fields.amount !== undefined && <strong className="num" style={{ fontSize: 18 }}>{money(Number(f.fields.amount), { cents: true })}</strong>}
       </div>
-      <div style={{ background: "var(--surface-2)", borderRadius: 10, padding: "10px 12px", fontSize: 12, color: "var(--ink-2)", lineHeight: 1.45 }}>
-        <span className="lab" style={{ display: "block", marginBottom: 4 }}>Quoted from the message, treated as data</span>“{f.excerpt}”
-      </div>
+      {f.kind === "export" ? (
+        <div style={{ fontSize: 13, color: "var(--ink-2)", lineHeight: 1.45 }}>
+          Importing downloads the file from <strong style={{ color: "var(--ink)" }}>{String(f.fields.host ?? "the link in the email")}</strong> and adds its transactions; rows already here are not added twice, and the import can be undone on Settings › Backups. Import only if you asked Rocket Money for an export and the sender above is Rocket Money.
+        </div>
+      ) : (
+        <div style={{ background: "var(--surface-2)", borderRadius: 10, padding: "10px 12px", fontSize: 12, color: "var(--ink-2)", lineHeight: 1.45 }}>
+          <span className="lab" style={{ display: "block", marginBottom: 4 }}>Quoted from the message, treated as data</span>“{f.excerpt}”
+        </div>
+      )}
       {(f.kind === "bill_due" || f.kind === "past_due" || f.kind === "price_change") && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Amount</span><input className="input num" style={{ width: 120 }} value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" /></label>
@@ -49,7 +55,7 @@ function FactCard({ f, onDone }: { f: FactRow; onDone: () => void }) {
         </div>
       )}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <button className="btn dark" type="button" disabled={busy} onClick={() => act("confirm")}>Confirm</button>
+        <button className="btn dark" type="button" disabled={busy} onClick={() => act("confirm")}>{f.kind === "export" ? (busy ? "Importing…" : "Import it") : "Confirm"}</button>
         <button className="btn" type="button" disabled={busy} onClick={() => act("reject")}>Not this</button>
         {f.message && <Link to="/mail" style={{ fontSize: 13, marginLeft: "auto" }}>Open the message</Link>}
       </div>

@@ -62,7 +62,7 @@ def _hash(value: str) -> str:
 
 
 def _signer() -> URLSafeTimedSerializer:
-    return URLSafeTimedSerializer(settings.session_secret or "insecure-development-secret", salt="fa-oauth-consent")
+    return URLSafeTimedSerializer(settings.signing_secret(), salt="fa-oauth-consent")
 
 
 def _client_info(row: OAuthClient) -> OAuthClientInformationFull:
