@@ -64,6 +64,20 @@ class Transaction(SQLModel, table=True):
         return not (self.is_transfer or self.is_card_payment or self.is_income or self.is_ignored)
 
 
+class Passkey(SQLModel, table=True):
+    """A passkey the owner made: its public key only, and the address it belongs to."""
+
+    __tablename__ = "passkeys"
+    id: int | None = Field(default=None, primary_key=True)
+    credential_id: str = Field(index=True, unique=True)  # base64url
+    public_key: str = ""  # base64url COSE key
+    sign_count: int = 0
+    name: str = "Passkey"
+    rp_id: str = ""
+    created_at: dt.datetime = Field(default_factory=utcnow)
+    last_used_at: dt.datetime | None = None
+
+
 class CategoryBudget(SQLModel, table=True):
     """An amount for one spending category for the days one paycheck covers. What is not used carries into the
     next paycheck when `rollover` is "next"."""

@@ -67,8 +67,8 @@ def data_version() -> int:
 
 
 # Rows the engine never reads: writing them leaves a computed plan as it was.
-QUIET_TABLES = {"audit_entries", "job_runs", "web_sessions", "oauth_tokens", "oauth_codes", "oauth_clients", "api_keys", "review_runs", "message_refs"}
-QUIET_SETTINGS = {"usage.calls", "selfcheck", "push.brief_day", "reminders.sent", "imports.processed", "review.pending"}
+QUIET_TABLES = {"audit_entries", "job_runs", "web_sessions", "oauth_tokens", "oauth_codes", "oauth_clients", "api_keys", "review_runs", "message_refs", "passkeys"}
+QUIET_SETTINGS = {"usage.calls", "selfcheck", "push.brief_day", "reminders.sent", "imports.processed", "review.pending", "auth.totp", "auth.totp.last_step"}
 
 
 def _engine_reads(obj) -> bool:  # noqa: ANN001
