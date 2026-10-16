@@ -1,4 +1,5 @@
-"""Approvals: the sends waiting for the owner, approve or deny, standing allowances per recipient."""
+"""Approvals: the sends waiting, approve or deny, standing allowances per recipient. Each person's sends are their
+own: the owner approves the owner's, a second person their own, and neither approves the other's."""
 
 from __future__ import annotations
 
@@ -32,30 +33,54 @@ class DecideIn(BaseModel):
     allow_always: bool = False
 
 
+def _mine(principal: auth.Principal) -> int | None:
+    """Whose sends this caller decides: the owner's (None) or a second person's own."""
+    return principal.person_id if principal.kind == "person" else None
+
+
+def _check_mine(row: Approval, principal: auth.Principal) -> None:
+    if row.for_person_id != _mine(principal):
+        raise HTTPException(403, "This send is someone else's to approve; each person approves only their own.")
+
+
+def _whose(session: Session, row: Approval, principal: auth.Principal) -> dict:
+    from ..models import Person
+    from ..config import settings
+
+    out = approvals.out(row)
+    mine = row.for_person_id == _mine(principal)
+    person = session.get(Person, row.for_person_id) if row.for_person_id else None
+    out["mine"] = mine
+    out["whose"] = "yours" if mine else (person.display_name or person.username) if person else settings.username
+    return out
+
+
 @router.get("")
-def list_approvals(status: str = "pending", limit: int = 50, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+def list_approvals(status: str = "pending", limit: int = 50, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
     query = select(Approval)
     if status != "all":
         query = query.where(Approval.status == status)
     rows = session.exec(query.order_by(Approval.created_at.desc()).limit(max(1, min(limit, 200)))).all()
-    pending = len(session.exec(select(Approval.id).where(Approval.status == "pending")).all())
-    return {"approvals": [approvals.out(r) for r in rows], "pending": pending, "allowances": approvals.allowances(session)}
+    pending = len(session.exec(select(Approval.id).where(Approval.status == "pending", Approval.for_person_id == _mine(principal))).all())
+    return {"approvals": [_whose(session, r, principal) for r in rows], "pending": pending, "allowances": approvals.allowances(session, _mine(principal))}
 
 
 @router.post("")
 def queue(body: ApprovalIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_scope("confirm"))) -> dict:
     try:
-        row = approvals.create(session, to=body.to, subject=body.subject, body=body.body, reason=body.reason, source=body.source, created_by=principal.name, created_kind=principal.kind, account_id=body.account_id)
+        row = approvals.create(session, to=body.to, subject=body.subject, body=body.body, reason=body.reason, source=body.source, created_by=principal.name, created_kind=principal.kind, account_id=body.account_id,
+                               for_person_id=_mine(principal))
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
     return approvals.out(row)
 
 
 @router.put("/{approval_id}")
-def edit(approval_id: int, body: EditIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_owner)) -> dict:
+def edit(approval_id: int, body: EditIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_owner)) -> dict:
     row = session.get(Approval, approval_id)
     if row is None:
         raise HTTPException(404, "No such approval")
+    _check_mine(row, principal)
     if row.status != "pending":
         raise HTTPException(409, f"The approval is {row.status}")
     for field, value in body.model_dump(exclude_unset=True).items():
@@ -72,6 +97,7 @@ def approve(approval_id: int, body: DecideIn | None = None, session: Session = D
     row = session.get(Approval, approval_id)
     if row is None:
         raise HTTPException(404, "No such approval")
+    _check_mine(row, principal)
     try:
         row = approvals.approve(session, row, decided_by=principal.name, allow_always=bool(body and body.allow_always))
     except ValueError as error:
@@ -84,6 +110,7 @@ def deny(approval_id: int, session: Session = Depends(get_session), principal: a
     row = session.get(Approval, approval_id)
     if row is None:
         raise HTTPException(404, "No such approval")
+    _check_mine(row, principal)
     try:
         row = approvals.deny(session, row, decided_by=principal.name)
     except ValueError as error:
@@ -92,5 +119,5 @@ def deny(approval_id: int, session: Session = Depends(get_session), principal: a
 
 
 @router.delete("/allowances/{recipient}")
-def remove_allowance(recipient: str, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_owner)) -> dict:
-    return {"allowances": approvals.disallow(session, recipient)}
+def remove_allowance(recipient: str, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_owner)) -> dict:
+    return {"allowances": approvals.disallow(session, recipient, _mine(principal))}

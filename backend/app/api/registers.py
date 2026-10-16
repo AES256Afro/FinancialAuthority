@@ -86,7 +86,7 @@ def classify(series_id: int, body: ClassifyIn, session: Session = Depends(get_se
     series = session.get(RecurringSeries, series_id)
     if series is None:
         raise HTTPException(404, "No such series")
-    if principal.kind != "owner":
+    if not principal.full:
         if series.confirmed:
             raise HTTPException(403, "Only the owner changes a charge that is already named")
         if body.amount is not None and abs(body.amount - series.typical_amount) > max(1.0, 0.25 * series.typical_amount):

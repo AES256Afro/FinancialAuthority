@@ -26,7 +26,7 @@ from ..store import get_setting
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/privacy", tags=["privacy"])
 PHRASE = "delete everything"
-KEEP_TABLES = {"web_sessions", "passkeys"}
+KEEP_TABLES = {"web_sessions", "passkeys", "people"}
 KEEP_SETTINGS = {"auth.totp", "auth.totp.last_step"}
 
 # What the chat's model sees at each level the owner can choose on Models.
@@ -111,6 +111,8 @@ def erase(body: EraseIn, session: Session = Depends(get_session), principal: aut
     from ..factors import check_code, second_step_on
     from ..models import BankLink
 
+    if principal.kind != "owner":
+        raise HTTPException(403, "Only the owner erases everything.")
     if body.phrase.strip().lower() != PHRASE:
         raise HTTPException(400, f'Type the words "{PHRASE}" to confirm.')
     if auth.auth_enabled() and not hmac.compare_digest(body.password.encode(), settings.password.encode()):
@@ -154,7 +156,7 @@ def erase(body: EraseIn, session: Session = Depends(get_session), principal: aut
     for path in documents_folder().glob("*.bin"):
         path.unlink(missing_ok=True)
     bump_version()
-    left = ["Your sign-in: this browser's session, your passkeys and the second step."]
+    left = ["Your sign-in: this browser's session, your passkeys and the second step.", "The people you let in, and their sign-ins (Settings › People removes them)."]
     if settings.offbox_dir:
         left.append(f"Off-box copies on their own disk, at {settings.offbox_dir}: delete them there if you want them gone too.")
     left.append(f"Files you put in the import folder ({settings.import_root}).")

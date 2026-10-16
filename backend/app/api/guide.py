@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api/v1", tags=["guide"])
 
 
 def _who(p: auth.Principal) -> tuple[str, str]:
-    return p.name, ("owner" if p.kind == "owner" else "key")
+    return p.name, (p.kind if p.kind in ("owner", "person") else "key")
 
 
 @router.get("/cover")

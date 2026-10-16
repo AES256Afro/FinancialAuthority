@@ -56,7 +56,7 @@ def create_move(body: MoveIn, session: Session = Depends(get_session), principal
         move = start_move(session, today(), source_id=body.source_account_id, target_id=body.target_account_id, target_name=body.target_name[:80], finish_by=body.finish_by, name=body.name)
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
-    services.audit(session, client=principal.name, client_kind="owner" if principal.kind == "owner" else "key", tool="move_start", args={"source": body.source_account_id}, rows=1)
+    services.audit(session, client=principal.name, client_kind=principal.kind, tool="move_start", args={"source": body.source_account_id}, rows=1)
     return move_plan(session, move, today())
 
 
@@ -66,7 +66,7 @@ def get_move(move_id: int, session: Session = Depends(get_session), principal: a
     if move.status == "moving":
         verify(session, move, today())
     out = move_plan(session, move, today())
-    services.audit(session, client=principal.name, client_kind="owner" if principal.kind == "owner" else "key", tool="account_move", args={"id": move_id}, rows=out["progress"]["total"], redaction=principal.redaction)
+    services.audit(session, client=principal.name, client_kind=principal.kind, tool="account_move", args={"id": move_id}, rows=out["progress"]["total"], redaction=principal.redaction)
     return out
 
 
