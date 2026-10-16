@@ -134,6 +134,12 @@ def self_check() -> str:
                 problems.append("no restore point in the last two days")
             if not backups["database"]["ok"]:
                 problems.append(f"the database did not pass its check: {backups['database']['result']}")
+            drilled = get_setting(session, "backups.drill", None)
+            if drilled and not drilled.get("ok"):
+                problems.append(f"the last restore drill failed: {drilled.get('detail', '')[:120]}")
+            off = get_setting(session, "backups.offbox", {}) or {}
+            if off.get("last_error"):
+                problems.append(f"the off-box copy failed: {off['last_error'][:120]}")
         except Exception as error:  # noqa: BLE001 - a check that cannot run is itself the problem
             problems.append(f"restore points could not be read: {error}")
         report = {
@@ -382,3 +388,35 @@ def restore_point_daily() -> str:
 
 
 jobs.register("restore_point_daily", restore_point_daily, 6 * 3600, "Keep a copy of the whole database once a day, the last seven kept")
+
+
+def offbox_copy() -> str:
+    """The sealed copy in the folder off the data disk, daily or weekly as the owner chose; silent only when off."""
+    from .. import offbox
+
+    with session_scope() as session:
+        if not offbox.due(session):
+            return "not due, or not set up"
+        made = offbox.copy_now(session)
+        return f"sealed {made['file']} ({made['bytes'] // 1024} KB) into {made['folder']}"
+
+
+def restore_drill() -> str:
+    """Once a week, open the newest copy on its own and prove it holds what it should."""
+    from datetime import UTC, datetime, timedelta
+
+    from .. import offbox
+    from ..store import get_setting
+
+    with session_scope() as session:
+        last = get_setting(session, offbox.DRILL, None)
+        if last and datetime.now(UTC) - datetime.fromisoformat(last["at"]) < timedelta(days=6, hours=23):
+            return f"last drill {last['at'][:10]}: {'passed' if last['ok'] else 'failed'}"
+        result = offbox.drill(session)
+        if not result["ok"]:
+            raise RuntimeError(result["detail"])
+        return result["detail"]
+
+
+jobs.register("offbox_copy", offbox_copy, 3600, "Seal a copy of the database into the off-box folder, daily or weekly as set on Backups")
+jobs.register("restore_drill", restore_drill, 6 * 3600, "Once a week, open the newest copy on its own and prove it holds what it should")

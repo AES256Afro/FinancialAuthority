@@ -3,6 +3,7 @@
 import { AlertTriangle, CheckCircle2, RotateCcw, Undo2 } from "lucide-react";
 import { type ReactElement, useState } from "react";
 import { api, useApi } from "../api";
+import { DrillCard, OffboxCard, RecoveryKit } from "../components/Offbox";
 
 interface Point { name: string; kind: string; reason: string; created_at: string; bytes: number; verified: boolean; transactions: number | null }
 interface Status { count: number; bytes: number; latest_age_hours: number | null; database: { ok: boolean; result: string; bytes: number }; keep: Record<string, number>; last_check: { at: string; by: string; database: string; points_ok: boolean } | null }
@@ -177,6 +178,9 @@ export function Backups() {
           </table>
         </div>
       </section>
+      <DrillCard />
+      <OffboxCard />
+      <RecoveryKit />
     </div>
   );
 }

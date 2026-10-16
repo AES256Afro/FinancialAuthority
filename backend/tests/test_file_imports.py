@@ -232,3 +232,35 @@ def test_each_copy_reads_back_and_a_backup_manager_can_ask(capsys):
     assert restore.main(["check", "BoxPilot"]) == 0 and _json.loads(capsys.readouterr().out)["database"]["result"] == "ok"
     assert restore.status()["last_check"]["by"] == "BoxPilot" and restore.status()["last_check"]["database"] == "ok"
     assert restore.main(["restore", made["name"]]) == 2  # restoring stays in the app
+
+
+def test_a_sealed_copy_opens_only_with_its_passphrase_and_the_drill_proves_the_newest(owner: TestClient, tmp_path):
+    import json as _json
+
+    from app import offbox, restore
+
+    blob = offbox.seal(b"hello ledger", "correct horse battery staple")
+    assert offbox.unseal(blob, "correct horse battery staple") == b"hello ledger"
+    import pytest
+
+    with pytest.raises(Exception):
+        offbox.unseal(blob, "wrong passphrase entirely")
+    assert owner.put("/api/v1/restore-points/offbox", json={"passphrase": "short"}).status_code == 400
+    assert owner.put("/api/v1/restore-points/offbox", json={"folder": "relative/path"}).status_code == 400
+    state = owner.put("/api/v1/restore-points/offbox", json={"folder": str(tmp_path), "passphrase": "four plain words kept safe", "every_days": 7}).json()
+    assert state["passphrase_set"] and state["folder_ok"] and state["every_days"] == 7
+    made = owner.post("/api/v1/restore-points/offbox/copy").json()["made"]
+    sealed = (tmp_path / made["file"]).read_bytes()
+    out = tmp_path / "opened.db"
+    out.write_bytes(offbox.unseal(sealed, "four plain words kept safe"))
+    assert restore.check(out)["ok"]
+    drilled = owner.post("/api/v1/restore-points/drill").json()["drill"]
+    assert drilled["ok"] and "passed SQLite's check" in drilled["detail"]
+    # a copy that no longer matches its count fails the drill
+    meta = restore.folder() / drilled["point"].replace(".db", ".json")
+    data = _json.loads(meta.read_text())
+    data["transactions"] = (data.get("transactions") or 0) + 5
+    meta.write_text(_json.dumps(data))
+    with Session(engine) as session:
+        failed = offbox.drill(session)
+    assert failed["ok"] is False

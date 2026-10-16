@@ -17,11 +17,14 @@ services:
     volumes:
       - ./data:/data
       - ./imports:/imports
+      # A folder on another disk for sealed copies; point it at a USB drive or a synced folder (Settings > Backups).
+      - ${FA_OFFBOX_HOST_DIR:-./offbox}:/offbox
     env_file:
       - path: .env
         required: false
     environment:
       FA_INSTALL: compose
+      FA_OFFBOX_DIR: /offbox
       FA_BRIDGE_CONTAINER: financialauthority-bridge
     extra_hosts:
       - host.docker.internal:host-gateway

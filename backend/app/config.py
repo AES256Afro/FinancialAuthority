@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     # Where the app keeps its own restore points. Beside the data by default; BoxPilot mounts its own folder,
     # so its nightly archive of the data does not carry every copy inside it.
     restore_dir: Path | None = None
+    # A folder off the data disk for sealed copies (a USB drive, a synced folder); BoxPilot mounts one at /offbox.
+    offbox_dir: str = ""
     # How the app was installed (boxpilot, compose, docker), and the name of the Proton Mail Bridge's container
     # on the server, so the Bridge's sign-in steps show the commands for this install.
     install: str = ""
