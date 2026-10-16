@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useApi } from "./api";
 import { loadAppearance } from "./appearance";
 import { Shell } from "./components/Shell";
@@ -7,7 +7,8 @@ import { Failed, Loading as Wait } from "./components/State";
 import { Home } from "./pages/Home";
 import { SignIn } from "./pages/SignIn";
 import { Today } from "./pages/Today";
-import type { Me, Snapshot } from "./types";
+import type { Snapshot } from "./types";
+import { roleOf, type MePerson } from "./types-people";
 
 // Pages load when first opened, so the app opens fast on a phone; Home and Today come with the first load.
 const Accounts = lazy(() => import("./pages/Accounts").then((m) => ({ default: m.Accounts })));
@@ -38,6 +39,9 @@ const Models = lazy(() => import("./pages/Models").then((m) => ({ default: m.Mod
 const Outlook = lazy(() => import("./pages/Outlook").then((m) => ({ default: m.Outlook })));
 const Notifications = lazy(() => import("./pages/Notifications").then((m) => ({ default: m.Notifications })));
 const Paystubs = lazy(() => import("./pages/Paystubs").then((m) => ({ default: m.Paystubs })));
+const People = lazy(() => import("./pages/People").then((m) => ({ default: m.People })));
+const Shared = lazy(() => import("./pages/Shared").then((m) => ({ default: m.Shared })));
+const Join = lazy(() => import("./pages/Join").then((m) => ({ default: m.Join })));
 const More = lazy(() => import("./pages/More").then((m) => ({ default: m.More })));
 const Budgets = lazy(() => import("./pages/Budgets").then((m) => ({ default: m.Budgets })));
 const Security = lazy(() => import("./pages/Security").then((m) => ({ default: m.Security })));
@@ -52,15 +56,35 @@ function Loading({ text }: { text: string }) {
 }
 
 export default function App() {
-  const me = useApi<Me>("/api/auth/me");
-  const snapshot = useApi<Snapshot>(me.data ? "/api/v1/snapshot" : null);
+  const { pathname } = useLocation();
+  // The one-time link a second person was sent opens before anyone is signed in.
+  const joining = pathname === "/join";
+  const me = useApi<MePerson>(joining ? null : "/api/auth/me");
+  const role = roleOf(me.data);
+  // A sign-in that sees the shared accounts only reaches one page; it never asks for the plan.
+  const snapshot = useApi<Snapshot>(me.data && role !== "shared" ? "/api/v1/snapshot" : null);
   useEffect(() => {
     if (me.data) loadAppearance();
   }, [me.data]);
 
+  if (joining) return <Suspense fallback={<Loading text="Opening…" />}><Join /></Suspense>;
   if (me.loading) return <Loading text="Opening…" />;
   if (me.error && me.error.status === 401) return <SignIn onDone={me.reload} />;
   if (me.error) return <div style={{ padding: 24, maxWidth: 640 }}><Failed error={me.error} what="the app" onRetry={me.reload} /></div>;
+
+  if (role === "shared") {
+    return (
+      <Shell snapshot={null} me={me.data}>
+        <Suspense fallback={<Loading text="Opening…" />}>
+        <Routes>
+          <Route path="/shared" element={<Shared me={me.data} />} />
+          <Route path="/settings/security" element={<Security />} />
+          <Route path="*" element={<Navigate to="/shared" replace />} />
+        </Routes>
+        </Suspense>
+      </Shell>
+    );
+  }
 
   const snap = snapshot.data;
   const body = (content: (s: Snapshot) => React.ReactNode) => {
@@ -70,7 +94,7 @@ export default function App() {
   };
 
   return (
-    <Shell snapshot={snap}>
+    <Shell snapshot={snap} me={me.data}>
       <Suspense fallback={<Loading text="Opening…" />}>
       <Routes>
         <Route path="/" element={body((s) => <Home snapshot={s} />)} />
@@ -96,11 +120,13 @@ export default function App() {
         <Route path="/outlook" element={<Outlook />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/confirm" element={<Confirm onChanged={snapshot.reload} />} />
-        <Route path="/settings" element={<SettingsIndex />} />
+        <Route path="/shared" element={<Shared me={me.data} />} />
+        <Route path="/settings" element={<SettingsIndex me={me.data} />} />
         <Route path="/more" element={<More />} />
         <Route path="/budgets" element={<Budgets />} />
         <Route path="/recap" element={<Recap />} />
         <Route path="/settings/security" element={<Security />} />
+        <Route path="/settings/people" element={<People me={me.data} />} />
         <Route path="/settings/privacy" element={<Privacy />} />
         <Route path="/settings/appearance" element={<Appearance />} />
         <Route path="/settings/clients" element={<Clients />} />

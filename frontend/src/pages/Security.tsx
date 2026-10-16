@@ -1,17 +1,17 @@
 // Settings › Sign-in and security: what protects the way in, drawn first; then the code from the phone (the second
 // step), passkeys, and the devices signed in. Codes and keys are shown once and never kept in this page's memory
-// longer than the step that shows them.
-import { Copy, Download, FingerprintPattern, Info, KeyRound, Smartphone } from "lucide-react";
+// longer than the step that shows them. A second person sees the same page for their own sign-in ("Your sign-in");
+// the owner also sees, and can sign out, the devices of the people they added.
+import { Copy, Download, FingerprintPattern, Info, KeyRound, Monitor, Smartphone, Tablet } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { when } from "../format";
 import type { Status } from "../guide";
-import type { Me } from "../types";
+import { roleOf, type MePerson } from "../types-people";
 import { ConfirmButton } from "../components/ConfirmButton";
-import { Devices } from "../components/Devices";
 import { makePasskey, passkeysSupported, passkeyWords } from "../components/passkeys";
-import { Said, Show } from "../components/State";
+import { Failed, Loading, Said, Show } from "../components/State";
 import { StatusPill } from "../components/Status";
 
 interface PasskeyRow { id: number; name: string; address: string; created_at: string; last_used_at: string | null }
@@ -415,13 +415,104 @@ function Passkeys({ f, onChanged }: { f: Factors; onChanged: () => void }) {
   );
 }
 
+// ---- the devices signed in -------------------------------------------------------------------------------------
+
+interface SessionRow { id: number; created_at: string; last_seen_at: string | null; user_agent: string; ip: string; this: boolean; who?: string; person_id?: number | null }
+
+function device(ua: string): string {
+  const os = /iPhone/.test(ua) ? "iPhone" : /iPad/.test(ua) ? "iPad" : /Android/.test(ua) ? "Android" : /Mac OS X/.test(ua) ? "Mac" : /Windows/.test(ua) ? "Windows" : /Linux/.test(ua) ? "Linux" : "A device";
+  const browser = /Edg\//.test(ua) ? "Edge" : /Chrome\//.test(ua) ? "Chrome" : /Firefox\//.test(ua) ? "Firefox" : /Safari\//.test(ua) ? "Safari" : "";
+  return browser ? `${browser} on ${os}` : os;
+}
+
+// A phone, a tablet or a computer, drawn, so the list is read at a glance.
+function DeviceIcon({ ua }: { ua: string }) {
+  const Icon = /iPhone|Android.*Mobile/.test(ua) ? Smartphone : /iPad|Android/.test(ua) ? Tablet : Monitor;
+  return <Icon size={18} aria-hidden="true" style={{ flexShrink: 0, color: "var(--ink-2)", marginTop: 1 }} />;
+}
+
+function SignedIn({ owner }: { owner: boolean }) {
+  const state = useApi<{ sessions: SessionRow[] }>("/api/auth/sessions");
+  const { data, reload, error } = state;
+  const [note, setNote] = useState<string | null>(null);
+  // Asked first by ConfirmButton; a failure is said beside the button that asked.
+  async function end(body: { session_id?: number; all_others?: boolean }) {
+    setNote(null);
+    const r = await api<{ ended: number }>("/api/auth/sessions/end", { method: "POST", body: JSON.stringify(body) });
+    setNote(`Signed out ${r.ended} ${r.ended === 1 ? "browser" : "browsers"}.`);
+    reload();
+  }
+  // Not signed in with a password (sign-in is off, or the demo): there is nothing to list.
+  if (error && !data && (error.status === 401 || error.status === 404)) return null;
+  const rows = data?.sessions ?? [];
+  const whoShown = rows.some((r) => r.who && r.who !== "you");
+  const whoWord = (r: SessionRow) => (!r.who || r.who === "you" ? "You" : r.who);
+  return (
+    <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <h2 style={h2}>Devices signed in</h2>
+      <p style={intro}>
+        {owner
+          ? "Every phone and computer browser signed in: yours, and those of the people you added on Settings › People. Signing one out ends it for good: it needs the password (or a passkey) again. A new password signs out all of yours."
+          : "Every phone and computer browser signed in as you. Signing one out ends it for good: it needs your password (or a passkey) again."}
+      </p>
+      {error && !data && <Failed error={error} what="the devices signed in" onRetry={reload} />}
+      {!data && !error && <Loading what="the devices signed in" />}
+      {data && (
+        <div className="card" style={{ padding: "6px 14px", overflowX: "auto" }}>
+          <table className="ledger">
+            <thead><tr><th>Device</th>{whoShown && <th>Who</th>}<th>Last used</th><th>Signed in</th><th><span className="sr-only">Sign out</span></th></tr></thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id}>
+                  <td>
+                    <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                      <DeviceIcon ua={r.user_agent} />
+                      <div>{device(r.user_agent)}{r.this && <strong style={{ marginLeft: 6, fontSize: 12 }}>· this one</strong>}<div style={{ fontSize: 11, color: "var(--muted)" }}>{r.ip}</div></div>
+                    </div>
+                  </td>
+                  {whoShown && <td style={{ fontWeight: r.who === "you" ? 400 : 700 }}>{whoWord(r)}</td>}
+                  <td style={{ whiteSpace: "nowrap" }}>{r.last_seen_at ? when(r.last_seen_at) : "not yet"}</td>
+                  <td style={{ whiteSpace: "nowrap" }}>{when(r.created_at)}</td>
+                  <td style={{ textAlign: "right" }}>
+                    {!r.this && <ConfirmButton label="Sign out" question={r.who && r.who !== "you" ? `Sign out ${r.who} on this browser for good?` : "Sign this browser out for good?"} yes="Sign it out" no="Keep" onConfirm={() => end({ session_id: r.id })} />}
+                  </td>
+                </tr>
+              ))}
+              {rows.length === 0 && <tr><td colSpan={whoShown ? 5 : 4} style={{ color: "var(--ink-2)" }}>Sign-in is off on this install (no password is set).</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {rows.filter((r) => !r.this).length > 0 && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <ConfirmButton
+            label="Sign out everywhere else"
+            question={owner && whoShown ? "Every other browser will need to sign in again: yours, and those of the people you added." : "Every other browser will need the password again."}
+            yes="Sign them all out"
+            no="Keep them"
+            onConfirm={() => end({ all_others: true })}
+          />
+        </div>
+      )}
+      {note && <Said text={note} />}
+    </section>
+  );
+}
+
 export function Security() {
   const factors = useApi<Factors>("/api/auth/factors");
-  const me = useApi<Me>("/api/auth/me");
+  const me = useApi<MePerson>("/api/auth/me");
   const authOn = me.data ? me.data.auth_enabled : true;
+  const role = roleOf(me.data);
+  const person = Boolean(me.data) && role !== "owner";
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18, maxWidth: 900 }}>
-      <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Sign-in and security</h1>
+      <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>{person ? "Your sign-in" : "Sign-in and security"}</h1>
+      {person && me.data && (
+        <InfoLine>
+          You sign in as <strong>{me.data.name}</strong>. Everything on this page is yours alone. Forgot your password or lost your phone? Ask {me.data.owner || "the owner"} for a new link: it clears your password, the code and your passkeys, and you choose a new password.
+        </InfoLine>
+      )}
       <Show state={factors} what="your sign-in settings">
         {(f) => (
           <>
@@ -431,7 +522,7 @@ export function Security() {
           </>
         )}
       </Show>
-      <Devices />
+      <SignedIn owner={!person} />
     </div>
   );
 }

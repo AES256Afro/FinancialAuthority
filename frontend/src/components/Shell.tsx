@@ -1,12 +1,16 @@
-// The app shell: a rail on wide screens, tabs on a phone, and the header with the payday chip.
-import { ArrowLeftRight, BarChart3, BellDot, BookOpen, Clock, Download, Eye, EyeOff, FileText, Gauge, History, Home, Landmark, LayoutGrid, List, Mail, MessageSquare, Mountain, PieChart, PiggyBank, Receipt, Repeat, Settings, Telescope, TrendingUp, Truck, Waves, type LucideIcon } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+// The app shell: a rail on wide screens, tabs on a phone, and the header with the payday chip. A second person who
+// sees the shared accounts only gets a shell of their own: Shared money, their sign-in, and Sign out; nothing here
+// asks the server for what that sign-in cannot reach.
+import { ArrowLeftRight, BarChart3, BellDot, BookOpen, Clock, Download, Eye, EyeOff, FileText, Gauge, History, Home, KeyRound, Landmark, LayoutGrid, List, LogOut, Mail, MessageSquare, Mountain, PieChart, PiggyBank, Receipt, Repeat, Settings, Telescope, TrendingUp, Truck, UserRound, Wallet, Waves, type LucideIcon } from "lucide-react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
+import { api, useApi } from "../api";
 import { brandMark, brandName, saveAppearance, useAppearance } from "../appearance";
 import { DEMO } from "../demo/shim";
 import { NextStepsStrip } from "./NextSteps";
-import { daysWord, longDate, shortDate } from "../format";
+import { daysWord, localToday, longDate, shortDate } from "../format";
 import type { Snapshot } from "../types";
+import { roleOf, type MePerson } from "../types-people";
 
 export interface NavItem {
   to: string;
@@ -49,6 +53,45 @@ export const NAV_ITEMS: NavItem[] = [
 ];
 export const NAV_GROUPS: { id: NavItem["group"]; label: string }[] = [{ id: "daily", label: "Every day" }, { id: "plan", label: "Plan" }, { id: "records", label: "Records" }];
 
+// All a "shared accounts only" sign-in reaches: the shared page and its own sign-in settings.
+export const SHARED_NAV_ITEMS: NavItem[] = [
+  { to: "/shared", label: "Shared money", icon: Wallet, group: "daily", hint: "The shared accounts: balances, the bills paid from them, and recent spending." },
+  { to: "/settings/security", label: "Your sign-in", icon: KeyRound, group: "foot", hint: "Your second step, passkeys and the devices signed in as you." },
+];
+
+// Sign out: ends this browser's session, then opens the sign-in page. Drawn like the rail and tab links around it.
+const SIGN_OUT_LOOK: Record<"rail" | "tab" | "header", CSSProperties> = {
+  rail: { display: "flex", flexDirection: "column", alignItems: "center", gap: 4, width: "100%", padding: "10px 4px", borderRadius: 10, background: "none", border: 0, font: "inherit", fontSize: 10, fontWeight: 700, letterSpacing: ".02em", color: "var(--ink-2)", cursor: "pointer" },
+  tab: { display: "flex", flexDirection: "column", alignItems: "center", gap: 3, flex: "1 1 0", minWidth: 0, minHeight: 44, background: "none", border: 0, padding: 0, font: "inherit", fontSize: 10, fontWeight: 700, color: "var(--muted)", cursor: "pointer", lineHeight: 1.15 },
+  header: { display: "inline-flex", alignItems: "center", gap: 4, minHeight: 32, padding: "0 6px", background: "none", border: 0, font: "inherit", fontSize: 12, color: "var(--ink-2)", cursor: "pointer" },
+};
+
+function SignOut({ look }: { look: "rail" | "tab" | "header" }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function go() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api("/api/auth/logout", { method: "POST" });
+      window.location.assign("/");
+    } catch (e) {
+      setError(`Not signed out: ${(e as Error).message}`);
+      setBusy(false);
+    }
+  }
+  const size = look === "header" ? 15 : look === "tab" ? 22 : 20;
+  return (
+    <>
+      <button type="button" onClick={go} disabled={busy} style={SIGN_OUT_LOOK[look]}>
+        <LogOut size={size} strokeWidth={1.8} aria-hidden="true" />
+        {busy ? "Signing out…" : "Sign out"}
+      </button>
+      {error && <span role="alert" style={{ fontSize: 12, color: "var(--critical-ink)" }}>{error}</span>}
+    </>
+  );
+}
+
 function DemoBanner() {
   const [flash, setFlash] = useState<string | null>(null);
   useEffect(() => {
@@ -72,14 +115,17 @@ function usePageTitle(brand: string) {
   const { pathname } = useLocation();
   useEffect(() => {
     const match = [...NAV_ITEMS].filter((n) => (n.end ? pathname === n.to : pathname === n.to || pathname.startsWith(n.to + "/"))).sort((a, b) => b.to.length - a.to.length)[0];
-    const extra: Record<string, string> = { "/glossary": "Words", "/checkin": "Check-in", "/welcome": "Welcome", "/settings/setup": "Setting up", "/settings/appearance": "Appearance", "/settings/connectors": "Connections", "/settings/models": "Models", "/settings/clients": "Apps and keys", "/settings/notifications": "Notifications", "/settings/backups": "Backups", "/settings/jobs": "Jobs", "/settings/audit": "Activity", "/settings/security": "Sign-in and security", "/settings/privacy": "Privacy" };
+    const extra: Record<string, string> = { "/shared": "Shared money", "/settings/people": "People", "/glossary": "Words", "/checkin": "Check-in", "/welcome": "Welcome", "/settings/setup": "Setting up", "/settings/appearance": "Appearance", "/settings/connectors": "Connections", "/settings/models": "Models", "/settings/clients": "Apps and keys", "/settings/notifications": "Notifications", "/settings/backups": "Backups", "/settings/jobs": "Jobs", "/settings/audit": "Activity", "/settings/security": "Sign-in and security", "/settings/privacy": "Privacy" };
     const page = extra[pathname] ?? match?.label;
     document.title = page ? `${page} · ${brandName()}` : brandName();
   }, [pathname, brand]);
 }
 
-export function Shell({ children, snapshot }: { children: ReactNode; snapshot: Snapshot | null; title?: string }) {
+export function Shell({ children, snapshot, me = null }: { children: ReactNode; snapshot: Snapshot | null; me?: MePerson | null; title?: string }) {
   const look = useAppearance();
+  const role = roleOf(me);
+  const limited = role === "shared";
+  const nav = limited ? SHARED_NAV_ITEMS : NAV_ITEMS;
   usePageTitle(look.brand.name);
   const [quietNote, setQuietNote] = useState<string | null>(null);
   async function toggleQuiet() {
@@ -90,8 +136,11 @@ export function Shell({ children, snapshot }: { children: ReactNode; snapshot: S
       setQuietNote((e as Error).message);
     }
   }
-  const today = snapshot?.as_of ?? new Date().toISOString().slice(0, 10);
-  const pending = snapshot ? snapshot.pending.confirmations + snapshot.pending.approvals : 0;
+  const today = snapshot?.as_of ?? localToday();
+  // The snapshot counts the owner's own sends; a second person counts theirs from the approvals list.
+  const own = useApi<{ pending: number }>(role === "everything" ? "/api/v1/approvals?limit=1" : null);
+  const approvalsMine = role === "everything" ? (own.data?.pending ?? 0) : (snapshot?.pending.approvals ?? 0);
+  const pending = snapshot ? snapshot.pending.confirmations + approvalsMine : 0;
   const item = ({ to, label, icon: Icon, end }: NavItem, size: number) => {
     const badge = to === "/confirm" ? pending : 0;
     return (
@@ -111,13 +160,19 @@ export function Shell({ children, snapshot }: { children: ReactNode; snapshot: S
           <img src={brandMark()} width={28} height={28} alt={brandName()} style={{ objectFit: "contain", borderRadius: 6 }} />
         </div>
         <div className="rail-list">
-          {NAV_GROUPS.map((g) => (
-            <div key={g.id} className="rail-group" role="group" aria-label={g.label}>
-              {NAV_ITEMS.filter((n) => n.group === g.id).map((n) => item(n, 20))}
-            </div>
-          ))}
+          {NAV_GROUPS.map((g) => {
+            const items = nav.filter((n) => n.group === g.id);
+            return items.length ? (
+              <div key={g.id} className="rail-group" role="group" aria-label={g.label}>
+                {items.map((n) => item(n, 20))}
+              </div>
+            ) : null;
+          })}
         </div>
-        <div className="rail-foot">{NAV_ITEMS.filter((n) => n.group === "foot" && n.rail !== false).map((n) => item(n, 20))}</div>
+        <div className="rail-foot">
+          {nav.filter((n) => n.group === "foot" && n.rail !== false).map((n) => item(n, 20))}
+          {limited && <SignOut look="rail" />}
+        </div>
       </nav>
       <main style={{ flex: "999 1 320px", minWidth: 0, display: "flex", flexDirection: "column", gap: 16, boxSizing: "border-box" }} className="px-4 pt-3.5 pb-24 md:px-6 md:pb-6">
         <header style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, minHeight: 40 }}>
@@ -129,18 +184,25 @@ export function Shell({ children, snapshot }: { children: ReactNode; snapshot: S
             </div>
           )}
           <div style={{ flexGrow: 1 }} />
+          {me && role !== "owner" && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, color: "var(--ink-2)" }}>
+              <UserRound size={15} aria-hidden="true" />Signed in as <strong style={{ color: "var(--ink)" }}>{me.name}</strong>
+            </span>
+          )}
+          {role === "everything" && <SignOut look="header" />}
           {snapshot && <Link to="/accounts" style={{ fontSize: 12, color: "var(--ink-2)" }}>{snapshot.accounts.length} account{snapshot.accounts.length === 1 ? "" : "s"}</Link>}
-          <button type="button" onClick={toggleQuiet} aria-pressed={look.quiet} title={look.quiet ? "Show every amount" : "Hide every amount: each one shows when tapped"} style={{ display: "inline-flex", alignItems: "center", gap: 4, minHeight: 32, padding: "0 6px", background: "none", border: 0, font: "inherit", fontSize: 12, color: "var(--ink-2)", cursor: "pointer" }}>
+          {!limited && <button type="button" onClick={toggleQuiet} aria-pressed={look.quiet} title={look.quiet ? "Show every amount" : "Hide every amount: each one shows when tapped"} style={{ display: "inline-flex", alignItems: "center", gap: 4, minHeight: 32, padding: "0 6px", background: "none", border: 0, font: "inherit", fontSize: 12, color: "var(--ink-2)", cursor: "pointer" }}>
             {look.quiet ? <Eye size={15} aria-hidden="true" /> : <EyeOff size={15} aria-hidden="true" />}{look.quiet ? "Show amounts" : "Hide amounts"}
-          </button>
+          </button>}
           {quietNote && <span role="alert" style={{ fontSize: 12, color: "var(--critical-ink)" }}>{quietNote}</span>}
-          <Link to="/glossary" title="The words the app uses" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--ink-2)" }}><BookOpen size={15} aria-hidden="true" />Words</Link>
+          {!limited && <Link to="/glossary" title="The words the app uses" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--ink-2)" }}><BookOpen size={15} aria-hidden="true" />Words</Link>}
         </header>
-        <NextStepsStrip />
+        {!limited && <NextStepsStrip />}
         {children}
       </main>
       <nav className="tabs fixed left-0 right-0 bottom-0 flex justify-around items-start pt-2 md:hidden" aria-label="Tabs" style={{ minHeight: 72, paddingBottom: "env(safe-area-inset-bottom)", background: "var(--surface)", borderTop: "1px solid var(--hairline)" }}>
-        {NAV_ITEMS.filter((n) => n.phone !== false).map((n) => item(n, 22))}
+        {nav.filter((n) => n.phone !== false).map((n) => item(n, 22))}
+        {limited && <SignOut look="tab" />}
       </nav>
     </div>
     </div>
