@@ -394,3 +394,63 @@ def rule_preview(body: RulePreviewIn, session: Session = Depends(get_session), _
         return preview_rule(session, today(), kind=body.kind, pattern=body.pattern, value=body.value, match_field=body.match_field)
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
+
+
+# ---- other assets: a home, a car, anything else worth something -----------------------------------------------
+
+
+@router.get("/assets")
+def list_assets(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+    from ..engine.assets import assets_overview, holdings_returns
+
+    return {**assets_overview(session, today()), "returns": holdings_returns(session)}
+
+
+class AssetIn(BaseModel):
+    name: str
+    kind: str = "other"
+    value: float
+    value_on: date | None = None
+    yearly_change: float | None = None
+    update_every_days: int = 180
+    owed: float = 0.0
+    note: str = ""
+
+
+@router.post("/assets")
+def add_asset(body: AssetIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    return _save_asset(None, body, session)
+
+
+@router.put("/assets/{asset_id}")
+def update_asset(asset_id: int, body: AssetIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    from ..models import OtherAsset
+
+    if session.get(OtherAsset, asset_id) is None:
+        raise HTTPException(404, "No such asset")
+    return _save_asset(asset_id, body, session)
+
+
+def _save_asset(asset_id: int | None, body: AssetIn, session: Session) -> dict:
+    from ..engine.assets import assets_overview, save_asset
+
+    try:
+        save_asset(session, asset_id=asset_id, name=body.name, kind=body.kind, value=body.value, value_on=body.value_on or today(), yearly_change=body.yearly_change,
+                   update_every_days=body.update_every_days, owed=body.owed, note=body.note)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    return assets_overview(session, today())
+
+
+@router.delete("/assets/{asset_id}")
+def remove_asset(asset_id: int, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    from ..engine.assets import assets_overview
+    from ..models import OtherAsset
+
+    row = session.get(OtherAsset, asset_id)
+    if row is None:
+        raise HTTPException(404, "No such asset")
+    row.active = False
+    session.add(row)
+    session.commit()
+    return assets_overview(session, today())

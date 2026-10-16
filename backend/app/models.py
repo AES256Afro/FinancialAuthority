@@ -76,6 +76,24 @@ class TransactionSplit(SQLModel, table=True):
     note: str = ""
 
 
+class OtherAsset(SQLModel, table=True):
+    """Something worth money that is not an account: a home, a car. Its value is the owner's, as of a date."""
+
+    __tablename__ = "other_assets"
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    kind: str = "other"  # home | car | other
+    value: float = 0.0
+    value_on: dt.date
+    yearly_change: float | None = None  # a share a year: -0.15 loses 15% a year; None keeps the value as set
+    update_every_days: int = 180
+    owed: float = 0.0  # a loan against it, for equity; the loan itself stays on Debts
+    note: str = ""
+    active: bool = True
+    created_at: dt.datetime = Field(default_factory=utcnow)
+    updated_at: dt.datetime = Field(default_factory=utcnow)
+
+
 class Passkey(SQLModel, table=True):
     """A passkey the owner made: its public key only, and the address it belongs to."""
 
