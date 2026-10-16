@@ -243,9 +243,9 @@ Proposed after a survey of YNAB, Monarch, Copilot, Rocket Money, Empower, Simpli
 
 - ✅ **M29 Setup that checks itself.** (built 2026-10-16) Each setup step with a live check (secrets, mail, bank, https address, phone, backups); the Bridge's state read from the app; one button to test everything, with the fix for each failure.
 - ✅ **M30 Tags, splits, notes and bulk edit.** (built 2026-10-16) Split a transaction across categories; tags and notes; select many and recategorize; rules with a preview.
-- ☐ **M31 Receipts and documents.** A receipt forwarded to the mailbox attaches to its transaction; return and warranty dates as reminders; statements and paystubs kept with their months.
+- ✅ **M31 Receipts and documents.** (built 2026-10-16) A receipt forwarded to the mailbox attaches to its transaction; return and warranty dates as reminders; statements and paystubs kept with their months.
 - ✅ **M32 Reports you build.** (built 2026-10-16) Rows, period and picture chosen and saved; category groups; a year in review and tax-time totals.
-- ☐ **M33 A second person, if ever.** A second login with a role (everything, or shared accounts only); shared and personal accounts marked; approvals kept apart.
+- ✅ **M33 A second person, if ever.** (built 2026-10-16) A second login with a role (everything, or shared accounts only); shared and personal accounts marked; approvals kept apart.
 
 **Models and reach**
 

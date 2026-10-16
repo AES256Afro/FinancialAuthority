@@ -92,7 +92,13 @@ def create(session: Session, *, to: str, subject: str, body: str, reason: str = 
         session.commit()
         send(session, row)
     else:
-        notify.send(session, "A send waits for you", f"To {to}: {row.subject}\n{reason or body[:140]}", priority="high", tags=["envelope"], link=None)
+        title = "A send waits for you"
+        if for_person_id is not None:
+            from .models import Person
+
+            person = session.get(Person, for_person_id)
+            title = f"A send waits for {(person.display_name or person.username) if person else 'the second person'}"
+        notify.send(session, title, f"To {to}: {row.subject}\n{reason or body[:140]}", priority="high", tags=["envelope"], link=None)
     session.refresh(row)
     return row
 
