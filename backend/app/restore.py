@@ -21,6 +21,10 @@ FOLDER = "restore-points"
 # How many of each kind are kept; the oldest beyond that are removed.
 KEEP = {"import": 15, "daily": 7, "manual": 10, "before-restore": 5}
 NAME = re.compile(r"^\d{8}-\d{6}-\d{6}-[a-z-]+\.db$")
+# Who may get in, what was sent, and what happened stay as they are now: a restore never brings back a revoked
+# key or a closed session, never makes a sent email look unsent, and never erases the activity log.
+CARRIED = ("api_keys", "oauth_clients", "oauth_codes", "oauth_tokens", "web_sessions", "audit_entries", "approvals")
+CARRIED_SETTINGS = ("calendar.feed",)
 
 
 def folder() -> Path:
@@ -139,9 +143,33 @@ def restore(name: str) -> dict[str, Any]:
     _copy(path, settings.db_path)
     engine.dispose()
     init_db()  # a point from an older version gains the columns this version added
+    _carry_forward(folder() / before["name"], settings.db_path)
+    engine.dispose()
     with (folder() / "restores.log").open("a", encoding="utf-8") as log:
         log.write(json.dumps({"at": datetime.now(UTC).isoformat(), "restored": name, "before": before["name"]}) + "\n")
     return {"restored": name, "before": before}
+
+
+def _carry_forward(current: Path, db: Path) -> None:
+    """Copy the security tables and settings from the moment before the restore into the restored database."""
+    con = sqlite3.connect(str(db))
+    try:
+        con.execute("ATTACH DATABASE ? AS now", (str(current),))
+        for table in CARRIED:
+            mine = [r[1] for r in con.execute(f"PRAGMA main.table_info({table})")]
+            theirs = {r[1] for r in con.execute(f"PRAGMA now.table_info({table})")}
+            shared = ", ".join(f'"{c}"' for c in mine if c in theirs)
+            if not shared:
+                continue
+            con.execute(f"DELETE FROM main.{table}")
+            con.execute(f"INSERT INTO main.{table} ({shared}) SELECT {shared} FROM now.{table}")
+        for key in CARRIED_SETTINGS:
+            con.execute("DELETE FROM main.settings WHERE key = ?", (key,))
+            con.execute("INSERT INTO main.settings (key, value) SELECT key, value FROM now.settings WHERE key = ?", (key,))
+        con.commit()
+        con.execute("DETACH DATABASE now")
+    finally:
+        con.close()
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -81,6 +81,15 @@ class AuthorityProvider(OAuthAuthorizationServerProvider[AuthorizationCode, Refr
             return _client_info(row)
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
+        from datetime import timedelta as _td
+
+        from mcp.server.auth.provider import RegistrationError
+
+        with session_scope() as session:
+            recent = session.exec(select(OAuthClient).where(OAuthClient.created_at >= utcnow() - _td(days=1))).all()
+            live = session.exec(select(OAuthClient).where(OAuthClient.revoked_at == None)).all()  # noqa: E711
+        if len(recent) >= 20 or len(live) >= 100:
+            raise RegistrationError(error="invalid_client_metadata", error_description="Too many apps registered; revoke unused ones on Settings › Clients, or try tomorrow")
         raw = client_info.model_dump_json(exclude_none=True)
         stored = crypto.encrypt(raw) if settings.data_key else raw
         with session_scope() as session:
@@ -142,7 +151,7 @@ class AuthorityProvider(OAuthAuthorizationServerProvider[AuthorizationCode, Refr
                 key = auth.lookup_key(session, token)
                 if key is None:
                     return None
-                return AccessToken(token=token, client_id=key.name, scopes=sorted(key.scope_set), expires_at=None, resource=issuer(), subject="owner", claims={"redaction": key.redaction, "kind": "key"})
+                return AccessToken(token=token, client_id=key.name, scopes=sorted(key.scope_set), expires_at=None, resource=issuer(), subject="owner", claims={"redaction": key.redaction, "kind": "key", "name": key.name})
             row = session.exec(select(TokenRow).where(TokenRow.token_hash == _hash(token), TokenRow.kind == "access")).first()
             if row is None or row.revoked_at is not None or (row.expires_at and row.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc)):
                 return None
@@ -153,7 +162,7 @@ class AuthorityProvider(OAuthAuthorizationServerProvider[AuthorizationCode, Refr
             client.last_used_at = utcnow()
             session.add_all([row, client])
             session.commit()
-            return AccessToken(token=token, client_id=client.name or row.client_id, scopes=row.scopes.split(), expires_at=int(row.expires_at.replace(tzinfo=timezone.utc).timestamp()) if row.expires_at else None, resource=row.resource or issuer(), subject="owner", claims={"redaction": client.redaction, "kind": "oauth"})
+            return AccessToken(token=token, client_id=row.client_id, scopes=row.scopes.split(), expires_at=int(row.expires_at.replace(tzinfo=timezone.utc).timestamp()) if row.expires_at else None, resource=row.resource or issuer(), subject="owner", claims={"redaction": client.redaction, "kind": "oauth", "name": client.name or row.client_id})
 
     async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
         with session_scope() as session:
@@ -217,15 +226,29 @@ def _load_request(req: str) -> dict | None:
         return None
 
 
+KNOWN_HOSTS = ("claude.ai", "claude.com", "anthropic.com", "localhost", "127.0.0.1", "[::1]")
+
+
+def _destination(data: dict) -> tuple[str, bool]:
+    from urllib.parse import urlsplit
+
+    host = (urlsplit(str(data.get("redirect_uri") or "")).hostname or "").lower()
+    known = any(host == k or host.endswith("." + k) for k in KNOWN_HOSTS)
+    return host or "an unknown address", known
+
+
 def _consent_body(data: dict, req: str, client_name: str, error: str = "") -> str:
     scopes = data.get("scopes") or ["read"]
+    host, known = _destination(data)
+    where = (f'<div class="muted">After you allow it, you go back to <strong>{html.escape(host)}</strong>.</div>' if known else
+             f'<div class="err">After you allow it, you go back to <strong>{html.escape(host)}</strong>, which is not Claude. Allow it only if you started this connection yourself, from an app you trust; the name above is chosen by whoever asked.</div>')
     boxes = "".join(
         f'<label class="scope"><input type="checkbox" name="scope" value="{s}" {"checked" if s == "read" else ""} {"disabled" if s == "read" else ""}>'
         f"{'Read the money: balances, bills, the plan, the mail' if s == 'read' else 'Confirm facts on your behalf (bills from mail, recurring charges)'}</label>"
         for s in scopes if s in VALID_SCOPES
     )
     return (
-        f"<h1>Let {html.escape(client_name)} in?</h1>"
+        f"<h1>Let {html.escape(client_name)} in?</h1>{where}"
         f'<div class="muted">It will read through the app as you, with what you tick below. It can never approve a send or move money. You can revoke it any time on Settings › Clients.</div>'
         f'<input type="hidden" name="req" value="{html.escape(req)}"><input type="hidden" name="scope" value="read">{boxes}'
         f'{f"<div class=err>{html.escape(error)}</div>" if error else ""}'

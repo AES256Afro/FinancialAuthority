@@ -234,6 +234,12 @@ def require_scope(scope: str):
         if principal.via_cookie and request.method not in ("GET", "HEAD", "OPTIONS"):
             if request.headers.get(CSRF_HEADER, "") != CSRF_VALUE:
                 raise HTTPException(403, "Missing the request header the app sends")
+        if principal.kind == "key" and request.url.path.startswith("/api/"):
+            if principal.redaction != "full":
+                raise HTTPException(403, "This key hides some details, so it reads through the tools at /mcp, which hold them back; the REST routes show everything")
+            from . import services
+
+            services.audit(session, client=principal.name, client_kind="key", tool=f"rest {request.method} {request.url.path}"[:120], args=dict(request.query_params), rows=0, redaction=principal.redaction)
         return principal
 
     return dependency
