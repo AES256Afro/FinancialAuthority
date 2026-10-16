@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { api, useApi } from "../api";
 import { Where } from "../components/Where";
+import { Devices } from "../components/Devices";
 
 interface KeyRow {
   id: number;
@@ -101,6 +102,7 @@ export function Clients() {
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 900 }}>
       <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Clients</h1>
       <ConnectedApps />
+      <Devices />
       <h2 style={{ margin: "8px 0 0", fontSize: 16, fontWeight: 800 }}>API keys</h2>
       <p style={{ margin: 0, color: "var(--ink-2)" }}>A key lets a script or a client without a browser read through the MCP endpoint at <code>/mcp</code> or the REST API. Keys read only; approvals stay with you.</p>
       <form onSubmit={create} className="card" style={{ padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end" }}>

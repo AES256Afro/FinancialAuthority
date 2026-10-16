@@ -270,14 +270,15 @@ async def consent_post(request: Request, req: str = Form(""), decision: str = Fo
         principal = auth.principal_from_request(request, session)
     if decision == "signin":
         ip = auth._client_ip(request)
-        if auth._locked(ip):
-            return _page("Sign in", _signin_body(req, "Too many failed sign-ins. Try again in fifteen minutes."))
+        if auth._locked(ip) or auth._account_wait() > 0:
+            return _page("Sign in", _signin_body(req, "Too many failed sign-ins. Wait a minute, then try again."))
         ok = auth.auth_enabled() and hmac.compare_digest(username.encode(), settings.username.encode()) and hmac.compare_digest(password.encode(), settings.password.encode())
         if not ok and auth.auth_enabled():
             auth._record_failure(ip)
             return _page("Sign in", _signin_body(req, "Wrong username or password."))
         response = _page("Allow access", _consent_body(data, req, await _client_name(data["client_id"])))
-        token = auth._serializer().dumps({"u": settings.username, "iat": int(time.time())})
+        with session_scope() as session:
+            token = auth.start_session(session, request)
         response.set_cookie(auth.COOKIE, token, max_age=auth.SESSION_MAX_AGE, httponly=True, samesite="lax", secure=auth.request_is_https(request), path="/")
         return response
     if principal is None or principal.kind != "owner":

@@ -294,6 +294,19 @@ class Goal(SQLModel, table=True):
     active: bool = True
 
 
+class WebSession(SQLModel, table=True):
+    """One signed-in browser. Signing out ends it; the owner can end any or all; a new password ends them all."""
+
+    __tablename__ = "web_sessions"
+    id: int | None = Field(default=None, primary_key=True)
+    sid_hash: str = Field(index=True, unique=True)
+    created_at: dt.datetime = Field(default_factory=utcnow)
+    last_seen_at: dt.datetime | None = None
+    user_agent: str = ""
+    ip: str = ""
+    revoked_at: dt.datetime | None = None
+
+
 class ApiKey(SQLModel, table=True):
     __tablename__ = "api_keys"
     id: int | None = Field(default=None, primary_key=True)
