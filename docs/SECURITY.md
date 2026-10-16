@@ -7,6 +7,7 @@
 - The ledger: transactions, balances, bills, debts, installment plans, advances, paystubs (gross, net, deductions), the registers the engine plans from.
 - Read tokens for banks (Plaid access tokens, Teller access tokens), mailbox passwords (Proton Bridge, Gmail app password), model API keys, push tokens. Each is encrypted at rest with AES-GCM under a key derived from `FA_DATA_KEY`; the key lives only in the environment.
 - Message references and short excerpts from the mailboxes; never whole bodies, never attachments beyond the paystub lines extracted.
+- Documents the owner uploads (a lease, a charge sheet, a utility's terms, receipts): each file encrypted with the data key under the data folder, its text kept encrypted page by page. The file itself downloads to the owner only; models read the text only through `documents_search` and `document_read`, boxed as untrusted, and only with the full redaction level. The terms a lease states wait on Needs you, and only the owner signed in applies them. Erasing everything removes the files too. Nothing is used to train a model.
 - OAuth client registrations and hashed tokens; hashed API keys; the owner's password hash; the audit log.
 
 It never holds a bank password, a card number in the clear, or a government identifier.
