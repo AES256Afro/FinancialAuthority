@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     data_dir: Path = Path(os.environ.get("FA_DATA_DIR") or Path(__file__).resolve().parents[1] / "data")
     # The drop folder for exports and paystub PDFs. BoxPilot mounts /imports.
     import_dir: Path | None = None
+    # Where the app keeps its own restore points. Beside the data by default; BoxPilot mounts its own folder,
+    # so its nightly archive of the data does not carry every copy inside it.
+    restore_dir: Path | None = None
 
     host: str = "0.0.0.0"
     port: int = 8000

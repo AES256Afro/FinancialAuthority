@@ -55,6 +55,7 @@ class Transaction(SQLModel, table=True):
     source: str = "manual"  # manual | rocketmoney | csv | ofx | plaid | teller | era | alert | demo
     source_ref: str = ""
     row_hash: str = Field(index=True, unique=True)
+    import_id: int | None = Field(default=None, index=True)  # the import that brought it, so that import can be undone
     created_at: dt.datetime = Field(default_factory=utcnow)
 
     @property
@@ -152,6 +153,28 @@ class Scenario(SQLModel, table=True):
     name: str
     spec: str = "{}"  # JSON
     created_at: dt.datetime = Field(default_factory=utcnow)
+
+
+class ImportBatch(SQLModel, table=True):
+    """One import of a file or an export: what it added, what it changed, and the restore point taken before it,
+    so the import can be undone exactly, or the whole database put back as it was."""
+
+    __tablename__ = "import_batches"
+    id: int | None = Field(default=None, primary_key=True)
+    kind: str  # file | rocketmoney | bills
+    source_file: str = ""
+    via: str = "upload"  # upload | folder | mail
+    account_id: int | None = None
+    inserted: int = 0
+    duplicates: int = 0
+    merged: int = 0
+    accounts_created: str = "[]"  # json list of account ids this import created
+    changes: str = "[]"  # json: bills created, and bills updated with their values before
+    restore_point: str = ""
+    summary: str = ""
+    status: str = "kept"  # kept | undone
+    created_at: dt.datetime = Field(default_factory=utcnow)
+    undone_at: dt.datetime | None = None
 
 
 class AccountMove(SQLModel, table=True):

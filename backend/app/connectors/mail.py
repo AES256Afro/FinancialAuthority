@@ -201,7 +201,7 @@ def capture_export(session: Session, parsed: Parsed, fetch: Fetcher) -> dict:
     rows = parse_csv(text, "rocketmoney-export-from-mail.csv")
     if rows is None:
         return {"imported": 0, "note": "the link did not give a Rocket Money transactions export"}
-    result = import_rows(session, rows, "rocketmoney-export-from-mail.csv")
+    result = import_rows(session, rows, "rocketmoney-export-from-mail.csv", via="mail")
     return {"imported": result.inserted, "duplicates": result.duplicates, "note": f"export imported: {result.summary}"}
 
 

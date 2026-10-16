@@ -146,10 +146,14 @@ def _account_for(session: Session, r: dict, cache: dict[tuple, Account]) -> Acco
 MERGE_DAYS = 3  # an export's date and a connector's can differ by posting; within this many days they are one
 
 
-def import_rows(session: Session, rows: list[dict], source_file: str = "upload.csv") -> SyncResult:
+def import_rows(session: Session, rows: list[dict], source_file: str = "upload.csv", via: str = "upload") -> SyncResult:
     """Insert what is new. A key repeated within one file is a real repeat purchase; the same key already in
     the ledger is overlap between exports and is skipped; a row a live connector already holds on the same
     account, same amount within three days, is the same transaction seen twice and is merged, not added."""
+    from .. import importlog
+
+    batch = importlog.begin(session, "rocketmoney", source_file, via)
+    accounts_known = set(session.exec(select(Account.id)).all())
     existing = set(session.exec(select(Transaction.row_hash)).all())
     rules = rules_for(session)
     cache: dict[tuple, Account] = {}
@@ -181,16 +185,20 @@ def import_rows(session: Session, rows: list[dict], source_file: str = "upload.c
             account_id=account.id, date=r["date"], posted_date=r["original_date"], merchant=r["merchant"], raw_name=r["name"], description=r["description"],
             amount=r["amount"], category=r["category"], note=r["note"],
             is_transfer=r["category"] in TRANSFER_CATEGORIES, is_card_payment=r["category"] == "Credit Card Payment",
-            is_income=r["category"] == "Income", is_ignored=bool(r["ignored_from"]), source="rocketmoney", source_ref=source_file, row_hash=h,
+            is_income=r["category"] == "Income", is_ignored=bool(r["ignored_from"]), source="rocketmoney", source_ref=source_file, row_hash=h, import_id=batch.id,
         )
         apply_rules(rules, row)
         session.add(row)
         existing.add(h)
         inserted += 1
+    summary = f"{inserted} new, {duplicates} already known" + (f", {merged} already held by the bank link" if merged else "")
+    session.flush()
+    created = sorted(set(session.exec(select(Account.id)).all()) - accounts_known)
+    importlog.finish(session, batch, inserted=inserted, duplicates=duplicates, merged=merged, accounts_created=created, summary=summary)
     session.commit()
     accounts_after = len(session.exec(select(Account.id)).all())
-    summary = f"{inserted} new, {duplicates} already known" + (f", {merged} already held by the bank link" if merged else "")
-    return SyncResult(ok=True, summary=summary, inserted=inserted, duplicates=duplicates, accounts=accounts_after - accounts_before, details={"merged": merged}, at=utcnow())
+    return SyncResult(ok=True, summary=summary, inserted=inserted, duplicates=duplicates, accounts=accounts_after - accounts_before,
+                      details={"merged": merged, "import_id": batch.id if inserted or created else None}, at=utcnow())
 
 
 def export_csv(session: Session) -> str:
@@ -221,4 +229,4 @@ class RocketMoneyConnector(Connector):
         rows = parse_csv(text, source_file)
         if rows is None:
             return SyncResult(ok=False, summary=f"{source_file}: not a Rocket Money transactions export (missing columns)")
-        return import_rows(session, rows, source_file)
+        return import_rows(session, rows, source_file, via=str(_.get("via") or "upload"))

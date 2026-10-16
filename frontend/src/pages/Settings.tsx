@@ -7,6 +7,7 @@ const ITEMS = [
   { to: "/settings/models", title: "Models", text: "The advisor and the reviewer: Ollama, any OpenAI-compatible server, or Claude by API; your rules and goals." },
   { to: "/settings/clients", title: "Clients", text: "Apps signed in through OAuth, and API keys for scripts, each with a scope and a redaction level." },
   { to: "/settings/notifications", title: "Notifications", text: "The morning brief on the phone through ntfy or Gotify, both free." },
+  { to: "/settings/backups", title: "Backups", text: "A copy of everything before each import and once a day; undo an import, or put everything back to a moment." },
   { to: "/settings/jobs", title: "Jobs", text: "What the app does on its own, and whether it ran." },
   { to: "/settings/audit", title: "Audit", text: "Every read a model, an app or a script made through the tools." },
 ];
