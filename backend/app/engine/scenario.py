@@ -13,7 +13,6 @@ from sqlmodel import Session, select
 
 from ..models import Account, Advance, Bill, Debt, Income, InstallmentPlan, RecurringSeries
 from ..store import get_setting
-from .cadence import next_paydays, payday_position
 from .projection import assemble, cash_of, low_point, next_due, pending_installment_events, project, set_aside_of, wdate
 from .projections import NOT_ADVICE
 from .snapshot import usual_pace
@@ -32,22 +31,16 @@ def load_inputs(session: Session, today: date, horizon_days: int = HORIZON) -> d
     cash, _all = cash_of(accounts)
     buffer = float(get_setting(session, "buffer", 200.0))
     incomes = session.exec(select(Income).where(Income.active == True)).all()  # noqa: E712
-    from .cadence import next_unpaid_payday
+    from .cadence import pay_schedule, scheduled_payday
 
-    upcoming = sorted(((next_unpaid_payday(session, i, today), i) for i in incomes), key=lambda p: p[0])
-    next_pay = upcoming[0] if upcoming else None
-    next_payday = next_pay[0] if next_pay else today + timedelta(days=14)
-    cadence = (next_pay[1].cadence if next_pay else "biweekly") or "biweekly"
-    from .cadence import paydays_through
-
-    paydays = paydays_through(next_payday, cadence, today + timedelta(days=horizon_days + 31), at_least=2)
+    # Every paycheck on one schedule, as the snapshot takes it: each payday of each, and what lands on it.
+    schedule = pay_schedule(session, incomes, today, today + timedelta(days=horizon_days + 31), at_least=2)
+    paydays = schedule["paydays"]
 
     def net_for(payday: date) -> float:
-        if next_pay is None:
-            return 0.0
-        if cadence == "semimonthly" and payday_position(payday) == "end" and next_pay[1].expected_net_end is not None:
-            return float(next_pay[1].expected_net_end)
-        return float(next_pay[1].expected_net)
+        return schedule["amounts"].get(payday, 0.0)
+
+    from .payments import paid_periods
 
     bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
     plans = session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all()  # noqa: E712
@@ -60,15 +53,21 @@ def load_inputs(session: Session, today: date, horizon_days: int = HORIZON) -> d
     by_id = {a.id: a for a in accounts}
     card_mode = (get_setting(session, "cards", {}) or {}).get("pay_from", "auto")
     return {
-        "today": today, "cash": cash, "buffer": buffer, "has_income": next_pay is not None, "cadence": cadence, "paydays": paydays, "net_for": net_for, "pay_amounts": {d: net_for(d) for d in paydays},
+        "today": today, "cash": cash, "buffer": buffer, "has_income": schedule["known"], "cadence": schedule["cadence"], "paydays": paydays, "net_for": net_for, "pay_amounts": {d: net_for(d) for d in paydays},
+        "pay_days": schedule["pay_days"], "payday_today": any(scheduled_payday(i, today) == today for i in incomes), "paid": paid_periods(session, today),
         "bills": bills, "plans": plans, "advances": advances, "debts": debts, "accounts": by_id, "card_mode": card_mode,
-        "planned": planned_to_cards(session, today), "extra": pending_installment_events(pending_streams, today, horizon_days=horizon_days) + planned_events(session, today), "pace": pace, "horizon_days": horizon_days,
+        "planned": planned_to_cards(session, today), "extra": pending_installment_events(pending_streams, today, horizon_days=horizon_days, plans=plans) + planned_events(session, today), "pace": pace, "horizon_days": horizon_days,
     }
 
 
-def baseline_events(inp: dict) -> list[dict]:
+def assembled(inp: dict, horizon_days: int | None = None) -> dict:
+    """The registers as the plan counts them, from the inputs above: assemble with every input it takes."""
     return assemble(bills=inp["bills"], plans=inp["plans"], advances=inp["advances"], today=inp["today"], accounts=inp["accounts"], paydays=inp["paydays"], card_mode=inp["card_mode"], debts=inp["debts"], planned=inp["planned"],
-                    extra=inp["extra"], card_pace_by_account=inp["pace"]["per_day_by_account"], horizon_days=inp["horizon_days"])["math"]
+                    extra=inp["extra"], card_pace_by_account=inp["pace"]["per_day_by_account"], horizon_days=horizon_days or inp["horizon_days"], paid=inp["paid"], pay_days=inp["pay_days"])
+
+
+def baseline_events(inp: dict) -> list[dict]:
+    return assembled(inp)["math"]
 
 
 def rent_bill(bills: list[Bill], bill_id: int | None = None) -> Bill | None:

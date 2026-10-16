@@ -6,6 +6,7 @@ from datetime import date, timedelta
 
 from sqlmodel import Session, select
 
+from ..engine.borrowing import plan_covers_series
 from ..engine.recurring import detect, merchant_key
 from ..models import Bill, Income, InstallmentPlan, RecurringSeries, Transaction
 
@@ -81,7 +82,7 @@ def run_detection(session: Session, today: date, lookback_days: int = 400) -> di
                 session.add_all([series, bill])
                 linked += 1
                 continue
-            plan = next((p for p in plans if p.merchant and series.merchant_key.startswith(p.merchant.lower())), None)
+            plan = next((p for p in plans if plan_covers_series(p, series)), None)  # the plan's merchant, or its lender at its installment
             if plan is not None and f["kind"] != "income":
                 series.kind, series.confirmed = "installment", True
                 session.add(series)
@@ -95,6 +96,8 @@ def run_detection(session: Session, today: date, lookback_days: int = 400) -> di
                         inc.series_id = series.id
                         if f["cadence"] == "semimonthly" and inc.cadence == "semimonthly":
                             inc.pay_days = f.get("pay_days", "")
+                        if f["cadence"] == "monthly" and inc.cadence == "monthly" and f.get("pay_day"):
+                            inc.pay_day = f["pay_day"]
                         inc.next_date = max(inc.next_date, series.next_expected) if inc.next_date < today else inc.next_date
                         session.add_all([series, inc])
                         linked += 1
@@ -102,14 +105,19 @@ def run_detection(session: Session, today: date, lookback_days: int = 400) -> di
     # A stream nobody confirmed and the ledger no longer shows (its rows were undone or removed) stops counting.
     retired = 0
     for series in existing.values():
-        if series.id not in seen_ids and not series.confirmed and series.active:
+        if series.id not in seen_ids and not series.confirmed and series.active and series.origin != "borrowing":  # a lender's stream is sync_borrowing's to retire
             series.active = False
             session.add(series)
             retired += 1
-    from ..engine.cadence import next_unpaid_payday
+    from ..engine.cadence import pay_day_from, scheduled_payday
 
+    # Each paycheck's date moves to its first scheduled payday on or after today; a check that has landed is
+    # worked out from the ledger each time it matters, so on payday the date stays today's.
     for inc in incomes:
-        rolled = next_unpaid_payday(session, inc, today)
+        if (inc.cadence or "") == "monthly" and not inc.pay_day:
+            inc.pay_day = pay_day_from(inc.next_date)  # pinned before the date rolls, so a check on the 31st stays one after February
+            session.add(inc)
+        rolled = scheduled_payday(inc, today)
         if rolled != inc.next_date:
             inc.next_date = rolled
             session.add(inc)

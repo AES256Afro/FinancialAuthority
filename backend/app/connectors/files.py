@@ -262,6 +262,28 @@ def _target_account(session: Session, *, account_id: int | None, account_name: s
     return account, True
 
 
+def folder_account(session: Session, filename: str, rows: list[dict]) -> dict[str, Any]:
+    """Which account a bank's CSV dropped in the import folder belongs to, as import_rows takes it: the account
+    whose last four digits the file itself carries, else the account whose name the file's name starts with (a
+    copy's " (1)" ignored, the longest name first), else a new one named after the file."""
+    from pathlib import Path
+
+    from .banks import _last4_of
+
+    stem = re.sub(r"\s*\(\d+\)$", "", Path(filename).stem).strip() or "Imported"  # "chase (1).csv" is chase.csv again
+    number = next((d for d in (re.sub(r"\D", "", str(r.get("account") or "")) for r in rows) if len(d) >= 4), "")
+    accounts = [a for a in session.exec(select(Account).where(Account.active == True)).all() if a.kind != "investment"]  # noqa: E712
+    if number:
+        same = next((a for a in accounts if _last4_of(a) == number[-4:]), None)
+        if same is not None:
+            return {"account_id": same.id, "account_name": same.name}
+    low = stem.lower()
+    named = sorted((a for a in accounts if a.name and low.startswith(a.name.strip().lower())), key=lambda a: -len(a.name.strip()))
+    if named:
+        return {"account_id": named[0].id, "account_name": named[0].name}
+    return {"account_name": stem, "account_number": number}
+
+
 def import_rows(session: Session, rows: list[dict], *, source_file: str, account_name: str, institution: str = "", kind: str = "checking", account_id: int | None = None,
                 account_number: str = "", via: str = "upload") -> SyncResult:
     """Rows into the ledger under one account, without adding what is already there. A row an earlier import of
@@ -406,14 +428,17 @@ def parse_bills_rows(text: str, mapping: dict | None = None) -> list[dict]:
     return rows
 
 
-def import_bills(session: Session, rows: list[dict], *, source_file: str) -> SyncResult:
+def import_bills(session: Session, rows: list[dict], *, source_file: str, today: date | None = None) -> SyncResult:
     """Each row becomes a bill on the register, or updates the bill of the same name. A row without a due day
-    (no due-day, next-date or date column it could come from) is skipped and said so."""
+    (no due-day, next-date or date column it could come from) is skipped and said so. A new bill is dated today,
+    so no payment is looked for in the months before it was added."""
+    from ..clock import local_today
     from ..engine.recurring import merchant_key, suggest_kind
     from ..models import Bill
 
     from .. import importlog
 
+    today = today or local_today()
     batch = importlog.begin(session, "bills", source_file)
     bills = list(session.exec(select(Bill).where(Bill.active == True)).all())  # noqa: E712
     created = updated = skipped = 0
@@ -427,7 +452,8 @@ def import_bills(session: Session, rows: list[dict], *, source_file: str) -> Syn
         bill = next((b for b in bills if merchant_key(b.name) == key), None)
         kind = "subscription" if suggest_kind(r["category"], r["name"]) == "subscription" else "bill"
         if bill is None:
-            bill = Bill(name=r["name"], kind=kind, amount=r["amount"], amount_mode="fixed", cadence=r["cadence"], due_day=r["due_day"], anchor_date=r.get("next_date"), autopay=r["autopay"], movable=True, move_window="1-28", category=r["category"])
+            bill = Bill(name=r["name"], kind=kind, amount=r["amount"], amount_mode="fixed", cadence=r["cadence"], due_day=r["due_day"], anchor_date=r.get("next_date"), autopay=r["autopay"], movable=True, move_window="1-28", category=r["category"],
+                        created_on=today)
             session.add(bill)
             session.flush()
             bills.append(bill)
@@ -444,12 +470,12 @@ def import_bills(session: Session, rows: list[dict], *, source_file: str) -> Syn
             session.add(bill)
             updated += 1
         ids.append(int(bill.id or 0))
+    summary = f"{created} bill{'s' if created != 1 else ''} added, {updated} updated" + (f", {skipped} without a due day skipped" if skipped else "")
+    importlog.finish(session, batch, changes=changes, summary=summary)  # the restore point is taken here, before anything is committed
+    session.commit()
     if created or updated:
         from ..llm.reviewer import mark_pending
 
-        mark_pending(session, f"bills imported from {source_file}")
-    summary = f"{created} bill{'s' if created != 1 else ''} added, {updated} updated" + (f", {skipped} without a due day skipped" if skipped else "")
-    importlog.finish(session, batch, changes=changes, summary=summary)
-    session.commit()
+        mark_pending(session, f"bills imported from {source_file}")  # it commits, so only once the import's own point is made
     return SyncResult(ok=True, summary=summary, inserted=created, details={"created": created, "updated": updated, "skipped": skipped, "bill_ids": ids, "source_file": source_file,
                                                                         "import_id": batch.id if changes else None}, at=utcnow())

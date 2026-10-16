@@ -46,24 +46,36 @@ def planned_to_cards(session: Session, today: date) -> dict[int, float]:
 
 def settle_planned(session: Session, today: date) -> int:
     """A plan settles when a transaction that looks like it posts: money out, within a dollar, from a day before
-    its date to a week after. Returns how many settled."""
-    settled = 0
-    for p in session.exec(select(PlannedPayment).where(PlannedPayment.done == False)).all():  # noqa: E712
+    its date to a week after. A transaction settles one plan only, and is never one another plan already took:
+    the pairs that share a word of the name go first, then the nearest by date. Returns how many settled."""
+    from ..connectors.files import _words
+
+    open_plans = session.exec(select(PlannedPayment).where(PlannedPayment.done == False)).all()  # noqa: E712
+    if not open_plans:
+        return 0
+    taken = {t for t in session.exec(select(PlannedPayment.transaction_id).where(PlannedPayment.transaction_id != None)).all()}  # noqa: E711
+    pairs = []
+    for p in open_plans:
         rows = session.exec(select(Transaction).where(Transaction.date >= p.date - timedelta(days=1), Transaction.date <= p.date + timedelta(days=7), Transaction.amount > 0)).all()
-        match = None
         for t in rows:
-            if abs(t.amount - p.amount) > 1.0:
+            if t.id in taken or abs(t.amount - p.amount) > 1.0:
                 continue
             if p.kind == "card_payment" and not (t.is_card_payment or t.category in ("Credit Card Payment", "Transfer") or "payment" in (t.raw_name + " " + t.description).lower()):
                 continue
             if p.to_account_id and t.account_id == p.to_account_id:
                 continue  # the card side of the same payment is money in on the card, not the payment leaving checking
-            match = t
-            break
-        if match is not None:
-            p.done, p.transaction_id = True, match.id
-            session.add(p)
-            settled += 1
+            named = bool(_words(p.name) & _words(f"{t.merchant} {t.raw_name} {t.description}"))
+            pairs.append(((0 if named else 1, abs((t.date - p.date).days), abs(t.amount - p.amount), t.id), p, t))
+    settled = 0
+    done: set[int] = set()
+    for _rank, p, t in sorted(pairs, key=lambda x: x[0]):
+        if p.id in done or t.id in taken:
+            continue
+        p.done, p.transaction_id = True, t.id
+        session.add(p)
+        done.add(p.id)
+        taken.add(t.id)
+        settled += 1
     if settled:
         session.commit()
     return settled

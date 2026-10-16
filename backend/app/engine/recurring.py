@@ -12,7 +12,7 @@ import statistics
 from collections import Counter, defaultdict
 from datetime import date, timedelta
 
-from .cadence import _add_months, next_paydays, semimonthly_days_of
+from .cadence import MONTH_END, _add_months, month_end, next_paydays, semimonthly_days_of
 
 CADENCES = [  # (name, min_days, max_days, charges_per_year)
     ("weekly", 6, 8, 52),
@@ -101,12 +101,17 @@ def detect(rows: list[dict], as_of: date, lookback_days: int = 400, include_inac
             typical = statistics.median(amounts)
             next_expected = dates[-1] + timedelta(days=round(med_gap))
             pay_days = ""
+            pay_day = 0
             if name in ("monthly", "quarterly", "yearly"):
                 # a calendar month is not a fixed number of days: step by months and keep the usual day of the
-                # last three (a weekend-shifted charge does not move it; a tie goes to the latest)
+                # last three (a weekend-shifted charge does not move it; a tie goes to the latest); a run that
+                # lands on the last day of every month keeps month end, so Apr 30 is followed by May 31
                 recent = [d.day for d in dates[-3:]]
                 counts = Counter(recent)
                 usual_day = next(day for day in reversed(recent) if counts[day] == max(counts.values()))
+                if all(d == month_end(d) for d in dates[-3:]):
+                    usual_day = MONTH_END
+                pay_day = usual_day
                 stepped = _add_months(dates[-1], {"monthly": 1, "quarterly": 3, "yearly": 12}[name])
                 next_expected = stepped.replace(day=min(usual_day, calendar.monthrange(stepped.year, stepped.month)[1]))
             if name == "biweekly":
@@ -134,6 +139,7 @@ def detect(rows: list[dict], as_of: date, lookback_days: int = 400, include_inac
                 "active": active,
                 "kind": "income" if income else "unknown",
                 "pay_days": pay_days,
+                "pay_day": pay_day,
             })
     found.sort(key=lambda f: f["yearly_cost"], reverse=True)
     return found

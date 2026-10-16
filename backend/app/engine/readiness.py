@@ -52,7 +52,9 @@ def readiness(session: Session, today: date, *, move_date: date | None = None, n
     from .cadence import next_unpaid_payday
 
     next_payday = next_unpaid_payday(session, income, today) if income else today + timedelta(days=14)
-    paydays = next_paydays(next_payday, cadence, 8)
+    from .cadence import income_days
+
+    paydays = next_paydays(next_payday, cadence, 8, **(income_days(income) if income else {}))
 
     # 1. a buffer of one pay period's advances
     typical = float((get_setting(session, "borrowing", {}) or {}).get("typical_per_period") or 0.0)

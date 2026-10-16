@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 
 from ..models import Account, Advance, Bill, Income, InstallmentPlan, RecurringSeries
 from ..store import get_setting
-from .cadence import next_paydays, payday_position
+from .cadence import next_paydays
 from .projection import assemble, build_events, card_events, cash_of, low_point, pending_installment_events, project, projection_caveats, split_windows
 from .snapshot import finance_snapshot, usual_pace
 
@@ -50,7 +50,8 @@ def _first_break(after: list[dict], before: list[dict], start: date) -> tuple[di
 
 def purchase_check(session: Session, today: date, amount: float, *, on: date | None = None, installments: int | None = None) -> dict:
     """Yes, wait or no: whether the purchase keeps the honest line where it is above zero, and no deeper where
-    it is already under, through the horizon; the first thing it would break; the first date it would pass."""
+    it is already under, through the horizon; the first thing it would break; the first date it would pass.
+    "outside" when a charge falls past the end of the line, where the plan cannot see whether it holds."""
     on = on or today
     amount = round(float(amount), 2)
     snap = finance_snapshot(session, today)
@@ -79,14 +80,20 @@ def purchase_check(session: Session, today: date, amount: float, *, on: date | N
             "shortfall": round(-first_bad["at_pace"], 2),
             "already_short": round(-was["at_pace"], 2) if was["at_pace"] < 0 else 0.0,
         }
-    verdict = "yes" if hit is None else "no"
+    # A charge past the end of the line is one the plan cannot see: nothing past it is known to hold, so it is
+    # never a yes. What breaks inside the line is still a no.
+    after_line = [(d, a) for d, a in charges if d > horizon_end]
+    verdict = "no" if hit is not None else "outside" if after_line else "yes"
     first_ok = None
     if verdict == "no":
         for p in projection:
             d = date.fromisoformat(p["date"])
             if d <= on:
                 continue
-            if _first_break(_apply(projection, _charges(amount, d, installments)), projection, d) is None:
+            trial = _charges(amount, d, installments)
+            if trial[-1][0] > horizon_end:
+                break  # from here the last charge falls past what the plan can see
+            if _first_break(_apply(projection, trial), projection, d) is None:
                 first_ok = d.isoformat()
                 verdict = "wait"
                 break
@@ -99,6 +106,8 @@ def purchase_check(session: Session, today: date, amount: float, *, on: date | N
         "charges": [{"date": d.isoformat(), "amount": a} for d, a in charges],
         "verdict": verdict,
         "breaks": breaks,
+        "outside": {"horizon": horizon_end.isoformat(), "charges": [{"date": d.isoformat(), "amount": a} for d, a in after_line],
+                    "text": f"The plan sees through {horizon_end:%b} {horizon_end.day}; {len(after_line)} charge{'s' if len(after_line) != 1 else ''} fall{'' if len(after_line) != 1 else 's'} after it, which it cannot check."} if after_line else None,
         "first_ok_date": first_ok,
         "low_point": {"date": low["date"], "at_pace": low["value"]},
         "low_point_before": low_point([p for p in projection if date.fromisoformat(p["date"]) >= on] or projection),
@@ -118,23 +127,18 @@ def _low_finder(session: Session, today: date):
     cash, _all_cash = cash_of(accounts)
     buffer = float(get_setting(session, "buffer", 200.0))
     incomes = session.exec(select(Income).where(Income.active == True)).all()  # noqa: E712
-    from .cadence import next_unpaid_payday
-
-    upcoming = sorted(((next_unpaid_payday(session, i, today), i) for i in incomes), key=lambda p: p[0])
-    next_payday = upcoming[0][0] if upcoming else today + timedelta(days=14)
-    cadence = (upcoming[0][1].cadence if upcoming else "biweekly") or "biweekly"
-    from .cadence import paydays_through
+    from .borrowing import plan_covers_series
+    from .cadence import pay_schedule
+    from .payments import paid_periods
     from .projection import HORIZON_DAYS
 
-    paydays = paydays_through(next_payday, cadence, today + timedelta(days=HORIZON_DAYS + 31), at_least=5)
+    # Every paycheck on one schedule, as the snapshot takes it: each payday of each, and what lands on it.
+    schedule = pay_schedule(session, incomes, today, today + timedelta(days=HORIZON_DAYS + 31), at_least=5)
+    next_payday = schedule["next"]
+    paydays = schedule["paydays"]
 
     def net_for(payday: date) -> float:
-        if not upcoming:
-            return 0.0
-        income = upcoming[0][1]
-        if cadence == "semimonthly" and payday_position(payday) == "end" and income.expected_net_end is not None:
-            return float(income.expected_net_end)
-        return float(income.expected_net)
+        return schedule["amounts"].get(payday, 0.0)
 
     expected_net = net_for(next_payday)
     following = paydays[1]
@@ -145,9 +149,11 @@ def _low_finder(session: Session, today: date):
     advances = session.exec(select(Advance).where(Advance.repaid == False)).all()  # noqa: E712
     pace = usual_pace(session, today, {b.name for b in bills})
     unconfirmed_rows = session.exec(select(RecurringSeries).where(RecurringSeries.confirmed == False, RecurringSeries.active == True)).all()  # noqa: E712
-    pending_streams = [r for r in unconfirmed_rows if r.suggested_kind == "installment"]
-    caveats = projection_caveats(has_income=bool(upcoming), bills=len(bills), unnamed=len(unconfirmed_rows) - len(pending_streams), pending_installments=len(pending_streams))
-    pending_rows = pending_installment_events(pending_streams, today)
+    streams = [r for r in unconfirmed_rows if r.suggested_kind == "installment"]
+    pending_streams = [r for r in streams if not any(plan_covers_series(p, r) for p in plans)]
+    caveats = projection_caveats(has_income=schedule["known"], bills=len(bills), unnamed=len(unconfirmed_rows) - len(streams), pending_installments=len(pending_streams))
+    pending_rows = pending_installment_events(pending_streams, today, plans=plans)
+    paid = paid_periods(session, today)
 
     from ..models import Debt
 
@@ -160,12 +166,35 @@ def _low_finder(session: Session, today: date):
     by_id = {a.id: a for a in accounts}
 
     def low_for(due_days: dict[int, int]) -> dict:
-        events = assemble(bills=bills, plans=plans, advances=advances, today=today, accounts=by_id, paydays=paydays, card_mode=card_mode, debts=debts_rows, planned=planned_map, extra=extra, card_pace_by_account=pace["per_day_by_account"], due_days=due_days)["math"]
+        events = assemble(bills=bills, plans=plans, advances=advances, today=today, accounts=by_id, paydays=paydays, card_mode=card_mode, debts=debts_rows, planned=planned_map, extra=extra, card_pace_by_account=pace["per_day_by_account"], due_days=due_days,
+                          paid=paid, pay_days=schedule["pay_days"])["math"]
         windows = split_windows(events, today, next_payday, following, paydays[2])
         path = project(today, cash=cash, buffer=buffer, expected_net=expected_net, pay_dates=pay_dates, set_aside=windows["set_aside"], events=events, per_day=pace["per_day_cash"], pay_amounts=pay_amounts, reserved_for={(e.get("source"), e["date"]) for e in windows["next_window"]})
         return low_point(path)
 
     return low_for, bills, caveats
+
+
+CYCLE_WORDS = {"monthly": "of each month", "quarterly": "of its month each quarter", "semiannual": "of its month twice a year", "yearly": "of its month each year"}
+
+
+def _request(bill: Bill, day: int) -> tuple[str, str]:
+    """The instruction and the draft request for moving a bill's due day, in the bill's own cadence: a bill that
+    comes every week or two has no day of the month, so it asks for a due date nearer that day instead."""
+    cycle = CYCLE_WORDS.get(bill.cadence or "monthly")
+    if cycle is None:
+        every = "every week" if bill.cadence == "weekly" else "every two weeks"
+        return (f"{bill.name} comes {every}, not on a day of the month; ask {bill.name} for a due date nearer the {ordinal(day)}.",
+                f"Hello,\n\nMy payment is due {every}. Could the due date move by a few days, to fall nearer the {ordinal(day)}, starting with the next cycle? "
+                f"Please confirm the change and any one-time adjustment to the next bill.\n\nThank you.")
+    return (f"Ask {bill.name} to move the due date from the {ordinal(bill.due_day)} to the {ordinal(day)}.",
+            f"Hello,\n\nI would like to move my billing date from the {ordinal(bill.due_day)} {cycle} to the {ordinal(day)}, starting with the next cycle. "
+            f"Please confirm the change and any one-time adjustment to the next bill.\n\nThank you.")
+
+
+def _monthly(b: Bill) -> bool:
+    """A movable bill whose due day is a day of every month: the only kind the suggestions move."""
+    return bool(b.movable) and (b.cadence or "monthly") == "monthly"
 
 
 def date_move_check(session: Session, today: date, bill_id: int, day: int) -> dict:
@@ -179,13 +208,12 @@ def date_move_check(session: Session, today: date, bill_id: int, day: int) -> di
     before = low_for({})
     after = low_for({bill.id: day})
     change = round(after["value"] - before["value"], 2)
+    instruction, draft = _request(bill, day)
     return {
-        "bill_id": bill.id, "name": bill.name, "from_day": bill.due_day, "to_day": day, "movable": bool(bill.movable),
+        "bill_id": bill.id, "name": bill.name, "cadence": bill.cadence or "monthly", "from_day": bill.due_day, "to_day": day, "movable": bool(bill.movable),
         "low_before": before["value"], "low_before_date": before["date"], "low_after": after["value"], "low_after_date": after["date"], "change": change,
         "verdict": "better" if change >= 1.0 else ("worse" if change <= -1.0 else "same"),
-        "instruction": f"Ask {bill.name} to move the due date from the {ordinal(bill.due_day)} to the {ordinal(day)}.",
-        "draft": (f"Hello,\n\nI would like to move my billing date from the {ordinal(bill.due_day)} of each month to the {ordinal(day)}, starting with the next cycle. "
-                  f"Please confirm the change and any one-time adjustment to the next bill.\n\nThank you."),
+        "instruction": instruction, "draft": draft,
         "source": f"bill:{bill.id}", "caveats": caveats, "not_advice": NOT_ADVICE,
     }
 
@@ -224,7 +252,7 @@ def _billing_date_suggestions(session: Session, today: date) -> dict:
     baseline = low_for({})
     suggestions = []
     for b in bills:
-        if not b.movable:
+        if not _monthly(b):  # a weekly, quarterly or yearly bill is not moved to "the Nth of each month"
             continue
         best_day, best_low = b.due_day, baseline["value"]
         for day in range(1, 29):
@@ -234,13 +262,11 @@ def _billing_date_suggestions(session: Session, today: date) -> dict:
             if low["value"] > best_low + 0.005 or (abs(low["value"] - best_low) <= 0.005 and best_day != b.due_day and abs(day - b.due_day) < abs(best_day - b.due_day)):
                 best_day, best_low = day, low["value"]
         if best_day != b.due_day and best_low - baseline["value"] >= 1.0:
+            instruction, draft = _request(b, best_day)
             suggestions.append({
                 "bill_id": b.id, "name": b.name, "amount": b.amount, "from_day": b.due_day, "to_day": best_day,
                 "low_before": baseline["value"], "low_after": round(best_low, 2), "improvement": round(best_low - baseline["value"], 2),
-                "instruction": f"Ask {b.name} to move the due date from the {ordinal(b.due_day)} to the {ordinal(best_day)}.",
-                "draft": (f"Hello,\n\nI would like to move my billing date from the {ordinal(b.due_day)} of each month to the {ordinal(best_day)}, starting with the next cycle. "
-                          f"Please confirm the change and any one-time adjustment to the next bill.\n\nThank you."),
-                "source": f"bill:{b.id}",
+                "instruction": instruction, "draft": draft, "source": f"bill:{b.id}",
             })
     suggestions.sort(key=lambda s: (-s["improvement"], s["name"]))
 
@@ -248,11 +274,11 @@ def _billing_date_suggestions(session: Session, today: date) -> dict:
     plan: list[dict] = []
     chosen: dict[int, int] = {}
     current = baseline["value"]
-    movable_ids = [b.id for b in bills if b.movable]
+    movable_ids = [b.id for b in bills if _monthly(b)]
     for _step in range(len(movable_ids)):
         best = None
         for b in bills:
-            if not b.movable or b.id in chosen:
+            if not _monthly(b) or b.id in chosen:
                 continue
             for day in range(1, 29):
                 if day == b.due_day:
@@ -272,7 +298,7 @@ def _billing_date_suggestions(session: Session, today: date) -> dict:
         "suggestions": suggestions,
         "plan": plan,
         "plan_low": round(current, 2),
-        "movable": sum(1 for b in bills if b.movable),
+        "movable": sum(1 for b in bills if _monthly(b)),
         "sources": ["snapshot:projection", *(s["source"] for s in suggestions)],
         "caveats": caveats,
         "drafts_only": "The app drafts the request; it never sends anything. Copy it to the biller yourself, or approve a send once sending exists.",

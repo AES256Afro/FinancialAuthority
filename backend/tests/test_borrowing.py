@@ -93,7 +93,7 @@ def test_sync_files_borrowing_retires_the_fake_bill_and_queues_streams(owner: Te
         advances = session.exec(select(Advance)).all()
         assert sum(1 for a in advances if a.repaid) == 2 and sum(a.fee for a in advances) == 40.99
         still = next(a for a in advances if not a.repaid)
-        assert still.repay_date == date(2026, 10, 30) and still.amount == 150.0
+        assert still.repay_date == date(2026, 10, 15) and still.amount == 150.0  # the first payday on or after it was taken (the 15th), not the next unpaid one
         assert session.exec(select(Bill).where(Bill.name == "Earnin Activehours")).one().active is False
         session.refresh(series)
         assert series.kind == "advance" and series.confirmed
@@ -110,7 +110,7 @@ def test_sync_files_borrowing_retires_the_fake_bill_and_queues_streams(owner: Te
         card_rows = [e for e in snap["window"]["items"] if e["kind"] == "card_payment"]
         assert len(card_rows) == 1 and card_rows[0]["amount"] == 600.0 and card_rows[0]["date"] == "2026-10-30"
         assert not any(e["kind"] == "card_payment" for e in snap["due_before_payday"]["items"])
-        assert snap["safe_to_spend"]["parts"]["advances_on_payday"] == 150.0
+        assert snap["safe_to_spend"]["parts"]["advances"] == 150.0 and snap["safe_to_spend"]["parts"]["advances_on_payday"] == 0.0  # due on the 15th, today's payday, from what is here
         # the queued Affirm stream is counted on its day at its last amount, marked pending, with a caveat that says so
         pending_rows = [e for e in snap["due_before_payday"]["items"] + snap["window"]["items"] if e.get("pending")]
         assert len(pending_rows) == 1 and pending_rows[0]["amount"] == 248.79 and pending_rows[0]["date"] == "2026-10-22" and pending_rows[0]["source"].startswith("series:")

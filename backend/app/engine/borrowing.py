@@ -62,12 +62,30 @@ def _text(t: Transaction) -> str:
     return f"{t.merchant} {t.raw_name} {t.description}"
 
 
-def pair_advances(rows: list[dict], next_payday: date | None = None, today: date | None = None) -> dict:
+def plan_provider(p: InstallmentPlan) -> str:
+    """The lender a plan pays, read from its provider and its merchant together, so a plan named after the bank's
+    text ("AFFIRM PAYMENT") is Affirm's; a lender the table does not know keeps the plan's own word."""
+    return provider_of(f"{p.provider} {p.merchant}", INSTALLMENT_PROVIDERS) or (p.provider or "")
+
+
+def plan_covers_series(p: InstallmentPlan, series: RecurringSeries) -> bool:
+    """Whether a stream the ledger shows is this plan's own payments: it carries the plan's merchant, or it is the
+    same lender's at the plan's installment, within a dollar (the bank reads "AFFIRM PAYMENT" where the lender's
+    email named the store)."""
+    key = (series.merchant_key or series.merchant or "").lower()
+    if p.merchant and key.startswith(p.merchant.lower()):
+        return True
+    lender = provider_of(series.merchant, INSTALLMENT_PROVIDERS)
+    return bool(lender) and lender == plan_provider(p) and abs(float(p.installment or 0.0) - float(series.typical_amount or 0.0)) < 1.0
+
+
+def pair_advances(rows: list[dict], next_payday: date | None = None, today: date | None = None, paydays: list[date] | None = None) -> dict:
     """rows: dicts with id, date, amount (positive = money out), provider. Money in from an advance app is an
     advance; money out to it is a repayment. Each advance takes the first later repayment that covers it with a
     fee of up to thirty percent, or a run of partial repayments that adds up within ten days; an advance with
-    no repayment yet is outstanding and due on the next payday. Small payments with no advance behind them are
-    tips and membership fees."""
+    no repayment yet is outstanding and due on the first scheduled payday on or after the day it was taken
+    (`paydays`), which stays its day once that check has landed. Small payments with no advance behind them
+    are tips and membership fees."""
     ins = sorted((r for r in rows if r["amount"] <= -MIN_ADVANCE), key=lambda r: (r["date"], r["id"]))
     today = today or (max((r["date"] for r in rows), default=date.today()))
     outs = sorted((r for r in rows if r["amount"] > 0), key=lambda r: (r["date"], r["id"]))
@@ -110,7 +128,9 @@ def pair_advances(rows: list[dict], next_payday: date | None = None, today: date
                           "annual_rate": _money((repaid - amount) / amount * 365.0 / days) if amount else 0.0, "sources": [f"transaction:{adv['id']}", *[f"transaction:{o['id']}" for o in match]]})
         else:
             stale = (today - taken).days > MATCH_DAYS  # no repayment within a pay period: unresolved history, not money due
-            due = next_payday if next_payday and next_payday > taken else taken + timedelta(days=14)
+            due = next((d for d in sorted(paydays or []) if d >= taken), None)
+            if due is None:
+                due = next_payday if next_payday and next_payday > taken else taken + timedelta(days=14)
             pairs.append({"provider": adv["provider"], "taken_on": taken, "amount": _money(amount), "fee": 0.0, "repaid": False, "stale": stale, "repay_date": due, "days": None, "annual_rate": None, "sources": [f"transaction:{adv['id']}"]})
     tips = [o for o in outs if o["id"] not in used and o["amount"] <= TIP_CEILING]
     unmatched = [o for o in outs if o["id"] not in used and o["amount"] > TIP_CEILING]
@@ -165,28 +185,43 @@ def _rows(session: Session, today: date) -> tuple[list[dict], list[dict]]:
     return advances, installments
 
 
-def _next_payday(session: Session, today: date) -> date | None:
+def _next_pay(session: Session, today: date) -> tuple[date, object] | None:
+    """The next payday whose check has not landed, with its income: the earliest of every active paycheck."""
     from ..models import Income
 
     incomes = session.exec(select(Income).where(Income.active == True)).all()  # noqa: E712
     from .cadence import next_unpaid_payday
 
-    upcoming = sorted(next_unpaid_payday(session, i, today) for i in incomes)
+    upcoming = sorted(((next_unpaid_payday(session, i, today), i) for i in incomes), key=lambda p: p[0])
     return upcoming[0] if upcoming else None
 
 
-def _cadence(session: Session) -> str:
+def _next_payday(session: Session, today: date) -> date | None:
+    got = _next_pay(session, today)
+    return got[0] if got else None
+
+
+def _scheduled_paydays(session: Session, today: date) -> list[date]:
+    """Every active paycheck's paydays by its schedule alone, from six checks back to four ahead, whether or not
+    a check has landed: an advance is due on the first of them on or after the day it was taken."""
     from ..models import Income
+    from .cadence import income_days, previous_paydays, scheduled_payday
 
-    income = session.exec(select(Income).where(Income.active == True)).first()  # noqa: E712
-    return (income.cadence if income else "biweekly") or "biweekly"
+    out: set[date] = set()
+    for income in session.exec(select(Income).where(Income.active == True)).all():  # noqa: E712
+        cadence, days = income.cadence or "biweekly", income_days(income)
+        anchor = scheduled_payday(income, today)
+        out.update(previous_paydays(anchor, cadence, 6, **days))
+        out.update(next_paydays(anchor, cadence, 4, **days))
+    return sorted(out)
 
 
-def previous_payday(next_payday: date, cadence: str, before: date) -> date | None:
-    """The last payday strictly before `before`, walked back from the next one by cadence."""
+def previous_payday(next_payday: date, cadence: str, before: date, days: dict | None = None) -> date | None:
+    """The last payday strictly before `before`, walked back from the next one by cadence (and the paycheck's own
+    days, as cadence.income_days gives them)."""
     from .cadence import previous_paydays
 
-    walk = [next_payday, *previous_paydays(next_payday, cadence, 8)]
+    walk = [next_payday, *previous_paydays(next_payday, cadence, 8, **(days or {}))]
     earlier = [d for d in walk if d < before]
     return max(earlier) if earlier else None
 
@@ -214,13 +249,16 @@ def ensure_borrowing_rules(session: Session) -> int:
 def borrowing_summary(session: Session, today: date) -> dict:
     """The light figures the snapshot, the brief and the watchlist carry: fees in the last ninety days, what
     stands outstanding, and what was taken since the last payday."""
+    from .cadence import income_days
+
     advance_rows, _installments = _rows(session, today)
-    next_payday = _next_payday(session, today)
-    paired = pair_advances(advance_rows, next_payday, today)
+    pay = _next_pay(session, today)
+    next_payday = pay[0] if pay else None
+    paired = pair_advances(advance_rows, next_payday, today, _scheduled_paydays(session, today))
     since = today - timedelta(days=WINDOW_DAYS)
     fees = sum(p["fee"] for p in paired["pairs"] if p["taken_on"] >= since) + sum(t["amount"] for t in paired["tips"] if t["date"] >= since)
     outstanding = [p for p in paired["pairs"] if not p["repaid"] and not p.get("stale")]
-    last_payday = previous_payday(next_payday, _cadence(session), today) if next_payday is not None else None
+    last_payday = previous_payday(pay[0], pay[1].cadence or "biweekly", today, income_days(pay[1])) if pay else None
     since_payday = [p for p in paired["pairs"] if last_payday and p["taken_on"] >= last_payday and p["taken_on"] <= today]
     return {
         "fees_90d": _money(fees), "fees_month": _money(fees * 30.0 / WINDOW_DAYS), "advances_90d": len([p for p in paired["pairs"] if p["taken_on"] >= since]),
@@ -236,23 +274,29 @@ def sync_borrowing(session: Session, today: date) -> dict:
     recategorised = ensure_borrowing_rules(session)
     refresh_plan_progress(session, today)
     advance_rows, installment_rows = _rows(session, today)
-    paired = pair_advances(advance_rows, _next_payday(session, today), today)
+    paired = pair_advances(advance_rows, _next_payday(session, today), today, _scheduled_paydays(session, today))
     existing = {(a.provider, a.taken_on, round(a.amount, 2)): a for a in session.exec(select(Advance)).all()}
     created = updated = 0
+    shown = {(p["provider"], p["taken_on"], round(p["amount"], 2)) for p in paired["pairs"] if not p.get("stale")}
     for key, row in list(existing.items()):
         if not row.repaid and (today - row.taken_on).days > MATCH_DAYS:  # it never showed a repayment; it is not due against the next check
             session.delete(row)
+            existing.pop(key)
+        elif row.provider in ADVANCE_PROVIDERS.values() and row.taken_on >= today - timedelta(days=LOOKBACK_DAYS) and key not in shown:
+            session.delete(row)  # made from the ledger, whose row is gone (an undone import): it was never taken
             existing.pop(key)
     for p in paired["pairs"]:
         if p.get("stale"):
             continue
         key = (p["provider"], p["taken_on"], round(p["amount"], 2))
         row = existing.get(key)
+        # An advance not yet repaid is never moved to a later payday: the app takes it back on the day it set.
+        repay_date = p["repay_date"] if p["repaid"] or row is None else min(row.repay_date, p["repay_date"])
         if row is None:
-            session.add(Advance(provider=p["provider"], amount=p["amount"], fee=p["fee"], taken_on=p["taken_on"], repay_date=p["repay_date"], repaid=p["repaid"]))
+            session.add(Advance(provider=p["provider"], amount=p["amount"], fee=p["fee"], taken_on=p["taken_on"], repay_date=repay_date, repaid=p["repaid"]))
             created += 1
-        elif (row.repaid, round(row.fee, 2), row.repay_date) != (p["repaid"], round(p["fee"], 2), p["repay_date"]):
-            row.repaid, row.fee, row.repay_date = p["repaid"], p["fee"], p["repay_date"]
+        elif (row.repaid, round(row.fee, 2), row.repay_date) != (p["repaid"], round(p["fee"], 2), repay_date):
+            row.repaid, row.fee, row.repay_date = p["repaid"], p["fee"], repay_date
             session.add(row)
             updated += 1
     retired = 0
@@ -274,18 +318,26 @@ def sync_borrowing(session: Session, today: date) -> dict:
     plans = session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all()  # noqa: E712
     bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
     series_rows = session.exec(select(RecurringSeries)).all()
-    for stream in installment_streams(installment_rows, today):
-        if not stream["active"]:
-            continue
-        known = any(p.provider.lower() == stream["provider"].lower() and abs(p.installment - stream["amount"]) < 1.0 for p in plans)
+    streams = [s for s in installment_streams(installment_rows, today) if s["active"]]
+    for stream in streams:
+        known = any(plan_provider(p).lower() == stream["provider"].lower() and abs(p.installment - stream["amount"]) < 1.0 for p in plans)
         known = known or any(provider_of(b.name, INSTALLMENT_PROVIDERS) == stream["provider"] and abs(b.amount - stream["amount"]) < 1.0 for b in bills)
-        known = known or any(provider_of(s.merchant, INSTALLMENT_PROVIDERS) == stream["provider"] and abs(s.typical_amount - stream["amount"]) < 1.0 for s in series_rows)
+        same = [s for s in series_rows if provider_of(s.merchant, INSTALLMENT_PROVIDERS) == stream["provider"] and abs(s.typical_amount - stream["amount"]) < 1.0]
+        # A series retired earlier is not knowledge: the stream is back, so that series counts again.
+        known = known or any(s.active or s.confirmed for s in same)
         if known:
             continue
         cadence = {7: "weekly", 14: "biweekly", 30: "monthly"}[stream["cadence_days"]]
-        session.add(RecurringSeries(merchant_key=stream["provider"].lower(), merchant=stream["provider"], category="Loan Payment", cadence=cadence, typical_amount=stream["amount"], latest_amount=stream["amount"],
-                                    charges_seen=stream["payments_seen"], first_seen=stream["first_date"], last_date=stream["last_date"], next_expected=stream["next_date"], active=True, kind="unknown", confirmed=False, suggested_kind="installment"))
+        series = same[0] if same else RecurringSeries(merchant_key=stream["provider"].lower(), merchant=stream["provider"], category="Loan Payment", cadence=cadence, typical_amount=stream["amount"], latest_amount=stream["amount"],
+                                                      first_seen=stream["first_date"], last_date=stream["last_date"], next_expected=stream["next_date"], kind="unknown", confirmed=False, suggested_kind="installment")
+        series.charges_seen, series.last_date, series.next_expected, series.active, series.origin = stream["payments_seen"], stream["last_date"], stream["next_date"], True, "borrowing"
+        session.add(series)
         queued += 1
+    # A stream queued here that has stopped (paid off, or its rows undone) stops counting; detection never retires it.
+    for s in series_rows:
+        if s.origin == "borrowing" and s.active and not s.confirmed and not any(provider_of(s.merchant, INSTALLMENT_PROVIDERS) == st["provider"] and abs(s.typical_amount - st["amount"]) < 1.0 for st in streams):
+            s.active = False
+            session.add(s)
     session.commit()
     return {"advances_created": created, "advances_updated": updated, "bills_retired": retired, "streams_queued": queued, "rows_recategorised": recategorised}
 
@@ -293,9 +345,12 @@ def sync_borrowing(session: Session, today: date) -> dict:
 def borrowing_overview(session: Session, today: date) -> dict:
     """The picture: what advances and installments cost, the cycle they run in, what stands outstanding, and
     the steps that end it. Everything here is read from the ledger and the registers."""
+    from .cadence import income_days
+
     advance_rows, installment_rows = _rows(session, today)
-    next_payday = _next_payday(session, today)
-    paired = pair_advances(advance_rows, next_payday, today)
+    pay = _next_pay(session, today)
+    next_payday = pay[0] if pay else None
+    paired = pair_advances(advance_rows, next_payday, today, _scheduled_paydays(session, today))
     since = today - timedelta(days=WINDOW_DAYS)
     pairs = [p for p in paired["pairs"] if p["taken_on"] >= since]
     tips = [t for t in paired["tips"] if t["date"] >= since]
@@ -331,13 +386,13 @@ def borrowing_overview(session: Session, today: date) -> dict:
     # The cycle: for each payday in the window, what was advanced since the one before and what was repaid on it.
     cycle: list[dict] = []
     paydays: list[date] = []
-    if next_payday is not None:
-        cadence = _cadence(session)
+    if pay is not None:
+        cadence, days = pay[1].cadence or "biweekly", income_days(pay[1])
         back: date | None = next_payday
         guard = 0
         while back is not None and back > since and guard < 12:
             paydays.insert(0, back)
-            back = previous_payday(back, cadence, back)
+            back = previous_payday(back, cadence, back, days)
             guard += 1
         for i, pd in enumerate(paydays):
             start = paydays[i - 1] if i > 0 else since
@@ -353,7 +408,7 @@ def borrowing_overview(session: Session, today: date) -> dict:
     series_rows = session.exec(select(RecurringSeries).where(RecurringSeries.confirmed == False)).all()  # noqa: E712
     installments = []
     for s in streams:
-        plan = next((p for p in plans if p.provider.lower() == s["provider"].lower() and abs(p.installment - s["amount"]) < 1.0), None)
+        plan = next((p for p in plans if plan_provider(p).lower() == s["provider"].lower() and abs(p.installment - s["amount"]) < 1.0), None)
         bill = next((b for b in bills if provider_of(b.name, INSTALLMENT_PROVIDERS) == s["provider"] and abs(b.amount - s["amount"]) < 1.0), None)
         series = next((r for r in series_rows if provider_of(r.merchant, INSTALLMENT_PROVIDERS) == s["provider"] and abs(r.typical_amount - s["amount"]) < 1.0), None)
         status = "plan" if plan else "bill" if bill else "pending" if series else "unknown"
@@ -510,7 +565,8 @@ def refresh_plan_progress(session: Session, today: date) -> int:
     # before the next date on ticks one off and moves the next date on by the plan's cadence. A payment counts once.
     used_ids: set[int] = set()
     for p in unscheduled:
-        pays = sorted((t for t in rows if abs(float(t.amount) - p.installment) <= 0.05 and provider_of(_text(t), INSTALLMENT_PROVIDERS) == p.provider), key=lambda t: t.date)
+        lender = plan_provider(p)  # a plan named after the bank's text ("AFFIRM PAYMENT") is still Affirm's
+        pays = sorted((t for t in rows if abs(float(t.amount) - p.installment) <= 0.05 and provider_of(_text(t), INSTALLMENT_PROVIDERS) == lender), key=lambda t: t.date)
         moved = False
         for t in pays:
             if p.remaining <= 0:
@@ -535,7 +591,7 @@ def refresh_plan_progress(session: Session, today: date) -> int:
         first = date.fromisoformat(schedule[0]["date"])
         amounts = [s["amount"] for s in schedule]
         matched = 0
-        pool = sorted((row for row in paid_to.get(p.provider, []) if row[0] >= first - timedelta(days=5)), key=lambda r: r[0])
+        pool = sorted((row for row in paid_to.get(plan_provider(p), []) if row[0] >= first - timedelta(days=5)), key=lambda r: r[0])
         used: set = set()
         for i, target in enumerate(amounts):
             hit = next((j for j, (d, a) in enumerate(pool) if j not in used and abs(a - target) <= 0.05), None)

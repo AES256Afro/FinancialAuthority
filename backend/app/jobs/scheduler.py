@@ -171,56 +171,71 @@ def self_check() -> str:
 
 
 def import_watch() -> str:
-    """Import any new file in the import folder, then re-run detection. Keeps a record of what it has taken."""
+    """Import any new file in the import folder, then re-run detection. Each file is recorded as taken the moment
+    it is, so a later failure never loses the record of the ones before it; a file that fails is said so, the
+    others still import, and it is tried again on the next run."""
     settings.ensure_dirs()
+    taken: list[str] = []
+    failed: list[str] = []
     with session_scope() as session:
         processed = {tuple(p) for p in get_setting(session, "imports.processed", [])}
-        processed_before = set(processed)
-        taken: list[str] = []
-        for path in sorted(settings.import_root.rglob("*.pdf")):
-            stamp = (str(path.relative_to(settings.import_root)), int(path.stat().st_mtime))
+        pdfs = [(path, (str(path.relative_to(settings.import_root)), int(path.stat().st_mtime))) for path in sorted(settings.import_root.rglob("*.pdf"))]
+        tables = [(path, (path.name, int(path.stat().st_mtime))) for path in sorted(list(settings.import_root.glob("*.csv")) + list(settings.import_root.glob("*.ofx")) + list(settings.import_root.glob("*.qfx")) + list(settings.import_root.glob("*.qbo")))]
+        for path, stamp in pdfs + tables:
             if stamp in processed:
                 continue
-            from ..engine.borrowing import statement_fact_from_file
-            from ..engine.paystubs import paystub_fact_from_file
-
-            data = path.read_bytes()
-            applied = statement_fact_from_file(session, data, path.name, _today(), "import-folder")
-            if applied:
-                taken.append(f"{path.name}: an Affirm statement, {applied['loans']} loans landed")
-            else:
-                fact = paystub_fact_from_file(session, data, path.name, _today(), "import-folder")
-                taken.append(f"{path.name}: {'a paystub, on Needs you to confirm' if fact else 'not read as a paystub or a statement'}")
-            processed.add(stamp)
-        for path in sorted(list(settings.import_root.glob("*.csv")) + list(settings.import_root.glob("*.ofx")) + list(settings.import_root.glob("*.qfx")) + list(settings.import_root.glob("*.qbo"))):
-            stamp = (path.name, int(path.stat().st_mtime))
-            if stamp in processed:
+            try:
+                note = _import_pdf(session, path) if path.suffix.lower() == ".pdf" else _import_table(session, path)
+            except Exception as error:  # noqa: BLE001 - one file's failure is its own; the others still import
+                session.rollback()
+                log.exception("import of %s failed", path.name)
+                failed.append(f"{path.name}: not imported ({type(error).__name__}: {str(error)[:120]})")
                 continue
-            text = path.read_text(encoding="utf-8-sig", errors="replace")
-            from ..connectors.files import detect, import_bills, import_rows, parse_bills_rows, parse_csv_rows, parse_ofx
-            from ..connectors.rocketmoney import parse_csv as parse_rocketmoney
-
-            if path.suffix.lower() == ".csv" and parse_rocketmoney(text, path.name) is not None:
-                result = CONNECTORS["rocketmoney"].sync(session, text=text, source_file=path.name, via="folder")
-            else:
-                found = detect(text)
-                if found["kind"] == "ofx":
-                    parsed = parse_ofx(text)
-                    rows = parsed["rows"]
-                    name = f"{parsed['vendor']} {parsed['account_type'] or 'account'}".strip() if parsed["vendor"] else path.stem
-                    result = import_rows(session, rows, source_file=path.name, account_name=name, institution=parsed["vendor"], account_number=parsed["account_id"], via="folder") if rows else None
-                elif found["kind"] == "bills":
-                    result = import_bills(session, parse_bills_rows(text, found["mapping"]), source_file=path.name)
-                else:
-                    rows = parse_csv_rows(text) if found["ready"] else []
-                    result = import_rows(session, rows, source_file=path.name, account_name=path.stem, via="folder") if rows else None
-            taken.append(f"{path.name}: {result.summary if result else 'no rows found'}")
+            taken.append(note)
             processed.add(stamp)
-        if processed != processed_before:
-            set_setting(session, "imports.processed", sorted(processed))
+            set_setting(session, "imports.processed", sorted(processed))  # this file's record lands now, not at the end
     if taken:
         detect_recurring()
+    if failed:
+        raise RuntimeError("; ".join(failed + taken))  # a file that would not import is a failed run, never a quiet one
     return "; ".join(taken) if taken else "nothing new"
+
+
+def _import_pdf(session, path) -> str:  # noqa: ANN001 - a Session and a Path
+    """A PDF in the folder: an Affirm statement, applied at once, or a paystub, which waits on Needs you."""
+    from ..engine.borrowing import statement_fact_from_file
+    from ..engine.paystubs import paystub_fact_from_file
+
+    data = path.read_bytes()
+    applied = statement_fact_from_file(session, data, path.name, _today(), "import-folder")
+    if applied:
+        return f"{path.name}: an Affirm statement, {applied['loans']} loans landed"
+    fact = paystub_fact_from_file(session, data, path.name, _today(), "import-folder")
+    return f"{path.name}: {'a paystub, on Needs you to confirm' if fact else 'not read as a paystub or a statement'}"
+
+
+def _import_table(session, path) -> str:  # noqa: ANN001 - a Session and a Path
+    """A CSV or a statement file in the folder: a Rocket Money export, an OFX statement, a bills list, or a bank's
+    CSV, which lands in the account the file names (its number, else an account its name starts with)."""
+    from ..connectors.files import detect, folder_account, import_bills, import_rows, parse_bills_rows, parse_csv_rows, parse_ofx
+    from ..connectors.rocketmoney import parse_csv as parse_rocketmoney
+
+    text = path.read_text(encoding="utf-8-sig", errors="replace")
+    if path.suffix.lower() == ".csv" and parse_rocketmoney(text, path.name) is not None:
+        result = CONNECTORS["rocketmoney"].sync(session, text=text, source_file=path.name, via="folder")
+    else:
+        found = detect(text)
+        if found["kind"] == "ofx":
+            parsed = parse_ofx(text)
+            rows = parsed["rows"]
+            name = f"{parsed['vendor']} {parsed['account_type'] or 'account'}".strip() if parsed["vendor"] else path.stem
+            result = import_rows(session, rows, source_file=path.name, account_name=name, institution=parsed["vendor"], account_number=parsed["account_id"], via="folder") if rows else None
+        elif found["kind"] == "bills":
+            result = import_bills(session, parse_bills_rows(text, found["mapping"]), source_file=path.name, today=_today())
+        else:
+            rows = parse_csv_rows(text) if found["ready"] else []
+            result = import_rows(session, rows, source_file=path.name, via="folder", **folder_account(session, path.name, rows)) if rows else None
+    return f"{path.name}: {result.summary if result else 'no rows found'}"
 
 
 def _today():

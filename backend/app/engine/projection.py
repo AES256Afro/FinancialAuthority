@@ -8,7 +8,7 @@ from datetime import date, timedelta
 
 from ..models import Account, Advance, Bill, InstallmentPlan
 from .billdates import bill_dates
-from .cadence import payday_for, payday_position
+from .cadence import _add_months, next_paydays, payday_for, payday_position
 
 SPENDABLE_KINDS = {"checking", "cash"}
 CASH_KINDS = {"checking", "savings", "cash"}
@@ -44,10 +44,11 @@ def next_due(due_day: int, today: date) -> date:
     return candidate
 
 
-def window_date(due: date, paid_from: str) -> date:
+def window_date(due: date, paid_from: str, pay_days: str = "") -> date:
     """The payday whose window a bill belongs to: its due date, or the mid or end-of-month check the owner
-    pays it from. Cash still leaves on the due date; this only decides which paycheck carries it."""
-    return payday_for(due, paid_from) if paid_from in ("mid", "end") else due
+    pays it from (on the paycheck's own semi-monthly days). Cash still leaves on the due date; this only decides
+    which paycheck carries it."""
+    return payday_for(due, paid_from, pay_days) if paid_from in ("mid", "end") else due
 
 
 def line_of(category: str, kind: str) -> str:
@@ -62,10 +63,12 @@ def line_of(category: str, kind: str) -> str:
     return "utilities"
 
 
-def build_events(bills: list[Bill], plans: list[InstallmentPlan], advances: list[Advance], today: date, *, due_days: dict[int, int] | None = None, accounts: dict[int, Account] | None = None, horizon_days: int = HORIZON_DAYS) -> list[dict]:
+def build_events(bills: list[Bill], plans: list[InstallmentPlan], advances: list[Advance], today: date, *, due_days: dict[int, int] | None = None, accounts: dict[int, Account] | None = None, horizon_days: int = HORIZON_DAYS,
+                 paid: set[tuple[int, date]] | None = None, pay_days: str = "") -> list[dict]:
     """Every dated obligation for the horizon. `due_days` overrides a bill's due day (the optimiser's what-if).
     A bill charged to a card (its paying account is a card) is marked so: it does not leave checking on its
-    due date; it rides the card payment it is paid from."""
+    due date; it rides the card payment it is paid from. A due date whose payment is already matched in the
+    ledger (`paid`, as (bill id, due date)) is left out: that money has left the balance, or the card holds it."""
     events: list[dict] = []
     horizon = today + timedelta(days=horizon_days)
     for b in bills:
@@ -74,7 +77,9 @@ def build_events(bills: list[Bill], plans: list[InstallmentPlan], advances: list
         payer = (accounts or {}).get(b.pay_from_account_id) if b.pay_from_account_id else None
         from_kind = "card" if payer is not None and payer.kind == "card" else "cash"
         for d in bill_dates(b, today, horizon, due_day=due_day):
-            events.append({"date": d, "window_date": window_date(d, paid_from), "name": b.name, "amount": _money(b.amount), "kind": b.kind, "autopay": b.autopay, "source": f"bill:{b.id}", "line": line_of(b.category, b.kind), "bill_id": b.id, "paid_from": paid_from, "from_kind": from_kind, "from_account_id": b.pay_from_account_id, "category": b.category or "", "movable": bool(b.movable), "due_day": due_day})
+            if paid and (b.id, d) in paid:
+                continue
+            events.append({"date": d, "window_date": window_date(d, paid_from, pay_days), "name": b.name, "amount": _money(b.amount), "kind": b.kind, "autopay": b.autopay, "source": f"bill:{b.id}", "line": line_of(b.category, b.kind), "bill_id": b.id, "paid_from": paid_from, "from_kind": from_kind, "from_account_id": b.pay_from_account_id, "category": b.category or "", "movable": bool(b.movable), "due_day": due_day})
     for p in plans:
         payer = (accounts or {}).get(getattr(p, "pay_from_account_id", None)) if getattr(p, "pay_from_account_id", None) else None
         plan_kind = "card" if payer is not None and payer.kind == "card" else "cash"
@@ -128,22 +133,75 @@ def card_events(cards: list[Account], paydays: list[date], mode: str, today: dat
     return events
 
 
-def pending_installment_events(series_rows: list, today: date, horizon_days: int = HORIZON_DAYS) -> list[dict]:
+def series_dates(cadence: str, first: date, start: date, end: date) -> list[date]:
+    """The days a detected series charges from `start` through `end`, stepped from `first` (its next expected
+    date) by its own cadence: weekly and every two weeks by days, twice a month on the 15th and the last day,
+    monthly, quarterly and yearly by calendar months on the day of `first`."""
+    if cadence in ("weekly", "biweekly"):
+        step = timedelta(days=7 if cadence == "weekly" else 14)
+        d = first
+        while d < start:
+            d += step
+        out = []
+        while d <= end:
+            out.append(d)
+            d += step
+        return out
+    if cadence == "semimonthly":
+        return [d for d in next_paydays(first, "semimonthly", max(2, (end - first).days // 13 + 3)) if start <= d <= end]
+    months = {"quarterly": 3, "semiannual": 6, "yearly": 12}.get(cadence, 1)
+    out, k, d = [], 0, first
+    while d <= end and k < 400:
+        if d >= start:
+            out.append(d)
+        k += 1
+        d = _add_months(first, k * months)
+    return out
+
+
+def pending_installment_events(series_rows: list, today: date, horizon_days: int = HORIZON_DAYS, plans: list | None = None) -> list[dict]:
     """A pay-later stream the ledger found and the owner has not named yet still charges on its day: it is
-    counted at its last amount, marked pending, until the payments left are set and it becomes a plan."""
+    counted at its last amount, marked pending, until the payments left are set and it becomes a plan. A stream
+    that is a plan's own payments (the plan's merchant, or the same lender at the same installment) is that
+    plan, which is counted already."""
+    from .borrowing import plan_covers_series
+
     events: list[dict] = []
     horizon = today + timedelta(days=horizon_days)
     for s in series_rows:
         if s.confirmed or not s.active or getattr(s, "suggested_kind", "") != "installment":
             continue
-        step = {"weekly": 7, "biweekly": 14, "monthly": 30}.get(s.cadence, 30)
-        d = s.next_expected
-        while d < today:
-            d += timedelta(days=step)
-        while d <= horizon:
+        if any(p.active and plan_covers_series(p, s) for p in plans or []):
+            continue
+        for d in series_dates(s.cadence, s.next_expected, today, horizon):
             events.append({"date": d, "window_date": d, "name": f"{s.merchant} (payments left not set)", "amount": _money(s.typical_amount), "kind": "installment", "autopay": True, "source": f"series:{s.id}", "line": "debt", "paid_from": "due", "pending": True})
-            d += timedelta(days=step)
     return events
+
+
+def cards_paid_by_bills(bills: list[Bill], cards: list[Account], debts: list | None) -> dict[int, set[int]]:
+    """The cards whose payment a bill already holds, each with those bills: an active bill filed under Credit
+    Card Payment pays the card it names (the card's or its debt's name is in the bill's name), else the card
+    whose minimum it is (on the card's due day, when two cards share that minimum). The card's own payment is
+    not reserved again on top of that bill."""
+    out: dict[int, set[int]] = {}
+    pairs = [(a, _debt_of(a, debts)) for a in cards]
+    for b in bills:
+        if not b.active or (b.category or "").strip().lower() != "credit card payment":
+            continue
+        text = (b.name or "").lower()
+        named = [a for a, d in pairs if any(len(n.strip()) >= 3 and n.strip().lower() in text for n in (a.name or "", d.name if d is not None else ""))]
+        minimum = [(a, d) for a, d in pairs if d is not None and (d.minimum or 0) > 0 and abs(float(b.amount) - float(d.minimum)) < 1.0]
+        if len(minimum) > 1:
+            minimum = [(a, d) for a, d in minimum if d.due_day and int(d.due_day) == int(b.due_day)] or minimum[:1]
+        card = named[0] if named else (minimum[0][0] if minimum else None)
+        if card is not None:
+            out.setdefault(card.id, set()).add(b.id)
+    return out
+
+
+def _debt_of(a: Account, debts: list | None):  # noqa: ANN202 - a Debt or None
+    """The debt row of a card: by its account, else by the same name."""
+    return next((d for d in (debts or []) if (getattr(d, "account_id", None) == a.id) or (d.name or "").strip().lower() == (a.name or "").strip().lower()), None)
 
 
 def card_payoffs(cards: list[Account], paydays: list[date], mode: str, today: date, debts: list | None, planned: dict[int, float] | None, card_bills: list[dict], card_pace_by_account: dict[int, float] | None, horizon_days: int = HORIZON_DAYS) -> list[dict]:
@@ -188,20 +246,24 @@ def card_payoffs(cards: list[Account], paydays: list[date], mode: str, today: da
     return events
 
 
-def assemble(*, bills: list[Bill], plans: list[InstallmentPlan], advances: list[Advance], today: date, accounts: dict[int, Account], paydays: list[date], card_mode: str, debts: list | None, planned: dict[int, float] | None, extra: list[dict], card_pace_by_account: dict[int, float] | None, due_days: dict[int, int] | None = None, horizon_days: int = HORIZON_DAYS) -> dict:
+def assemble(*, bills: list[Bill], plans: list[InstallmentPlan], advances: list[Advance], today: date, accounts: dict[int, Account], paydays: list[date], card_mode: str, debts: list | None, planned: dict[int, float] | None, extra: list[dict], card_pace_by_account: dict[int, float] | None, due_days: dict[int, int] | None = None, horizon_days: int = HORIZON_DAYS,
+             paid: set[tuple[int, date]] | None = None, pay_days: str = "") -> dict:
     """Everything the windows and the daily path count, with the card done right. `math` is what leaves
     checking: cash bills, plans, advances, planned payments and the card payments. `display` adds the bills
-    that ride the card, marked via_card, so the picture still names them."""
-    events = build_events(bills, plans, advances, today, due_days=due_days, accounts=accounts, horizon_days=horizon_days) + extra
+    that ride the card, marked via_card, so the picture still names them. A card whose payment is kept as a
+    bill is paid by that bill, once: `paid_by_bill` names those bills by card. `paid` and `pay_days` are as
+    build_events takes them."""
+    events = build_events(bills, plans, advances, today, due_days=due_days, accounts=accounts, horizon_days=horizon_days, paid=paid, pay_days=pay_days) + extra
     card_bills = [e for e in events if e.get("from_kind") == "card"]
     cash = [e for e in events if e.get("from_kind") != "card"]
     cards = [a for a in accounts.values() if a.kind == "card" and a.active]
-    payoffs = card_payoffs(cards, paydays, card_mode, today, debts, planned, card_bills, card_pace_by_account, horizon_days=horizon_days)
+    covered = cards_paid_by_bills(bills, cards, debts)
+    payoffs = card_payoffs([a for a in cards if a.id not in covered], paydays, card_mode, today, debts, planned, card_bills, card_pace_by_account, horizon_days=horizon_days)
     for e in card_bills:
         e["via_card"] = True
     math = sorted(cash + payoffs, key=lambda e: e["date"])
     display = sorted(cash + payoffs + card_bills, key=lambda e: e["date"])
-    return {"math": math, "display": display, "card_bills": card_bills, "payoffs": payoffs}
+    return {"math": math, "display": display, "card_bills": card_bills, "payoffs": payoffs, "paid_by_bill": covered}
 
 
 def _schedule_of(p: InstallmentPlan) -> list[dict]:

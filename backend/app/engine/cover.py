@@ -15,7 +15,7 @@ from sqlmodel import Session, select
 
 from ..models import Debt, Income
 from ..store import get_setting
-from .projection import assemble, is_spendable, next_due
+from .projection import is_spendable, next_due
 NOT_ADVICE = "Computed by the engine from your registers and the ledger. Not financial advice."
 
 UTILISATION_TARGET = 0.30
@@ -69,13 +69,12 @@ def _walk(start_balance: float, events: list[dict], pace: float, start: date, en
 
 
 def account_cover(session: Session, today: date, *, saving: dict | None = None) -> dict:
-    from .scenario import load_inputs
+    from .scenario import assembled, load_inputs
 
     inp = load_inputs(session, today, horizon_days=60)
     accounts = inp["accounts"]
-    assembled = assemble(bills=inp["bills"], plans=inp["plans"], advances=inp["advances"], today=today, accounts=accounts, paydays=inp["paydays"], card_mode=inp["card_mode"], debts=inp["debts"],
-                         planned=inp["planned"], extra=inp["extra"], card_pace_by_account=inp["pace"]["per_day_by_account"], horizon_days=60)
-    math, card_bills, payoffs = assembled["math"], assembled["card_bills"], assembled["payoffs"]
+    plan = assembled(inp, 60)
+    math, card_bills, payoffs = plan["math"], plan["card_bills"], plan["payoffs"]
     paydays = inp["paydays"]
     p1 = paydays[0] if paydays else today + timedelta(days=14)
     p2 = paydays[1] if len(paydays) > 1 else p1 + timedelta(days=14)
@@ -137,6 +136,8 @@ def account_cover(session: Session, today: date, *, saving: dict | None = None) 
             balance = float(a.balance or 0.0)
             statement = next_due(int(debt.statement_day), today) if debt and debt.statement_day else None
             mine_pay = [e for e in payoffs if e.get("source") == f"account:{a.id}" or (debt is not None and e.get("source") == f"debt:{debt.id}")]
+            by_bill = plan["paid_by_bill"].get(a.id, set())  # a card paid by a bill on the register: that bill is its payment
+            mine_pay = sorted(mine_pay + [e for e in math if e.get("bill_id") in by_bill], key=lambda e: e["date"])
             riding = [e for e in card_bills if e.get("from_account_id") == a.id]
             pace = float(pace_by.get(a.id, 0.0))
             planned_off = float(inp["planned"].get(a.id, 0.0))
@@ -202,18 +203,21 @@ def account_cover(session: Session, today: date, *, saving: dict | None = None) 
         else:
             out_accounts.append({**base, "role": "other", "status": "good", "headline": "Not counted in the paycheck plan"})
 
-    # Payday moves: the set-aside stays in checking for the window after; the saving share moves out.
+    # Payday moves: the set-aside stays in checking for the window after; the saving share moves out. They are
+    # dated on the scheduled payday: today's, when today is payday, even once its check has posted.
     if deposit is not None and inp["has_income"]:
+        pay_on = today if inp["payday_today"] else p1
+        after = p1 if pay_on < p1 else p2
         snap_windows = (saving or {}).get("per_check") or []
-        first = next((w for w in snap_windows if w.get("date") == p1.isoformat()), None)
+        first = next((w for w in snap_windows if w.get("date") == pay_on.isoformat()), None)
         save_to = next((a for a in out_accounts if a["role"] == "save"), None)
         if first and first.get("keep", 0) > 0 and save_to:
-            sheet.append({"kind": "move", "date": p1.isoformat(), "action": f"Move to {save_to['name']}", "amount": first["keep"], "from": deposit.name, "to": save_to["name"],
-                          "so_that": f"{(saving or {}).get('share_used')}% of what the {_short(p1)} check leaves goes to the ladder" + ("" if (saving or {}).get("chosen") else " (the suggested share; choose yours on Saving)"), "source": "saving:share"})
-        aside = next((w for w in (saving or {}).get("windows", []) if w.get("start") == p1.isoformat()), None)
+            sheet.append({"kind": "move", "date": pay_on.isoformat(), "action": f"Move to {save_to['name']}", "amount": first["keep"], "from": deposit.name, "to": save_to["name"],
+                          "so_that": f"{(saving or {}).get('share_used')}% of what the {_short(pay_on)} check leaves goes to the ladder" + ("" if (saving or {}).get("chosen") else " (the suggested share; choose yours on Saving)"), "source": "saving:share"})
+        aside = next((w for w in (saving or {}).get("windows", []) if w.get("start") == pay_on.isoformat()), None)
         if aside and aside.get("set_aside", 0) > 0:
-            sheet.append({"kind": "keep", "date": p1.isoformat(), "action": f"Leave in {deposit.name}", "amount": aside["set_aside"], "from": None, "to": deposit.name,
-                          "so_that": f"the {_short(p2)} window's bills are already there", "source": "snapshot:set_aside"})
+            sheet.append({"kind": "keep", "date": pay_on.isoformat(), "action": f"Leave in {deposit.name}", "amount": aside["set_aside"], "from": None, "to": deposit.name,
+                          "so_that": f"the {_short(after)} window's bills are already there", "source": "snapshot:set_aside"})
     for row in sheet:
         row["id"] = f"{row['kind']}:{row['source']}:{row['date']}"
         row["done"] = row["id"] in ticks

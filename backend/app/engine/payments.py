@@ -48,7 +48,8 @@ def match_payments(session: Session, today: date) -> dict:
         series_key = series_keys.get(bill.series_id) if bill.series_id else None
         # A named match may drift by the detector's own 15% (a price change); an estimate by 40%.
         tolerance = max(2.0, bill.amount * (0.4 if bill.amount_mode == "estimate" else 0.15))
-        for due in _due_dates(bill, start, end):
+        # A bill is looked for from the day it was added, never in the months before it existed.
+        for due in _due_dates(bill, max(start, bill.created_on or start), end):
             payment = existing.get((bill.id, due))
             if payment is not None and payment.status == "paid":
                 counts["paid"] += 1
@@ -82,9 +83,18 @@ def match_payments(session: Session, today: date) -> dict:
     return counts
 
 
+def paid_periods(session: Session, today: date) -> set[tuple[int, date]]:
+    """The (bill, due date) periods from today on whose payment the ledger already shows, paid today or early.
+    The plan leaves them out: that money has left the balance, or rides the card that was charged."""
+    rows = session.exec(select(Payment.bill_id, Payment.due_date).where(Payment.status == "paid", Payment.due_date >= today)).all()
+    return {(bill_id, due) for bill_id, due in rows}
+
+
 def payments_overview(session: Session, today: date) -> dict:
-    bills = {b.id: b for b in session.exec(select(Bill)).all()}
-    rows = session.exec(select(Payment).where(Payment.due_date >= today - timedelta(days=45)).order_by(Payment.due_date)).all()
+    """Each period of the bills on the register: past due, late, paid and coming. A bill that is no longer on it
+    (undone, or turned off) has no periods here; its rows are kept, unshown."""
+    bills = {b.id: b for b in session.exec(select(Bill).where(Bill.active == True)).all()}  # noqa: E712
+    rows = [p for p in session.exec(select(Payment).where(Payment.due_date >= today - timedelta(days=45)).order_by(Payment.due_date)).all() if p.bill_id in bills]
 
     def out(p: Payment) -> dict:
         b = bills.get(p.bill_id)

@@ -103,11 +103,13 @@ def undo(session: Session, batch_id: int, today: date) -> dict[str, Any]:
     batch.status, batch.undone_at = "undone", utcnow()
     session.add(batch)
     session.commit()
+    from .engine.borrowing import sync_borrowing
     from .engine.payments import match_payments
     from .jobs.detect import run_detection
 
     if rows:
         run_detection(session, today)
+        sync_borrowing(session, today)  # an advance the undone rows showed goes with them
     match_payments(session, today)
     return {"id": batch.id, "removed": len(rows), "bills_removed": bills_removed, "bills_restored": bills_restored, "accounts_closed": accounts_closed}
 

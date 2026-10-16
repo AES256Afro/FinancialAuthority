@@ -15,7 +15,7 @@ from typing import Any
 from sqlmodel import Session, select
 
 from ..models import CategoryBudget, Income, Transaction
-from .cadence import PAYCHECKS_PER_YEAR, next_unpaid_payday, previous_paydays
+from .cadence import PAYCHECKS_PER_YEAR, income_days, next_unpaid_payday, previous_paydays
 
 SUGGEST_DAYS = 56
 TOLERANCE = 5.0  # dollars of slack before "ahead of pace"
@@ -34,7 +34,7 @@ def paycheck_span(session: Session, today: date) -> dict[str, Any]:
         return {"known": False, "start": start, "end": today, "next_payday": today + timedelta(days=1), "previous_start": start - timedelta(days=14), "cadence": "biweekly"}
     next_payday, income = upcoming[0]
     cadence = income.cadence or "biweekly"
-    back = previous_paydays(next_payday, cadence, 2)
+    back = previous_paydays(next_payday, cadence, 2, **income_days(income))
     start = back[0] if back[0] <= today else today
     return {"known": True, "start": start, "end": next_payday - timedelta(days=1), "next_payday": next_payday, "previous_start": back[1], "cadence": cadence}
 

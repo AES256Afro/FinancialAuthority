@@ -62,11 +62,12 @@ def due_today(session: Session, today: date) -> list[dict[str, Any]]:
                 continue
             how = "comes out automatically" if e.get("autopay") else "needs paying"
             out.append({"key": f"bill:{e.get('source')}:{e['date']}", "title": f"{e['name']} {_usd(e['amount'])} on {_short(e['date'])}", "body": f"It {how}; the plan has it covered from the check that carries it.", "link": "/bills", "tag": "bill"})
-    if s["payday"] and snap["next_paycheck"]["known"] and snap["next_paycheck"]["date"] == today.isoformat():
+    if s["payday"] and snap["payday"]["today"]:  # the scheduled payday, whether or not the check has posted yet
         cov = account_cover(session, today, saving=saving_plan(session, today, snap=snap))
         moves = [r for r in cov["sheet"] if r["date"] == today.isoformat() and not r["done"]]
         body = "; ".join(f"{r['action']} {_usd(r['amount'])}" for r in moves[:3]) or "Nothing to move today."
-        out.append({"key": f"payday:{today.isoformat()}", "title": f"Payday: {_usd(snap['next_paycheck']['amount'])} expected", "body": body, "link": "/cover", "tag": "payday"})
+        word = "in" if snap["payday"]["landed"] else "expected"
+        out.append({"key": f"payday:{today.isoformat()}", "title": f"Payday: {_usd(snap['payday']['amount'])} {word}", "body": body, "link": "/cover", "tag": "payday"})
     if s["statement"]:
         cov = account_cover(session, today, saving=saving_plan(session, today, snap=snap))
         for a in cov["accounts"]:

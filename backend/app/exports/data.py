@@ -73,12 +73,10 @@ def _fold(line: str) -> str:
 def calendar(session: Session, today: date, *, amounts: bool = True, name: str = "FinancialAuthority") -> bytes:
     """Paydays, bill due dates, card payments, pay-later payments and advance repayments for ninety days, as
     all-day events a phone's calendar can subscribe to. With amounts off, only names and dates."""
-    from ..engine.projection import assemble
-    from ..engine.scenario import load_inputs
+    from ..engine.scenario import assembled, load_inputs
 
     inp = load_inputs(session, today, horizon_days=90)
-    events = assemble(bills=inp["bills"], plans=inp["plans"], advances=inp["advances"], today=today, accounts=inp["accounts"], paydays=inp["paydays"], card_mode=inp["card_mode"], debts=inp["debts"],
-                      planned=inp["planned"], extra=inp["extra"], card_pace_by_account=inp["pace"]["per_day_by_account"], horizon_days=90)["display"]
+    events = assembled(inp, 90)["display"]
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//FinancialAuthority//Paydays and bills//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH", f"X-WR-CALNAME:{_ics_text(name)}: paydays and bills", "X-PUBLISHED-TTL:PT6H"]
 

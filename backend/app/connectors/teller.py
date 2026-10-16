@@ -21,8 +21,8 @@ from sqlmodel import Session, select
 
 from .. import crypto
 from ..config import settings
-from ..models import BankLink
-from .banks import SAVINGS_SUBTYPES, TELLER_CATEGORIES, bank_settings, finish_link, link_token, upsert_account, upsert_transaction
+from ..models import BankLink, Transaction
+from .banks import SAVINGS_SUBTYPES, TELLER_CATEGORIES, bank_settings, finish_link, link_token, remove_transaction, upsert_account, upsert_transaction
 from .base import Connector, SyncResult
 
 log = logging.getLogger("fa.teller")
@@ -214,6 +214,12 @@ class TellerConnector(Connector):
                     merchant=str(counterparty or tx.get("description") or ""), raw_name=str(tx.get("description") or ""), category=category_for(tx), pending=pending,
                 )
                 inserted, updated = inserted + int(new), updated + int(not new)
+            # A pending charge the bank has dropped (a hold released, an authorisation that never posted) is gone
+            # from what it sends; it leaves the ledger too, or it would stay off the balance for good.
+            sent = {str(tx["id"]) for tx in txs}
+            for row in session.exec(select(Transaction).where(Transaction.account_id == account.id, Transaction.source == "teller", Transaction.pending == True)).all():  # noqa: E712
+                if row.source_ref not in sent:
+                    remove_transaction(session, "teller", row.source_ref)
         link.needs_login = False
         session.commit()
         return inserted, updated, ids

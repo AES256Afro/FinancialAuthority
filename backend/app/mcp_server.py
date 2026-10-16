@@ -495,8 +495,9 @@ def build_server() -> MCPServer:
         if not (0 <= amount <= 1_000_000):
             return {"error": "the amount is between 0 and a million"}
         """Should the owner buy this? Yes, wait or no: whether the purchase keeps the honest line above zero
-        through the horizon, the first thing it would break, and the first date it would pass. Explain the
-        verdict with the figures returned; do not compute your own.
+        through the horizon, the first thing it would break, and the first date it would pass; "outside" when a
+        charge falls past the end of the line, which the plan cannot check. Explain the verdict with the figures
+        returned; do not compute your own.
 
         Args:
             amount: The price, in dollars.
