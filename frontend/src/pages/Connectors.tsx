@@ -248,7 +248,7 @@ export function Connectors() {
       <section id="import" className="card" style={sectionStyle}>
         <div>
           <h2 style={{ margin: 0, fontSize: 14, fontWeight: 800 }}>Import a file from any bank or vendor</h2>
-          <div style={{ fontSize: 13, color: "var(--ink-2)" }}>For a bank or a vendor with no live connection: download its CSV or OFX statement and bring it here. The app works out the columns, shows the first rows, and skips what your transactions already have. A bills list (name, amount, how often, due day) lands on your bills list the same way. The same files can be dropped into the Imports folder.</div>
+          <div style={{ fontSize: 13, color: "var(--ink-2)" }}>For a bank or a vendor with no live connection: download its CSV or OFX file, or its statement PDF, and bring it here. The app works out the columns, shows the first rows, and skips what your transactions already have. A bills list (name, amount, how often, due day) lands on your bills list the same way. The same files can be dropped into the Imports folder.</div>
         </div>
         <FileImport />
       </section>
