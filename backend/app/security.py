@@ -13,7 +13,7 @@ from typing import Any
 
 MAX_BODY = 60 * 1024 * 1024  # uploads are refused above 50 MB by their routes; this stops anything larger early
 MAX_JSON = 1024 * 1024  # every other body: a form or a JSON object is never near a megabyte
-UPLOAD_PREFIXES = ("/api/v1/imports", "/api/v1/borrowing/statement", "/api/v1/imports/rocketmoney", "/api/v1/appearance", "/api/v1/exports/templates")
+UPLOAD_PREFIXES = ("/api/v1/imports", "/api/v1/borrowing/statement", "/api/v1/imports/rocketmoney", "/api/v1/appearance", "/api/v1/exports/templates", "/api/v1/documents")
 
 APP_CSP = (
     "default-src 'self'; script-src 'self' https://cdn.plaid.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; "

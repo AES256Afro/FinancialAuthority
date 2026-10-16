@@ -26,7 +26,18 @@ def _next_on_day(day: int, start: date) -> date:
 
 
 def bill_dates(bill, start: date, end: date, *, due_day: int | None = None) -> list[date]:  # noqa: ANN001 - a Bill
-    """Every date from `start` through `end` the bill comes due."""
+    """Every date from `start` through `end` the bill comes due, never before its first due date or after its last."""
+    first, last = getattr(bill, "starts_on", None), getattr(bill, "ends_on", None)
+    if first is not None and first > start:
+        start = first
+    if last is not None and last < end:
+        end = last
+    if start > end:
+        return []
+    return _bill_dates(bill, start, end, due_day=due_day)
+
+
+def _bill_dates(bill, start: date, end: date, *, due_day: int | None = None) -> list[date]:  # noqa: ANN001 - a Bill
     cadence = (getattr(bill, "cadence", "") or "monthly").lower()
     day = due_day if due_day is not None else getattr(bill, "due_day", 1)
     anchor = getattr(bill, "anchor_date", None)
