@@ -16,7 +16,7 @@ export function Jobs() {
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 900 }}>
       <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Jobs</h1>
       <div style={{ fontSize: 13, color: "var(--ink-2)" }}>Scheduler: {data?.scheduler ?? "…"}. Every job is idempotent and never silent on failure.</div>
-      <div className="card" style={{ padding: "6px 14px" }}>
+      <div className="card" style={{ padding: "6px 14px", overflowX: "auto" }}>
         <table className="ledger">
           <thead><tr><th>Job</th><th>Every</th><th>What it does</th><th></th></tr></thead>
           <tbody>

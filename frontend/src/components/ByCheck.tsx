@@ -36,11 +36,11 @@ function Bar({ parts, total }: { parts: Part[]; total: number }) {
 function Lines({ items, c }: { items: Event[]; c: ReturnType<typeof palette> }) {
   const top = [...items].sort((a, b) => b.amount - a.amount).slice(0, 6);
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "4px 14px", fontSize: 12 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(220px, 100%), 1fr))", gap: "4px 14px", fontSize: 12 }}>
       {top.map((e, i) => (
         <div key={`${e.source}-${e.date}-${i}`} style={{ display: "flex", gap: 6, alignItems: "baseline", minWidth: 0 }}>
           <span className="sw" style={{ background: e.kind === "card_payment" ? c.debt : e.kind === "advance" ? c.debt : e.kind === "installment" ? c.bill : e.planned ? c.paycheck : c.bill, margin: 0, flexShrink: 0 }} />
-          <span style={{ flexGrow: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <span style={{ flexGrow: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {e.name} <span style={{ color: "var(--muted)" }}>· {shortDate(e.date)}{e.via_card ? " · on the card" : ""}{e.planned ? " · already sent" : ""}{e.pending ? " · end date not set" : ""}</span>
             {e.kind === "card_payment" && e.parts && <span style={{ color: "var(--muted)" }}> · carried {money(e.parts.balance)} + bills {money(e.parts.bills)} + usual spend {money(e.parts.spend)}</span>}
           </span>

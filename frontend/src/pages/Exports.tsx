@@ -132,7 +132,7 @@ export function Exports() {
           <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
             <div>
               <div className="lab" style={{ marginBottom: 6 }}>Layout</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 6 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(150px, 100%), 1fr))", gap: 6 }}>
                 {c.layouts.map((l) => (
                   <button key={l.id} type="button" aria-pressed={t.layout === l.id} onClick={() => setT({ ...t, layout: l.id, mascot: t.mascot ?? null })} title={l.description}
                     style={{ display: "flex", gap: 8, alignItems: "center", padding: 8, borderRadius: 10, cursor: "pointer", font: "inherit", textAlign: "left", border: t.layout === l.id ? "2px solid var(--ink)" : "1px solid var(--hairline)", background: "var(--surface)", color: "var(--ink)" }}>

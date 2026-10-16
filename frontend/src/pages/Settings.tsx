@@ -18,7 +18,7 @@ export function SettingsIndex() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 820 }}>
       <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Settings</h1>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(240px, 100%), 1fr))", gap: 12 }}>
         {ITEMS.map((i) => (
           <Link key={i.to} to={i.to} className="card" style={{ padding: 14, textDecoration: "none", color: "var(--ink)" }}>
             <strong>{i.title}</strong>

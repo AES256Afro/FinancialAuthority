@@ -179,7 +179,7 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
       )}
       {data && !data.can_store_secrets && <div style={{ fontSize: 13, color: "var(--critical)" }}>FA_DATA_KEY is empty, so tokens cannot be stored. Set it in the app's environment first.</div>}
       <Freshness />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))", gap: 12 }}>
         <div style={{ border: "1px solid var(--hairline)", borderRadius: 12, padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <strong>Plaid</strong>

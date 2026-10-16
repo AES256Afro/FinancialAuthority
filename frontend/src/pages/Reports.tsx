@@ -99,7 +99,7 @@ export function Reports() {
               {data.groups.slice(0, 14).map((g) => {
                 const over = g.this_month > g.average && g.average > 0;
                 return (
-                  <div key={g.name} style={{ display: "grid", gridTemplateColumns: "minmax(120px, 180px) 1fr 90px 90px", gap: 10, alignItems: "center", fontSize: 13 }}>
+                  <div key={g.name} style={{ display: "grid", gridTemplateColumns: "minmax(0, 180px) minmax(40px, 1fr) auto auto", gap: 10, alignItems: "center", fontSize: 13 }}>
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={g.name}>{g.name}</span>
                     <div style={{ position: "relative", height: 14, background: "var(--surface-2)", borderRadius: 4 }} title={`${g.name}: ${money(g.this_month)} this month, ${money(g.average)} usual`}>
                       <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${(g.this_month / groupMax) * 100}%`, background: over ? "var(--bill)" : "var(--paycheck)", borderRadius: 4 }} />
@@ -113,7 +113,7 @@ export function Reports() {
             </div>
           </section>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))", gap: 14 }}>
             <section className="card" style={{ padding: "6px 14px", overflowX: "auto" }}>
               <table className="ledger">
                 <thead><tr><th>{by === "category" ? "Category" : "Merchant"}</th><th style={{ textAlign: "right" }}>Total</th><th style={{ textAlign: "right" }}>Share</th><th style={{ textAlign: "right" }}>Rows</th></tr></thead>
