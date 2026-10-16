@@ -21,7 +21,7 @@ PROVIDER_IDS = ("none", "ollama", "openai", "anthropic")
 SECRET_NAMES = ("anthropic", "openai")
 
 DEFAULT_ROLES: dict[str, dict[str, Any]] = {
-    "advisor": {"provider": "ollama", "model": "llama3.2", "base_url": "", "price_in": None, "price_out": None},
+    "advisor": {"provider": "ollama", "model": "llama3.2", "base_url": "", "price_in": None, "price_out": None, "sees": "full"},
     "reviewer": {"provider": "none", "model": "claude-sonnet-5-5", "base_url": "", "price_in": None, "price_out": None},
 }
 
@@ -76,6 +76,10 @@ def save_role(session: Session, role: str, values: dict[str, Any]) -> dict[str, 
     for key in ("price_in", "price_out"):
         if key in values:
             merged[key] = None if values[key] in (None, "") else float(values[key])
+    if values.get("sees") is not None:
+        if values["sees"] not in ("full", "merchants", "aggregates"):
+            raise ValueError("sees is full, merchants or aggregates")
+        merged["sees"] = values["sees"]
     if merged["provider"] not in PROVIDER_IDS:
         raise ValueError("unknown provider")
     fallback = DEFAULT_MODELS[merged["provider"]][role]

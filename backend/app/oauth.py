@@ -86,12 +86,27 @@ class AuthorityProvider(OAuthAuthorizationServerProvider[AuthorizationCode, Refr
 
         from mcp.server.auth.provider import RegistrationError
 
+        from sqlalchemy import func
+
+        uris = [str(u) for u in (client_info.redirect_uris or [])]
+        if len(uris) > 5 or any(len(u) > 512 for u in uris) or len(client_info.client_name or "") > 120:
+            raise RegistrationError(error="invalid_client_metadata", error_description="At most five redirect addresses of 512 characters, and a name of 120")
         with session_scope() as session:
-            recent = session.exec(select(OAuthClient).where(OAuthClient.created_at >= utcnow() - _td(days=1))).all()
-            live = session.exec(select(OAuthClient).where(OAuthClient.revoked_at == None)).all()  # noqa: E711
-        if len(recent) >= 20 or len(live) >= 100:
-            raise RegistrationError(error="invalid_client_metadata", error_description="Too many apps registered; revoke unused ones on Settings › Clients, or try tomorrow")
-        raw = client_info.model_dump_json(exclude_none=True)
+            # An app that registered and was never allowed within the hour is forgotten; it holds nothing.
+            unused = session.exec(select(OAuthClient).where(OAuthClient.created_at < utcnow() - _td(hours=1), OAuthClient.last_used_at == None, OAuthClient.revoked_at == None)).all()  # noqa: E711
+            held = {t.client_id for t in session.exec(select(OAuthToken).where(OAuthToken.client_id.in_([c.client_id for c in unused]))).all()} if unused else set()
+            for c in unused:
+                if c.client_id not in held:
+                    session.delete(c)
+            session.commit()
+            recent = session.exec(select(func.count()).select_from(OAuthClient).where(OAuthClient.created_at >= utcnow() - _td(days=1))).one()
+            live = session.exec(select(func.count()).select_from(OAuthClient).where(OAuthClient.revoked_at == None)).one()  # noqa: E711
+        if recent >= 20 or live >= 100:
+            raise RegistrationError(error="invalid_client_metadata", error_description="Too many apps registered; revoke unused ones on Settings › Apps and keys, or try tomorrow")
+        keep = {"client_id": client_info.client_id, "client_name": (client_info.client_name or "")[:120], "redirect_uris": uris, "grant_types": list(client_info.grant_types or [])[:4],
+                "response_types": list(client_info.response_types or [])[:2], "token_endpoint_auth_method": client_info.token_endpoint_auth_method, "scope": (client_info.scope or "read")[:60],
+                "client_id_issued_at": client_info.client_id_issued_at, "client_secret": client_info.client_secret}
+        raw = json.dumps({k: v for k, v in keep.items() if v is not None})
         stored = crypto.encrypt(raw) if settings.data_key else raw
         with session_scope() as session:
             session.add(OAuthClient(
@@ -162,7 +177,7 @@ class AuthorityProvider(OAuthAuthorizationServerProvider[AuthorizationCode, Refr
                 key = auth.lookup_key(session, token)
                 if key is None:
                     return None
-                return AccessToken(token=token, client_id=key.name, scopes=sorted(key.scope_set), expires_at=None, resource=issuer(), subject="owner", claims={"redaction": key.redaction, "kind": "key", "name": key.name})
+                return AccessToken(token=token, client_id=key.name, scopes=sorted(key.scope_set & auth.KEY_SCOPES), expires_at=None, resource=issuer(), subject="owner", claims={"redaction": key.redaction, "kind": "key", "name": key.name})
             row = session.exec(select(TokenRow).where(TokenRow.token_hash == _hash(token), TokenRow.kind == "access")).first()
             if row is None or row.revoked_at is not None or (row.expires_at and row.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc)):
                 return None
@@ -300,8 +315,28 @@ async def consent_get(request: Request, req: str = "") -> HTMLResponse:
     return _page("Allow access", _consent_body(data, req, await _client_name(data["client_id"])))
 
 
+def _same_origin(request: Request) -> bool:
+    """The form came from the app's own consent page: the browser says so, by Origin or Sec-Fetch-Site."""
+    site = request.headers.get("sec-fetch-site", "")
+    if site and site not in ("same-origin", "none"):
+        return False
+    origin = request.headers.get("origin", "")
+    if origin and origin != "null":
+        from urllib.parse import urlsplit as _split
+
+        here = _split(issuer())
+        mine = {f"{here.scheme}://{here.netloc}", f"{request.url.scheme}://{request.url.netloc}"}
+        forwarded = request.headers.get("x-forwarded-host")
+        if forwarded:
+            mine.add(f"https://{forwarded}")
+        return origin in mine
+    return True
+
+
 @router.post("/oauth/consent")
 async def consent_post(request: Request, req: str = Form(""), decision: str = Form(""), username: str = Form(""), password: str = Form(""), code: str = Form(""), scope: list[str] | None = Form(None)):  # noqa: ANN201
+    if not _same_origin(request):
+        return _page("Refused", "<h1>That form did not come from this app</h1><div class=\"muted\">Start the connection again from the app that asked.</div>")
     data = _load_request(req)
     if data is None:
         return _page("Expired", "<h1>That request has expired</h1><div class=\"muted\">Start the connection again from the app that asked.</div>")

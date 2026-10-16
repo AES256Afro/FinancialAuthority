@@ -92,6 +92,9 @@ def _part_text(part) -> str:  # noqa: ANN001 - an email.message part
         return raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw)
 
 
+MAX_TEXT = 200_000  # characters of a message's text or html that are read; a bill or an alert is far shorter
+
+
 def parse_message(raw: bytes) -> Parsed:
     msg: EmailMessage = email.message_from_bytes(raw, policy=policy.default)  # type: ignore[assignment]
     sender_pairs = getaddresses([msg.get("From", "")])
@@ -114,11 +117,12 @@ def parse_message(raw: bytes) -> Parsed:
             text = _part_text(part)
         elif part.get_content_type() == "text/html" and not html:
             html = _part_text(part)
+    text, html = (text or "")[:MAX_TEXT], (html or "")[:MAX_TEXT]
     if html:
         html_text, links = html_to_text(html)
         if not text or len(text) < 40:
-            text = html_text
-    return Parsed(message_id=msg.get("Message-ID", "") or "", sender=sender.lower(), sender_name=sender_name, subject=msg.get("Subject", "") or "", date=date, text=text or "", html=html or "", attachments=attachments, links=links)
+            text = html_text[:MAX_TEXT]
+    return Parsed(message_id=(msg.get("Message-ID", "") or "")[:500], sender=sender.lower()[:320], sender_name=sender_name[:200], subject=(msg.get("Subject", "") or "")[:1000], date=date, text=text, html=html, attachments=attachments, links=links[:200])
 
 
 # The Bridge sidecar forwards the Bridge's loopback ports to the standard ones, so from the app's container

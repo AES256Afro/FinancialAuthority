@@ -39,6 +39,9 @@ class TellerError(RuntimeError):
         self.code = code
 
 
+_FOLDER: Path | None = None
+
+
 def cert_files(certificate: str, private_key: str) -> tuple[str, str] | None:
     """The PEMs on disk for the HTTP client, rewritten whenever their content changes. They are written to a
     private folder outside the data directory (so no backup or restore point carries the key in the clear); the
@@ -53,12 +56,10 @@ def cert_files(certificate: str, private_key: str) -> tuple[str, str] | None:
             pass
     import tempfile
 
-    folder = Path(tempfile.gettempdir()) / f"fa-teller-{os.getuid() if hasattr(os, 'getuid') else 'user'}"
-    folder.mkdir(mode=0o700, parents=True, exist_ok=True)
-    try:
-        os.chmod(folder, 0o700)
-    except OSError:
-        pass
+    global _FOLDER
+    if _FOLDER is None or not _FOLDER.is_dir():
+        _FOLDER = Path(tempfile.mkdtemp(prefix="fa-teller-"))  # random name, made by this process, 0700
+    folder = _FOLDER
     paths = (folder / "certificate.pem", folder / "private_key.pem")
     for path, content in zip(paths, (certificate, private_key), strict=True):
         text = content.strip() + "\n"

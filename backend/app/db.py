@@ -84,6 +84,20 @@ def _engine_reads(obj) -> bool:  # noqa: ANN001
 def _after_flush(session, _context) -> None:  # noqa: ANN001
     if any(_engine_reads(o) for o in (*session.new, *session.dirty, *session.deleted)):
         bump_version()
+        session.info["engine_write"] = True
+
+
+@event.listens_for(Session, "after_commit")
+def _after_commit(session) -> None:  # noqa: ANN001
+    # A plan worked out between the flush and the commit read the old rows; moving again on commit drops it.
+    if session.info.pop("engine_write", False):
+        bump_version()
+
+
+@event.listens_for(Session, "after_soft_rollback")
+def _after_rollback(session, _previous) -> None:  # noqa: ANN001
+    if session.info.pop("engine_write", False):
+        bump_version()
 
 
 @event.listens_for(Session, "do_orm_execute")

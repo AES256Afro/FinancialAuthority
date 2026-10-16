@@ -313,9 +313,24 @@ class ConfirmIn(BaseModel):
     remaining: int | None = None
 
 
-def apply_fact(session: Session, fact: ExtractedFact, ref: MessageRef | None, body: ConfirmIn) -> str:
-    """What a confirmed fact changes in the registers. Returns the applied_to tag."""
+def apply_fact(session: Session, fact: ExtractedFact, ref: MessageRef | None, body: ConfirmIn, *, owner: bool = False) -> str:
+    """What a confirmed fact changes in the registers. Returns the applied_to tag.
+
+    Anyone but the owner (a key or a connected app with the confirm scope) confirms what the message said and no
+    more: no export is fetched, no name is overridden, an amount may move a quarter at most and a date six weeks
+    at most, and only a bill of exactly the same name is updated."""
     fields = json.loads(fact.fields or "{}")
+    if not owner:
+        if fact.kind == "export":
+            raise HTTPException(403, "Only the owner, signed in, imports an export from mail")
+        if body.name:
+            raise HTTPException(403, "Only the owner renames what a message says")
+        said = fields.get("amount") if fields.get("amount") is not None else fields.get("net")
+        if body.amount is not None and (not isinstance(said, (int, float)) or said <= 0 or not (0.75 * said <= body.amount <= 1.25 * said)):
+            raise HTTPException(403, "Only the owner changes an amount by more than a quarter of what the message said")
+        said_due = fields.get("due_date") or fields.get("pay_date")
+        if body.due_date is not None and (not said_due or abs((body.due_date - date.fromisoformat(str(said_due)[:10])).days) > 45):
+            raise HTTPException(403, "Only the owner moves a date by more than six weeks from what the message said")
     if fact.kind == "paystub":
         from ..engine.paystubs import record_paystub
 
@@ -373,7 +388,10 @@ def apply_fact(session: Session, fact: ExtractedFact, ref: MessageRef | None, bo
         due = body.due_date or (date.fromisoformat(fields["due_date"]) if fields.get("due_date") else None)
         key = merchant_key(name)
         bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
-        bill = next((b for b in bills if merchant_key(b.name) == key or merchant_key(b.name).startswith(key) or key.startswith(merchant_key(b.name))), None)
+        if owner:
+            bill = next((b for b in bills if merchant_key(b.name) == key or merchant_key(b.name).startswith(key) or key.startswith(merchant_key(b.name))), None)
+        else:
+            bill = next((b for b in bills if merchant_key(b.name) == key), None)  # a key changes only the bill of exactly that name
         if bill is None:
             if amount is None or due is None:
                 raise HTTPException(400, "A new bill needs an amount and a due date; add them to the confirmation")
@@ -397,10 +415,8 @@ def confirm_fact(fact_id: int, body: ConfirmIn, session: Session = Depends(get_s
     fact = session.get(ExtractedFact, fact_id)
     if fact is None:
         raise HTTPException(404, "No such fact")
-    if fact.kind == "export" and principal.kind != "owner":
-        raise HTTPException(403, "Only the owner, signed in, imports an export from mail")
     ref = session.get(MessageRef, fact.message_ref_id) if fact.message_ref_id else None
-    applied = apply_fact(session, fact, ref, body) if body.apply else ""
+    applied = apply_fact(session, fact, ref, body, owner=principal.kind == "owner") if body.apply else ""
     fact.status = "applied" if applied else "confirmed"
     fact.applied_to = applied
     fact.resolved_at = utcnow()

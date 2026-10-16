@@ -73,10 +73,19 @@ def _client_ip(request: Request) -> str:
     if trusted:
         try:
             address = ipaddress.ip_address(peer)
-            if any(address in ipaddress.ip_network(p, strict=False) for p in trusted):
-                forwarded = request.headers.get("cf-connecting-ip") or request.headers.get("x-forwarded-for", "")
-                if forwarded:
-                    return forwarded.split(",")[0].strip()
+            nets = [ipaddress.ip_network(p, strict=False) for p in trusted]
+            if any(address in n for n in nets):
+                # Each proxy appends who it heard from; the caller is the last address no trusted proxy owns.
+                chain = [x.strip() for x in request.headers.get("x-forwarded-for", "").split(",") if x.strip()]
+                for hop in reversed(chain):
+                    try:
+                        if not any(ipaddress.ip_address(hop) in n for n in nets):
+                            return hop
+                    except ValueError:
+                        return hop
+                cf = request.headers.get("cf-connecting-ip", "").strip()
+                if cf:
+                    return cf
         except ValueError:
             pass
     return peer

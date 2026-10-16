@@ -83,8 +83,19 @@ def slim(name: str, payload: Any) -> Any:
     return payload
 
 
+def _sees(session: Session | None = None) -> str:
+    """How much the chat's model sees: the owner's choice on Models (full, merchants or aggregates)."""
+    from ..db import session_scope
+    from .roles import role_settings
+
+    if session is not None:
+        return str(role_settings(session)["advisor"].get("sees") or "full")
+    with session_scope() as own:
+        return str(role_settings(own)["advisor"].get("sees") or "full")
+
+
 async def run_tool(name: str, arguments: dict) -> Any:
-    token = mcp.CALLER.set(("advisor", "full"))
+    token = mcp.CALLER.set(("advisor", _sees()))
     try:
         result = await mcp.mcp_server.call_tool(name, arguments)
     finally:
@@ -107,7 +118,7 @@ def rules_block(session: Session) -> str:
 
 def system_prompt(session: Session, today: date) -> tuple[str, set[float]]:
     snap = finance_snapshot(session, today)
-    plan = compact_plan(snap)
+    plan = mcp.redact(compact_plan(snap), _sees(session))
     allowed = engine_numbers(plan)
     return SYSTEM.format(rules=rules_block(session), as_of=snap["as_of"], plan=json.dumps(plan, separators=(",", ":"))), allowed
 
