@@ -342,19 +342,64 @@ def remove_utility(utility_id: int, session: Session = Depends(get_session), _: 
 
 
 @router.get("/documents")
-def list_documents(attach_to: str = "", session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+def list_documents(attach_to: str = "", kind: str = "", period: str = "", session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
     query = select(Document).order_by(Document.uploaded_at.desc())
     if attach_to:
         query = query.where(Document.attach_to == attach_to)
+    if kind:
+        query = query.where(Document.kind == kind)
+    if period:
+        query = query.where(Document.period == period)
     return {"documents": [docs.doc_out(d) for d in session.exec(query).all()], "kinds": list(docs.KINDS)}
+
+
+@router.get("/documents/months")
+def documents_by_month(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+    """Every kept file with a month, grouped by month: statements, paystubs, receipts."""
+    from ..engine.receipts import months
+
+    got = months(session)
+    undated = session.exec(select(Document).where(Document.period == "").order_by(Document.uploaded_at.desc())).all()
+    return {"months": got, "undated": [docs.doc_out(d) for d in undated]}
+
+
+@router.get("/receipts")
+def get_receipts(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+    from ..engine.receipts import receipts_overview
+
+    return receipts_overview(session, today())
+
+
+@router.get("/receipts/candidates")
+def receipt_candidates(amount: float, bought_on: date, merchant: str = "", session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+    """The purchases a receipt with this total and day may belong to."""
+    from ..engine.receipts import candidates
+
+    return {"candidates": candidates(session, amount, bought_on, merchant, limit=5)}
+
+
+def _form_date(value: str, label: str) -> date | None:
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError as error:
+        raise HTTPException(400, f"{label} is a date, YYYY-MM-DD") from error
 
 
 @router.post("/documents")
 def upload_document(file: UploadFile = File(...), title: str = Form(""), kind: str = Form("other"), attach_to: str = Form(""), note: str = Form(""),
+                    period: str = Form(""), merchant: str = Form(""), amount: str = Form(""), bought_on: str = Form(""), return_by: str = Form(""), warranty_until: str = Form(""),
                     session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     raw = file.file.read(docs.MAX_BYTES + 1)
     try:
-        doc = docs.save_document(session, raw, filename=file.filename or "document", title=title, kind=kind, attach_to=attach_to, note=note)
+        money = round(float(amount.replace(",", "").replace("$", "")), 2) if amount.strip() else None
+    except ValueError as error:
+        raise HTTPException(400, "The amount is a number, like 42.50") from error
+    try:
+        doc = docs.save_document(session, raw, filename=file.filename or "document", title=title, kind=kind, attach_to=attach_to, note=note, period=period.strip(),
+                                 merchant=merchant, amount=money, bought_on=_form_date(bought_on, "The day bought"), return_by=_form_date(return_by, "The last day to return"),
+                                 warranty_until=_form_date(warranty_until, "The warranty's end"))
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
     services.audit(session, client=principal.name, client_kind=principal.kind, tool="document_upload", args={"kind": kind, "attach_to": attach_to}, rows=1)
@@ -395,6 +440,32 @@ def document_file(doc_id: int, session: Session = Depends(get_session), principa
     services.audit(session, client=principal.name, client_kind=principal.kind, tool="document_file", args={"id": doc_id}, rows=1)
     safe_name = "".join(ch for ch in doc.filename if ch.isalnum() or ch in "._- ")[:100] or "document"
     return Response(raw, media_type=doc.content_type, headers={"Content-Disposition": f'attachment; filename="{safe_name}"', "Cache-Control": "no-store"})
+
+
+class DocumentEdit(BaseModel):
+    title: str | None = None
+    kind: str | None = None
+    attach_to: str | None = None
+    note: str | None = None
+    period: str | None = None
+    merchant: str | None = None
+    amount: float | None = None
+    bought_on: date | None = None
+    return_by: date | None = None
+    warranty_until: date | None = None
+
+
+@router.put("/documents/{doc_id}")
+def edit_document(doc_id: int, body: DocumentEdit, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    """Change what a kept file belongs to, its month, or a receipt's store, total and dates. Fields left out stay."""
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        raise HTTPException(404, "No such document")
+    try:
+        docs.update_document(session, doc, body.model_dump(exclude_unset=True))
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    return docs.doc_out(doc)
 
 
 @router.delete("/documents/{doc_id}")

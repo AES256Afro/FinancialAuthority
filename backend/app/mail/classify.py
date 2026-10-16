@@ -1,7 +1,7 @@
 """Classification and extraction, rules first. A model may run second (M4.6); every fact still waits for the owner.
 
 Kinds: bill_due, statement, paystub, installment, advance, price_change, payday, payment_confirmation, past_due,
-bank_alert, export, none. Rules match on the sender and the subject; extraction reads amounts, dates and account
+bank_alert, receipt, export, none. Rules match on the sender and the subject; extraction reads amounts, dates and account
 tails from the text. The text is data: nothing here executes or follows anything it says.
 """
 
@@ -25,6 +25,7 @@ class Rule:
     sender: str | None = None
     subject: str | None = None
     confidence: float = 0.9
+    unless: str | None = None  # a subject that rules this rule out
 
 
 RULES: list[Rule] = [
@@ -47,6 +48,9 @@ RULES: list[Rule] = [
     Rule("investment-statement", "investment_balance", sender=r"fidelity|netbenefits|vanguard|schwab|empower|principal|voya|tiaa|troweprice|t\.? ?rowe|johnhancock|transamerica|merrill|etrade|morganstanley|robinhood|betterment|wealthfront|coinbase|tsp\.gov|adp", subject=r"statement|balance|account (value|summary)|quarterly|your (401|retirement|ira|brokerage|portfolio)", confidence=0.8),
     Rule("bill-due", "bill_due", subject=r"(bill|invoice|statement) (is )?(ready|available|due)|amount due|payment (is )?due|due (on|tomorrow|soon|today)|your (monthly )?(bill|invoice)"),
     Rule("statement", "statement", subject=r"statement (is )?(ready|available|here)|e-?statement|monthly statement|account statement|your .* statement"),
+    # A store's receipt; the shipping and delivery notes about the same order are not.
+    Rule("receipt", "receipt", subject=r"\breceipt\b|order (confirmation|confirmed|receipt)|your (\S+ )?order (#|no\.?|number|from)|thanks? (you )?for (your )?(order|purchase|shopping)|purchase confirmation|order #\s*\w+",
+         unless=r"shipped|delivered|out for delivery|on (its|the) way|tracking|refund|cancel|return (started|label)|review", confidence=0.8),
 ]
 
 
@@ -56,6 +60,8 @@ def classify(sender: str, subject: str, text: str = "") -> tuple[str, float, str
         if rule.sender and not re.search(rule.sender, s):
             continue
         if rule.subject and not re.search(rule.subject, j):
+            continue
+        if rule.unless and re.search(rule.unless, j):
             continue
         return rule.kind, rule.confidence, f"rule:{rule.name}"
     body = (text or "")[:4000].lower()
@@ -163,6 +169,29 @@ def extract(kind: str, subject: str, text: str, ref: date | None = None) -> dict
         pay_date = _date_near(blob, ("pay date", "paid on", "check date"), ref)
         if pay_date:
             fields["pay_date"] = pay_date.isoformat()
+    if kind == "receipt":
+        total = _amount_near(blob, ("order total", "grand total", "total charged", "amount charged", "amount paid", "total paid", "you paid", "payment total", "total:", "total"))
+        if total is not None:
+            fields["total"] = round(total, 2)
+        order = re.search(r"order\s*(?:#|no\.?|number)[:\s]*([A-Z0-9][A-Z0-9-]{3,29})", blob, re.IGNORECASE)
+        if order:
+            fields["order_no"] = order.group(1)
+        back = _date_near(blob, ("return by", "returns? (are )?accepted (until|through)", "return window (closes|ends)", "eligible for return (until|through)", "return it by"), ref)
+        if back:
+            fields["return_by"] = back.isoformat()
+        else:
+            days = re.search(r"(\d{1,3})[- ]day returns?|returns? within (\d{1,3}) days|(\d{1,3}) days to return", blob, re.IGNORECASE)
+            if days:
+                fields["return_days"] = int(next(g for g in days.groups() if g))
+        until = _date_near(blob, ("warranty (expires|ends|until|through|valid through)", "covered (until|through)"), ref)
+        if until:
+            fields["warranty_until"] = until.isoformat()
+        else:
+            span = re.search(r"(\d{1,2})[- ](year|month)s?(?: limited)? warranty|warranty(?: of| for)? (\d{1,2}) (year|month)s?", blob, re.IGNORECASE)
+            if span:
+                n = int(span.group(1) or span.group(3))
+                unit = (span.group(2) or span.group(4)).lower()
+                fields["warranty_months"] = n * 12 if unit == "year" else n
     tail = LAST4.search(blob)
     if tail:
         fields["last4"] = tail.group(1)
@@ -177,7 +206,7 @@ def extract(kind: str, subject: str, text: str, ref: date | None = None) -> dict
 def excerpt_for(text: str, fields: dict, limit: int = 240) -> str:
     """The shortest stretch of the text that holds the amount and the date, for the confirm card."""
     body = re.sub(r"\s+", " ", text or "").strip()
-    anchors = [str(fields.get("amount", "")), fields.get("due_date", ""), fields.get("net", "")]
+    anchors = [str(fields.get("amount", "")), fields.get("due_date", ""), fields.get("net", ""), str(fields.get("total", ""))]
     for anchor in anchors:
         if not anchor:
             continue

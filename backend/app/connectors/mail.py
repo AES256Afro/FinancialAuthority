@@ -143,12 +143,45 @@ def handle_message(session: Session, account: MailAccount, folder: str, uid: int
     fields["subject"] = parsed.subject[:200]
     if parsed.date:
         fields["message_date"] = parsed.date.date().isoformat()
+    if kind == "receipt":
+        receipt_fields(fields, parsed, today)
+        if fields.get("order_no") and _order_seen(session, fields["order_no"], parsed.sender):
+            return {**outcome, "note": "a receipt for this order is already in"}
     status = "auto" if kind in INFORMATIONAL else "pending"
     if kind in ("bill_due", "past_due") and "amount" not in fields:
         confidence = min(confidence, 0.5)
     session.add(ExtractedFact(kind=kind, message_ref_id=ref.id, fields=json.dumps(fields), confidence=confidence, status=status, excerpt=excerpt_for(parsed.text, fields), produced_by=produced_by, resolved_at=utcnow() if status == "auto" else None))
     outcome["fact"] = status
     return outcome
+
+
+def receipt_fields(fields: dict, parsed: Parsed, today: date) -> None:
+    """A receipt's store, day and dates: days to return and years of warranty become dates from the day bought."""
+    import calendar
+    from datetime import timedelta
+
+    def add_months(d: date, n: int) -> date:
+        y, m = divmod(d.month - 1 + n, 12)
+        return d.replace(year=d.year + y, month=m + 1, day=min(d.day, calendar.monthrange(d.year + y, m + 1)[1]))
+
+    bought = parsed.date.date() if parsed.date else today
+    fields["merchant"] = (parsed.sender_name or parsed.sender.split("@")[-1].split(".")[0]).strip()[:60]
+    fields["bought_on"] = bought.isoformat()
+    if fields.get("return_days") and not fields.get("return_by"):
+        fields["return_by"] = (bought + timedelta(days=int(fields.pop("return_days")))).isoformat()
+    if fields.get("warranty_months") and not fields.get("warranty_until"):
+        fields["warranty_until"] = add_months(bought, int(fields.pop("warranty_months"))).isoformat()
+    pdf = next((a.name for a in parsed.attachments if a.content_type == "application/pdf" or a.name.lower().endswith(".pdf")), None)
+    if pdf:
+        fields["attachment"] = pdf
+
+
+def _order_seen(session: Session, order_no: str, sender: str) -> bool:
+    for f in session.exec(select(ExtractedFact).where(ExtractedFact.kind == "receipt")).all():
+        got = json.loads(f.fields or "{}")
+        if got.get("order_no") == order_no and got.get("sender", "").split("@")[-1] == sender.split("@")[-1]:
+            return True
+    return False
 
 
 def upcoming_bills_facts(session: Session, ref: MessageRef, parsed: Parsed, today: date, produced_by: str) -> dict:

@@ -115,6 +115,13 @@ def next_steps(session: Session, today: date) -> dict:
         if h["state"] == "upcoming" and h["costs_undated"]:
             what = ", ".join(h["costs_undated"][:3])
             steps.append(_step(f"home-undated-{h['id']}", "info", f"{h['name']}: {what} has no date, so the plan does not count it. Give it the day you pay, or mark it paid if it is.", "Moving home", "/move", h["source"]))
+    from .receipts import deadlines
+
+    for d in deadlines(session, today, within_days=30):
+        if d["what"] == "return" and d["days_left"] <= 7:
+            steps.append(_step(f"return-{d['document_id']}", "critical" if d["days_left"] <= 2 else "warning", f"{d['word']} ({d['days_left']} day{'s' if d['days_left'] != 1 else ''} left). Keep it, or take it back.", "The receipt", "/documents#receipts", d["source"]))
+        elif d["what"] == "warranty":
+            steps.append(_step(f"warranty-{d['document_id']}", "info", f"{d['word']}: if anything is wrong with it, claim before then.", "The receipt", "/documents#receipts", d["source"]))
     if not housing["homes"]:
         for b in housing["rent_bills_to_adopt"][:1]:
             steps.append(_step(f"home-adopt-{b['id']}", "info", f"Make {b['name']} your home on Housing: its fees, due day, lease end and notice then count too.", "Housing", "/housing", f"bill:{b['id']}"))

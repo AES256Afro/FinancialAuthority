@@ -62,6 +62,12 @@ def search_transactions(
     from .engine.edits import splits_by_tx
 
     split = splits_by_tx(session, [t.id for t, _ in rows]) if redaction == "full" else {}
+    from .models import Document
+
+    kept: dict[int, list[int]] = {}
+    if rows:
+        for d in session.exec(select(Document).where(Document.attach_to.in_([f"transaction:{t.id}" for t, _ in rows]))).all():
+            kept.setdefault(int(d.attach_to.split(":")[1]), []).append(d.id)
     items = []
     for t, a in rows:
         items.append({
@@ -79,6 +85,7 @@ def search_transactions(
             "hidden": t.is_ignored,
             "kind": "transfer" if t.is_transfer else "card payment" if t.is_card_payment else "income" if t.is_income else "spending",
             "splits": [{"category": s.category, "amount": s.amount, "note": s.note} for s in split.get(t.id, [])],
+            "receipts": kept.get(t.id, []),
         })
     return {"returned": len(items), "total_amount": round(sum(i["amount"] for i in items), 2), "transactions": items}
 

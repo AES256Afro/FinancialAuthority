@@ -28,7 +28,7 @@ MAX_PAGE_CHARS = 20_000
 KINDS = ("lease", "addendum", "charges", "welcome", "utility_terms", "card_agreement", "receipt", "statement", "paystub", "other")
 TYPES = {"pdf": "application/pdf", "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "txt": "text/plain", "csv": "text/csv", "md": "text/plain",
          "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
-ATTACH = re.compile(r"^(?:home|utility|bill|account|transaction|debt):\d+$")
+ATTACH = re.compile(r"^(?:home|utility|bill|account|transaction|debt|paystub):\d+$")
 
 
 def folder() -> Path:
@@ -76,7 +76,8 @@ def read_pages(raw: bytes, ext: str) -> list[str]:
     return pages
 
 
-def save_document(session: Session, raw: bytes, *, filename: str, title: str = "", kind: str = "other", attach_to: str = "", note: str = "") -> Document:
+def save_document(session: Session, raw: bytes, *, filename: str, title: str = "", kind: str = "other", attach_to: str = "", note: str = "", period: str = "", merchant: str = "",
+                  amount: float | None = None, bought_on=None, return_by=None, warranty_until=None, source: str = "upload") -> Document:  # noqa: ANN001 - dates
     if len(raw) > MAX_BYTES:
         raise ValueError("A document is at most 25 MB")
     ext = (filename.rsplit(".", 1)[-1] if "." in filename else "").lower()
@@ -93,8 +94,14 @@ def save_document(session: Session, raw: bytes, *, filename: str, title: str = "
     if not path.exists():
         path.write_bytes(_seal(raw))
     pages = read_pages(raw, ext)
+    if period and not re.fullmatch(r"\d{4}-\d{2}", period):
+        raise ValueError("A month is written YYYY-MM")
+    if not period and bought_on is not None:
+        period = bought_on.isoformat()[:7]
     doc = Document(title=(title or filename).strip()[:120], kind=kind, attach_to=attach_to, filename=Path(filename).name[:120], content_type=TYPES[ext], size=len(raw), sha256=digest,
-                   pages_enc=crypto.encrypt(json.dumps(pages)) if settings.data_key else json.dumps(pages), pages=len(pages), note=note.strip()[:300])
+                   pages_enc=crypto.encrypt(json.dumps(pages)) if settings.data_key else json.dumps(pages), pages=len(pages), note=note.strip()[:300],
+                   period=period, merchant=merchant.strip()[:80], amount=round(float(amount), 2) if amount is not None else None, bought_on=bought_on, return_by=return_by,
+                   warranty_until=warranty_until, source=source[:60])
     session.add(doc)
     session.commit()
     session.refresh(doc)
@@ -128,7 +135,47 @@ def remove_document(session: Session, doc: Document) -> None:
 
 def doc_out(doc: Document) -> dict[str, Any]:
     return {"id": doc.id, "title": doc.title, "kind": doc.kind, "attach_to": doc.attach_to, "filename": doc.filename, "content_type": doc.content_type, "size": doc.size,
-            "pages": doc.pages, "has_text": doc.pages > 0 and any(p.strip() for p in pages_of(doc)), "note": doc.note, "uploaded_at": doc.uploaded_at.isoformat(), "source": f"document:{doc.id}"}
+            "pages": doc.pages, "has_text": doc.pages > 0 and any(p.strip() for p in pages_of(doc)), "note": doc.note, "uploaded_at": doc.uploaded_at.isoformat(), "source": f"document:{doc.id}",
+            "period": doc.period, "merchant": doc.merchant, "amount": doc.amount, "bought_on": doc.bought_on.isoformat() if doc.bought_on else None,
+            "return_by": doc.return_by.isoformat() if doc.return_by else None, "warranty_until": doc.warranty_until.isoformat() if doc.warranty_until else None, "came_from": doc.source}
+
+
+def save_text(session: Session, text: str, *, filename: str, title: str, kind: str, attach_to: str = "", note: str = "", **facts: Any) -> Document:
+    """A document made from text the app already holds (a receipt email's words), kept like an upload."""
+    return save_document(session, text.encode("utf-8"), filename=filename if filename.endswith(".txt") else filename + ".txt", title=title, kind=kind, attach_to=attach_to, note=note, **facts)
+
+
+def update_document(session: Session, doc: Document, values: dict[str, Any]) -> Document:
+    """What the owner changes on a kept file: its title, kind, what it belongs to, its month and a receipt's facts."""
+    from datetime import date as _date
+
+    if "attach_to" in values:
+        attach = str(values["attach_to"] or "")
+        if attach and not ATTACH.fullmatch(attach):
+            raise ValueError("attach_to names what it belongs to, like transaction:12")
+        doc.attach_to = attach
+    if "period" in values:
+        period = str(values["period"] or "")
+        if period and not re.fullmatch(r"\d{4}-\d{2}", period):
+            raise ValueError("A month is written YYYY-MM")
+        doc.period = period
+    for key in ("title", "note", "merchant"):
+        if values.get(key) is not None:
+            setattr(doc, key, str(values[key]).strip()[:120 if key != "note" else 300])
+    if values.get("kind") is not None:
+        doc.kind = values["kind"] if values["kind"] in KINDS else doc.kind
+    if "amount" in values:
+        doc.amount = round(float(values["amount"]), 2) if values["amount"] is not None else None
+    for key in ("bought_on", "return_by", "warranty_until"):
+        if key in values:
+            v = values[key]
+            setattr(doc, key, _date.fromisoformat(v) if isinstance(v, str) and v else v or None)
+    if doc.kind == "receipt" and not doc.period and doc.bought_on:
+        doc.period = doc.bought_on.isoformat()[:7]
+    session.add(doc)
+    session.commit()
+    session.refresh(doc)
+    return doc
 
 
 def search(session: Session, query: str, limit: int = 10) -> list[dict[str, Any]]:
