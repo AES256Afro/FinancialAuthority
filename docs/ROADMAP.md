@@ -241,7 +241,7 @@ Proposed after a survey of YNAB, Monarch, Copilot, Rocket Money, Empower, Simpli
 
 **Quality of life**
 
-- ☐ **M29 Setup that checks itself.** Each setup step with a live check (secrets, mail, bank, https address, phone, backups); the Bridge's state read from the app; one button to test everything, with the fix for each failure.
+- ✅ **M29 Setup that checks itself.** (built 2026-10-16) Each setup step with a live check (secrets, mail, bank, https address, phone, backups); the Bridge's state read from the app; one button to test everything, with the fix for each failure.
 - ☐ **M30 Tags, splits, notes and bulk edit.** Split a transaction across categories; tags and notes; select many and recategorize; rules with a preview.
 - ☐ **M31 Receipts and documents.** A receipt forwarded to the mailbox attaches to its transaction; return and warranty dates as reminders; statements and paystubs kept with their months.
 - ☐ **M32 Reports you build.** Rows, period and picture chosen and saved; category groups; a year in review and tax-time totals.

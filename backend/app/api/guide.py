@@ -155,3 +155,21 @@ def firstrun_update(body: FirstRunIn, session: Session = Depends(get_session), _
     if body.mark not in ids or body.unmark not in ids:
         raise HTTPException(400, "unknown step")
     return firstrun_engine.update(session, dismissed=body.dismissed, mark=body.mark, unmark=body.unmark)
+
+
+@router.get("/setup/check")
+def setup_check(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+    """Each setup step's state now, from what the app already records (M29)."""
+    from ..engine import setup_check as sc
+
+    items = sc.checks(session)
+    return {"checks": items, "summary": sc.summary(items)}
+
+
+@router.post("/setup/test")
+def setup_test(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    """Try each connection for real: mailboxes sign in, the bank keys are checked, the https address is fetched."""
+    from ..engine import setup_check as sc
+
+    items = sc.checks(session)
+    return {"checks": items, "summary": sc.summary(items), "tests": sc.test_everything(session)}
