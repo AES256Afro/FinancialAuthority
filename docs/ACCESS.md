@@ -110,6 +110,14 @@ Optional. An Anthropic API key pasted into Settings › Models (never into chat)
 
 Housing (in the menu under Plan) holds each home: what is paid with the rent each month, the bills of its own, the lease's end and the notice it needs, and each utility and where it comes from. Moving home shows only the cost of getting into the next place. What only you can add: amounts the app cannot know (a renter's insurance quote, the first water bill), whether a fee was already paid, the day you gave notice (tap "I gave notice"), and your documents: open a home on Housing, choose Documents, and upload the lease or the property's charge sheet (PDF, photo, spreadsheet or text, 25 MB at most). The terms a lease states then wait on Needs you until you tap Apply.
 
+### 13. A second person (M33)
+
+Settings › People adds someone with a role: **Everything** (sees and does what you do, except adding people, erasing, restoring, connecting apps and approving your sends) or **Shared** (one page: the accounts you mark shared, and theirs). The app shows a one-time link; send it to them yourself. They choose their own password there; you never see it. Mark accounts Shared or theirs on the same page or on Accounts. If they lose their phone or password, press New link: it signs them out and lets them start again.
+
+### 14. Receipts (M31)
+
+Forward a store's receipt email to a connected mailbox, or add a photo or PDF on Documents. It waits on Needs you with the purchase it matches; Keep the receipt attaches it. Its last day to return and its warranty come back as reminders (Settings › Notifications sets how many days before).
+
 ## What the coding agent never asks for
 
 Passwords, second factors, bank logins, card numbers, government identifiers. Anything that must be typed into a sign-in form is typed by the owner. Values for the app's own test accounts come from the fixture, never from the owner.
