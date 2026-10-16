@@ -328,3 +328,38 @@ def test_ollama_falls_back_to_a_model_the_server_has():
     events = asyncio.run(run())
     assert [e.type for e in events] == ["text", "usage", "done"] and events[0].text == "ready"
     assert calls == ["llama3.2", "hermes3:8b"] and provider.model == "hermes3:8b"
+
+
+def test_a_provider_error_reads_as_what_to_do():
+    from app.llm.providers import plain_error
+
+    body = json.dumps({"type": "error", "error": {"type": "not_found_error", "message": "model: llama3.2"}})
+    assert plain_error("Anthropic", 404, body, "llama3.2") == 'Anthropic has no model called "llama3.2". Tap Find models and pick one from the list.'
+    assert plain_error("Anthropic", 401, json.dumps({"error": {"type": "authentication_error", "message": "invalid x-api-key"}}), "m").startswith("Anthropic did not accept the key")
+    assert "out of credit" in plain_error("Anthropic", 400, json.dumps({"error": {"type": "invalid_request_error", "message": "Your credit balance is too low"}}), "m")
+    assert plain_error("Example", 500, "upstream broke", "m") == "Example answered 500: upstream broke"
+
+
+def test_a_model_left_over_from_another_provider_is_replaced(owner: TestClient):
+    got = owner.put("/api/v1/models/advisor", json={"provider": "anthropic", "model": "llama3.2"}).json()
+    assert got["roles"]["advisor"]["model"] == got["defaults"]["anthropic"]["advisor"] == "claude-haiku-5-5"
+    kept = owner.put("/api/v1/models/advisor", json={"provider": "anthropic", "model": "claude-sonnet-5-5"}).json()
+    assert kept["roles"]["advisor"]["model"] == "claude-sonnet-5-5"
+    back = owner.put("/api/v1/models/advisor", json={"provider": "ollama", "model": "claude-sonnet-5-5"}).json()
+    assert back["roles"]["advisor"]["model"] == "llama3.2"
+    local = owner.put("/api/v1/models/advisor", json={"provider": "openai", "model": "llama3.2"}).json()
+    assert local["roles"]["advisor"]["model"] == "llama3.2"  # a local OpenAI-compatible server may well have it
+    owner.put("/api/v1/models/advisor", json={"provider": "ollama", "model": "llama3.2"})
+
+
+def test_anthropic_lists_the_models_its_key_can_use():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/v1/models" and request.headers["x-api-key"] == "k"
+        return httpx.Response(200, json={"data": [{"id": "claude-new-1"}, {"id": "claude-new-2"}], "has_more": False})
+
+    live = Anthropic("", "k", client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    assert asyncio.run(live.list_models()) == ["claude-new-1", "claude-new-2"]
+    down = Anthropic("", "k", client=httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(503))))
+    from app.llm.providers import ANTHROPIC_MODELS
+
+    assert asyncio.run(down.list_models()) == ANTHROPIC_MODELS and asyncio.run(Anthropic("", "").list_models()) == ANTHROPIC_MODELS

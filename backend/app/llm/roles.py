@@ -25,6 +25,24 @@ DEFAULT_ROLES: dict[str, dict[str, Any]] = {
     "reviewer": {"provider": "none", "model": "claude-sonnet-5-5", "base_url": "", "price_in": None, "price_out": None},
 }
 
+# What each provider uses when a role has no model of its own: a small model explains, a strong one reviews.
+DEFAULT_MODELS: dict[str, dict[str, str]] = {
+    "ollama": {"advisor": "llama3.2", "reviewer": "llama3.2"},
+    "openai": {"advisor": "", "reviewer": ""},
+    "anthropic": {"advisor": "claude-haiku-5-5", "reviewer": "claude-sonnet-5-5"},
+    "none": {"advisor": "", "reviewer": ""},
+}
+
+
+def model_fits(provider: str, model: str) -> bool:
+    """Whether a model name can belong to a provider: Anthropic's are all claude-…, and a bare claude-… name
+    belongs to no other server (OpenRouter and the like prefix it)."""
+    m = (model or "").strip().lower()
+    if not m:
+        return False
+    return m.startswith("claude") if provider == "anthropic" else not m.startswith("claude-")
+
+
 _overrides: dict[str, Provider] = {}
 
 
@@ -60,6 +78,10 @@ def save_role(session: Session, role: str, values: dict[str, Any]) -> dict[str, 
             merged[key] = None if values[key] in (None, "") else float(values[key])
     if merged["provider"] not in PROVIDER_IDS:
         raise ValueError("unknown provider")
+    fallback = DEFAULT_MODELS[merged["provider"]][role]
+    if fallback and not model_fits(merged["provider"], merged["model"]):
+        # A model left over from another provider is replaced by this provider's own, never sent where it cannot work.
+        merged["model"] = fallback
     current[role] = merged
     set_setting(session, "models", current)
     return merged
@@ -97,7 +119,8 @@ def provider_for(session: Session, role: str) -> Provider | None:
     if role in _overrides:
         return _overrides[role]
     conf = role_settings(session)[role]
-    kind, model = conf["provider"], conf["model"] or DEFAULT_ROLES[role]["model"]
+    kind = conf["provider"]
+    model = conf["model"] or DEFAULT_MODELS.get(kind, {}).get(role) or DEFAULT_ROLES[role]["model"]
     if kind == "ollama":
         return Ollama(model, conf["base_url"] or settings.ollama_url)
     if kind == "openai":
