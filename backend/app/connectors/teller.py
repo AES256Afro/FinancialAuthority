@@ -71,9 +71,9 @@ class TellerClient:
         return httpx.Client(**kwargs)
 
     def get(self, access_token: str, path: str, params: dict[str, Any] | None = None) -> Any:
-        from ..usage import record_call
+        from ..usage import note
 
-        record_call("teller", path.split("?")[0])
+        note("teller", path.split("?")[0])
         with self.client(access_token) as client:
             response = client.get(path, params=params)
         if response.status_code >= 400:
@@ -145,41 +145,48 @@ class TellerConnector(Connector):
         inserted = updated = 0
         notes: list[str] = []
         ok = True
+        from ..usage import flush
+
         for link in links:
             try:
                 n_ins, n_upd, account_ids = self.sync_link(session, api, link)
                 inserted, updated = inserted + n_ins, updated + n_upd
+                flush(session)
                 finish_link(session, link, ok=True, accounts=account_ids)
                 notes.append(f"{link.institution}: {n_ins} new, {n_upd} changed")
-            except TellerError as error:
+            except Exception as error:  # noqa: BLE001 - one link's failure is recorded on it and never stops the others
+                session.rollback()
                 ok = False
-                if error.code in ("enrollment.disconnected", "401", "unauthorized"):
+                if isinstance(error, TellerError) and error.code in ("enrollment.disconnected", "401", "unauthorized"):
                     link.needs_login = True
-                finish_link(session, link, ok=False, error=str(error))
-                notes.append(f"{link.institution}: {error}")
-            except httpx.HTTPError as error:
-                ok = False
-                finish_link(session, link, ok=False, error=f"{type(error).__name__}: {error}")
-                notes.append(f"{link.institution}: {type(error).__name__}")
+                message = str(error) if isinstance(error, TellerError) else f"{type(error).__name__}: {error}"
+                finish_link(session, link, ok=False, error=message[:300])
+                notes.append(f"{link.institution}: {message[:120]}")
+        flush(session)
+        session.commit()
         return SyncResult(ok=ok, summary="; ".join(notes), inserted=inserted, details={"updated": updated})
 
     def sync_link(self, session: Session, api: TellerClient, link: BankLink) -> tuple[int, int, list[str]]:
         token = link_token(link)
         inserted = updated = 0
         ids: list[str] = []
+        # Fetch everything first, then write in one short transaction: the database is never locked while the app
+        # waits on the network.
+        fetched = []
         for a in api.accounts(token):
             if link.external_id and a.get("enrollment_id") and a["enrollment_id"] != link.external_id:
                 continue
+            fetched.append((a, api.balances(token, a["id"]), api.transactions(token, a["id"])))
+        for a, balances, txs in fetched:
             institution = str((a.get("institution") or {}).get("name") or link.institution)
-            balances = api.balances(token, a["id"])
             ledger = balances.get("ledger")
             balance = float(ledger) if ledger not in (None, "") else None
             kind = account_kind(str(a.get("type") or ""), str(a.get("subtype") or ""))
             if kind == "card" and balance is not None:
-                balance = abs(balance)
+                balance = -balance  # Teller gives what a card owes as negative; a card in credit stays a credit
             account = upsert_account(session, provider="teller", external_id=a["id"], name=str(a.get("name") or "Account"), institution=institution, kind=kind, balance=balance, last4=str(a.get("last_four") or ""))
             ids.append(a["id"])
-            for tx in api.transactions(token, a["id"]):
+            for tx in txs:
                 if str(tx.get("status") or "posted") != "posted":
                     continue
                 raw = float(tx["amount"])

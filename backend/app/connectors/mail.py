@@ -230,7 +230,9 @@ class MailConnector(Connector):
         self.fetch = fetch
 
     def sync(self, session: Session, today: date | None = None, account_id: int | None = None, **_: object) -> SyncResult:
-        today = today or date.today()
+        from ..clock import local_today
+
+        today = today or local_today()
         query = select(MailAccount).where(MailAccount.active == True)  # noqa: E712
         if account_id is not None:
             query = query.where(MailAccount.id == account_id)
@@ -249,6 +251,7 @@ class MailConnector(Connector):
                 account.messages_seen += new
                 notes.append(f"{account.label}: {new} new, {facts} facts")
             except Exception as error:  # noqa: BLE001
+                session.rollback()
                 ok = False
                 account.last_error = explain_error(account.host, error)[:300]
                 notes.append(f"{account.label}: {account.last_error}")
@@ -265,18 +268,33 @@ class MailConnector(Connector):
             for folder in [f.strip() for f in account.folders.split(",") if f.strip()]:
                 client.select_readonly(folder)
                 last = int(get_setting(session, uid_key(account.id, folder), 0) or 0)
+                validity = getattr(client, "uidvalidity", lambda: 0)()
+                known = int(get_setting(session, uid_key(account.id, folder) + ".validity", 0) or 0)
+                if validity and known and validity != known:
+                    # The server numbered the folder afresh (a rebuilt Bridge cache): start again from the recent end.
+                    last = 0
+                    from sqlmodel import delete
+
+                    session.exec(delete(MessageRef).where(MessageRef.account_id == account.id, MessageRef.folder == folder, MessageRef.kind == "none"))
+                if validity:
+                    set_setting(session, uid_key(account.id, folder) + ".validity", validity)
                 uids = client.new_uids(last)
-                if last == 0 and uids:
-                    uids = uids[-BATCH_FIRST:]  # a new mailbox starts from the recent end, not from the beginning of time
+                # A new mailbox starts from the most recent messages; after that, the oldest unread first.
+                uids = uids[-BATCH_FIRST:] if last == 0 else uids[:BATCH_FIRST]
                 for uid in uids:
-                    parsed = parse_message(client.fetch_raw(uid))
-                    outcome = handle_message(session, account, folder, uid, parsed, today, self.fetch)
-                    if not outcome.get("seen"):
+                    try:
+                        parsed = parse_message(client.fetch_raw(uid))
+                        with session.begin_nested():
+                            outcome = handle_message(session, account, folder, uid, parsed, today, self.fetch)
+                    except Exception as error:  # noqa: BLE001 - one unreadable message never blocks the mailbox
+                        log.warning("message %s in %s could not be read: %s", uid, folder, error)
+                        outcome = {}
+                    if outcome and not outcome.get("seen"):
                         new += 1
                     if outcome.get("fact") or outcome.get("imported"):
                         facts += 1
                     last = max(last, uid)
-                    set_setting(session, uid_key(account.id, folder), last)
+                set_setting(session, uid_key(account.id, folder), last)
                 session.commit()
         finally:
             client.close()

@@ -39,21 +39,16 @@ class Jobs:
 
     def run(self, name: str) -> JobRun:
         spec = self.specs[name]
-        with session_scope() as session:
-            run = JobRun(name=name)
-            session.add(run)
-            session.commit()
-            session.refresh(run)
-            run_id = run.id
+        started = utcnow()
         ok, summary = True, ""
         try:
             summary = spec.func() or ""
         except Exception as error:  # noqa: BLE001  (a job must never take the scheduler down)
             ok, summary = False, f"{type(error).__name__}: {error}"
             log.exception("job %s failed", name)
+        # The run is written once, after the work, so a busy database at the start never loses the record.
         with session_scope() as session:
-            run = session.get(JobRun, run_id)
-            run.finished_at, run.ok, run.summary = utcnow(), ok, summary[:2000]
+            run = JobRun(name=name, started_at=started, finished_at=utcnow(), ok=ok, summary=summary[:2000])
             session.add(run)
             session.commit()
             session.refresh(run)
@@ -245,6 +240,9 @@ def mail_sync() -> str:
             from ..engine.payments import match_payments
 
             match_payments(session, _today())
+    if not result.ok:
+        # A mailbox that could not be read is a failed run on the Jobs page, never a quiet "ok".
+        raise RuntimeError(result.summary or "a mailbox could not be read")
     return result.summary
 
 
@@ -276,6 +274,7 @@ def bank_sync() -> str:
 
     notes: list[str] = []
     inserted = 0
+    failed = False
     with session_scope() as session:
         links = session.exec(select(BankLink).where(BankLink.active == True)).all()  # noqa: E712
         if not links:
@@ -289,6 +288,7 @@ def bank_sync() -> str:
             result = CONNECTORS[link.provider].sync(session, link_id=link.id)
             notes.append(result.summary)
             inserted += result.inserted
+            failed = failed or not result.ok
         from ..engine.planned import settle_planned
 
         settled = settle_planned(session, _today())
@@ -296,6 +296,8 @@ def bank_sync() -> str:
             notes.append(f"{settled} planned payment{'s' if settled != 1 else ''} posted")
     if inserted:
         notes.append(detect_recurring())  # new rows may complete a series; the owner should not wait six hours
+    if failed:
+        raise RuntimeError("; ".join(notes))
     return "; ".join(notes)
 
 
@@ -366,7 +368,7 @@ def balance_history() -> str:
     with session_scope() as session:
         accounts = [a for a in session.exec(select(Account).where(Account.active == True)).all() if a.balance is not None]  # noqa: E712
         for a in accounts:
-            record_balance(session, a, a.balance, utcnow().date(), commit=False)
+            record_balance(session, a, a.balance, _today(), commit=False)
         session.commit()
         return f"{len(accounts)} balances recorded"
 

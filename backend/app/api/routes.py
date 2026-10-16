@@ -30,7 +30,9 @@ router = APIRouter(prefix="/api/v1", tags=["v1"])
 
 def today() -> date:
     override = get_setting_today()
-    return override or date.today()
+    from ..clock import local_today
+
+    return override or local_today()
 
 
 _today_override: date | None = None

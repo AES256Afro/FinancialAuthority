@@ -289,3 +289,25 @@ def test_freshness_counts_calls_and_forecasts_the_cost(owner: TestClient):
     assert priced["sync_every_hours"] == 1 and priced["cost"]["monthly"] == 0.3 and priced["cost"]["yearly"] == 3.6
     owner.put("/api/v1/banks/freshness", json={"sync_every_hours": 4, "clear_price": True})
     assert bank_sync() == "not due yet"  # read half an hour ago; the next read is in three and a half hours
+
+
+def test_a_withdrawn_transaction_that_paid_a_bill_is_removed_without_stalling_the_link():
+    from datetime import date as _date
+
+    from app.connectors.banks import remove_transaction, tx_hash
+    from app.models import Account, Bill, Payment, Transaction
+
+    with Session(engine) as session:
+        a = Account(name="Checking", kind="checking", connector="plaid")
+        b = Bill(name="Phone", amount=96.0, due_day=5)
+        session.add_all([a, b])
+        session.flush()
+        t = Transaction(account_id=a.id, date=_date(2026, 10, 5), merchant="Phone", amount=96.0, row_hash=tx_hash("plaid", "t-1"), source="plaid")
+        session.add(t)
+        session.flush()
+        session.add(Payment(bill_id=b.id, due_date=_date(2026, 10, 5), amount=96.0, status="paid", transaction_id=t.id))
+        session.commit()
+        assert remove_transaction(session, "plaid", "t-1")
+        session.commit()
+        p = session.exec(select(Payment)).one()
+        assert p.transaction_id is None and p.status == "scheduled"

@@ -271,3 +271,12 @@ def test_an_export_email_waits_for_the_owner_and_only_rocket_moneys_domain_count
     assert done.status_code == 200, done.text
     with Session(engine) as session:
         assert len(session.exec(select(Transaction)).all()) == 2
+
+
+def test_a_message_in_an_unknown_charset_is_read_not_refused():
+    from app.mail.imap import parse_message
+
+    raw_bytes = (b"From: Bank <alerts@bank.example>\r\nTo: owner@example.test\r\nSubject: Purchase alert\r\nMIME-Version: 1.0\r\n"
+                 b"Content-Type: text/plain; charset=x-unknown-8\r\n\r\nA purchase of $12.00 was made.\r\n")
+    parsed = parse_message(raw_bytes)
+    assert "$12.00" in parsed.text

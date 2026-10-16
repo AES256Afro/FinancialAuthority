@@ -43,10 +43,10 @@ class PlaidClient:
         self.client_factory = client_factory or (lambda: httpx.Client(timeout=httpx.Timeout(60.0, connect=10.0)))
 
     def post(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
-        from ..usage import record_call
+        from ..usage import note
 
         if self.environment != "sandbox":
-            record_call("plaid", path)
+            note("plaid", path)
         payload = {"client_id": self.client_id, "secret": self.secret, **body}
         with self.client_factory() as client:
             response = client.post(f"{self.host}{path}", json=payload, headers={"Content-Type": "application/json", "Plaid-Version": PLAID_VERSION})
@@ -187,27 +187,43 @@ class PlaidConnector(Connector):
         inserted = updated = removed = 0
         notes: list[str] = []
         ok = True
+        from ..usage import flush
+
         for link in links:
             try:
                 n_ins, n_upd, n_rem, account_ids = self.sync_link(session, api, link)
                 inserted, updated, removed = inserted + n_ins, updated + n_upd, removed + n_rem
+                flush(session)
                 finish_link(session, link, ok=True, accounts=account_ids)
                 notes.append(f"{link.institution}: {n_ins} new, {n_upd} changed, {n_rem} removed")
-            except PlaidError as error:
+            except Exception as error:  # noqa: BLE001 - one link's failure is recorded on it and never stops the others
+                session.rollback()
                 ok = False
-                if error.code == "ITEM_LOGIN_REQUIRED":
+                if isinstance(error, PlaidError) and error.code == "ITEM_LOGIN_REQUIRED":
                     link.needs_login = True
-                finish_link(session, link, ok=False, error=str(error))
-                notes.append(f"{link.institution}: {error}")
-            except httpx.HTTPError as error:
-                ok = False
-                finish_link(session, link, ok=False, error=f"{type(error).__name__}: {error}")
-                notes.append(f"{link.institution}: {type(error).__name__}")
+                message = str(error) if isinstance(error, PlaidError) else f"{type(error).__name__}: {error}"
+                finish_link(session, link, ok=False, error=message[:300])
+                notes.append(f"{link.institution}: {message[:120]}")
+        flush(session)
+        session.commit()
         return SyncResult(ok=ok, summary="; ".join(notes), inserted=inserted, details={"updated": updated, "removed": removed})
 
     def sync_link(self, session: Session, api: PlaidClient, link: BankLink) -> tuple[int, int, int, list[str]]:
+        """Everything is fetched from Plaid first; then it is written in one short transaction, so the database is
+        never locked while the app waits on the network."""
         token = link_token(link)
         got = api.accounts(token)
+        pages: list[dict] = []
+        cursor = link.cursor or ""
+        for _page in range(50):
+            page = api.sync_page(token, cursor)
+            pages.append(page)
+            cursor = str(page.get("next_cursor") or cursor)
+            if not page.get("has_more"):
+                break
+        holdings = None
+        if any(account_kind(str(a.get("type") or ""), a.get("subtype")) == "investment" for a in got.get("accounts", [])):
+            holdings = self.fetch_holdings(api, token)
         institution = link.institution or str((got.get("item") or {}).get("institution_name") or "")
         accounts = {}
         for a in got.get("accounts", []):
@@ -223,12 +239,10 @@ class PlaidConnector(Connector):
                 kind=kind, balance=float(balance) if balance is not None else None, last4=str(a.get("mask") or ""),
                 subtype=investment_subtype(a.get("subtype")) if kind == "investment" else "", credit_limit=float(limit) if (limit is not None and kind == "card") else None,
             )
-        if any(a.kind == "investment" for a in accounts.values()):
-            self.sync_holdings(session, api, token, accounts)
+        if holdings is not None:
+            self.write_holdings(session, holdings, accounts)
         inserted = updated = removed = 0
-        cursor = link.cursor or ""
-        for _page in range(50):
-            page = api.sync_page(token, cursor)
+        for page in pages:
             for tx in page.get("added", []) + page.get("modified", []):
                 if tx.get("pending"):
                     continue
@@ -243,23 +257,27 @@ class PlaidConnector(Connector):
                 inserted, updated = inserted + int(new), updated + int(not new)
             for tx in page.get("removed", []):
                 removed += int(remove_transaction(session, "plaid", tx["transaction_id"]))
-            cursor = str(page.get("next_cursor") or cursor)
-            if not page.get("has_more"):
-                break
         link.cursor = cursor
         link.needs_login = False
         session.commit()
         return inserted, updated, removed, list(accounts)
 
-    def sync_holdings(self, session: Session, api: PlaidClient, token: str, accounts: dict[str, Any]) -> int:
-        """Every position in the item's investment accounts; a vendor without the product is simply skipped."""
+    def fetch_holdings(self, api: PlaidClient, token: str) -> dict | None:
+        """The item's positions; None for a vendor without the product."""
         try:
-            got = api.holdings(token)
+            return api.holdings(token)
         except PlaidError as error:
             if error.code in ("PRODUCTS_NOT_SUPPORTED", "PRODUCT_NOT_READY", "NO_INVESTMENT_ACCOUNTS", "INVALID_PRODUCT"):
                 log.info("no holdings for this item: %s", error)
-                return 0
+                return None
             raise
+
+    def sync_holdings(self, session: Session, api: PlaidClient, token: str, accounts: dict[str, Any]) -> int:
+        got = self.fetch_holdings(api, token)
+        return self.write_holdings(session, got, accounts) if got is not None else 0
+
+    def write_holdings(self, session: Session, got: dict, accounts: dict[str, Any]) -> int:
+        """Every position in the item's investment accounts."""
         securities = {str(s.get("security_id")): s for s in got.get("securities", [])}
         count = 0
         for h in got.get("holdings", []):

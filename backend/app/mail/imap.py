@@ -83,6 +83,15 @@ def html_to_text(html: str) -> tuple[str, list[str]]:
     return text, parser.links
 
 
+def _part_text(part) -> str:  # noqa: ANN001 - an email.message part
+    """A text part's content; a part in a charset Python does not know is read as UTF-8, never refused."""
+    try:
+        return part.get_content()
+    except (LookupError, UnicodeError, ValueError):
+        raw = part.get_payload(decode=True) or b""
+        return raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw)
+
+
 def parse_message(raw: bytes) -> Parsed:
     msg: EmailMessage = email.message_from_bytes(raw, policy=policy.default)  # type: ignore[assignment]
     sender_pairs = getaddresses([msg.get("From", "")])
@@ -102,9 +111,9 @@ def parse_message(raw: bytes) -> Parsed:
             attachments.append(Attachment(name=part.get_filename() or "attachment", content_type=part.get_content_type(), size=len(payload), data=payload if len(payload) <= 15_000_000 else None))
             continue
         if part.get_content_type() == "text/plain" and not text:
-            text = part.get_content()
+            text = _part_text(part)
         elif part.get_content_type() == "text/html" and not html:
-            html = part.get_content()
+            html = _part_text(part)
     if html:
         html_text, links = html_to_text(html)
         if not text or len(text) < 40:
@@ -177,12 +186,21 @@ class ImapClient:
         return exists, uidnext
 
     def new_uids(self, since_uid: int) -> list[int]:
+        """Every message after `since_uid`, oldest first; the caller picks the batch it reads."""
         assert self.conn
         status, data = self.conn.uid("search", None, f"UID {since_uid + 1}:*")
         if status != "OK" or not data or not data[0]:
             return []
-        uids = [int(u) for u in data[0].split()]
-        return [u for u in uids if u > since_uid][:BATCH]
+        return [u for u in (int(x) for x in data[0].split()) if u > since_uid]
+
+    def uidvalidity(self) -> int:
+        """The folder's UIDVALIDITY after select: when it changes, its message numbers start again."""
+        assert self.conn
+        ok, resp = self.conn.response("UIDVALIDITY")
+        try:
+            return int(resp[0]) if resp and resp[0] else 0
+        except (TypeError, ValueError):
+            return 0
 
     def fetch_raw(self, uid: int) -> bytes:
         assert self.conn
