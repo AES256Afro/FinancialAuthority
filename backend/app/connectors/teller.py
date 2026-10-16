@@ -193,23 +193,24 @@ class TellerConnector(Connector):
             fetched.append((a, api.balances(token, a["id"]), api.transactions(token, a["id"])))
         for a, balances, txs in fetched:
             institution = str((a.get("institution") or {}).get("name") or link.institution)
-            ledger = balances.get("ledger")
-            balance = float(ledger) if ledger not in (None, "") else None
             kind = account_kind(str(a.get("type") or ""), str(a.get("subtype") or ""))
+            # What can be spent is the available balance (pending charges already out); a card owes its ledger.
+            available, ledger = balances.get("available"), balances.get("ledger")
+            chosen = available if (kind in ("checking", "savings", "cash") and available not in (None, "")) else ledger
+            balance = float(chosen) if chosen not in (None, "") else None
             if kind == "card" and balance is not None:
                 balance = -balance  # Teller gives what a card owes as negative; a card in credit stays a credit
             account = upsert_account(session, provider="teller", external_id=a["id"], name=str(a.get("name") or "Account"), institution=institution, kind=kind, balance=balance, last4=str(a.get("last_four") or ""))
             ids.append(a["id"])
             for tx in txs:
-                if str(tx.get("status") or "posted") != "posted":
-                    continue
+                pending = str(tx.get("status") or "posted") == "pending"  # the same id posts later; the row is updated in place
                 raw = float(tx["amount"])
                 amount = -raw if DEBITS_NEGATIVE else raw
                 details = tx.get("details") or {}
                 counterparty = (details.get("counterparty") or {}).get("name")
                 new = upsert_transaction(
                     session, provider="teller", tx_id=tx["id"], account=account, when=date.fromisoformat(tx["date"]), amount=amount,
-                    merchant=str(counterparty or tx.get("description") or ""), raw_name=str(tx.get("description") or ""), category=category_for(tx),
+                    merchant=str(counterparty or tx.get("description") or ""), raw_name=str(tx.get("description") or ""), category=category_for(tx), pending=pending,
                 )
                 inserted, updated = inserted + int(new), updated + int(not new)
         link.needs_login = False

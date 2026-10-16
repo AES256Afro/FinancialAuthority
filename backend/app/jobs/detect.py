@@ -18,7 +18,7 @@ def run_detection(session: Session, today: date, lookback_days: int = 400) -> di
     since = today - timedelta(days=lookback_days)
     rows = [
         {"date": t.date, "merchant": t.merchant, "amount": t.amount, "category": t.category}
-        for t in session.exec(select(Transaction).where(Transaction.date >= since, Transaction.is_ignored == False)).all()  # noqa: E712
+        for t in session.exec(select(Transaction).where(Transaction.date >= since, Transaction.is_ignored == False, Transaction.pending == False)).all()  # noqa: E712
         if not t.is_transfer and not t.is_card_payment
     ]
     spending = [r for r in rows if not _is_income_row(r)]

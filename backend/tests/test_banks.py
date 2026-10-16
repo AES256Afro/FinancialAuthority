@@ -34,7 +34,8 @@ class FakePlaid:
                 "modified": [{"transaction_id": "t1", "account_id": "acc-chk", "amount": 55.00, "date": "2026-10-10", "name": "EXAMPLE GROCER 123", "merchant_name": "Example Grocer", "pending": False, "personal_finance_category": {"primary": "FOOD_AND_DRINK", "detailed": "FOOD_AND_DRINK_GROCERIES"}}],
                 "removed": [], "next_cursor": "c2", "has_more": False,
             },
-            {"added": [], "modified": [], "removed": [{"transaction_id": "t4", "account_id": "acc-card"}], "next_cursor": "c3", "has_more": False},
+            {"added": [{"transaction_id": "t5", "account_id": "acc-card", "amount": 12.99, "date": "2026-10-12", "name": "STREAMING CO", "merchant_name": "Streaming Co", "pending": False, "pending_transaction_id": "t3", "personal_finance_category": {"primary": "ENTERTAINMENT", "detailed": "ENTERTAINMENT_TV_AND_MOVIES"}}],
+             "modified": [], "removed": [{"transaction_id": "t4", "account_id": "acc-card"}], "next_cursor": "c3", "has_more": False},
         ]
         self.fail_with: dict | None = None
 
@@ -90,23 +91,26 @@ def test_plaid_settings_link_exchange_sync_cursor_and_removal(owner: TestClient)
         linked = owner.post("/api/v1/banks/plaid/exchange", json={"public_token": "public-sandbox-xyz", "institution": "Example Bank"}).json()
         link = linked["link"]
         assert link["provider"] == "plaid" and link["institution"] == "Example Bank" and link["last_error"] == ""
-        assert linked["sync"]["ok"] and linked["sync"]["inserted"] == 3  # t3 is pending and skipped; t1, t2, t4 land
+        assert linked["sync"]["ok"] and linked["sync"]["inserted"] == 4  # t3 is pending: kept, marked pending
         assert {a["name"]: (a["kind"], a["balance"]) for a in link["accounts"]} == {"Everyday Checking": ("checking", 300.0), "Rainy Day": ("savings", 1500.0), "Rewards Card": ("card", 842.1)}  # a spending account holds its available balance; a card owes its current one
 
         with Session(engine) as session:
             row = session.exec(select(BankLink)).one()
             assert row.cursor == "c2" and row.access_token_enc.startswith("fa1:") and "access-sandbox" not in row.access_token_enc
             by_ref = {t.source_ref: t for t in session.exec(select(Transaction).where(Transaction.source == "plaid")).all()}
-            assert set(by_ref) == {"t1", "t2", "t4"}
+            assert set(by_ref) == {"t1", "t2", "t3", "t4"} and by_ref["t3"].pending and not by_ref["t1"].pending
             assert by_ref["t1"].amount == 55.0 and by_ref["t1"].category == "Groceries" and by_ref["t1"].merchant == "Example Grocer"  # modified in page two
             assert by_ref["t2"].amount == -2240.0 and by_ref["t2"].is_income and by_ref["t2"].category == "Income"
             assert by_ref["t4"].is_card_payment and by_ref["t4"].category == "Credit Card Payment"
             assert by_ref["t4"].account_id == session.exec(select(Account).where(Account.external_id == "acc-card")).one().id
 
         again = owner.post(f"/api/v1/banks/{link['id']}/sync").json()
-        assert again["ok"] and again["details"]["removed"] == 1 and fake.requests[-1][1]["cursor"] == "c2"
+        assert again["ok"] and again["details"]["removed"] == 2 and fake.requests[-1][1]["cursor"] == "c2"
         with Session(engine) as session:
             assert session.exec(select(Transaction).where(Transaction.source_ref == "t4")).first() is None
+            # the posted charge replaced its pending one: there once, never twice
+            assert session.exec(select(Transaction).where(Transaction.source_ref == "t3")).first() is None
+            assert not session.exec(select(Transaction).where(Transaction.source_ref == "t5")).one().pending
             assert session.exec(select(BankLink)).one().cursor == "c3"
 
         fake.fail_with = {"error_type": "ITEM_ERROR", "error_code": "ITEM_LOGIN_REQUIRED", "error_message": "the login details of this item have changed", "display_message": "Please sign in again."}
@@ -169,13 +173,13 @@ def test_teller_enroll_and_sync_with_sign_and_kind_conventions(owner: TestClient
         assert saved["providers"]["teller"] == {"configured": True, "environment": "development", "application_id": "app_123", "certificate_set": False, "private_key_set": False}
 
         enrolled = owner.post("/api/v1/banks/teller/enroll", json={"access_token": "token_x", "enrollment_id": "enr_1", "institution": "Example Credit Union"}).json()
-        assert enrolled["sync"]["ok"] and enrolled["sync"]["inserted"] == 3
+        assert enrolled["sync"]["ok"] and enrolled["sync"]["inserted"] == 4
         assert all(tok == "token_x" for tok, _ in fake.seen_auth)
-        assert {a["name"]: (a["kind"], a["balance"]) for a in enrolled["link"]["accounts"]} == {"Share Draft": ("checking", 1010.55), "Visa Platinum": ("card", 640.0)}
+        assert {a["name"]: (a["kind"], a["balance"]) for a in enrolled["link"]["accounts"]} == {"Share Draft": ("checking", 990.0), "Visa Platinum": ("card", 640.0)}  # checking holds what is available; a card owes its ledger
 
         with Session(engine) as session:
             by_ref = {t.source_ref: t for t in session.exec(select(Transaction).where(Transaction.source == "teller")).all()}
-            assert set(by_ref) == {"txn_1", "txn_3", "txn_4"}  # the pending coffee is skipped
+            assert set(by_ref) == {"txn_1", "txn_2", "txn_3", "txn_4"} and by_ref["txn_2"].pending  # the pending coffee shows, marked pending
             assert by_ref["txn_1"].amount == 18.4 and by_ref["txn_1"].merchant == "Example Taqueria" and by_ref["txn_1"].category == "Dining & Drinks"
             assert by_ref["txn_3"].amount == -200.0 and by_ref["txn_3"].is_transfer
             assert by_ref["txn_4"].category == "Gas" and by_ref["txn_4"].date == date(2026, 10, 7)
@@ -183,7 +187,7 @@ def test_teller_enroll_and_sync_with_sign_and_kind_conventions(owner: TestClient
             assert link.accounts == "acc_1,acc_2" and link.access_token_enc.startswith("fa1:")
 
         second = owner.post(f"/api/v1/banks/{enrolled['link']['id']}/sync").json()
-        assert second["ok"] and second["inserted"] == 0 and second["details"]["updated"] == 3
+        assert second["ok"] and second["inserted"] == 0 and second["details"]["updated"] == 4
         assert owner.delete(f"/api/v1/banks/{enrolled['link']['id']}").json() == {"ok": True}
     finally:
         CONNECTORS["teller"].client_factory = None
@@ -311,3 +315,52 @@ def test_a_withdrawn_transaction_that_paid_a_bill_is_removed_without_stalling_th
         session.commit()
         p = session.exec(select(Payment)).one()
         assert p.transaction_id is None and p.status == "scheduled"
+
+
+def test_a_plaid_notice_is_verified_before_it_starts_anything():
+    import base64 as _b64
+    import hashlib as _h
+    import time as _t
+
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
+
+    from app.connectors import plaid_webhook as pw
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    nums = key.public_key().public_numbers()
+
+    def b64(raw: bytes) -> str:
+        return _b64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+    jwk = {"kty": "EC", "crv": "P-256", "x": b64(nums.x.to_bytes(32, "big")), "y": b64(nums.y.to_bytes(32, "big")), "expired_at": None}
+
+    def token(body: bytes, iat: float, alg: str = "ES256", kid: str = "k1") -> str:
+        head = b64(json.dumps({"alg": alg, "kid": kid, "typ": "JWT"}).encode())
+        claims = b64(json.dumps({"iat": int(iat), "request_body_sha256": _h.sha256(body).hexdigest()}).encode())
+        r, s = decode_dss_signature(key.sign(f"{head}.{claims}".encode(), ec.ECDSA(hashes.SHA256())))
+        return f"{head}.{claims}.{b64(r.to_bytes(32, 'big') + s.to_bytes(32, 'big'))}"
+
+    body = json.dumps({"webhook_type": "TRANSACTIONS", "webhook_code": "SYNC_UPDATES_AVAILABLE", "item_id": "item-1"}).encode()
+    now = _t.time()
+    fetch = lambda kid: jwk  # noqa: E731
+    assert pw.verify(token(body, now), body, fetch, now)["request_body_sha256"]
+    for bad in (token(body, now - 600), token(body + b" ", now), token(body, now, alg="HS256")):
+        try:
+            pw.verify(bad, body, fetch, now)
+            raise AssertionError("accepted a bad notice")
+        except pw.Refused:
+            pass
+    tampered = token(body, now)
+    try:
+        pw.verify(tampered, body.replace(b"item-1", b"item-2"), fetch, now)
+        raise AssertionError("accepted another body")
+    except pw.Refused:
+        pass
+
+
+def test_the_webhook_route_refuses_what_does_not_verify(client: TestClient):
+    r = client.post("/api/plaid/webhook", content=b'{"webhook_type":"TRANSACTIONS","item_id":"x"}', headers={"Plaid-Verification": "not.a.token", "Content-Type": "application/json"})
+    assert r.status_code == 401 and r.json() == {"ok": False}
+    assert client.post("/api/plaid/webhook", content=b"{}").status_code == 401

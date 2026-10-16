@@ -39,7 +39,7 @@ def match_payments(session: Session, today: date) -> dict:
     end = today + timedelta(days=AHEAD_DAYS)
     bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
     series_keys = {s.id: s.merchant_key for s in session.exec(select(RecurringSeries)).all()}
-    transactions = session.exec(select(Transaction).where(Transaction.date >= start - timedelta(days=BEFORE_DAYS), Transaction.date <= today, Transaction.amount > 0)).all()
+    transactions = session.exec(select(Transaction).where(Transaction.date >= start - timedelta(days=BEFORE_DAYS), Transaction.date <= today, Transaction.amount > 0, Transaction.pending == False)).all()  # noqa: E712
     existing = {(p.bill_id, p.due_date): p for p in session.exec(select(Payment).where(Payment.due_date >= start)).all()}
     used = {p.transaction_id for p in existing.values() if p.transaction_id}
     counts = {"paid": 0, "late": 0, "past_due": 0, "scheduled": 0}

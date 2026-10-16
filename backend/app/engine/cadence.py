@@ -154,7 +154,7 @@ def next_unpaid_payday(session, income, today: date) -> date:  # noqa: ANN001 - 
         window_start = d - timedelta(days=2)
         if window_start > today:
             break
-        landed = session.exec(select(Transaction.amount).where(Transaction.date >= window_start, Transaction.date <= today, Transaction.amount < 0, Transaction.is_income == True)).all()  # noqa: E712
+        landed = session.exec(select(Transaction.amount).where(Transaction.date >= window_start, Transaction.date <= today, Transaction.amount < 0, Transaction.is_income == True, Transaction.pending == False)).all()  # noqa: E712
         if not any(abs(abs(a) - expected) <= max(50.0, expected * 0.4) for a in landed):
             break
         d = step_payday(d, income.cadence or "biweekly")

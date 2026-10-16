@@ -150,7 +150,10 @@ def extract(kind: str, subject: str, text: str, ref: date | None = None) -> dict
         a = AMOUNT.search(blob)
         if a:
             fields["amount"] = round(float(a.group(1).replace(",", "")), 2)
-    if kind == "paystub":
+        if fields["alert"] in ("purchase", "declined"):
+            at = re.search(r"\bat\s+([A-Za-z0-9][A-Za-z0-9&'*#./ -]{1,40}?)(?=\s+(?:on|for|was|using|with)\b|[.,;!\n]|$)", blob)
+            if at:
+                fields["merchant"] = re.sub(r"\s+", " ", at.group(1)).strip()[:60]
         net = _amount_near(blob, ("net pay", "net amount", "take home", "net:"))
         gross = _amount_near(blob, ("gross pay", "gross earnings", "gross:"))
         if net is not None:

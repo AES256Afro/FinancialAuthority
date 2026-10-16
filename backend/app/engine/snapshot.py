@@ -6,6 +6,8 @@ arithmetic with the full projection, set-asides and goals; the shape of the resu
 
 from __future__ import annotations
 
+import json
+
 from datetime import date, datetime, timedelta, timezone
 
 from sqlmodel import Session, select
@@ -278,6 +280,8 @@ def _finance_snapshot(session: Session, today: date) -> dict:
         "goals": goals,
         "usual_pace": {**pace, "over_safe": _money(max(0.0, pace["per_window"] - safe))},
         "board": _board(display_events, before, windows[0] if windows else None, payments, today),
+        "fresh": _freshness(session, accounts),
+        "in_flight": _in_flight(session, today),
         "debts": [{"id": d.id, "name": d.name, "kind": d.kind, "balance": d.balance, "apr": d.apr, "minimum": d.minimum, "due_day": d.due_day} for d in debts],
         "pending": {"confirmations": unconfirmed + len(facts["pending"]), "series": unconfirmed, "facts": len(facts["pending"]), "approvals": approvals_waiting, "past_due": len(payments["past_due"])},
         "mail": facts,
@@ -400,3 +404,48 @@ def _board(display_events: list[dict], before: list[dict], window: dict | None, 
         return {"total": _money(sum(r["amount"] for r in rows)), "items": rows}
 
     return {"problems": col(problems), "due_7": col(due7), "later": col(later), "paid": col(paid)}
+
+
+def _freshness(session: Session, accounts: list) -> dict:
+    """How fresh the figures are: when each spending account's balance was last reported, the oldest of them,
+    and the newest transaction."""
+    from sqlalchemy import func
+
+    spending = [a for a in accounts if a.kind in ("checking", "cash", "savings", "card")]
+    stamps = [a.balance_at for a in spending if a.balance_at]
+    newest = session.exec(select(func.max(Transaction.date))).one()
+    return {
+        "balances_as_of": min(stamps).isoformat() if stamps else None,
+        "accounts": [{"id": a.id, "name": a.name, "kind": a.kind, "as_of": a.balance_at.isoformat() if a.balance_at else None, "connector": a.connector} for a in spending],
+        "newest_transaction": newest.isoformat() if newest else None,
+    }
+
+
+def _in_flight(session: Session, today: date) -> dict:
+    """What has happened but is not posted: charges the bank holds as pending (already off the checking balance the
+    bank reports), and purchases a bank's alert email told of that no bank row matches yet. The mail ones are
+    shown, never taken off: they are what the email said, and the bank's own row replaces them."""
+    from ..models import ExtractedFact
+
+    pending = session.exec(select(Transaction).where(Transaction.pending == True, Transaction.date >= today - timedelta(days=14)).order_by(Transaction.date.desc())).all()  # noqa: E712
+    names = {a.id: a.name for a in session.exec(select(Account)).all()}
+    since = datetime.now(timezone.utc) - timedelta(days=7)
+    alerts = session.exec(select(ExtractedFact).where(ExtractedFact.kind == "bank_alert", ExtractedFact.created_at >= since)).all()
+    seen = []
+    for f in alerts:
+        try:
+            fields = json.loads(f.fields or "{}")
+        except ValueError:
+            continue
+        if fields.get("alert") != "purchase" or not isinstance(fields.get("amount"), (int, float)):
+            continue
+        when = date.fromisoformat(str(fields.get("message_date") or f.created_at.date().isoformat())[:10])
+        amount = float(fields["amount"])
+        posted = session.exec(select(Transaction.id).where(Transaction.amount >= amount - 0.01, Transaction.amount <= amount + 0.01, Transaction.date >= when - timedelta(days=1), Transaction.date <= when + timedelta(days=6)).limit(1)).first()
+        if posted is not None:
+            continue
+        seen.append({"amount": _money(amount), "merchant": _from_mail(str(fields.get("merchant") or ""), 60), "last4": str(fields.get("last4") or "")[-4:], "date": when.isoformat(), "source": f"fact:{f.id}"})
+    return {
+        "pending": {"total": _money(sum(t.amount for t in pending)), "items": [{"id": t.id, "date": t.date.isoformat(), "merchant": t.merchant, "amount": _money(t.amount), "account": names.get(t.account_id, ""), "source": f"transaction:{t.id}"} for t in pending]},
+        "mail": {"total": _money(sum(s["amount"] for s in seen)), "items": seen, "counted": False},
+    }
