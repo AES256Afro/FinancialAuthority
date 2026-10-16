@@ -204,20 +204,68 @@ def row_hash(account_name: str, r: dict) -> str:
     return sha256(f"file|{account_name}|{key}".encode()).hexdigest()
 
 
-def import_rows(session: Session, rows: list[dict], *, source_file: str, account_name: str, institution: str = "", kind: str = "checking") -> SyncResult:
-    """Rows into the ledger under one account, de-duplicated against everything already there."""
-    account = session.exec(select(Account).where(Account.connector == "file", Account.name == account_name)).first()
-    created = account is None
-    if account is None:
-        account = Account(name=account_name or "Imported", institution=institution, kind=kind if kind in ("checking", "savings", "cash", "card", "loan", "investment") else "checking", connector="file", external_id=f"file:{account_name.lower()}")
-        session.add(account)
-        session.flush()
+MERGE_DAYS = 3  # a file's date and a bank link's can differ by posting; within this many days they are one
+GENERIC_WORDS = {"pos", "debit", "credit", "card", "purchase", "payment", "ach", "the", "and", "withdrawal", "deposit", "online", "transfer", "from", "with",
+                 "www", "com", "inc", "llc", "recurring", "pending", "visa", "mastercard", "checkcard", "check", "web", "pmt", "bill", "autopay"}
+
+
+def _words(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z]{3,}", (text or "").lower()) if w not in GENERIC_WORDS}
+
+
+def _target_account(session: Session, *, account_id: int | None, account_name: str, account_number: str, institution: str, kind: str) -> tuple[Account, bool]:
+    """The account the rows belong to: the one chosen; else the account the bank link holds under the same last
+    four digits; else the account of the same name; else a new one."""
+    if account_id:
+        chosen = session.get(Account, account_id)
+        if chosen is None or not chosen.active:
+            raise ValueError("No such account")
+        return chosen, False
+    digits = re.sub(r"\D", "", account_number or "")
+    if len(digits) >= 4:
+        from .rocketmoney import _live_accounts_by_last4
+
+        live = _live_accounts_by_last4(session).get(digits[-4:])
+        if live is not None:
+            return live, False
+    name = (account_name or "Imported").strip()
+    for a in session.exec(select(Account).where(Account.active == True)).all():  # noqa: E712
+        if a.name.strip().lower() == name.lower():
+            return a, False
+    account = Account(name=name, institution=institution, kind=kind if kind in ("checking", "savings", "cash", "card", "loan", "investment") else "checking", connector="file", external_id=f"file:{name.lower()}")
+    if len(digits) >= 4:
+        from .. import crypto
+
+        try:
+            account.last4_enc = crypto.encrypt(digits[-4:])
+        except Exception:  # noqa: BLE001 - without the data key the digits are simply not kept
+            account.last4_enc = ""
+    session.add(account)
+    session.flush()
+    return account, True
+
+
+def import_rows(session: Session, rows: list[dict], *, source_file: str, account_name: str, institution: str = "", kind: str = "checking", account_id: int | None = None,
+                account_number: str = "", via: str = "upload") -> SyncResult:
+    """Rows into the ledger under one account, without adding what is already there. A row an earlier import of
+    this or an overlapping file brought is skipped by its key. A row the account already holds from any other
+    source (a bank link, an export, the same statement in another format) on the same amount within three days,
+    by the same name or on the same day, is the same transaction seen twice and is not added. A key repeated
+    within one file is a real repeat purchase. The import is logged with a restore point, so it can be undone."""
+    from .. import importlog
+
+    batch = importlog.begin(session, "file", source_file, via)
+    account, created = _target_account(session, account_id=account_id, account_name=account_name, account_number=account_number, institution=institution, kind=kind)
     existing = set(session.exec(select(Transaction.row_hash)).all())
+    # What the account already holds, by amount; each row can stand for one row of the file, once.
+    held: dict[str, list[list]] = {}
+    for t in session.exec(select(Transaction).where(Transaction.account_id == account.id)).all():
+        held.setdefault(f"{t.amount:.2f}", []).append([t.date, _words(f"{t.merchant} {t.raw_name} {t.description}"), False])
     rules = rules_for(session)
-    inserted = duplicates = 0
+    inserted = duplicates = merged = 0
     seen: dict[str, int] = {}
     for r in rows:
-        h = row_hash(account_name, r)
+        h = row_hash(account.name if account_id else account_name, r)
         repeat = seen.get(h, 0)
         seen[h] = repeat + 1
         if repeat and not r["fitid"]:
@@ -225,13 +273,23 @@ def import_rows(session: Session, rows: list[dict], *, source_file: str, account
         if h in existing:
             duplicates += 1
             continue
-        t = Transaction(account_id=account.id, date=r["date"], posted_date=r["date"], merchant=r["merchant"], raw_name=r["description"], description=r["description"], amount=r["amount"], category=r["category"], is_income=r["amount"] < 0 and bool(INFLOW_WORDS.search(r["description"])), source="file", source_ref=source_file, row_hash=h)
+        words = _words(f"{r['merchant']} {r['description']}")
+        near = [x for x in held.get(f"{r['amount']:.2f}", []) if not x[2] and abs((x[0] - r["date"]).days) <= MERGE_DAYS and (x[0] == r["date"] or words & x[1])]
+        if near:
+            twin = min(near, key=lambda x: (0 if words & x[1] else 1, abs((x[0] - r["date"]).days)))
+            twin[2] = True
+            merged += 1
+            continue
+        t = Transaction(account_id=account.id, date=r["date"], posted_date=r["date"], merchant=r["merchant"], raw_name=r["description"], description=r["description"], amount=r["amount"], category=r["category"], is_income=r["amount"] < 0 and bool(INFLOW_WORDS.search(r["description"])), source="file", source_ref=source_file, row_hash=h, import_id=batch.id)
         apply_rules(rules, t)
         session.add(t)
         existing.add(h)
         inserted += 1
+    summary = f"{inserted} new, {duplicates} already imported" + (f", {merged} already in {account.name} from another source" if merged else "") + f", into {account.name}"
+    importlog.finish(session, batch, inserted=inserted, duplicates=duplicates, merged=merged, account_id=account.id, accounts_created=[account.id] if created else [], summary=summary)
     session.commit()
-    return SyncResult(ok=True, summary=f"{inserted} new, {duplicates} already known, into {account.name}", inserted=inserted, duplicates=duplicates, accounts=int(created), details={"account_id": account.id}, at=utcnow())
+    return SyncResult(ok=True, summary=summary, inserted=inserted, duplicates=duplicates, accounts=int(created),
+                      details={"account_id": account.id, "merged": merged, "import_id": batch.id if inserted or created else None}, at=utcnow())
 
 
 def sniff_holdings_csv(text: str) -> dict[str, Any]:
@@ -322,9 +380,13 @@ def import_bills(session: Session, rows: list[dict], *, source_file: str) -> Syn
     from ..engine.recurring import merchant_key, suggest_kind
     from ..models import Bill
 
+    from .. import importlog
+
+    batch = importlog.begin(session, "bills", source_file)
     bills = list(session.exec(select(Bill).where(Bill.active == True)).all())  # noqa: E712
     created = updated = skipped = 0
     ids: list[int] = []
+    changes: list[dict] = []
     for r in rows:
         if r["due_day"] is None:
             skipped += 1
@@ -338,7 +400,9 @@ def import_bills(session: Session, rows: list[dict], *, source_file: str) -> Syn
             session.flush()
             bills.append(bill)
             created += 1
+            changes.append({"op": "bill_created", "id": bill.id})
         else:
+            changes.append({"op": "bill_updated", "id": bill.id, "before": importlog.bill_before(bill)})
             bill.amount, bill.cadence, bill.due_day = r["amount"], r["cadence"], r["due_day"]
             bill.autopay = r["autopay"] or bill.autopay
             if r["category"]:
@@ -350,6 +414,8 @@ def import_bills(session: Session, rows: list[dict], *, source_file: str) -> Syn
         from ..llm.reviewer import mark_pending
 
         mark_pending(session, f"bills imported from {source_file}")
-    session.commit()
     summary = f"{created} bill{'s' if created != 1 else ''} added, {updated} updated" + (f", {skipped} without a due day skipped" if skipped else "")
-    return SyncResult(ok=True, summary=summary, inserted=created, details={"created": created, "updated": updated, "skipped": skipped, "bill_ids": ids, "source_file": source_file}, at=utcnow())
+    importlog.finish(session, batch, changes=changes, summary=summary)
+    session.commit()
+    return SyncResult(ok=True, summary=summary, inserted=created, details={"created": created, "updated": updated, "skipped": skipped, "bill_ids": ids, "source_file": source_file,
+                                                                        "import_id": batch.id if changes else None}, at=utcnow())

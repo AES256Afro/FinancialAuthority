@@ -114,3 +114,120 @@ def test_a_bills_list_lands_on_the_register(owner: TestClient):
     assert bills["Example Streaming Co"]["due_day"] == 15 and bills["Example Streaming Co"]["kind"] == "subscription"
     again = owner.post("/api/v1/imports/file", files={"file": ("bills.csv", io.BytesIO(BILLS_CSV.encode()), "text/csv")}).json()
     assert again["inserted"] == 0 and "2 updated" in again["summary"]
+
+
+SAME_AS_CSV_OFX = """<OFX><SIGNONMSGSRSV1><SONRS><FI><ORG>Example Bank</ORG></FI></SONRS></SIGNONMSGSRSV1>
+<BANKMSGSRSV1><STMTTRNRS><STMTRS><BANKACCTFROM><ACCTID>55554321</ACCTID><ACCTTYPE>CHECKING</ACCTTYPE></BANKACCTFROM><BANKTRANLIST>
+<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261003<TRNAMT>2240.00<FITID>A1<NAME>EXAMPLE EMPLOYER<MEMO>PAYROLL</STMTTRN>
+<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261006<TRNAMT>-54.12<FITID>A2<NAME>EXAMPLE GROCER</STMTTRN>
+<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261006<TRNAMT>-54.12<FITID>A3<NAME>EXAMPLE GROCER</STMTTRN>
+<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261008<TRNAMT>-41.10<FITID>A4<NAME>FUEL STOP</STMTTRN>
+<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20261010<TRNAMT>-12.00<FITID>A5<NAME>EXAMPLE BAKERY</STMTTRN>
+</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>"""
+
+
+def _upload(owner: TestClient, name: str, text: str, **data) -> dict:
+    return owner.post("/api/v1/imports/file", data=data, files={"file": (name, io.BytesIO(text.encode()), "text/plain")}).json()
+
+
+def test_the_same_statement_in_another_format_is_not_added_twice(owner: TestClient):
+    first = _upload(owner, "bank.csv", BANK_CSV, account_name="Everyday Checking")
+    assert first["inserted"] == 4
+    # The OFX of the same month, a day later by posting date and with other descriptions, into the same account.
+    second = _upload(owner, "bank.ofx", SAME_AS_CSV_OFX, account_name="everyday checking")
+    assert second["merged"] == 4 and second["inserted"] == 1 and second["account_id"] == first["account_id"]
+    with Session(engine) as session:
+        assert len(session.exec(select(Transaction)).all()) == 5
+
+
+def test_a_file_for_a_linked_account_adds_only_what_the_link_missed(owner: TestClient):
+    with Session(engine) as session:
+        live = Account(name="Credit Union Checking", institution="Example CU", kind="checking", connector="plaid", external_id="acc-1")
+        session.add(live)
+        session.flush()
+        for when, merchant, amount in ((date(2026, 10, 3), "Example Employer", -2240.0), (date(2026, 10, 6), "Example Grocer", 54.12), (date(2026, 10, 8), "Fuel Stop", 41.10)):
+            session.add(Transaction(account_id=live.id, date=when, merchant=merchant, amount=amount, source="plaid", row_hash=f"plaid-{merchant}"))
+        session.commit()
+        live_id = live.id
+    got = _upload(owner, "older.csv", BANK_CSV, account_id=str(live_id))
+    # the link holds one of the two same-day grocer charges: one is matched, the other is new
+    assert got["account_id"] == live_id and got["merged"] == 3 and got["inserted"] == 1 and got["accounts_created"] == 0
+    with Session(engine) as session:
+        rows = session.exec(select(Transaction).where(Transaction.account_id == live_id)).all()
+        assert len(rows) == 4 and sum(1 for r in rows if r.amount == 54.12) == 2
+
+
+def test_an_import_can_be_undone_exactly(owner: TestClient):
+    from app import restore
+
+    before = len(restore.list_points())
+    first = _upload(owner, "bank.csv", BANK_CSV, account_name="Everyday Checking")
+    assert first["import_id"] and len(restore.list_points()) == before + 1
+    again = _upload(owner, "bank.csv", BANK_CSV, account_name="Everyday Checking")
+    assert again["import_id"] is None and len(restore.list_points()) == before + 1  # nothing changed: no entry, no copy
+    other = _upload(owner, "other.csv", DEBIT_CREDIT_CSV, account_name="Everyday Checking")
+    history = owner.get("/api/v1/imports/history").json()["imports"]
+    assert [h["id"] for h in history] == [other["import_id"], first["import_id"]] and history[1]["restore_point"]
+    undone = owner.post(f"/api/v1/imports/{first['import_id']}/undo").json()
+    assert undone["removed"] == 4 and undone["accounts_closed"] == 0  # the later import still uses the account
+    with Session(engine) as session:
+        assert len(session.exec(select(Transaction)).all()) == 2  # the later import stays
+    assert owner.post(f"/api/v1/imports/{first['import_id']}/undo").status_code == 400
+    owner.post(f"/api/v1/imports/{other['import_id']}/undo")
+    with Session(engine) as session:
+        assert session.exec(select(Transaction)).all() == [] and session.get(Account, first["account_id"]).active is False
+
+
+def test_undoing_a_bills_list_puts_the_bills_back(owner: TestClient):
+    first = _upload(owner, "bills.csv", BILLS_CSV)
+    changed = BILLS_CSV.replace("79.99", "89.99")
+    second = _upload(owner, "bills-new.csv", changed + "Example Gym,25.00,Monthly,2026-11-20,no,Fitness\n")
+    assert second["inserted"] == 1 and first["import_id"] != second["import_id"]
+    owner.post(f"/api/v1/imports/{second['import_id']}/undo")
+    bills = {b["name"]: b for b in owner.get("/api/v1/bills").json()["bills"]}
+    assert bills["Example Internet"]["amount"] == 79.99 and "Example Gym" not in bills
+
+
+def test_a_restore_point_puts_the_whole_database_back(owner: TestClient, client: TestClient):
+    from app import restore
+
+    made = owner.post("/api/v1/restore-points").json()["made"]
+    _upload(owner, "bank.csv", BANK_CSV, account_name="Everyday Checking")
+    key = owner.post("/api/v1/keys", json={"name": "admin-key", "scopes": ["read", "admin"]})
+    if key.status_code == 200:
+        reader = TestClient(client.app)
+        assert reader.post(f"/api/v1/restore-points/{made['name']}/restore", headers={"Authorization": f"Bearer {key.json()['token']}"}).status_code in (401, 403)
+    assert owner.post("/api/v1/restore-points/not-a-point.db/restore").status_code == 404
+    done = owner.post(f"/api/v1/restore-points/{made['name']}/restore").json()
+    assert done["restored"] == made["name"] and done["before"]["kind"] == "before-restore"
+    with Session(engine) as session:
+        assert session.exec(select(Transaction)).all() == []
+    # and the restore is undone the same way
+    owner.post(f"/api/v1/restore-points/{done['before']['name']}/restore")
+    with Session(engine) as session:
+        assert len(session.exec(select(Transaction)).all()) == 4
+    assert any(p["kind"] == "before-restore" for p in restore.list_points())
+
+
+def test_the_daily_copy_is_taken_once_a_day():
+    from app import restore
+    from app.jobs.scheduler import restore_point_daily
+
+    restore_point_daily()
+    count = len([p for p in restore.list_points() if p["kind"] == "daily"])
+    assert "today's copy is there" in restore_point_daily()
+    assert len([p for p in restore.list_points() if p["kind"] == "daily"]) == count
+
+
+def test_each_copy_reads_back_and_a_backup_manager_can_ask(capsys):
+    import json as _json
+
+    from app import restore
+
+    made = restore.make_point("manual", "test")
+    assert made["verified"] and made["tables"] > 10
+    assert restore.main(["status"]) == 0
+    status = _json.loads(capsys.readouterr().out)
+    assert status["database"]["ok"] and status["newest"]["manual"]["name"] == made["name"] and status["latest_age_hours"] < 1
+    assert restore.main(["check"]) == 0 and _json.loads(capsys.readouterr().out)["database"]["result"] == "ok"
+    assert restore.main(["restore", made["name"]]) == 2  # restoring stays in the app

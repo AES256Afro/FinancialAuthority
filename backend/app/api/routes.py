@@ -234,7 +234,8 @@ async def import_rocketmoney(file: UploadFile = File(...), session: Session = De
     from ..jobs.detect import run_detection
 
     detection = run_detection(session, today()) if result.inserted else {}
-    return {"ok": True, "summary": result.summary, "inserted": result.inserted, "duplicates": result.duplicates, "accounts_created": result.accounts, "detection": detection}
+    return {"ok": True, "summary": result.summary, "inserted": result.inserted, "duplicates": result.duplicates, "accounts_created": result.accounts, "detection": detection,
+            "import_id": result.details.get("import_id")}
 
 
 @router.get("/exports/rocketmoney.csv", response_class=PlainTextResponse)

@@ -126,6 +126,16 @@ def self_check() -> str:
             problems.append(f"stale balances: {', '.join(stale)}")
         if usage.free < 2e9:
             problems.append("under 2 GB free")
+        from .. import restore
+
+        try:
+            backups = restore.status()
+            if backups["latest_age_hours"] is None or backups["latest_age_hours"] > 48:
+                problems.append("no restore point in the last two days")
+            if not backups["database"]["ok"]:
+                problems.append(f"the database did not pass its check: {backups['database']['result']}")
+        except Exception as error:  # noqa: BLE001 - a check that cannot run is itself the problem
+            problems.append(f"restore points could not be read: {error}")
         report = {
             "at": utcnow().isoformat(),
             "free_gb": round(usage.free / 1e9, 2),
@@ -172,19 +182,19 @@ def import_watch() -> str:
             from ..connectors.rocketmoney import parse_csv as parse_rocketmoney
 
             if path.suffix.lower() == ".csv" and parse_rocketmoney(text, path.name) is not None:
-                result = CONNECTORS["rocketmoney"].sync(session, text=text, source_file=path.name)
+                result = CONNECTORS["rocketmoney"].sync(session, text=text, source_file=path.name, via="folder")
             else:
                 found = detect(text)
                 if found["kind"] == "ofx":
                     parsed = parse_ofx(text)
                     rows = parsed["rows"]
                     name = f"{parsed['vendor']} {parsed['account_type'] or 'account'}".strip() if parsed["vendor"] else path.stem
-                    result = import_rows(session, rows, source_file=path.name, account_name=name, institution=parsed["vendor"]) if rows else None
+                    result = import_rows(session, rows, source_file=path.name, account_name=name, institution=parsed["vendor"], account_number=parsed["account_id"], via="folder") if rows else None
                 elif found["kind"] == "bills":
                     result = import_bills(session, parse_bills_rows(text, found["mapping"]), source_file=path.name)
                 else:
                     rows = parse_csv_rows(text) if found["ready"] else []
-                    result = import_rows(session, rows, source_file=path.name, account_name=path.stem) if rows else None
+                    result = import_rows(session, rows, source_file=path.name, account_name=path.stem, via="folder") if rows else None
             taken.append(f"{path.name}: {result.summary if result else 'no rows found'}")
             processed.add(stamp)
         set_setting(session, "imports.processed", sorted(processed))
@@ -346,3 +356,19 @@ def balance_history() -> str:
 
 
 jobs.register("balance_history", balance_history, 24 * 3600, "Keep today's balance of every account, for net worth over time")
+
+
+def restore_point_daily() -> str:
+    """A copy of the whole database once a day; the last seven are kept."""
+    from .. import restore
+
+    from datetime import UTC, datetime, timedelta
+
+    newest = next((p for p in restore.list_points() if p["kind"] == "daily"), None)
+    if newest and newest["created_at"] and datetime.now(UTC) - datetime.fromisoformat(newest["created_at"]) < timedelta(hours=20):
+        return f"today's copy is there: {newest['name']}"
+    made = restore.make_point("daily", "Daily copy")
+    return f"copied the database: {made['name']} ({made['bytes'] // 1024} KB)"
+
+
+jobs.register("restore_point_daily", restore_point_daily, 6 * 3600, "Keep a copy of the whole database once a day, the last seven kept")
