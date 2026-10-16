@@ -306,12 +306,15 @@ def _explain_safe(session: Session, accounts: list, before: list[dict], advances
     for a in savings:
         left_out.append({"name": a.name, "verb": "has", "amount": _money(a.balance or 0.0), "why": "Savings is kept apart and never counted as money to spend."})
     paid_before = {str(e.get("source")) for e in before}
-    debt_card = {f"debt:{d.id}": d.account_id for d in session.exec(select(Debt)).all() if d.account_id}
+    from ..models import PlannedPayment
+
+    card_of = {f"debt:{d.id}": d.account_id for d in session.exec(select(Debt)).all() if d.account_id}
+    card_of.update({f"planned:{p.id}": p.to_account_id for p in session.exec(select(PlannedPayment)).all() if p.to_account_id})
     for a in accounts:
-        if a.kind != "card":
+        if a.kind != "card" or not (a.balance or 0):
             continue
         owes = float(a.balance or 0.0)
-        counted = any(src == f"account:{a.id}" or debt_card.get(src) == a.id for src in paid_before)
+        counted = any(src == f"account:{a.id}" or card_of.get(src) == a.id for src in paid_before)
         why = ("A card is not money to spend. Its payment before payday is counted above." if counted else
                "A card is not money to spend. Its next payment falls on or after payday, on the paycheck that carries it.")
         left_out.append({"name": a.name, "verb": "owes", "amount": _money(owes), "why": why, "owes": True})
