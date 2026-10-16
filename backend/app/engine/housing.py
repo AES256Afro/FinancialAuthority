@@ -173,6 +173,18 @@ def notice(home: Home, today: date) -> dict[str, Any] | None:
     return {"by": by.isoformat(), "given_on": None, "status": status, "days_left": left, "word": f"Give written notice by {by:%a %b} {by.day} ({left} day{'s' if left != 1 else ''} left)"}
 
 
+def lease_word(home: Home, today: date) -> str | None:
+    """The lease term's end when no move-out is planned: what it means, and the notice to leave then."""
+    if not home.lease_ends_on or home.ends_on:
+        return None
+    end = home.lease_ends_on
+    said = f"Your lease runs to {end:%a %b} {end.day}, {end.year}" + (" and has ended: it goes on month to month unless you signed a new one." if end < today else ".")
+    if home.notice_days and end >= today:
+        by = end - timedelta(days=home.notice_days + 1)
+        said += f" To leave then, give written notice by {by:%a %b} {by.day}, {by.year}; to stay, ask the office about renewing."
+    return said
+
+
 def _charge_out(c: HomeCharge) -> dict[str, Any]:
     return {"id": c.id, "name": c.name, "kind": c.kind, "amount": c.amount, "estimate": c.estimate, "pays_to": c.pays_to, "payee": c.payee, "due_day": c.due_day,
             "starts_on": c.starts_on.isoformat() if c.starts_on else None, "ends_on": c.ends_on.isoformat() if c.ends_on else None, "note": c.note, "known": c.amount is not None, "bill_id": c.bill_id}
@@ -211,6 +223,9 @@ def home_out(session: Session, home: Home, today: date) -> dict[str, Any]:
         "id": home.id, "name": home.name, "kind": home.kind, "payee": home.payee, "state": state,
         "starts_on": home.starts_on.isoformat() if home.starts_on else None, "ends_on": home.ends_on.isoformat() if home.ends_on else None,
         "first_due": (home.first_due or home.starts_on).isoformat() if (home.first_due or home.starts_on) else None, "next_due": next_due,
+        "first_due_entered": home.first_due.isoformat() if home.first_due else None,  # as typed: None when the first payment is the move-in day
+        "lease_ends_on": home.lease_ends_on.isoformat() if home.lease_ends_on else None, "lease_word": lease_word(home, today),
+        "notice_given_on": home.notice_given_on.isoformat() if home.notice_given_on else None,
         "due_day": home.due_day, "grace_days": home.grace_days, "late_fee": home.late_fee, "autopay": home.autopay, "notice_days": home.notice_days,
         "notice": notice(home, today), "deposit": home.deposit, "deposit_back_on": home.deposit_back_on.isoformat() if home.deposit_back_on else None,
         "pay_from_account_id": home.pay_from_account_id, "note": home.note,
@@ -236,8 +251,11 @@ def overview(session: Session, today: date) -> dict[str, Any]:
     rent_bills = [b for b in session.exec(select(Bill).where(Bill.active == True, Bill.home_id == None)).all() if (b.category or "").lower() in ("rent", "mortgage")]  # noqa: E711, E712
     move = None
     if current and upcoming:
+        dated = sorted((c for c in upcoming["costs"] if c["due_on"] and not c["paid"]), key=lambda c: c["due_on"])
+        check = {"name": dated[0]["name"], "on": dated[0]["due_on"], "amount": dated[0]["amount"], "source": f"home:{upcoming['id']}"} if dated else None
         move = {"from": current["name"], "to": upcoming["name"], "on": upcoming["starts_on"], "monthly_change": _money(upcoming["monthly_total"] - current["monthly_total"]),
-                "costs_total": upcoming["costs_total"], "costs_missing": upcoming["costs_missing"], "old_ends_on": current["ends_on"], "old_notice": current["notice"]}
+                "costs_total": upcoming["costs_total"], "costs_missing": upcoming["costs_missing"], "old_ends_on": current["ends_on"], "old_notice": current["notice"],
+                "first_cost": check}
     return {"as_of": today.isoformat(), "homes": out, "current_id": current["id"] if current else None, "upcoming_id": upcoming["id"] if upcoming else None, "move": move,
             "utilities_unassigned": [utility_out(u) for u in loose], "rent_bills_to_adopt": [{"id": b.id, "name": b.name, "amount": b.amount, "due_day": b.due_day} for b in rent_bills],
             "not_advice": "Your housing as you entered it, counted in every figure. Not financial or legal advice; your lease is what holds."}

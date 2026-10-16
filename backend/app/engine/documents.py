@@ -182,6 +182,9 @@ def terms_of(pages: list[str]) -> dict[str, Any]:
                 value = int(raw)
                 if (key == "due_day" and not 1 <= value <= 31) or (key == "notice_days" and not 1 <= value <= 180):
                     continue
+                if key == "grace_days" and "after" in m.group(0).lower():
+                    due = int((found.get("due_day") or {}).get("value") or 1)
+                    value = max(0, value - due)
             else:
                 when = parse_date_text(raw)
                 if when is None:
@@ -226,8 +229,8 @@ def apply_terms(session: Session, fields: dict[str, Any]) -> str:
         home.late_fee, _ = float(terms["late_fee"]["value"]), changed.append("late_fee")
     if "deposit" in terms:
         home.deposit, _ = float(terms["deposit"]["value"]), changed.append("deposit")
-    if "ends_on" in terms:
-        home.ends_on, _ = _date.fromisoformat(terms["ends_on"]["value"]), changed.append("ends_on")
+    if "ends_on" in terms:  # the lease term's end; moving out is the owner's own date
+        home.lease_ends_on, _ = _date.fromisoformat(terms["ends_on"]["value"]), changed.append("lease_ends_on")
     charges = charges_of(session, home.id)
     for key, name, kind in (("rent", "Rent", "rent"), ("pet_rent", "Pet rent", "pet")):
         if key in terms:

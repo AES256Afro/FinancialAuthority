@@ -1,5 +1,5 @@
 // The app shell: a rail on wide screens, tabs on a phone, and the header with the payday chip.
-import { ArrowLeftRight, BarChart3, BellDot, BookOpen, Clock, Download, Eye, EyeOff, FileText, Gauge, History, Landmark, LayoutGrid, List, Mail, MessageSquare, Mountain, PieChart, PiggyBank, Receipt, Repeat, Settings, Telescope, TrendingUp, Truck, Waves, type LucideIcon } from "lucide-react";
+import { ArrowLeftRight, BarChart3, BellDot, BookOpen, Clock, Download, Eye, EyeOff, FileText, Gauge, History, Home, Landmark, LayoutGrid, List, Mail, MessageSquare, Mountain, PieChart, PiggyBank, Receipt, Repeat, Settings, Telescope, TrendingUp, Truck, Waves, type LucideIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { brandMark, brandName, saveAppearance, useAppearance } from "../appearance";
@@ -33,7 +33,8 @@ export const NAV_ITEMS: NavItem[] = [
   { to: "/saving", label: "Saving", icon: PiggyBank, group: "plan", phone: false, hint: "The saving ladder and how much of each check to keep." },
   { to: "/debts", label: "Debts", icon: Mountain, group: "plan", phone: false, hint: "What you owe, what it costs, and the order to pay it down." },
   { to: "/borrowing", label: "Borrowing", icon: Repeat, group: "plan", phone: false, hint: "Advance apps and pay-later plans, and their fees." },
-  { to: "/move", label: "Moving home", icon: Truck, group: "plan", phone: false, hint: "Plan a move: the costs, the dates and whether the money holds." },
+  { to: "/housing", label: "Housing", icon: Home, group: "plan", phone: false, hint: "Your rent or mortgage, its fees, your utilities and your lease, in one place." },
+  { to: "/move", label: "Moving home", icon: Truck, group: "plan", phone: false, hint: "The cost to get into your next home, and whether the money holds." },
   { to: "/switch", label: "Switch banks", icon: ArrowLeftRight, group: "plan", phone: false, hint: "Move your paycheck and bills from one bank to another, step by step." },
   { to: "/outlook", label: "Outlook", icon: Telescope, group: "plan", phone: false, hint: "Savings and investments over the years ahead." },
   { to: "/accounts", label: "Accounts", icon: Landmark, group: "records", phone: false, hint: "Every account and its balance." },

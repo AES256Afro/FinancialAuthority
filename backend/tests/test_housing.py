@@ -151,7 +151,9 @@ def test_a_leases_terms_are_read_and_wait_for_the_owner(owner: TestClient):
     assert refused.status_code == 403
     assert owner.post(f"/api/v1/facts/{fact_id}/confirm", json={"apply": True}).status_code == 200
     home = next(h for h in owner.get("/api/v1/housing").json()["homes"] if h["id"] == home["id"])
-    assert home["late_fee"] == 75.0 and home["notice_days"] == 60 and home["deposit"] == 300.0 and home["ends_on"] == "2027-03-31"
+    assert home["late_fee"] == 75.0 and home["notice_days"] == 60 and home["deposit"] == 300.0 and home["grace_days"] == 2  # late after the 3rd: two days past the 1st
+    assert home["lease_ends_on"] == "2027-03-31" and home["ends_on"] is None  # the term ends; nobody said you move out, so rent goes on
+    assert "To leave then, give written notice by Fri Jan 29, 2027" in home["lease_word"]
     assert {c["name"]: c["amount"] for c in home["charges"]} == {"Rent": 1250.0, "Pet rent": 20.0} and home["to_landlord_monthly"] == 1270.0
     assert home["documents"][0]["title"] == "Lease"
 

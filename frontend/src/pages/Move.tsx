@@ -1,16 +1,447 @@
-// Moving home: a what-if over your real bills and paychecks. The verdict for a date, the first date that fits,
-// your balance day by day with and without the move, each paycheck's load with it, what has to be true first,
-// and saved scenarios to compare dates. Every figure is the engine's; this page draws it and says it is not a
-// recommendation.
-import { useEffect, useState } from "react";
+// Moving home: the cost to get into your next home, and whether the money holds. First the home you are moving
+// to: each cost to get in as a bar (the move-in check split into its parts, what comes back marked), then your
+// balance day by day to a month after the move with every cost counted, then a place to add a cost. Below, folded,
+// the what-if for a place you have not chosen: the verdict for a date, the first date that fits, each paycheck's
+// load, what has to be true first, and saved scenarios. Every figure is the engine's; this page draws it.
+import { ChevronRight, CircleCheck, CircleHelp, TriangleAlert, Undo2, type LucideIcon } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { TriangleAlert } from "lucide-react";
 import { api, useApi } from "../api";
-import { Failed, Said } from "../components/State";
+import { ConfirmButton } from "../components/ConfirmButton";
+import { Empty, Failed, Loading, Said } from "../components/State";
 import { StatusPill } from "../components/Status";
-import { localToday, money, parseIso, parseMoney, shortDate } from "../format";
+import { localToday, money, monthDay, parseIso, parseMoney, shortDate } from "../format";
 import { palette } from "../looks";
+import { inkOn } from "../paychecks";
 import { getPrefs } from "../prefs";
+import type { CostPart, HomeCost, HomeRow, HousingOut, MoveCheckOut, MovePathPoint } from "../types";
+
+type Note = { text: string; tone: "info" | "error" } | null;
+
+const SMALL = { minHeight: 32, padding: "4px 10px" } as const;
+const MUTED = { fontSize: 12, color: "var(--muted)" } as const;
+const AMOUNT_HINT = "Type an amount like 120 or 1200.50";
+
+/** A save's state: busy, and its outcome said next to its button. */
+function useAction() {
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<Note>(null);
+  async function run(work: () => Promise<void>, done: string): Promise<boolean> {
+    setBusy(true);
+    setNote(null);
+    try {
+      await work();
+      setNote({ text: done, tone: "info" });
+      return true;
+    } catch (e) {
+      setNote({ text: `Couldn't save it: ${(e as Error).message}`, tone: "error" });
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+  return { busy, note, setNote, run, fail: (text: string) => setNote({ text, tone: "error" }) };
+}
+
+function Tag({ icon: Icon, children }: { icon: LucideIcon; children: ReactNode }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "2px 8px", borderRadius: 999, background: "var(--surface-2)", color: "var(--ink-2)", fontSize: 12, fontWeight: 700 }}>
+      <Icon size={13} aria-hidden="true" style={{ flexShrink: 0 }} />{children}
+    </span>
+  );
+}
+
+function Field({ label, children, grow }: { label: string; children: ReactNode; grow?: boolean }) {
+  return (
+    <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: grow ? "1 1 180px" : "0 1 auto", minWidth: 0 }}>
+      <span className="lab">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function Check({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label style={{ display: "flex", alignItems: "center", gap: 6, minHeight: 40, fontSize: 13 }}>
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} style={{ width: 18, height: 18 }} />
+      {label}
+    </label>
+  );
+}
+
+// Steps of the bill colour toward the card's surface, so the parts of one cost read as one payment and every
+// colour still comes from the look. What comes back is drawn in the saving colour, with its icon and its word.
+const STEPS = [0, 0.34, 0.56, 0.18, 0.46, 0.68];
+function toward(hex: string, base: string, t: number): string {
+  const a = hex.replace("#", "");
+  const b = base.replace("#", "");
+  const mix = (i: number) => Math.round(parseInt(a.slice(i, i + 2), 16) * (1 - t) + parseInt(b.slice(i, i + 2), 16) * t).toString(16).padStart(2, "0");
+  return `#${mix(0)}${mix(2)}${mix(4)}`;
+}
+
+/** The engine's sentence with its dates in words. */
+function withDates(text: string): string {
+  return text.replace(/\b(\d{4}-\d{2}-\d{2})\b/g, (_, iso: string) => shortDate(iso));
+}
+
+// ---- the costs to get in ---------------------------------------------------------------------------------------
+
+interface CostBody {
+  name: string;
+  amount: number | null;
+  due_on: string | null;
+  refundable: boolean;
+  parts: CostPart[];
+  paid: boolean;
+  note: string;
+}
+
+function costBody(c: HomeCost, patch: Partial<CostBody> = {}): CostBody {
+  return { name: c.name, amount: c.amount, due_on: c.due_on, refundable: c.refundable, parts: c.parts, paid: c.paid, note: c.note, ...patch };
+}
+
+function CostForm({ h, cost, apply, onDone, onCancel }: { h: HomeRow; cost?: HomeCost; apply: (next: HousingOut) => void; onDone: (text: string) => void; onCancel?: () => void }) {
+  const [name, setName] = useState(cost?.name ?? "");
+  const [amount, setAmount] = useState(cost?.amount !== null && cost?.amount !== undefined ? String(cost.amount) : "");
+  const [dueOn, setDueOn] = useState(cost?.due_on ?? "");
+  const [refundable, setRefundable] = useState(cost?.refundable ?? false);
+  const [paid, setPaid] = useState(cost?.paid ?? false);
+  const [memo, setMemo] = useState(cost?.note ?? "");
+  const act = useAction();
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return act.fail("Give it a name, such as Move-in check or Truck.");
+    const value = amount.trim() ? parseMoney(amount) : null;
+    if (amount.trim() && (value === null || value < 0)) return act.fail(AMOUNT_HINT);
+    const body: CostBody = { name: name.trim(), amount: value, due_on: dueOn || null, refundable, parts: cost?.parts ?? [], paid, note: memo.trim() };
+    const url = cost ? `/api/v1/housing/costs/${cost.id}` : `/api/v1/housing/${h.id}/costs`;
+    const ok = await act.run(async () => apply(await api<HousingOut>(url, { method: cost ? "PUT" : "POST", body: JSON.stringify(body) })), "Saved.");
+    if (!ok) return;
+    const unsaid = value === null ? " Its amount is not known yet, so it is not counted until you add it." : !dueOn && !paid ? " It has no date yet, so it is not counted in your plan until you give it the day you pay." : "";
+    onDone(`${cost ? "Saved" : "Added"} ${body.name}.${unsaid}`);
+  }
+
+  return (
+    <form onSubmit={save} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <Field label="What it is" grow><input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder="Move-in check, truck, application fee" /></Field>
+        <Field label="Amount (blank: not known yet)"><input className="input num" value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" style={{ width: "min(100%, 140px)" }} /></Field>
+        <Field label="The day you pay it"><input className="input" type="date" value={dueOn} onChange={(e) => setDueOn(e.target.value)} /></Field>
+      </div>
+      <div style={{ display: "flex", gap: "0 16px", flexWrap: "wrap", alignItems: "center" }}>
+        <Check label="It comes back (refundable, like a deposit)" checked={refundable} onChange={setRefundable} />
+        <Check label="Already paid" checked={paid} onChange={setPaid} />
+      </div>
+      <Field label="Note (optional)" grow><input className="input" value={memo} onChange={(e) => setMemo(e.target.value)} maxLength={300} /></Field>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <button className="btn dark" type="submit" disabled={act.busy}>{act.busy ? "Saving…" : cost ? "Save" : "Add the cost"}</button>
+        {onCancel && <button className="btn" type="button" onClick={onCancel}>Cancel</button>}
+        <Said text={act.note?.tone === "error" ? act.note.text : null} tone="error" />
+      </div>
+    </form>
+  );
+}
+
+/** One cost as a bar as long as its amount against the largest cost; a move-in check's parts are its segments. */
+function CostBar({ cost, widest }: { cost: HomeCost; widest: number }) {
+  const c = palette(getPrefs().look);
+  const amount = cost.amount as number;
+  const parts: CostPart[] = cost.parts.length ? cost.parts : [{ name: cost.name, amount, refundable: cost.refundable }];
+  const fillOf = (p: CostPart, i: number) => (cost.paid ? c.buffer : p.refundable ? c.saving : toward(c.bill, c.surface, STEPS[i % STEPS.length]));
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div role="img" aria-label={`${cost.name}: ${parts.map((p) => `${p.name} ${money(p.amount, { cents: true })}${p.refundable ? ", comes back" : ""}`).join("; ")}${cost.paid ? ". Already paid." : ""}`}
+        style={{ width: `${Math.max(3, (amount / widest) * 100)}%`, display: "flex", gap: 2, height: 28 }}>
+        {parts.map((p, i) => {
+          const fill = fillOf(p, i);
+          // Wide enough to carry its own words: a fifth of the widest bar or more.
+          const labelled = p.amount / widest >= 0.2;
+          return (
+            <div key={i} title={`${p.name}: ${money(p.amount, { cents: true })}${p.refundable ? " (comes back)" : ""}`}
+              style={{ flex: `${Math.max(p.amount, 0.0001)} 1 0px`, minWidth: 6, borderRadius: 4, background: fill, color: inkOn(fill), display: "flex", alignItems: "center", gap: 4, padding: labelled ? "0 7px" : 0, overflow: "hidden", whiteSpace: "nowrap", fontSize: 11, fontWeight: 800 }}>
+              {labelled && <>{p.refundable && <Undo2 size={12} aria-hidden="true" style={{ flexShrink: 0 }} />}<span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{p.name} {money(p.amount)}</span></>}
+            </div>
+          );
+        })}
+      </div>
+      {cost.parts.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 220px), 1fr))", gap: "4px 14px", fontSize: 12 }}>
+          {cost.parts.map((p, i) => (
+            <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", minWidth: 0 }}>
+              <span className="sw" style={{ background: fillOf(p, i), margin: 0, flexShrink: 0 }} />
+              <span style={{ flexGrow: 1, minWidth: 0, overflowWrap: "anywhere" }}>{p.name}{p.refundable && <span style={{ color: "var(--ink-2)", fontWeight: 700, whiteSpace: "nowrap" }}> · <Undo2 size={12} aria-hidden="true" style={{ display: "inline", verticalAlign: -2 }} /> comes back</span>}</span>
+              <strong className="num" style={{ whiteSpace: "nowrap" }}>{money(p.amount, { cents: true })}</strong>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CostRow({ cost, h, widest, apply }: { cost: HomeCost; h: HomeRow; widest: number; apply: (next: HousingOut) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const [typed, setTyped] = useState("");
+  const act = useAction();
+
+  async function addAmount(e: FormEvent) {
+    e.preventDefault();
+    const value = parseMoney(typed);
+    if (value === null || value < 0) return act.fail(AMOUNT_HINT);
+    const ok = await act.run(async () => apply(await api<HousingOut>(`/api/v1/housing/costs/${cost.id}`, { method: "PUT", body: JSON.stringify(costBody(cost, { amount: value })) })), `Saved: ${cost.name} is ${money(value, { cents: true })}.`);
+    if (ok) setAsking(false);
+  }
+  async function remove() {
+    apply(await api<HousingOut>(`/api/v1/housing/costs/${cost.id}`, { method: "DELETE" }));
+  }
+
+  if (editing) {
+    return (
+      <div style={{ borderTop: "1px solid var(--surface-2)", paddingTop: 10 }}>
+        <CostForm h={h} cost={cost} apply={apply} onDone={(text) => { setEditing(false); act.setNote({ text, tone: "info" }); }} onCancel={() => setEditing(false)} />
+      </div>
+    );
+  }
+  const undated = cost.amount !== null && !cost.paid && !cost.due_on;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, borderTop: "1px solid var(--surface-2)", paddingTop: 10 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 160px", minWidth: 0 }}>
+          <strong style={{ fontSize: 14, overflowWrap: "anywhere" }}>{cost.name}</strong>
+          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{cost.due_on ? `you pay it ${shortDate(cost.due_on)}` : "no date yet"}{cost.note ? ` · ${cost.note}` : ""}</div>
+        </div>
+        {cost.paid && <Tag icon={CircleCheck}>already paid</Tag>}
+        {cost.refundable && <Tag icon={Undo2}>comes back</Tag>}
+        {cost.amount === null ? (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 700, color: "var(--warning-ink)" }}><CircleHelp size={14} aria-hidden="true" />Not known yet</span>
+        ) : (
+          <strong className="num" style={{ fontSize: 15 }}>{money(cost.amount, { cents: true })}</strong>
+        )}
+      </div>
+      {cost.amount !== null && <CostBar cost={cost} widest={widest} />}
+      {undated && (
+        <div style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, fontWeight: 600, color: "var(--warning-ink)" }}>
+          <TriangleAlert size={14} aria-hidden="true" style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>No date yet, so not counted: give it the day you pay, or mark it paid.</span>
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "flex-start" }}>
+        {cost.amount === null && !asking && <button type="button" className="btn dark" style={SMALL} onClick={() => setAsking(true)}>Add the amount</button>}
+        <button type="button" className="btn" style={SMALL} onClick={() => { setEditing(true); act.setNote(null); }}>{undated ? "Give it a date" : "Edit"}</button>
+        <ConfirmButton label="Remove" style={SMALL} question={`Remove ${cost.name}? It stops counting.`} yes="Yes, remove it" no="Keep it" onConfirm={remove} />
+      </div>
+      {asking && cost.amount === null && (
+        <form onSubmit={addAmount} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <Field label={`${cost.name}: amount`}><input className="input num" value={typed} onChange={(e) => setTyped(e.target.value)} inputMode="decimal" style={{ width: "min(100%, 140px)" }} autoFocus /></Field>
+          <button className="btn dark" type="submit" disabled={act.busy}>{act.busy ? "Saving…" : "Save the amount"}</button>
+          <button className="btn" type="button" onClick={() => setAsking(false)}>Cancel</button>
+        </form>
+      )}
+      <Said text={act.note?.text ?? null} tone={act.note?.tone} />
+    </div>
+  );
+}
+
+function CostPicture({ h, on, apply }: { h: HomeRow; on: string | null; apply: (next: HousingOut) => void }) {
+  const known = h.costs.filter((x) => x.amount !== null);
+  const unknown = h.costs.filter((x) => x.amount === null);
+  // Placement only: every bar is drawn against the largest cost.
+  const widest = Math.max(1, ...known.map((x) => x.amount as number));
+  return (
+    <section className="card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+      <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, overflowWrap: "anywhere" }}>Getting into {h.name}{on ? ` on ${shortDate(on)}` : ""}</h2>
+      {h.costs.length === 0 ? (
+        <Empty card={false}>No costs yet. Add the first one below: the move-in check, the fees, the truck.</Empty>
+      ) : (
+        <>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 20px", alignItems: "baseline" }}>
+            <span><strong className="num" style={{ fontSize: 26, fontWeight: 800 }}>{money(h.costs_total, { cents: true })}</strong> <span style={{ fontSize: 13, color: "var(--ink-2)" }}>cost to get in, still to pay</span></span>
+            <span style={{ fontSize: 13 }}>Counted in your plan: <strong className="num">{money(h.costs_counted, { cents: true })}</strong></span>
+            {h.refundable_in_costs > 0 && <span style={{ fontSize: 13, display: "inline-flex", alignItems: "center", gap: 4 }}><Undo2 size={14} aria-hidden="true" /><span><strong className="num">{money(h.refundable_in_costs, { cents: true })}</strong> of it comes back</span></span>}
+            {h.costs_paid_before > 0 && <span style={{ fontSize: 13, display: "inline-flex", alignItems: "center", gap: 4 }}><CircleCheck size={14} aria-hidden="true" /><span><strong className="num">{money(h.costs_paid_before, { cents: true })}</strong> already paid</span></span>}
+          </div>
+          {h.costs_missing.length > 0 && (
+            <div style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, fontWeight: 600, color: "var(--warning-ink)" }}>
+              <CircleHelp size={14} aria-hidden="true" style={{ flexShrink: 0, marginTop: 1 }} />
+              <span>Not known yet, so not in the cost to get in: {h.costs_missing.join(", ")}.</span>
+            </div>
+          )}
+          {h.costs_undated.length > 0 && (
+            <div style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, fontWeight: 600, color: "var(--warning-ink)" }}>
+              <TriangleAlert size={14} aria-hidden="true" style={{ flexShrink: 0, marginTop: 1 }} />
+              <span>No date yet, so not counted in your plan: {h.costs_undated.join(", ")}. Give each the day you pay, or mark it paid.</span>
+            </div>
+          )}
+          {known.map((cost) => <CostRow key={cost.id} cost={cost} h={h} widest={widest} apply={apply} />)}
+          {unknown.map((cost) => <CostRow key={cost.id} cost={cost} h={h} widest={widest} apply={apply} />)}
+        </>
+      )}
+    </section>
+  );
+}
+
+function AddCost({ h, apply }: { h: HomeRow; apply: (next: HousingOut) => void }) {
+  const [said, setSaid] = useState<string | null>(null);
+  const [round, setRound] = useState(0);
+  return (
+    <section className="card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Add a cost to get in</h2>
+        <span style={MUTED}>A one-time cost of moving: it is counted on the day you pay it, until you mark it paid.</span>
+      </div>
+      <CostForm key={round} h={h} apply={apply} onDone={(text) => { setSaid(text); setRound((r) => r + 1); }} />
+      <Said text={said} />
+    </section>
+  );
+}
+
+// ---- whether the money holds -----------------------------------------------------------------------------------
+
+function PathChart({ path, moveOn, low }: { path: MovePathPoint[]; moveOn: string; low: MovePathPoint | null }) {
+  const c = palette(getPrefs().look);
+  const box = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(720);
+  const [sel, setSel] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const measure = () => el.clientWidth && setWidth(el.clientWidth);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // One drawing unit is one pixel, so the words stay readable on a phone.
+  const W = Math.max(280, Math.min(900, width));
+  const H = 210;
+  const LEFT = 58;
+  const RIGHT = W - 12;
+  const TOP = 22;
+  const BASE = H - 26;
+  const n = path.length;
+  const hi = Math.max(1, ...path.map((p) => p.at_pace));
+  const lo = Math.min(0, ...path.map((p) => p.at_pace));
+  const x = (i: number) => LEFT + (i * (RIGHT - LEFT)) / Math.max(1, n - 1);
+  const y = (v: number) => BASE - ((v - lo) / (hi - lo)) * (BASE - TOP);
+  const line = path.map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p.at_pace).toFixed(1)}`).join(" ");
+  const moveIdx = path.findIndex((p) => p.date >= moveOn);
+  const lowIdx = low ? path.findIndex((p) => p.date === low.date) : -1;
+  const labelW = (text: string) => text.length * 6.2;
+  const said = (p: MovePathPoint) => `${shortDate(p.date)}: ${p.at_pace < 0 ? `${money(-p.at_pace)} under your safety cushion` : `${money(p.at_pace)} above your safety cushion`}`;
+
+  function dayAt(evt: PointerEvent<SVGSVGElement>): number | null {
+    const rect = evt.currentTarget.getBoundingClientRect();
+    const px = ((evt.clientX - rect.left) / rect.width) * W;
+    const i = Math.round(((px - LEFT) / (RIGHT - LEFT)) * (n - 1));
+    return i >= 0 && i < n ? i : null;
+  }
+  function onKey(e: KeyboardEvent<SVGSVGElement>) {
+    const at = sel ?? 0;
+    const to = ({ ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: n - 1 } as Record<string, number>)[e.key];
+    if (e.key === "Escape") return setSel(null);
+    if (to === undefined) return;
+    e.preventDefault();
+    setSel(Math.max(0, Math.min(n - 1, to)));
+  }
+
+  const moveText = `Move day ${shortDate(moveOn)}`;
+  const lowText = low ? `Lowest ${money(low.at_pace)} · ${shortDate(low.date)}` : "";
+  const flipMove = moveIdx >= 0 && x(moveIdx) + labelW(moveText) + 6 > W;
+  const flipLow = lowIdx >= 0 && x(lowIdx) + labelW(lowText) + 10 > W;
+  return (
+    <div ref={box} style={{ position: "relative" }}>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block", height: "auto", touchAction: "pan-y" }}
+        role="slider" tabIndex={0} aria-label="Your balance day by day, above your safety cushion, to a month after the move. Use the arrow keys to move from day to day."
+        aria-valuemin={0} aria-valuemax={Math.max(0, n - 1)} aria-valuenow={sel ?? 0} aria-valuetext={n ? said(path[sel ?? 0]) : "No days to show"}
+        onPointerMove={(e) => setSel(dayAt(e))} onPointerDown={(e) => setSel(dayAt(e))} onPointerLeave={(e) => { if (e.pointerType === "mouse") setSel(null); }}
+        onBlur={() => setSel(null)} onKeyDown={onKey}>
+        <line x1={LEFT} x2={RIGHT} y1={y(hi)} y2={y(hi)} stroke={c.hairline} strokeWidth={1} />
+        <text x={LEFT - 6} y={y(hi) + 4} textAnchor="end" fontSize={11} fill={c.muted}>{money(hi)}</text>
+        {lo < 0 && (
+          <g>
+            <line x1={LEFT} x2={RIGHT} y1={y(lo)} y2={y(lo)} stroke={c.hairline} strokeWidth={1} />
+            <text x={LEFT - 6} y={y(lo) + 4} textAnchor="end" fontSize={11} fill={c.muted}>{money(lo)}</text>
+          </g>
+        )}
+        <line x1={LEFT} x2={RIGHT} y1={y(0)} y2={y(0)} stroke={c.buffer} strokeWidth={1.5} />
+        <text x={LEFT - 6} y={y(0) + 4} textAnchor="end" fontSize={11} fill={c.muted}>cushion</text>
+        {moveIdx >= 0 && (
+          <g>
+            <line x1={x(moveIdx)} x2={x(moveIdx)} y1={TOP - 6} y2={BASE} stroke={c.housing} strokeWidth={1.5} strokeDasharray="4 3" />
+            <text x={flipMove ? x(moveIdx) - 5 : x(moveIdx) + 5} y={TOP - 8} textAnchor={flipMove ? "end" : "start"} fontSize={11} fontWeight={800} fill={c.ink}>{moveText}</text>
+          </g>
+        )}
+        <path d={line} fill="none" stroke={c.safe} strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" />
+        {low && lowIdx >= 0 && (
+          <g>
+            <circle cx={x(lowIdx)} cy={y(low.at_pace)} r={4.5} fill={c.surface} stroke={c.ink} strokeWidth={2} />
+            <text x={flipLow ? x(lowIdx) - 8 : x(lowIdx) + 8} y={y(low.at_pace) + 16 <= BASE - 4 ? y(low.at_pace) + 16 : y(low.at_pace) - 10} textAnchor={flipLow ? "end" : "start"} fontSize={11} fontWeight={700} fill={c.ink2}>{lowText}</text>
+          </g>
+        )}
+        {n > 0 && <text x={LEFT} y={H - 6} textAnchor="start" fontSize={11} fill={c.muted}>{monthDay(path[0].date)}</text>}
+        {n > 1 && <text x={RIGHT} y={H - 6} textAnchor="end" fontSize={11} fill={c.muted}>{monthDay(path[n - 1].date)}</text>}
+        {sel !== null && path[sel] && (
+          <g>
+            <line x1={x(sel)} x2={x(sel)} y1={TOP} y2={BASE} stroke={c.ink2} strokeWidth={1} />
+            <circle cx={x(sel)} cy={y(path[sel].at_pace)} r={5} fill={c.safe} stroke={c.surface} strokeWidth={2} />
+          </g>
+        )}
+      </svg>
+      {sel !== null && path[sel] && (
+        <div aria-hidden="true" style={{ position: "absolute", left: `${(x(sel) / W) * 100}%`, top: 0, transform: `translateX(${sel > n / 2 ? "calc(-100% - 8px)" : "8px"})`, width: "max-content", maxWidth: "min(280px, 75%)", background: "var(--ink)", color: "var(--inverse)", borderRadius: 8, padding: "6px 10px", fontSize: 12, pointerEvents: "none", lineHeight: 1.4 }}>
+          {said(path[sel])}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MoveCheck({ homeId, version }: { homeId: number; version: string }) {
+  const check = useApi<MoveCheckOut>(`/api/v1/housing/${homeId}/move`);
+  const first = useRef(true);
+  useEffect(() => {
+    // A cost was added or changed above: ask the engine again.
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    check.reload();
+  }, [version]); // eslint-disable-line react-hooks/exhaustive-deps
+  const d = check.data;
+  return (
+    <section className="card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Whether the money holds</h2>
+        <span style={MUTED}>Your balance day by day from today to a month after the move, at your usual spending, with every dated cost to get in and the new home's bills counted. Tap the chart, or use the arrow keys, to see a day.</span>
+      </div>
+      {check.error && !d ? (
+        <Failed error={check.error} what="the check against your paychecks" onRetry={check.reload} card={false} />
+      ) : !d ? (
+        <Loading what="the check against your paychecks" card={false} />
+      ) : (
+        <>
+          <div><StatusPill status={d.status}>{withDates(d.word)}</StatusPill></div>
+          {d.path.length > 1 ? <PathChart path={d.path} moveOn={d.move_on} low={d.low} /> : <Empty card={false} to="/paystubs#paycheck" action="Add your paycheck">No days to draw yet.</Empty>}
+          {d.caveats.length > 0 && (
+            <ul style={{ margin: 0, paddingLeft: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 4 }}>
+              {d.caveats.map((text) => (
+                <li key={text} style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, fontWeight: 600, color: "var(--warning-ink)" }}>
+                  <TriangleAlert size={14} aria-hidden="true" style={{ flexShrink: 0, marginTop: 1 }} /><span>{text}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+// ---- compare another place (the what-if) ------------------------------------------------------------------------
 
 interface OneOff {
   name: string;
@@ -126,12 +557,12 @@ function Chart({ r }: { r: Result }) {
   );
 }
 
-export function Move() {
+function WhatIf() {
   const [name, setName] = useState("New place");
   const [moveDate, setMoveDate] = useState(() => daysFromToday(45));
   const [newRent, setNewRent] = useState("");
   const [overlap, setOverlap] = useState("0");
-  const [oneOffs, setOneOffs] = useState<OneOff[]>([{ name: "Deposit", amount: "", date: "" }, { name: "Application and admin fees", amount: "", date: "" }, { name: "Truck and help", amount: "", date: "" }]);
+  const [oneOffs, setOneOffs] = useState<OneOff[]>([{ name: "Application and admin fees", amount: "", date: "" }, { name: "Truck and help", amount: "", date: "" }]);
   const [recurring, setRecurring] = useState<Recurring[]>([{ name: "Renter's insurance", amount: "", due_day: "1" }]);
   const [result, setResult] = useState<Result | null>(null);
   const [busy, setBusy] = useState(false);
@@ -209,7 +640,7 @@ export function Move() {
     setMoveDate(s.spec.move_date);
     setNewRent(s.spec.new_rent !== null && s.spec.new_rent !== undefined ? String(s.spec.new_rent) : "");
     setOverlap(String(s.spec.overlap_months ?? 0));
-    setOneOffs(s.spec.one_offs.length ? s.spec.one_offs.map((o) => ({ name: o.name, amount: String(o.amount), date: o.date })) : [{ name: "Deposit", amount: "", date: "" }]);
+    setOneOffs(s.spec.one_offs.length ? s.spec.one_offs.map((o) => ({ name: o.name, amount: String(o.amount), date: o.date })) : [{ name: "", amount: "", date: "" }]);
     setRecurring(s.spec.recurring.length ? s.spec.recurring.map((r) => ({ name: r.name, amount: String(r.amount), due_day: r.due_day ? String(r.due_day) : "" })) : [{ name: "Renter's insurance", amount: "", due_day: "1" }]);
   }
   useEffect(() => {
@@ -218,11 +649,6 @@ export function Move() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: 12 }}>
-        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, letterSpacing: "-0.01em" }}>Moving home</h1>
-        <div style={{ fontSize: 13, color: "var(--ink-2)" }}>a what-if over your real paychecks and bills; nothing in your bills list or transactions changes</div>
-      </div>
-
       {result && (
         <section className="card" style={{ padding: "18px 22px", borderTop: `5px solid ${result.verdict === "passes" ? "var(--safe)" : "var(--critical)"}`, display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 14, flexWrap: "wrap" }}>
@@ -243,7 +669,7 @@ export function Move() {
       )}
 
       <section className="card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}><h2 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>The scenario</h2><span style={{ fontSize: 12, color: "var(--muted)" }}>the new place's own figures; leave blank what you do not know yet</span></div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}><h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>The scenario</h3><span style={{ fontSize: 12, color: "var(--muted)" }}>the new place's own figures; leave blank what you do not know yet</span></div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Name</span><input className="input" value={name} onChange={(e) => setName(e.target.value)} style={{ width: "min(100%, 160px)" }} /></label>
           <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Move on</span><input className="input" type="date" value={moveDate} onChange={(e) => setMoveDate(e.target.value)} /></label>
@@ -291,7 +717,7 @@ export function Move() {
 
       {result && (
         <section className="card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}><h2 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Each paycheck with the move</h2><span style={{ fontSize: 12, color: "var(--muted)" }}>what each paycheck has to pay, and how much more than today</span></div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}><h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Each paycheck with the move</h3><span style={{ fontSize: 12, color: "var(--muted)" }}>what each paycheck has to pay, and how much more than today</span></div>
           <div style={{ overflowX: "auto" }}>
           <table className="ledger" style={{ fontSize: 13 }}>
             <thead><tr><th>Paycheck</th><th style={{ textAlign: "right" }}>Brings in</th><th style={{ textAlign: "right" }}>Has to pay</th><th style={{ textAlign: "right" }}>Change</th><th>Biggest bills</th></tr></thead>
@@ -315,7 +741,7 @@ export function Move() {
       {ready && (
         <section className="card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-            <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>What has to be true first</h2>
+            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>What has to be true first</h3>
             <span style={{ fontSize: 12, color: ready.ready ? "var(--safe-ink)" : "var(--ink-2)", fontWeight: 700 }}>{ready.met} of {ready.of} met</span>
           </div>
           {ready.items.map((i) => (
@@ -337,6 +763,61 @@ export function Move() {
         </section>
       )}
       {result && <div style={{ fontSize: 11, color: "var(--muted)" }}>{result.not_advice}</div>}
+    </div>
+  );
+}
+
+export function Move({ onChanged }: { onChanged?: () => void }) {
+  const state = useApi<HousingOut>("/api/v1/housing");
+  const [fresh, setFresh] = useState<HousingOut | null>(null);
+  const [comparing, setComparing] = useState(false);
+  useEffect(() => setFresh(null), [state.data]);
+  const data = fresh ?? state.data;
+  const up = data && data.upcoming_id !== null ? data.homes.find((h) => h.id === data.upcoming_id) ?? null : null;
+  const apply = (next: HousingOut) => {
+    setFresh(next);
+    onChanged?.();
+  };
+  // What the check against your paychecks depends on: when a cost changes, it asks again.
+  const version = up ? up.costs.map((c) => `${c.id}:${c.amount}:${c.due_on}:${c.paid}`).join("|") + `|${up.starts_on}` : "";
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, letterSpacing: "-0.01em" }}>Moving home</h1>
+        <div style={{ fontSize: 13, color: "var(--ink-2)" }}>The cost to get into your next home, and whether the money holds.</div>
+      </div>
+
+      {state.error && !data ? (
+        <Failed error={state.error} what="your next home" onRetry={state.reload} />
+      ) : !data ? (
+        <Loading what="your next home" />
+      ) : !up ? (
+        <Empty to="/housing" action="Add your next home on Housing">No move planned. Add the home you are moving to on Housing, with the day you move in, and the cost to get into it shows here.</Empty>
+      ) : (
+        <>
+          <CostPicture h={up} on={data.move?.on ?? up.starts_on} apply={apply} />
+          <MoveCheck homeId={up.id} version={version} />
+          <AddCost h={up} apply={apply} />
+          <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
+            {up.first_due ? <>The rent and fees from {shortDate(up.first_due)} are on <Link to="/housing">Housing</Link>.</> : <>The rent and fees are on <Link to="/housing">Housing</Link>.</>}
+          </div>
+        </>
+      )}
+
+      <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>
+            <button type="button" aria-expanded={comparing} onClick={() => setComparing(!comparing)} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "none", border: 0, padding: 0, minHeight: 32, font: "inherit", color: "var(--ink)", cursor: "pointer" }}>
+              <ChevronRight size={16} aria-hidden="true" style={{ transform: comparing ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+              Compare another place
+            </button>
+          </h2>
+          <span style={MUTED}>A what-if for a place you have not chosen, over your real paychecks and bills. Nothing in your bills list or transactions changes.</span>
+        </div>
+        {comparing && <WhatIf />}
+      </section>
+      {up && data && <div style={{ fontSize: 11, color: "var(--muted)" }}>{data.not_advice}</div>}
     </div>
   );
 }

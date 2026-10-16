@@ -32,6 +32,7 @@ class HomeIn(BaseModel):
     payee: str = ""
     starts_on: date | None = None
     ends_on: date | None = None
+    lease_ends_on: date | None = None
     first_due: date | None = None
     due_day: int = 1
     grace_days: int = 0
