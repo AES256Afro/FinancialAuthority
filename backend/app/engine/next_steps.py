@@ -107,6 +107,9 @@ def next_steps(session: Session, today: date) -> dict:
         if h["state"] == "upcoming" and (h["missing"] or h["costs_missing"]):
             what = ", ".join((h["missing"] + h["costs_missing"])[:4])
             steps.append(_step(f"home-missing-{h['id']}", "info", f"{h['name']}: no amount yet for {what}. Each one you add is counted in the plan.", "Housing", f"/housing#home-{h['id']}", h["source"]))
+        if h["state"] == "upcoming" and h["costs_undated"]:
+            what = ", ".join(h["costs_undated"][:3])
+            steps.append(_step(f"home-undated-{h['id']}", "info", f"{h['name']}: {what} has no date, so the plan does not count it. Give it the day you pay, or mark it paid if it is.", "Moving home", "/move", h["source"]))
     if not housing["homes"]:
         for b in housing["rent_bills_to_adopt"][:1]:
             steps.append(_step(f"home-adopt-{b['id']}", "info", f"Make {b['name']} your home on Housing: its fees, due day, lease end and notice then count too.", "Housing", "/housing", f"bill:{b['id']}"))

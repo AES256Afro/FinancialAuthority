@@ -30,7 +30,11 @@ def run_detection(session: Session, today: date, lookback_days: int = 400) -> di
     found = detect(spending, today, lookback_days, include_inactive=True) + detect(income_rows, today, lookback_days, include_inactive=True, income=True)
 
     existing = {(_series_key({"merchant_key": s.merchant_key, "cadence": s.cadence, "typical_amount": s.typical_amount})): s for s in session.exec(select(RecurringSeries)).all()}
-    bills = {b.name.lower(): b for b in session.exec(select(Bill).where(Bill.active == True)).all()}  # noqa: E712
+    bills = {}
+    for b in session.exec(select(Bill).where(Bill.active == True)).all():  # noqa: E712
+        bills[b.name.lower()] = b
+        if b.pays_to:
+            bills.setdefault(b.pays_to.lower(), b)
     incomes = list(session.exec(select(Income).where(Income.active == True)).all())  # noqa: E712
     plans = list(session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all())  # noqa: E712
     created = updated = linked = 0

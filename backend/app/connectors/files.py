@@ -433,7 +433,7 @@ def import_bills(session: Session, rows: list[dict], *, source_file: str, today:
     (no due-day, next-date or date column it could come from) is skipped and said so. A new bill is dated today,
     so no payment is looked for in the months before it was added."""
     from ..clock import local_today
-    from ..engine.recurring import merchant_key, suggest_kind
+    from ..engine.recurring import bill_named, merchant_key, suggest_kind
     from ..models import Bill
 
     from .. import importlog
@@ -449,7 +449,7 @@ def import_bills(session: Session, rows: list[dict], *, source_file: str, today:
             skipped += 1
             continue
         key = merchant_key(r["name"])
-        bill = next((b for b in bills if merchant_key(b.name) == key), None)
+        bill = bill_named(bills, key)
         kind = "subscription" if suggest_kind(r["category"], r["name"]) == "subscription" else "bill"
         if bill is None:
             bill = Bill(name=r["name"], kind=kind, amount=r["amount"], amount_mode="fixed", cadence=r["cadence"], due_day=r["due_day"], anchor_date=r.get("next_date"), autopay=r["autopay"], movable=True, move_window="1-28", category=r["category"],

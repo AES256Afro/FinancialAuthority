@@ -198,6 +198,7 @@ class Bill(SQLModel, table=True):
     starts_on: dt.date | None = None  # the first due date: nothing is due before it (a lease whose first full payment is later)
     ends_on: dt.date | None = None  # the last day it can come due (a lease that ends, a service stopped at a move)
     home_id: int | None = Field(default=None, index=True)  # made from a home's charges (Housing); edited there
+    pays_to: str = ""  # the name the bank shows for its payments when it is not the bill's own (a home's rent, paid to the property)
     utility_id: int | None = Field(default=None, index=True)  # made from a utility; edited there
 
 

@@ -154,7 +154,7 @@ def handle_message(session: Session, account: MailAccount, folder: str, uid: int
 def upcoming_bills_facts(session: Session, ref: MessageRef, parsed: Parsed, today: date, produced_by: str) -> dict:
     """Rocket Money's weekly list: one pending bill fact per charge it names, or an auto fact when a bill on the
     register already says the same. With nothing parsed, the message stays an informational fact."""
-    from ..engine.recurring import merchant_key
+    from ..engine.recurring import bill_named, merchant_key
     from ..models import Bill
     from ..parsers.rocketmoney_bills import parse_upcoming_bills
 
@@ -170,7 +170,7 @@ def upcoming_bills_facts(session: Session, ref: MessageRef, parsed: Parsed, toda
     pending = known = 0
     for charge in charges:
         key = merchant_key(charge["name"])
-        match = next((b for b in bills if merchant_key(b.name) == key or merchant_key(b.name).startswith(key) or key.startswith(merchant_key(b.name))), None)
+        match = bill_named(bills, key, loose=True)
         same = match is not None and abs(match.amount - charge["amount"]) < 0.01 and match.due_day == charge["due_date"].day
         fields = {**base, "name": charge["name"], "amount": charge["amount"], "due_date": charge["due_date"].isoformat()}
         excerpt = f"{charge['name']} · {charge['due_date'].strftime('%A, %B %d')} · ${charge['amount']:,.2f}"

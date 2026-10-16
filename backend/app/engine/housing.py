@@ -68,6 +68,7 @@ def sync_bills(session: Session, home: Home) -> None:
         bill.autopay, bill.grace_days, bill.late_fee = home.autopay, home.grace_days, home.late_fee
         bill.pay_from_account_id = home.pay_from_account_id or bill.pay_from_account_id
         bill.category, bill.kind, bill.home_id, bill.active = word if word != "Housing" else "Rent", "bill", home.id, True
+        bill.pays_to = home.payee or bill.pays_to
         session.add(bill)
         session.flush()
         home.bill_id = bill.id
@@ -88,6 +89,7 @@ def sync_bills(session: Session, home: Home) -> None:
             b.cadence, b.due_day = "monthly", max(1, min(31, c.due_day or home.due_day or 1))
             b.starts_on, b.ends_on = c.starts_on or home.first_due or home.starts_on, c.ends_on or _end_due(home)
             b.category = "Insurance" if c.kind == "insurance" else "Housing"
+            b.pays_to = c.payee or b.pays_to
             b.kind, b.home_id, b.active = "bill", home.id, True
             session.add(b)
             session.flush()
@@ -103,6 +105,7 @@ def sync_bills(session: Session, home: Home) -> None:
             b.name, b.amount = f"{cost.name}"[:80], _money(cost.amount)
             b.cadence, b.due_day, b.starts_on, b.ends_on = "monthly", cost.due_on.day, cost.due_on, cost.due_on  # one date, once
             b.category, b.kind, b.home_id, b.active, b.amount_mode = "Moving", "bill", home.id, True, "fixed"
+            b.pays_to = home.payee or b.pays_to
             session.add(b)
             session.flush()
             cost.bill_id = b.id
@@ -124,7 +127,8 @@ def sync_utility(session: Session, u: Utility) -> None:
         b.amount, b.amount_mode = _money(u.amount), "estimate" if u.estimate else "fixed"
         b.cadence, b.due_day = "monthly", max(1, min(31, u.due_day or 1))
         b.starts_on, b.ends_on = u.starts_on, u.ends_on
-        b.category, b.kind, b.utility_id, b.active = "Utilities", "bill", u.id, True
+        b.category, b.kind, b.utility_id, b.active = b.category or "Utilities", "bill", u.id, True
+        b.pays_to = who or b.pays_to
         session.add(b)
         session.flush()
         u.bill_id = b.id
@@ -137,7 +141,7 @@ def sync_utility(session: Session, u: Utility) -> None:
 
 def adopt_bill(session: Session, bill: Bill, *, name: str, kind: str = "rent") -> Home:
     """A rent bill already on the list becomes a home: its amount the rent, its due day the home's."""
-    home = Home(name=name.strip()[:80] or bill.name, kind=kind if kind in KINDS else "rent", due_day=bill.due_day, autopay=bill.autopay, grace_days=bill.grace_days,
+    home = Home(name=name.strip()[:80] or bill.name, kind=kind if kind in KINDS else "rent", payee=bill.pays_to or bill.name, due_day=bill.due_day, autopay=bill.autopay, grace_days=bill.grace_days,
                 late_fee=bill.late_fee, pay_from_account_id=bill.pay_from_account_id, bill_id=bill.id)
     session.add(home)
     session.flush()
@@ -178,7 +182,7 @@ def utility_out(u: Utility) -> dict[str, Any]:
     return {"id": u.id, "home_id": u.home_id, "service": u.service, "what": SERVICE_WORDS.get(u.service, "Service"), "provider": u.provider, "billed": u.billed, "billed_word": BILLED_WORDS.get(u.billed, u.billed),
             "billing_company": u.billing_company, "account_last4": "set" if u.account_last4_enc else "", "amount": u.amount, "estimate": u.estimate, "due_day": u.due_day,
             "starts_on": u.starts_on.isoformat() if u.starts_on else None, "ends_on": u.ends_on.isoformat() if u.ends_on else None, "moves_with_you": u.moves_with_you,
-            "bill_id": u.bill_id, "note": u.note, "known": u.amount is not None or u.billed in ("landlord", "included")}
+            "bill_id": u.bill_id, "note": u.note, "known": u.amount is not None or u.billed in ("landlord", "included") or u.moves_with_you}
 
 
 def home_out(session: Session, home: Home, today: date) -> dict[str, Any]:
@@ -196,7 +200,7 @@ def home_out(session: Session, home: Home, today: date) -> dict[str, Any]:
     to_landlord = sum(c.amount for c in with_rent if c.amount is not None)
     own_bills = sum(c.amount for c in elsewhere if c.amount is not None) + sum(u.amount for u in utilities if u.amount is not None and u.billed in ("direct", "submetered"))
     state = "upcoming" if home.starts_on and home.starts_on > today else "ended" if home.ends_on and home.ends_on <= today else "current"
-    missing = [c.name for c in charges if c.amount is None] + [SERVICE_WORDS.get(u.service, "Service") for u in utilities if u.amount is None and u.billed in ("direct", "submetered")]
+    missing = [c.name for c in charges if c.amount is None] + [SERVICE_WORDS.get(u.service, "Service") for u in utilities if u.amount is None and u.billed in ("direct", "submetered") and not u.moves_with_you]
     costs_known = [c for c in costs if c.amount is not None and not c.paid]
     return {
         "id": home.id, "name": home.name, "kind": home.kind, "payee": home.payee, "state": state,
@@ -209,6 +213,8 @@ def home_out(session: Session, home: Home, today: date) -> dict[str, Any]:
         "to_landlord_monthly": _money(to_landlord), "own_bills_monthly": _money(own_bills), "monthly_total": _money(to_landlord + own_bills), "missing": missing,
         "costs": [_cost_out(c) for c in costs], "costs_total": _money(sum(c.amount for c in costs_known)), "costs_missing": [c.name for c in costs if c.amount is None],
         "costs_paid_before": _money(sum(c.amount for c in costs if c.paid and c.amount)),
+        "costs_undated": [c.name for c in costs_known if c.due_on is None],
+        "costs_counted": _money(sum(c.amount for c in costs_known if c.due_on is not None)),
         "refundable_in_costs": _money(sum(c.amount for c in costs_known if c.refundable) + sum(float(p.get("amount") or 0) for c in costs_known for p in json.loads(c.parts or "[]") if p.get("refundable"))),
         "utilities": [utility_out(u) for u in utilities],
         "documents": [{"id": d.id, "title": d.title, "kind": d.kind, "pages": d.pages, "uploaded_at": d.uploaded_at.isoformat()} for d in docs],

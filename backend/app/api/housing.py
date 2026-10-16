@@ -271,9 +271,10 @@ class UtilityIn(BaseModel):
     ends_on: date | None = None
     moves_with_you: bool = False
     note: str = ""
+    bill_id: int | None = None  # a bill already on the list that is this utility's
 
 
-def _apply_utility(u: Utility, body: UtilityIn) -> None:
+def _apply_utility(u: Utility, body: UtilityIn, session: Session) -> None:
     if body.service not in hs.SERVICES or body.billed not in hs.BILLED:
         raise HTTPException(400, f"service is one of {', '.join(hs.SERVICES)}; billed is one of {', '.join(hs.BILLED)}")
     if body.amount is not None and not 0 <= body.amount <= 10_000:
@@ -284,18 +285,30 @@ def _apply_utility(u: Utility, body: UtilityIn) -> None:
     if body.account_last4 is not None:
         digits = "".join(ch for ch in body.account_last4 if ch.isdigit())[-4:]
         u.account_last4_enc = crypto.encrypt(digits) if digits else ""
+    if body.bill_id is not None and body.bill_id != u.bill_id:
+        bill = session.get(Bill, body.bill_id)
+        if bill is None or not bill.active or bill.home_id or (bill.utility_id and bill.utility_id != u.id):
+            raise HTTPException(400, "That bill is not on the list, or it already belongs to a home or another utility")
+        u.bill_id = bill.id
+        bill.pays_to = bill.pays_to or bill.name  # its payments keep matching under the new name
+        if u.amount is None:
+            u.amount, u.estimate = bill.amount, bill.amount_mode == "estimate"
+        u.due_day = u.due_day or bill.due_day
+        session.add(bill)
 
 
 @router.get("/utilities")
 def list_utilities(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
     rows = session.exec(select(Utility).where(Utility.active == True)).all()  # noqa: E712
-    return {"utilities": [hs.utility_out(u) for u in rows], "services": list(hs.SERVICES), "billed": hs.BILLED_WORDS}
+    linkable = session.exec(select(Bill).where(Bill.active == True, Bill.home_id == None, Bill.utility_id == None)).all()  # noqa: E711, E712
+    return {"utilities": [hs.utility_out(u) for u in rows], "services": list(hs.SERVICES), "billed": hs.BILLED_WORDS,
+            "bills_to_link": [{"id": b.id, "name": b.name, "amount": b.amount, "due_day": b.due_day, "category": b.category} for b in linkable if b.kind == "bill"]}
 
 
 @router.post("/utilities")
 def add_utility(body: UtilityIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     u = Utility()
-    _apply_utility(u, body)
+    _apply_utility(u, body, session)
     session.add(u)
     session.commit()
     hs.sync_utility(session, u)
@@ -307,7 +320,7 @@ def change_utility(utility_id: int, body: UtilityIn, session: Session = Depends(
     u = session.get(Utility, utility_id)
     if u is None:
         raise HTTPException(404, "No such utility")
-    _apply_utility(u, body)
+    _apply_utility(u, body, session)
     session.add(u)
     session.commit()
     hs.sync_utility(session, u)
