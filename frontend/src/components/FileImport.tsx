@@ -1,5 +1,6 @@
 // Import a file from any bank or vendor: a look at what it holds first, then the import under an account.
 // A bills list (name, amount, how often, due day) is told apart from transactions and lands on your bills list.
+// A statement PDF with a text layer is read line by line (M21); a card statement is read the card's way round.
 import { OctagonAlert } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
@@ -13,6 +14,7 @@ interface SampleRow {
   date?: string;
   amount?: number;
   description?: string;
+  merchant?: string;
   category?: string;
   name?: string;
   cadence?: string;
@@ -22,7 +24,7 @@ interface SampleRow {
 }
 
 interface Preview {
-  kind: "csv" | "ofx" | "bills";
+  kind: "csv" | "ofx" | "bills" | "statement";
   filename: string;
   columns?: string[];
   mapping?: Record<string, string | null>;
@@ -34,7 +36,13 @@ interface Preview {
   sample: SampleRow[];
   positions?: { name: string; ticker: string; value: number }[] | null;
   ready: boolean;
+  skipped?: number;
+  year?: number;
+  note?: string;
 }
+
+const isPdf = (f: File) => f.type === "application/pdf" || /\.pdf$/i.test(f.name);
+const lines = (n: number) => `${n} ${n === 1 ? "line" : "lines"}`;
 
 export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
   const [file, setFile] = useState<File | null>(null);
@@ -50,7 +58,8 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
   const [done, setDone] = useState<string | null>(null);
   const accounts = useApi<{ accounts: { id: number; name: string; kind: string; institution: string; active?: boolean }[] }>("/api/v1/accounts");
 
-  async function look(f: File) {
+  // A PDF is read with the kind it is (a card statement reads the other way round), so the kind goes with it.
+  async function look(f: File, as: string = kind) {
     setFile(f);
     setPreview(null);
     setError(null);
@@ -59,6 +68,7 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
     try {
       const body = new FormData();
       body.append("file", f);
+      if (isPdf(f)) body.append("kind", as);
       const p = await api<Preview>("/api/v1/imports/preview", { method: "POST", body });
       setPreview(p);
       if (p.sign) setSign(p.sign);
@@ -73,6 +83,13 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
       setBusy(false);
     }
   }
+  // The kind of account and how a statement is read go together: a card statement is read again when it changes.
+  function pickKind(next: string) {
+    const turned = (kind === "card") !== (next === "card");
+    setKind(next);
+    if (turned && file && preview?.kind === "statement") look(file, next);
+  }
+
   async function run() {
     if (!file) return;
     setBusy(true);
@@ -122,8 +139,8 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
         </div>
       )}
       <label style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
-        <span className="lab">File to import (CSV, OFX, QFX or QBO)</span>
-        <input className="input" type="file" accept=".csv,.ofx,.qfx,.qbo,text/csv,application/x-ofx" onChange={(e) => e.target.files?.[0] && look(e.target.files[0])} />
+        <span className="lab">File to import (CSV, OFX, QFX, QBO, or a statement PDF)</span>
+        <input className="input" type="file" accept=".csv,.ofx,.qfx,.qbo,.pdf,text/csv,application/x-ofx,application/pdf" onChange={(e) => e.target.files?.[0] && look(e.target.files[0])} />
       </label>
       <Where id="bank_file" />
       {busy && !preview && <span role="status" style={{ fontSize: 13, color: "var(--ink-2)" }}>Reading the file…</span>}
@@ -131,7 +148,7 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
       {preview && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8, borderTop: "1px solid var(--surface-2)", paddingTop: 8 }}>
           <div style={{ fontSize: 13 }}>
-            <strong>{preview.filename}</strong> · {preview.kind === "ofx" ? `a statement from ${preview.vendor || "a vendor"}` : preview.kind === "bills" ? "a bills list" : "a CSV"} · {preview.total} rows
+            <strong>{preview.filename}</strong> · {preview.kind === "statement" ? `a statement PDF · Read ${lines(preview.total)} from the statement (${preview.skipped ?? 0} skipped)` : `${preview.kind === "ofx" ? `a statement from ${preview.vendor || "a vendor"}` : preview.kind === "bills" ? "a bills list" : "a CSV"} · ${preview.total} rows`}
             {preview.kind === "csv" && preview.mapping && (
               <span style={{ color: "var(--ink-2)" }}> · date in <code>{preview.mapping.date ?? "?"}</code>, amount in <code>{preview.mapping.amount ?? `${preview.mapping.debit ?? "?"} / ${preview.mapping.credit ?? "?"}`}</code>, description in <code>{preview.mapping.description ?? "?"}</code></span>
             )}
@@ -139,7 +156,7 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
           {!preview.ready && (
             <div role="alert" style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 13, color: "var(--critical-ink)", fontWeight: 700 }}>
               <OctagonAlert size={14} aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }} />
-              <span>No date and amount columns were found; this file cannot be imported as it is.</span>
+              <span>{preview.kind === "statement" ? "No line with a date, words and an amount was found in this statement; it cannot be imported as it is. A CSV of the same months from the bank's website will work." : "No date and amount columns were found; this file cannot be imported as it is."}</span>
             </div>
           )}
           {preview.kind === "bills" && preview.sample.length > 0 && (
@@ -150,7 +167,53 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
               </table>
             </div>
           )}
-          {preview.kind !== "bills" && preview.sample.length > 0 && (
+          {preview.kind === "statement" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {(preview.total > 0 || (preview.skipped ?? 0) > 0) && (
+                <div aria-hidden="true" style={{ display: "flex", height: 10, borderRadius: 5, overflow: "hidden", background: "var(--surface-2)", maxWidth: 420 }}>
+                  <div style={{ flex: `${preview.total} 1 0`, background: "var(--paycheck)" }} />
+                  <div style={{ flex: `${preview.skipped ?? 0} 1 0`, background: "var(--buffer)" }} />
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12, color: "var(--ink-2)" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span className="sw" style={{ background: "var(--paycheck)", margin: 0 }} />Read: {lines(preview.total)}</span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span className="sw" style={{ background: "var(--buffer)", margin: 0 }} />Skipped (totals, balances, page lines): {preview.skipped ?? 0}</span>
+              </div>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 8, minHeight: 32, fontSize: 13, fontWeight: 700 }}>
+                <input type="checkbox" checked={kind === "card"} disabled={busy} onChange={(e) => pickKind(e.target.checked ? "card" : "checking")} style={{ width: 18, height: 18 }} />
+                This is a card statement
+              </label>
+              <span style={{ fontSize: 12, color: "var(--ink-2)" }}>On a card statement only payments, credits and refunds are money in; every other line is a charge. Ticking or unticking this reads the file again.</span>
+            </div>
+          )}
+          {preview.kind === "statement" && preview.sample.length > 0 && (
+            <div style={{ overflowX: "auto" }}>
+              <table className="ledger" style={{ fontSize: 12 }}>
+                <thead><tr><th>Date</th><th>Description</th><th style={{ textAlign: "right" }}>Money out</th><th style={{ textAlign: "right" }}>Money in</th></tr></thead>
+                <tbody>
+                  {preview.sample.map((r, i) => {
+                    const into = (r.amount ?? 0) < 0;
+                    return (
+                      <tr key={i}>
+                        <td style={{ whiteSpace: "nowrap" }}>{r.date ? shortDate(r.date) : "no date"}</td>
+                        <td>{r.description}</td>
+                        <td className="num" style={{ textAlign: "right" }}>{into ? "" : money(r.amount ?? 0, { cents: true })}</td>
+                        <td className="num" style={{ textAlign: "right", color: "var(--safe-ink)", fontWeight: 700 }}>{into ? money(Math.abs(r.amount ?? 0), { cents: true, sign: true }) : ""}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {preview.kind === "statement" && (
+            <div style={{ fontSize: 12, color: "var(--ink-2)", display: "flex", flexDirection: "column", gap: 2 }}>
+              {preview.sample.length > 0 && preview.sample.length < preview.total && <span>These are the first {lines(preview.sample.length)} of {preview.total}.</span>}
+              {preview.year ? <span>Dates printed without a year are read as {preview.year}; check them above.</span> : null}
+              {preview.note && <span>{preview.note}</span>}
+            </div>
+          )}
+          {preview.kind !== "bills" && preview.kind !== "statement" && preview.sample.length > 0 && (
             <div style={{ overflowX: "auto" }}>
               <table className="ledger" style={{ fontSize: 12 }}>
                 <thead><tr><th>Date</th><th>Description</th><th style={{ textAlign: "right" }}>Amount</th></tr></thead>
@@ -168,7 +231,7 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
             </label>
             {into === "new" && <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Account name</span><input className="input" value={account} onChange={(e) => setAccount(e.target.value)} placeholder="Everyday Checking" /></label>}
             {into === "new" && <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">At</span><input className="input" value={institution} onChange={(e) => setInstitution(e.target.value)} placeholder="Example Bank" /></label>}
-            {into === "new" && <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Kind</span><select className="input" value={kind} onChange={(e) => setKind(e.target.value)}><option value="checking">checking</option><option value="savings">savings</option><option value="card">card</option><option value="loan">loan</option></select></label>}
+            {into === "new" && <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Kind</span><select className="input" value={kind} onChange={(e) => pickKind(e.target.value)}><option value="checking">checking</option><option value="savings">savings</option><option value="card">card</option><option value="loan">loan</option></select></label>}
             {preview.kind === "csv" && (
               <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Signs in the file</span><select className="input" value={sign} onChange={(e) => setSign(e.target.value as "bank" | "ledger")}><option value="bank">money in is positive (most banks)</option><option value="ledger">money out is positive</option></select></label>
             )}

@@ -333,3 +333,144 @@ export interface PairsOut {
   matched: PairRow[];
   counts: { waiting: number; matched: number };
 }
+
+// M34: what the app noticed in your transactions (GET /api/v1/watch; POST /api/v1/watch/{key}/expected answers the same).
+export interface WatchRow {
+  id: number;
+  date: string;
+  merchant: string;
+  amount: number;
+  account: string;
+  pending: boolean;
+  source: string;
+}
+
+export interface WatchFinding {
+  key: string;
+  kind: "unusual" | "double" | "new" | "rise";
+  severity: "warning" | "info";
+  title: string;
+  text: string;
+  amount: number;
+  rows: WatchRow[];
+  link: string;
+  source?: string;
+}
+
+export interface WatchOut {
+  as_of: string;
+  items: WatchFinding[];
+  count: number;
+  not_advice: string;
+}
+
+// M23: each paycheck's plan beside what happened, and the week (GET /api/v1/recap).
+export interface RecapPlan {
+  start: string;
+  end: string;
+  paycheck: number;
+  bills: number;
+  advances: number;
+  set_aside: number;
+  free: number;
+  pace_per_day: number;
+  recorded: string;
+}
+
+export interface RecapWindow {
+  plan: RecapPlan;
+  came_in: number;
+  bills_paid: number;
+  everyday: number;
+  everyday_against_free: number;
+  status: "good" | "warn" | "crit";
+  word: string;
+  paycheck_word: string;
+  top: { category: string; spent: number }[];
+  finished: boolean;
+}
+
+export interface RecapOut {
+  as_of: string;
+  windows: RecapWindow[];
+  pace: { now: number; then: number | null; change: number | null };
+  note: string;
+  week: { from: string; to: string; spent: number; usual_week: number; top: { category: string; spent: number }[]; text: string };
+}
+
+// M24: bills that come a few times a year, a little from each paycheck (GET /api/v1/goals/sinking; POST
+// /api/v1/goals/sinking/{bill_id} answers the same with the goal made).
+export interface SinkingFund {
+  bill_id: number;
+  name: string;
+  cadence: string;
+  amount: number;
+  due: string;
+  paychecks_left: number;
+  per_paycheck: number;
+  goal_name: string;
+  goal_id: number | null;
+  funded: number;
+  ready_in_time: boolean;
+  source: string;
+}
+
+export interface SinkingOut {
+  as_of: string;
+  items: SinkingFund[];
+  per_paycheck_total: number;
+  note: string;
+}
+
+// M25: paying debts off with dates, advance apps by cost, money between people (GET /api/v1/debts/payoff?extra=N).
+export interface PayoffDebt {
+  name: string;
+  balance: number;
+  apr: number;
+  minimum: number;
+  source: string;
+  minimum_assumed: boolean;
+}
+
+export interface PayoffWay {
+  order: "avalanche" | "snowball" | "minimums";
+  months: number | null;
+  debt_free: string | null;
+  interest: number;
+  interest_saved?: number | null;
+  debts: { name: string; source: string; paid_on: string | null; interest: number }[];
+}
+
+export interface AdvanceCost {
+  provider: string;
+  advances: number;
+  taken: number;
+  fees: number;
+  fee_per_100: number;
+  days_held: number;
+  as_yearly_rate: number;
+}
+
+export interface PersonLoan {
+  person: string;
+  direction: "lent" | "borrowed";
+  amount: number;
+  on: string;
+  note: string;
+  settled: boolean;
+}
+
+export interface PayoffOut {
+  as_of: string;
+  extra: number;
+  debts: PayoffDebt[];
+  minimums_only: PayoffWay;
+  avalanche: PayoffWay;
+  snowball: PayoffWay;
+  cheapest: "avalanche" | "snowball";
+  minimums_total: number;
+  advances: AdvanceCost[];
+  people: PersonLoan[];
+  note: string;
+  not_advice: string;
+}

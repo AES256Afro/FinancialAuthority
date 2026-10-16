@@ -1,7 +1,10 @@
-// Goals: save up or pay down, with the pace per paycheck the engine computes to land on the date.
+// Goals: save up or pay down, with the pace per paycheck the engine computes to land on the date. Below them, the
+// bills that come a few times a year, with what to put aside from each paycheck and one tap to make it a goal.
+import { CalendarClock } from "lucide-react";
 import { useState } from "react";
 import { api, useApi } from "../api";
 import { money, parseMoney, shortDate } from "../format";
+import type { SinkingFund, SinkingOut } from "../types";
 import { ConfirmButton } from "./ConfirmButton";
 import { Failed, Loading, Said } from "./State";
 import { StatusPill } from "./Status";
@@ -28,6 +31,91 @@ interface GoalsOut {
 }
 
 const AMOUNT_HINT = "Type an amount like 120 or 1200.50";
+
+type Note = { text: string; tone: "info" | "error" } | null;
+
+const CADENCE_WORD: Record<string, string> = { quarterly: "every three months", semiannual: "twice a year", yearly: "once a year" };
+
+// Bills a few times a year (car insurance every six months, a yearly subscription): what to put aside from each
+// paycheck until each is due. The squares are the paychecks left before it is due, one square each. Every figure
+// is the app's own (GET /api/v1/goals/sinking); "Start saving for it" makes it a goal that fills above.
+function SinkingFunds({ onGoalMade }: { onGoalMade: () => void }) {
+  const state = useApi<SinkingOut>("/api/v1/goals/sinking");
+  const [busy, setBusy] = useState<number | null>(null);
+  const [said, setSaid] = useState<Record<number, Note>>({});
+
+  async function start(f: SinkingFund) {
+    setBusy(f.bill_id);
+    setSaid((all) => ({ ...all, [f.bill_id]: null }));
+    try {
+      await api<SinkingOut>(`/api/v1/goals/sinking/${f.bill_id}`, { method: "POST" });
+      setSaid((all) => ({ ...all, [f.bill_id]: { text: `Started the goal ${f.goal_name}: ${money(f.amount)} by ${shortDate(f.due)}. Put money aside on it above.`, tone: "info" } }));
+      state.reload();
+      onGoalMade();
+    } catch (err) {
+      setSaid((all) => ({ ...all, [f.bill_id]: { text: `Couldn't start it: ${(err as Error).message}`, tone: "error" } }));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  if (state.error && !state.data) return <Failed card={false} error={state.error} what="bills a few times a year" onRetry={state.reload} />;
+  if (!state.data) return <Loading card={false} what="bills a few times a year" />;
+  const data = state.data;
+  if (data.items.length === 0) return null;
+  const notStarted = data.items.some((f) => f.goal_id === null);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, borderTop: "1px solid var(--hairline)", paddingTop: 10, marginTop: 4 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Bills a few times a year</h3>
+        {notStarted && <span className="num" style={{ fontSize: 12, color: "var(--ink-2)" }}>{money(data.per_paycheck_total, { cents: true })} from each paycheck covers the ones not started yet</span>}
+      </div>
+      <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{data.note}</div>
+      {data.items.map((f) => {
+        const note = said[f.bill_id];
+        const full = f.goal_id !== null && f.funded >= f.amount;
+        return (
+          <div key={f.bill_id} style={{ display: "flex", flexDirection: "column", gap: 6, borderTop: "1px solid var(--surface-2)", paddingTop: 8 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 13 }}>
+              <CalendarClock size={15} aria-hidden="true" style={{ flexShrink: 0, color: "var(--bill-ink)" }} />
+              <strong>{f.name}</strong>
+              <span className="num" style={{ color: "var(--ink-2)" }}>{money(f.amount)} {CADENCE_WORD[f.cadence] ?? f.cadence}, next due {shortDate(f.due)}</span>
+              {!f.ready_in_time && <StatusPill status="warn">No paycheck lands before it is due</StatusPill>}
+              {full && <StatusPill status="good">All of it put aside</StatusPill>}
+            </div>
+            {f.paychecks_left > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                <div role="img" aria-label={`${f.paychecks_left} paychecks before it is due, ${money(f.per_paycheck, { cents: true })} from each`} style={{ display: "flex", gap: 2, maxWidth: 420 }}>
+                  {Array.from({ length: f.paychecks_left }, (_, i) => (
+                    <div key={i} style={{ flex: "1 1 0", minWidth: 3, maxWidth: 28, height: 10, borderRadius: 2, background: "var(--saving)" }} />
+                  ))}
+                </div>
+                <div className="num" style={{ fontSize: 12, color: "var(--ink-2)" }}>
+                  {f.paychecks_left === 1 ? "1 paycheck" : `${f.paychecks_left} paychecks`} before it is due: <strong style={{ color: "var(--ink)" }}>{money(f.per_paycheck, { cents: true })} from each paycheck</strong>
+                </div>
+              </div>
+            )}
+            {!f.ready_in_time && <div className="num" style={{ fontSize: 12, color: "var(--ink-2)" }}>The whole {money(f.amount, { cents: true })} is needed from what you have now.</div>}
+            {f.goal_id !== null ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                <div style={{ height: 8, background: "var(--surface-2)", borderRadius: 4, overflow: "hidden", maxWidth: 420 }} role="img" aria-label={`${money(f.funded)} of ${money(f.amount)} put aside`}>
+                  <div style={{ width: `${Math.min(100, (f.funded / Math.max(1, f.amount)) * 100)}%`, height: "100%", background: "var(--saving)" }} />
+                </div>
+                <div className="num" style={{ fontSize: 12, color: "var(--ink-2)" }}>{money(f.funded)} of {money(f.amount)} put aside, on the goal {f.goal_name} above.</div>
+              </div>
+            ) : (
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <button className="btn" type="button" disabled={busy === f.bill_id} style={{ minHeight: 32, padding: "4px 10px", fontSize: 12 }} onClick={() => start(f)}>{busy === f.bill_id ? "Starting…" : "Start saving for it"}</button>
+                {note && <Said text={note.text} tone={note.tone} />}
+              </div>
+            )}
+            {f.goal_id !== null && note && <Said text={note.text} tone={note.tone} />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export function Goals({ onChanged }: { onChanged?: () => void }) {
   const state = useApi<GoalsOut>("/api/v1/goals");
@@ -143,6 +231,12 @@ export function Goals({ onChanged }: { onChanged?: () => void }) {
           </div>
         );
       })}
+      <SinkingFunds
+        onGoalMade={() => {
+          reload();
+          onChanged?.();
+        }}
+      />
     </section>
   );
 }
