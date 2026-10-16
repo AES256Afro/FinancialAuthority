@@ -14,7 +14,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import auth, factors, oauth
 from .security import SecurityMiddleware
-from .api import appearance, approvals, banks, borrowing, exports, goals, guide, imports, moves, investments, ledger_rules, llm, mail, planned, plaid_webhook, projections, push, registers, restore, routes, scenarios, tools
+from .api import appearance, approvals, banks, borrowing, exports, goals, guide, imports, moves, investments, ledger_rules, llm, mail, planned, plaid_webhook, privacy, projections, push, registers, restore, routes, scenarios, tools
 from .config import settings
 from .db import init_db, session_scope
 from .engine.household import seed
@@ -78,6 +78,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.add_middleware(SecurityMiddleware)
 app.include_router(auth.router)
 app.include_router(factors.router)
+app.include_router(privacy.router)
 app.include_router(plaid_webhook.router)
 app.include_router(routes.router)
 app.include_router(registers.router)
