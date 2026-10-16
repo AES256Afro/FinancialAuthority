@@ -146,3 +146,55 @@ def test_a_payday_today_opens_the_first_window_with_its_paycheck():
     starts = [w["start"] for w in plan["windows"]]
     assert len(starts) == len(set(starts)) and starts[0] == payday.isoformat()
     assert plan["windows"][0]["paycheck_in"] == "source" and plan["windows"][0]["source"]["in"] == 2240.0
+
+
+def test_an_advance_left_behind_still_repays_from_the_old_account():
+    with Session(engine) as session:
+        old, new = _setup(session)
+        move = start_move(session, TODAY, source_id=old.id, target_id=new.id, target_name="", finish_by=None)
+        plan = move_plan(session, move, TODAY)
+    adv = next(i for ph in plan["phases"] for i in ph["items"] if i["kind"] == "advance" and i["owed"])
+    assert adv["decision"] == "drop" and f"${adv['owed']:,.2f}" in adv["instruction"]
+    # what is out is a debt: dropping the app does not drop the repayment from the old account's money
+    window = next(w for w in plan["windows"] if w["start"] <= "2026-10-16" <= w["end"])
+    assert any(x["name"].endswith("repays") for x in window["source"]["items"])
+    assert adv["switch_after"] >= "2026-10-16"  # the break comes after the last repayment
+
+
+def test_a_charge_on_the_old_account_the_day_the_paycheck_moves_asks_for_a_split():
+    with Session(engine) as session:
+        old, new = _setup(session)
+        session.add(Bill(name="Example Landlord", kind="bill", amount=2500.0, amount_mode="fixed", cadence="monthly", due_day=30, autopay=True, category="Rent", pay_from_account_id=old.id))
+        session.commit()
+        move = start_move(session, TODAY, source_id=old.id, target_id=new.id, target_name="", finish_by=None)
+        plan = move_plan(session, move, TODAY)
+    assert plan["first_new_payday"] == "2026-10-30"
+    split = next(m for w in plan["windows"] for m in w["move_money"] if m["how"] == "split")
+    assert split["on"] == "2026-10-30" and split["to"] == old.name and "Example Landlord" in split["for"]
+    income = next(i for ph in plan["phases"] for i in ph["items"] if i["kind"] == "income")
+    assert "split" in income["instruction"] and any("split" in s["text"] for s in plan["phases"][0]["steps"])
+    asked = float(income["instruction"].split("split: $")[1].split(" ")[0].replace(",", ""))
+    assert asked % 50 == 0 and asked >= split["amount"] + 25
+
+
+def test_a_wallet_is_one_item_and_cash_is_not_a_transfer():
+    with Session(engine) as session:
+        old, new = _setup(session)
+        for n in range(3):
+            _txn(session, old, TODAY - timedelta(days=10 * n + 1), "PwP Example Shop", 9.99, category="Shopping")
+            _txn(session, old, TODAY - timedelta(days=10 * n + 2), "PAYPAL to Example Person", 5.0 + n, category="Transfer", is_transfer=True)
+            _txn(session, old, TODAY - timedelta(days=10 * n + 3), "ATM Withdrawal", 40.0 + n, category="Transfer", is_transfer=True)
+        move = start_move(session, TODAY, source_id=old.id, target_id=new.id, target_name="", finish_by=None)
+        session.add(MoveItem(move_id=move.id, ref="transfer:gone", kind="transfer", name="Gone", amount=1.0, match_key="gone", decision="undecided"))
+        session.add(MoveItem(move_id=move.id, ref="transfer:kept", kind="transfer", name="Kept", amount=1.0, match_key="kept", decision="keep"))
+        session.commit()
+        from app.engine.moves import refresh_items
+
+        refresh_items(session, move, TODAY)
+        refs = {i.ref for i in session.exec(select(MoveItem).where(MoveItem.move_id == move.id)).all()}
+        plan = move_plan(session, move, TODAY)
+    assert "wallet:paypal" in refs and not any("paypal" in r and r != "wallet:paypal" for r in refs) and not any("pwp" in r for r in refs)
+    assert not any("atm" in r for r in refs)
+    assert "transfer:gone" not in refs and "transfer:kept" in refs  # untouched and no longer found goes; a decision stays
+    paypal = next(i for ph in plan["phases"] for i in ph["items"] if i["ref"] == "wallet:paypal")
+    assert paypal["phase"] == "wallets" and paypal["switch_after"] >= plan["first_new_payday"]

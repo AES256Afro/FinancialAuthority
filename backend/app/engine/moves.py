@@ -12,6 +12,7 @@ needs and when to move money between them. The app never moves money; it says wh
 
 from __future__ import annotations
 
+import re
 from collections import Counter, defaultdict
 from datetime import date, timedelta
 from typing import Any
@@ -28,12 +29,17 @@ LEAD_DAYS = 5  # a payer usually needs a few days before the next charge to use 
 PAYROLL_DAYS = 10  # payroll usually needs a pay period's notice
 QUIET_DAYS = 45  # the old account can close once nothing that moved has landed on it for this long
 LOOKBACK = 120
+TRANSFER_DAYS = 3  # money sent between two banks usually arrives in one to three business days
 EXTRA_ADVANCE = {"albert": "Albert"}
+# Wallets and payment apps draw on the bank account they are linked to; one switch at the wallet moves all of it.
+WALLETS = {"PayPal": ("paypal", "pwp"), "Venmo": ("venmo",), "Cash App": ("cash app", "square cash"), "Zelle": ("zelle",)}
+CASH = re.compile(r"(^|\s)(atm|cash withdrawal)(\s|$)")
 PHASES = [
     ("ready", "Get ready", "The new account in the app and money in it before anything moves."),
     ("paycheck", "The paycheck", "It moves first: everything after waits for the first paycheck to land in the new account."),
     ("bills", "Bills and card payments", "Each in its own window, right after its next charge has gone through on the old account."),
     ("subscriptions", "Subscriptions on the debit card", "Once the new debit card is in hand."),
+    ("wallets", "Wallets and payment apps", "They draw on the old account: add the new one, make it the default, and remove the old one at the close."),
     ("found", "Found in the ledger", "Recurring charges and transfers on the old account that no register names: decide each."),
     ("advances", "Advance apps", "The move is the chance to leave them on the old account and let them end."),
     ("close", "Close out", "When everything that moved has stayed moved for a while."),
@@ -62,6 +68,11 @@ def _default_payer(session: Session, accounts: dict[int, Account]) -> int | None
     spend = [a for a in accounts.values() if is_spendable(a) and a.kind != "card"]
     dep = _deposit_account(session, accounts, spend)
     return dep.id if dep else None
+
+
+def _wallet(key: str) -> str | None:
+    key = (key or "").lower()
+    return next((name for name, words in WALLETS.items() if any(re.search(rf"(^|\s){re.escape(w)}(\s|$)", key) for w in words)), None)
 
 
 def _advance_name(text: str) -> str | None:
@@ -138,13 +149,27 @@ def find_items(session: Session, move: AccountMove, today: date) -> list[dict[st
         out.append({"ref": f"advance:{name.lower()}", "kind": "advance", "name": name, "amount": _money(biggest), "due_day": None,
                     "match_key": name.lower(), "decision": "drop", "note": "Suggested: leave it on the old account and let it end."})
 
+    wallets: dict[str, list[Transaction]] = defaultdict(list)
+    for t in rows:
+        borrowed = t.category == "Borrowing" or _advance_name(t.merchant)
+        w = _wallet(merchant_key(t.merchant)) if t.amount > 0 and not t.is_card_payment and not borrowed else None
+        if w:
+            wallets[w].append(t)
+    for name, ts in wallets.items():
+        if len(ts) < 3:
+            continue
+        covered.add(name.lower())
+        recent = sum(t.amount for t in ts if t.date >= today - timedelta(days=30))
+        out.append({"ref": f"wallet:{name.lower()}", "kind": "wallet", "name": name, "amount": _money(recent or sorted(t.amount for t in ts)[len(ts) // 2]), "due_day": None,
+                    "match_key": "|".join(WALLETS[name]), "decision": "move", "note": f"{len(ts)} charges and transfers from it in the last {LOOKBACK} days."})
+
     linked = {b.series_id for b in session.exec(select(Bill)).all() if b.series_id}
     from ..jobs.detect import account_for_series
 
     for s in session.exec(select(RecurringSeries).where(RecurringSeries.active == True)).all():  # noqa: E712
         if s.id in linked or s.kind in ("ignored", "income", "advance", "installment") or s.merchant_key in covered:
             continue
-        if provider_of(s.merchant, INSTALLMENT_PROVIDERS) or _advance_name(s.merchant):
+        if provider_of(s.merchant, INSTALLMENT_PROVIDERS) or _advance_name(s.merchant) or _wallet(s.merchant_key) or CASH.search(s.merchant_key):
             continue
         if account_for_series(session, s) != src:
             continue
@@ -155,7 +180,8 @@ def find_items(session: Session, move: AccountMove, today: date) -> list[dict[st
     transfers = Counter(merchant_key(t.merchant) for t in rows if t.is_transfer and t.amount > 0 and not t.is_card_payment)
     names = {merchant_key(t.merchant): t.merchant for t in rows}
     for key, n in transfers.items():
-        if n >= 3 and key and key not in covered:
+        # Cash from an ATM follows the debit card, and a wallet is one item above, so neither is a transfer to switch.
+        if n >= 3 and key and key not in covered and not _wallet(key) and not CASH.search(key):
             covered.add(key)
             amounts = [t.amount for t in rows if merchant_key(t.merchant) == key and t.is_transfer and t.amount > 0]
             out.append({"ref": f"transfer:{key}", "kind": "transfer", "name": names.get(key, key), "amount": _money(sorted(amounts)[len(amounts) // 2]), "due_day": None,
@@ -164,10 +190,17 @@ def find_items(session: Session, move: AccountMove, today: date) -> list[dict[st
 
 
 def refresh_items(session: Session, move: AccountMove, today: date) -> int:
-    """Add what is new on the old account; never undo a decision the owner made."""
-    have = {i.ref for i in session.exec(select(MoveItem).where(MoveItem.move_id == move.id)).all()}
+    """Add what is new on the old account and drop what is no longer found and untouched; never undo a decision
+    the owner made."""
+    existing = session.exec(select(MoveItem).where(MoveItem.move_id == move.id)).all()
+    have = {i.ref for i in existing}
+    found = find_items(session, move, today)
+    refs = {f["ref"] for f in found}
+    for i in existing:
+        if i.ref not in refs and i.status == "todo" and i.decision == "undecided" and not i.note:
+            session.delete(i)
     added = 0
-    for f in find_items(session, move, today):
+    for f in found:
         if f["ref"] in have:
             continue
         session.add(MoveItem(move_id=move.id, ref=f["ref"], kind=f["kind"], name=f["name"][:120], amount=_money(f["amount"]), due_day=f["due_day"], match_key=f["match_key"],
@@ -259,6 +292,8 @@ def set_item(session: Session, move: AccountMove, item: MoveItem, today: date, *
 def _matches(item: MoveItem, t: Transaction) -> bool:
     if item.kind == "income":
         return t.is_income and t.amount < 0
+    if item.kind == "wallet":
+        return t.amount != 0 and _wallet(merchant_key(t.merchant)) == item.name
     if item.kind == "card_payment":
         text = f"{t.merchant} {t.description}".lower()
         return t.amount > 0 and (t.is_card_payment or "payment" in text) and bool(item.match_key) and any(w in text for w in item.match_key.split() if len(w) > 3)
@@ -330,17 +365,63 @@ def move_plan(session: Session, move: AccountMove, today: date) -> dict[str, Any
     card_ready = move.debit_card_on or (move.started_on + timedelta(days=10))
     paycheck_there = not income_items or all(i.status == "confirmed" for i in income_items)
 
+    # Money through the move: each pay window, what each account brings in and pays out with the switches applied.
+    events = assemble(bills=inp["bills"], plans=inp["plans"], advances=inp["advances"], today=today, accounts=inp["accounts"], paydays=inp["paydays"], card_mode=inp["card_mode"], debts=inp["debts"],
+                      planned=inp["planned"], extra=inp["extra"], card_pace_by_account=inp["pace"]["per_day_by_account"], horizon_days=150)["math"]
+    # Recurring charges the ledger found count on the old account too, until they move.
+    for i in items:
+        if i.kind == "found" and i.due_day:
+            events += [{"date": d, "name": i.name, "amount": float(i.amount), "kind": "found", "source": i.ref, "from_account_id": move.source_account_id} for d in _occurrences(i.due_day, today, horizon)]
+    default_id = _default_payer(session, accounts)
+    debt_card = {f"debt:{d.id}": d.account_id for d in inp["debts"] if getattr(d, "account_id", None)}
+    advance_rows = list(session.exec(select(Advance)).all())
+    adv_provider = {f"advance:{a.id}": (_advance_name(a.provider) or a.provider).lower() for a in advance_rows}
+    owed: dict[str, list[Advance]] = defaultdict(list)
+    for a in advance_rows:
+        if not a.repaid:
+            owed[(_advance_name(a.provider) or a.provider).lower()].append(a)
+    by_ref = {i.ref: i for i in items}
+
+    def item_of(e: dict) -> MoveItem | None:
+        src = e.get("source", "")
+        if src.startswith(("bill:", "plan:", "found:")):
+            return by_ref.get(src)
+        if src.startswith("account:"):
+            return by_ref.get(f"card:{src.split(':')[1]}")
+        if src in debt_card:
+            return by_ref.get(f"card:{debt_card[src]}")
+        if src in adv_provider:
+            return by_ref.get(f"advance:{adv_provider[src]}")
+        return None
+
+    def payer(e: dict) -> int | None:
+        acc = accounts.get(e.get("from_account_id")) if e.get("from_account_id") else None
+        if acc is not None and acc.kind != "card" and is_spendable(acc):
+            return acc.id
+        return default_id
+
     plan_items: list[dict[str, Any]] = []
     effective: dict[str, date | None] = {}
     for i in items:
         nxt = _occurrences(i.due_day, today, horizon)
+        amount = float(i.amount)
+        pays: list[dict] = []
+        if i.kind == "card_payment":
+            # A card is paid on the days the plan pays it, which can be well before its due date.
+            pays = sorted((e for e in events if e["date"] >= today and (it := item_of(e)) is not None and it.ref == i.ref), key=lambda e: e["date"])
+            nxt = sorted({e["date"] for e in pays}) or nxt
         ready = first_new if i.kind not in ("income", "advance") and not paycheck_there else today
-        if i.kind == "subscription":
+        if i.kind in ("subscription", "found"):
             ready = max(ready, card_ready)
         switch_after = switch_by = eff = None
+        out_now = owed.get(i.name.lower(), []) if i.kind == "advance" else []
         if i.kind == "income":
             switch_by = max(today, (paydays[0] if paydays else today) - timedelta(days=PAYROLL_DAYS))
             eff = first_new
+        elif i.kind == "advance":
+            # What is out is repaid from the old account first; the break comes after the last repayment.
+            switch_after = max([today] + [a.repay_date for a in out_now])
+            switch_by, eff = switch_after + timedelta(days=7), switch_after
         elif i.status in ("switched", "confirmed") and i.switched_on:
             eff = next((d for d in nxt if d >= i.switched_on + timedelta(days=LEAD_DAYS)), i.switched_on)
             switch_by = i.switched_on
@@ -358,46 +439,26 @@ def move_plan(session: Session, move: AccountMove, today: date) -> dict[str, Any
                 eff = nxt[k]
                 switch_by = eff - timedelta(days=LEAD_DAYS)
         else:
-            eff = max(ready, today + timedelta(days=LEAD_DAYS))
-            switch_after, switch_by = ready, eff
+            # Nothing scheduled: any day in the pay period after the money is there, a few days before it is needed.
+            switch_after = max(ready, today)
+            switch_by = switch_after + timedelta(days=14)
+            eff = switch_by + timedelta(days=LEAD_DAYS)
+        if pays and eff:
+            amount = next((float(e["amount"]) for e in pays if e["date"] >= eff), amount)
         effective[i.ref] = eff if i.decision in ("move", "drop") else None
         missed = i.status in ("switched", "confirmed") and i.switched_on is not None and i.last_seen_old is not None and i.last_seen_old > i.switched_on + timedelta(days=3)
         overdue = i.decision == "move" and i.status == "todo" and switch_by is not None and switch_by < today
         plan_items.append({
-            "id": i.id, "ref": i.ref, "kind": i.kind, "name": i.name, "amount": i.amount, "due_day": i.due_day, "decision": i.decision, "status": i.status,
+            "id": i.id, "ref": i.ref, "kind": i.kind, "name": i.name, "amount": _money(amount), "due_day": i.due_day, "decision": i.decision, "status": i.status,
             "switched_on": i.switched_on.isoformat() if i.switched_on else None, "confirmed_on": i.confirmed_on.isoformat() if i.confirmed_on else None,
             "last_seen_old": i.last_seen_old.isoformat() if i.last_seen_old else None, "last_seen_new": i.last_seen_new.isoformat() if i.last_seen_new else None,
             "next_due": nxt[0].isoformat() if nxt else None, "switch_after": switch_after.isoformat() if switch_after else None, "switch_by": switch_by.isoformat() if switch_by else None,
             "effective": eff.isoformat() if eff else None, "missed": missed, "overdue": overdue, "note": i.note,
-            "instruction": _instruction(i, sname, tname, nxt[0] if nxt else None, switch_after, switch_by, eff, first_new, card_ready, move),
-            "phase": {"income": "paycheck", "bill": "bills", "card_payment": "bills", "plan": "bills", "subscription": "subscriptions", "found": "found", "transfer": "found", "advance": "advances"}.get(i.kind, "found"),
+            "instruction": _instruction(i, sname, tname, nxt[0] if nxt else None, switch_after, switch_by, eff, first_new, card_ready, move, owed=out_now),
+            "owed": _money(sum(a.amount + a.fee for a in out_now)) if out_now else None,
+            "phase": {"income": "paycheck", "bill": "bills", "card_payment": "bills", "plan": "bills", "subscription": "subscriptions", "wallet": "wallets", "found": "found", "transfer": "found",
+                      "advance": "advances"}.get(i.kind, "found"),
         })
-
-    # Money through the move: each pay window, what each account brings in and pays out with the switches applied.
-    events = assemble(bills=inp["bills"], plans=inp["plans"], advances=inp["advances"], today=today, accounts=inp["accounts"], paydays=inp["paydays"], card_mode=inp["card_mode"], debts=inp["debts"],
-                      planned=inp["planned"], extra=inp["extra"], card_pace_by_account=inp["pace"]["per_day_by_account"], horizon_days=150)["math"]
-    default_id = _default_payer(session, accounts)
-    debt_card = {f"debt:{d.id}": d.account_id for d in inp["debts"] if getattr(d, "account_id", None)}
-    adv_provider = {f"advance:{a.id}": (_advance_name(a.provider) or a.provider).lower() for a in session.exec(select(Advance)).all()}
-    by_ref = {i.ref: i for i in items}
-
-    def item_of(e: dict) -> MoveItem | None:
-        src = e.get("source", "")
-        if src.startswith(("bill:", "plan:")):
-            return by_ref.get(src)
-        if src.startswith("account:"):
-            return by_ref.get(f"card:{src.split(':')[1]}")
-        if src in debt_card:
-            return by_ref.get(f"card:{debt_card[src]}")
-        if src in adv_provider:
-            return by_ref.get(f"advance:{adv_provider[src]}")
-        return None
-
-    def payer(e: dict) -> int | None:
-        acc = accounts.get(e.get("from_account_id")) if e.get("from_account_id") else None
-        if acc is not None and acc.kind != "card" and is_spendable(acc):
-            return acc.id
-        return default_id
 
     pace_src = float(inp["pace"]["per_day_by_account"].get(move.source_account_id, 0.0))
     windows = []
@@ -418,7 +479,7 @@ def move_plan(session: Session, move: AccountMove, today: date) -> dict[str, Any
                 continue
             it = item_of(e)
             eff = effective.get(it.ref) if it else None
-            if it is not None and it.decision == "drop" and eff and e["date"] >= eff:
+            if it is not None and it.decision == "drop" and eff and e["date"] >= eff and e.get("kind") != "advance":
                 continue
             side = "target" if (it is not None and it.decision == "move" and eff and e["date"] >= eff) else "source"
             flows[side]["out"] += e["amount"]
@@ -433,15 +494,16 @@ def move_plan(session: Session, move: AccountMove, today: date) -> dict[str, Any
         s_end = bal_s + flows["source"]["in"] - flows["source"]["out"]
         t_end = bal_t + flows["target"]["in"] - flows["target"]["out"]
         moves: list[dict] = []
+        paid_into = ("target" if paid_new else "source") if lands else None
         if flows["target"]["out"] > 0 and t_end < keep_t and (target is not None or move.target_name):
             amt = _money(min(keep_t - t_end, max(0.0, s_end - keep_s)) if s_end > keep_s else keep_t - t_end)
             if amt > 0.5:
-                moves.append({"amount": amt, "on": start.isoformat(), "from": sname, "to": tname})
+                moves.append({"amount": amt, "on": start.isoformat(), "from": sname, "to": tname, **_how(lines["target"], start, paid_into == "source")})
                 bal_s, bal_t, s_end, t_end = bal_s - amt, bal_t + amt, s_end - amt, t_end + amt
         if flows["source"]["out"] > 0 and s_end < keep_s and t_end > keep_t:
             amt = _money(min(keep_s - s_end, t_end - keep_t))
             if amt > 0.5:
-                moves.append({"amount": amt, "on": start.isoformat(), "from": tname, "to": sname})
+                moves.append({"amount": amt, "on": start.isoformat(), "from": tname, "to": sname, **_how(lines["source"], start, paid_into == "target")})
                 bal_s, bal_t, s_end, t_end = bal_s + amt, bal_t - amt, s_end + amt, t_end - amt
         bal_s, bal_t = s_end, t_end
         windows.append({
@@ -479,6 +541,18 @@ def move_plan(session: Session, move: AccountMove, today: date) -> dict[str, Any
     ready_steps.append({"text": (f"Put {_usd(first_move['amount'])} into {tname} by {_short(date.fromisoformat(first_move['on']))}, so the first things that move are covered before the paycheck arrives there."
                                  if first_move else f"{tname} has what the first switched items need."), "done": first_move is None, "link": None})
     ready_steps.append({"text": f"The {tname} debit card {'arrived ' + _short(move.debit_card_on) if move.debit_card_on else 'has not been marked as here yet; subscriptions wait for it'}.", "done": move.debit_card_on is not None, "link": None})
+    split = next((m for w in windows for m in w["move_money"] if m["how"] == "split" and m["to"] == sname), None)
+    if split:
+        when = _short(date.fromisoformat(split["on"]))
+        what = " and ".join(split["for"]) or "What still charges there"
+        ask = _split_amount(split["amount"])
+        text = (f"For the {when} paycheck, ask payroll for a split: {_usd(ask)} to {sname}, the rest to {tname}. {what} come{'s' if len(split['for']) == 1 else ''} out of {sname} that day, "
+                f"too soon for a transfer to arrive. Or ask that the change start from the paycheck after.")
+        for p in plan_items:
+            if p["kind"] == "income" and p["decision"] == "move":
+                p["instruction"] += " " + text
+        split_done = any(p["kind"] == "income" and p["status"] == "confirmed" for p in plan_items) or date.fromisoformat(split["on"]) < today
+        ready_steps.append({"text": text, "done": split_done, "link": None})
     phases = []
     for key, title, text in PHASES:
         entry = {"key": key, "title": title, "text": text, "items": sorted([p for p in plan_items if p["phase"] == key], key=lambda p: (p["switch_by"] or "9999", p["name"]))}
@@ -495,11 +569,26 @@ def move_plan(session: Session, move: AccountMove, today: date) -> dict[str, Any
         "source": {"id": move.source_account_id, "name": sname, "balance": source.balance if source else None},
         "target": {"id": move.target_account_id, "name": tname, "balance": target.balance if target else None, "in_app": target is not None},
         "first_new_payday": first_new.isoformat(), "progress": progress, "phases": phases, "timeline": timeline, "windows": windows,
-        "alerts": alerts_for(plan_items, windows, sname, tname, today), "close": {"ready": close_ready, "text": close_text}, "not_advice": NOT_ADVICE,
+        "alerts": alerts_for(plan_items, windows, sname, tname, today, split=split), "close": {"ready": close_ready, "text": close_text}, "not_advice": NOT_ADVICE,
     }
 
 
-def _instruction(i: MoveItem, sname: str, tname: str, n1: date | None, after: date | None, by: date | None, eff: date | None, first_new: date, card_ready: date, move: AccountMove) -> str:
+def _how(needs: list[dict], start: date, paycheck_funds: bool) -> dict[str, Any]:
+    """A transfer when there is time for it to arrive before the first charge that needs it; when there is not and
+    the money is the paycheck that lands that day, a split of the paycheck at payroll."""
+    need = min((date.fromisoformat(x["date"]) for x in needs), default=start)
+    tight = (need - start).days < TRANSFER_DAYS
+    return {"how": "split" if (paycheck_funds and tight) else "transfer", "need_by": need.isoformat(), "tight": tight,
+            "for": [x["name"] for x in needs if (date.fromisoformat(x["date"]) - start).days < TRANSFER_DAYS][:4]}
+
+
+def _split_amount(v: float) -> float:
+    """What to ask payroll for: the shortfall with a small cushion, rounded up to $50."""
+    return float(-(-(float(v) + 25.0) // 50) * 50)
+
+
+def _instruction(i: MoveItem, sname: str, tname: str, n1: date | None, after: date | None, by: date | None, eff: date | None, first_new: date, card_ready: date, move: AccountMove,
+                 owed: list[Advance] | None = None) -> str:
     window = f"after {_short(after)} and before {_short(by)}" if after and by else (f"by {_short(by)}" if by else "when it next comes up")
     if i.kind == "income":
         return (f"Give payroll {tname}'s routing and account numbers; most credit unions have a direct-deposit form in online banking. It usually takes one or two pay periods, "
@@ -516,15 +605,28 @@ def _instruction(i: MoveItem, sname: str, tname: str, n1: date | None, after: da
         return f"Change {i.name}'s payment account to {tname} {window}. The {_short(eff)} charge is the first from {tname}." if eff else f"Change {i.name}'s payment account to {tname}."
     if i.kind == "advance":
         if i.decision == "drop":
-            return f"Do not link {i.name} to {tname}. Repay what is out from {sname}, then remove {sname} from {i.name}. The move is the clean break from advances."
+            if owed:
+                total = sum(a.amount + a.fee for a in owed)
+                last = max(a.repay_date for a in owed)
+                return (f"{i.name} takes back {_usd(total)} from {sname} on {_short(last)}; the plan keeps it there. After that, do not take another, remove {sname} from {i.name}, "
+                        f"and do not link {i.name} to {tname}. The move is the clean break from advances.")
+            return f"Nothing is out. Remove {sname} from {i.name}, cancel its membership if it has one, and do not link it to {tname}. The move is the clean break from advances."
         return f"Link {i.name} to {tname} after the paycheck moves, and only if you still need it."
+    if i.kind == "wallet":
+        if i.name == "Zelle":
+            return f"Zelle follows your email or phone number. Enroll it in {tname}'s online banking {window}; that moves it off {sname}."
+        return f"{i.name} draws on {sname}. In {i.name}, add {tname} as a bank and make it the preferred one {window}. Remove {sname} from {i.name} at the close."
     if i.kind == "transfer":
         return f"Recurring transfers to {i.name} leave {sname}. Point them at {tname}, or stop them."
     return f"{i.name} charges {sname} about {_usd(i.amount)}. Decide: move it to {tname}, keep it on {sname} until it ends, or drop it."
 
 
-def alerts_for(items: list[dict], windows: list[dict], sname: str, tname: str, today: date) -> list[dict[str, Any]]:
+def alerts_for(items: list[dict], windows: list[dict], sname: str, tname: str, today: date, split: dict | None = None) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
+    income_open = any(p["kind"] == "income" and p["decision"] == "move" and p["status"] != "confirmed" for p in items)
+    if split and income_open and 0 <= (date.fromisoformat(split["on"]) - today).days <= 21:
+        out.append({"severity": "warn" if (date.fromisoformat(split["on"]) - today).days <= 7 else "info",
+                    "text": f"Keep {_usd(_split_amount(split['amount']))} of the {_short(date.fromisoformat(split['on']))} paycheck going to {sname}: {' and '.join(split['for']) or 'charges'} come out there that day.", "ref": "split"})
     for p in items:
         if p["missed"]:
             out.append({"severity": "crit", "text": f"{p['name']} still charged {sname} on {_short(date.fromisoformat(p['last_seen_old']))}, after you switched it. Check the change took.", "ref": p["ref"]})
@@ -537,7 +639,7 @@ def alerts_for(items: list[dict], windows: list[dict], sname: str, tname: str, t
             out.append({"severity": "warn", "text": f"{p['name']} reached {tname} on {_short(date.fromisoformat(p['last_seen_new']))}. Remove {tname} from {p['name']} if you meant to leave it behind.", "ref": p["ref"]})
     for w in windows:
         for m in w.get("move_money") or []:
-            if 0 <= (date.fromisoformat(m["on"]) - today).days <= 2:
+            if m.get("how") != "split" and 0 <= (date.fromisoformat(m["on"]) - today).days <= 2:
                 out.append({"severity": "info", "text": f"Move {_usd(m['amount'])} from {m['from']} to {m['to']} by {_short(date.fromisoformat(m['on']))}.", "ref": "money"})
     undecided = [p for p in items if p["decision"] == "undecided"]
     if undecided:

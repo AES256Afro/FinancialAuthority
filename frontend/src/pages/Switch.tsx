@@ -13,9 +13,10 @@ import { getPrefs } from "../prefs";
 interface Item {
   id: number; ref: string; kind: string; name: string; amount: number; due_day: number | null; decision: string; status: string;
   switched_on: string | null; confirmed_on: string | null; last_seen_old: string | null; last_seen_new: string | null;
-  next_due: string | null; switch_after: string | null; switch_by: string | null; effective: string | null; missed: boolean; overdue: boolean; note: string; instruction: string; phase: string;
+  next_due: string | null; switch_after: string | null; switch_by: string | null; effective: string | null; missed: boolean; overdue: boolean; note: string; instruction: string; phase: string; owed?: number | null;
 }
-interface Window { start: string; end: string; paycheck_in: string | null; source: { in: number; out: number; end: number }; target: { in: number; out: number; end: number }; move_money: { amount: number; on: string; from: string; to: string }[] }
+interface Window { start: string; end: string; paycheck_in: string | null; source: { in: number; out: number; end: number }; target: { in: number; out: number; end: number }; move_money: MoneyMove[] }
+interface MoneyMove { amount: number; on: string; from: string; to: string; how?: "split" | "transfer"; need_by?: string; tight?: boolean; for?: string[] }
 interface Plan {
   as_of: string;
   move: { id: number; name: string; status: string; started_on: string; finish_by: string | null; debit_card_on: string | null };
@@ -35,7 +36,7 @@ interface MoveList {
   accounts: { id: number; name: string; kind: string; institution: string }[];
 }
 
-const KIND_WORD: Record<string, string> = { income: "Paycheck", bill: "Bill", subscription: "Subscription", card_payment: "Card payment", plan: "Pay-later", advance: "Advance app", found: "Found in the ledger", transfer: "Transfer" };
+const KIND_WORD: Record<string, string> = { income: "Paycheck", bill: "Bill", subscription: "Subscription", card_payment: "Card payment", plan: "Pay-later", advance: "Advance app", wallet: "Wallet", found: "Found in the ledger", transfer: "Transfer" };
 
 function StartForm({ list, onStarted }: { list: MoveList; onStarted: () => void }) {
   const spend = list.accounts.filter((a) => a.kind === "checking" || a.kind === "savings" || a.kind === "card");
@@ -55,7 +56,7 @@ function StartForm({ list, onStarted }: { list: MoveList; onStarted: () => void 
   return (
     <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12, maxWidth: 760 }}>
       <strong style={{ fontSize: 15 }}>Start a move</strong>
-      <span style={{ fontSize: 13, color: "var(--ink-2)" }}>The app finds everything on the old account (the paycheck, every bill it pays, the cards it pays, pay-later plans, advance apps, and recurring charges no register names), gives each a window to switch in, and confirms each switch from the ledger.</span>
+      <span style={{ fontSize: 13, color: "var(--ink-2)" }}>The app finds everything on the old account (the paycheck, every bill it pays, the cards it pays, pay-later plans, wallets like PayPal, advance apps, and recurring charges no register names), gives each a window to switch in, and confirms each switch from the ledger.</span>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 220px), 1fr))", gap: 10 }}>
         <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Move from</span>
           <select className="input" value={source} onChange={(e) => setSource(Number(e.target.value))}>{spend.map((a) => <option key={a.id} value={a.id}>{a.name}{a.institution ? ` · ${a.institution}` : ""}</option>)}</select>
@@ -74,6 +75,23 @@ function StartForm({ list, onStarted }: { list: MoveList; onStarted: () => void 
         {note && <span style={{ fontSize: 13, color: "var(--critical)" }}>{note}</span>}
       </div>
     </section>
+  );
+}
+
+function MoneyLine({ m }: { m: MoneyMove }) {
+  if (m.how === "split") {
+    return (
+      <div className="num" style={{ fontSize: 13 }}>
+        <strong>{money(m.amount, { cents: true })}</strong> of the {shortDate(m.on)} paycheck to {m.to}
+        <div style={{ fontSize: 11, color: "var(--muted)" }}>a payroll split: {(m.for ?? []).join(" and ") || "charges"} come out there that day, too soon for a transfer</div>
+      </div>
+    );
+  }
+  return (
+    <div className="num" style={{ fontSize: 13 }}>
+      <strong>{money(m.amount, { cents: true })}</strong> {m.from} → {m.to}, start {shortDate(m.on)}
+      {m.need_by && m.need_by !== m.on ? <div style={{ fontSize: 11, color: "var(--muted)" }}>needed there by {shortDate(m.need_by)}</div> : null}
+    </div>
   );
 }
 
@@ -214,7 +232,7 @@ function MovePlan({ id }: { id: number }) {
                   <td style={{ whiteSpace: "nowrap" }}>{monthDay(w.start)} to {monthDay(w.end)}{w.paycheck_in ? <div style={{ fontSize: 11, color: "var(--muted)" }}>paycheck into {w.paycheck_in === "target" ? data.target.name : data.source.name}</div> : null}</td>
                   <td className="num" style={{ textAlign: "right" }}>{money(w.source.in)} · {money(w.source.out)} · <strong style={{ color: w.source.end < 0 ? "var(--critical)" : "inherit" }}>{money(w.source.end)}</strong></td>
                   <td className="num" style={{ textAlign: "right" }}>{money(w.target.in)} · {money(w.target.out)} · <strong style={{ color: w.target.end < 0 ? "var(--critical)" : "inherit" }}>{money(w.target.end)}</strong></td>
-                  <td>{w.move_money.length ? w.move_money.map((m, i) => <div key={i} className="num" style={{ fontSize: 13 }}><strong>{money(m.amount, { cents: true })}</strong> {m.from} → {m.to}, {shortDate(m.on)}</div>) : <span style={{ color: "var(--muted)" }}>nothing</span>}</td>
+                  <td>{w.move_money.length ? w.move_money.map((m, i) => <MoneyLine key={i} m={m} />) : <span style={{ color: "var(--muted)" }}>nothing</span>}</td>
                 </tr>
               ))}
             </tbody>
