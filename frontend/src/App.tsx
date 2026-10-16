@@ -38,6 +38,9 @@ const Outlook = lazy(() => import("./pages/Outlook").then((m) => ({ default: m.O
 const Notifications = lazy(() => import("./pages/Notifications").then((m) => ({ default: m.Notifications })));
 const Paystubs = lazy(() => import("./pages/Paystubs").then((m) => ({ default: m.Paystubs })));
 const More = lazy(() => import("./pages/More").then((m) => ({ default: m.More })));
+const Budgets = lazy(() => import("./pages/Budgets").then((m) => ({ default: m.Budgets })));
+const Security = lazy(() => import("./pages/Security").then((m) => ({ default: m.Security })));
+const Privacy = lazy(() => import("./pages/Privacy").then((m) => ({ default: m.Privacy })));
 const Reports = lazy(() => import("./pages/Reports").then((m) => ({ default: m.Reports })));
 const SettingsIndex = lazy(() => import("./pages/Settings").then((m) => ({ default: m.SettingsIndex })));
 const Transactions = lazy(() => import("./pages/Transactions").then((m) => ({ default: m.Transactions })));
@@ -92,6 +95,9 @@ export default function App() {
         <Route path="/confirm" element={<Confirm onChanged={snapshot.reload} />} />
         <Route path="/settings" element={<SettingsIndex />} />
         <Route path="/more" element={<More />} />
+        <Route path="/budgets" element={<Budgets />} />
+        <Route path="/settings/security" element={<Security />} />
+        <Route path="/settings/privacy" element={<Privacy />} />
         <Route path="/settings/appearance" element={<Appearance />} />
         <Route path="/settings/clients" element={<Clients />} />
         <Route path="/settings/models" element={<Models />} />

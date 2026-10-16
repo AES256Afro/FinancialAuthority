@@ -1,5 +1,5 @@
 // The app shell: a rail on wide screens, tabs on a phone, and the header with the payday chip.
-import { ArrowLeftRight, BarChart3, BellDot, BookOpen, Clock, Download, Eye, EyeOff, FileText, Gauge, Landmark, LayoutGrid, List, Mail, MessageSquare, Mountain, PiggyBank, Receipt, Repeat, Settings, Telescope, TrendingUp, Truck, Waves, type LucideIcon } from "lucide-react";
+import { ArrowLeftRight, BarChart3, BellDot, BookOpen, Clock, Download, Eye, EyeOff, FileText, Gauge, Landmark, LayoutGrid, List, Mail, MessageSquare, Mountain, PieChart, PiggyBank, Receipt, Repeat, Settings, Telescope, TrendingUp, Truck, Waves, type LucideIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { brandMark, brandName, saveAppearance, useAppearance } from "../appearance";
@@ -27,6 +27,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: "/bills", label: "Bills", icon: Receipt, group: "daily", hint: "Every bill and subscription, its due day and who pays it." },
   { to: "/confirm", label: "Needs you", icon: BellDot, group: "daily", hint: "What waits for your answer before it counts." },
   { to: "/chat", label: "Chat", icon: MessageSquare, group: "daily", phone: false, hint: "Ask about your plan in your own words." },
+  { to: "/budgets", label: "Budgets", icon: PieChart, group: "plan", phone: false, hint: "An amount for each kind of spending, for each paycheck, and what is left of it." },
   { to: "/cover", label: "Cover", icon: Gauge, group: "plan", phone: false, hint: "Before each payday: what every account needs against what it holds." },
   { to: "/saving", label: "Saving", icon: PiggyBank, group: "plan", phone: false, hint: "The saving ladder and how much of each check to keep." },
   { to: "/debts", label: "Debts", icon: Mountain, group: "plan", phone: false, hint: "What you owe, what it costs, and the order to pay it down." },
@@ -69,7 +70,7 @@ function usePageTitle(brand: string) {
   const { pathname } = useLocation();
   useEffect(() => {
     const match = [...NAV_ITEMS].filter((n) => (n.end ? pathname === n.to : pathname === n.to || pathname.startsWith(n.to + "/"))).sort((a, b) => b.to.length - a.to.length)[0];
-    const extra: Record<string, string> = { "/glossary": "Words", "/checkin": "Check-in", "/welcome": "Welcome", "/settings/setup": "Setting up", "/settings/appearance": "Appearance", "/settings/connectors": "Connections", "/settings/models": "Models", "/settings/clients": "Apps and keys", "/settings/notifications": "Notifications", "/settings/backups": "Backups", "/settings/jobs": "Jobs", "/settings/audit": "Activity" };
+    const extra: Record<string, string> = { "/glossary": "Words", "/checkin": "Check-in", "/welcome": "Welcome", "/settings/setup": "Setting up", "/settings/appearance": "Appearance", "/settings/connectors": "Connections", "/settings/models": "Models", "/settings/clients": "Apps and keys", "/settings/notifications": "Notifications", "/settings/backups": "Backups", "/settings/jobs": "Jobs", "/settings/audit": "Activity", "/settings/security": "Sign-in and security", "/settings/privacy": "Privacy" };
     const page = extra[pathname] ?? match?.label;
     document.title = page ? `${page} · ${brandName()}` : brandName();
   }, [pathname, brand]);
