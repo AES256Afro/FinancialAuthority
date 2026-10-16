@@ -181,6 +181,16 @@ The app keeps its own copies of its database: before every import, once a day, a
 data is also archived with the server's backups, and the app's sheet has *Take a restore point* and *Check the
 database and its copies*. Keep `FA_DATA_KEY` with your backups.
 
+**A sealed copy off the disk.** On Settings › Backups, choose a folder on another disk (a USB drive the server
+mounts, or a folder Syncthing or rclone syncs to a cloud: `/offbox` inside the app, set on BoxPilot's card or
+with `FA_OFFBOX_HOST_DIR` in `.env`) and a passphrase only you know. The app seals a copy there daily or weekly;
+without the passphrase nobody can open it. A weekly drill opens the newest copy on its own and proves it holds
+what it should. The page's **Recovery kit** says what to keep and how to bring everything back:
+
+```bash
+docker compose run --rm financialauthority /app/backend/.venv/bin/python -m app.offbox open /offbox/<copy>.fabackup /data/financialauthority.db
+```
+
 ## 9. Updating
 
 - **BoxPilot:** the app's card offers the new version; it backs up first.

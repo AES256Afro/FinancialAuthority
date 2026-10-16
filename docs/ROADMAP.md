@@ -236,7 +236,7 @@ Proposed after a survey of YNAB, Monarch, Copilot, Rocket Money, Empower, Simpli
 **Security and safety**
 
 - ☐ **M26 Passkeys and a second step.** Passkey sign-in; an authenticator code with recovery codes; signed-in devices with sign out everywhere; optional sign-in through the owner's own OpenID provider.
-- ☐ **M27 Backups that prove themselves.** A weekly restore drill of the newest copy; an encrypted copy to a drive or any cloud folder with the owner's passphrase; a one-page recovery kit.
+- ✅ **M27 Backups that prove themselves.** (built 2026-10-16) A weekly restore drill of the newest copy; an encrypted copy to a drive or any cloud folder with the owner's passphrase; a one-page recovery kit.
 - ☐ **M28 Privacy you control.** Hide amounts with one tap; each AI feature can be turned off, local models the default; everything in one file, and delete everything.
 
 **Quality of life**
