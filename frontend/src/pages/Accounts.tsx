@@ -1,13 +1,16 @@
 // Accounts: every balance with where it came from and how fresh it is, and net worth as what you have less
 // what you owe. Below them, what you own beyond the accounts (a home, a car) at the value you give it. The engine's
-// numbers; nothing computed here.
+// numbers; nothing computed here. Once someone else signs in too, each account is marked shared or whose it is,
+// with a small control to change the mark.
 import { useEffect, useState, type CSSProperties } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { api, useApi, type Loaded } from "../api";
+import { api, useApi, type ApiError, type Loaded } from "../api";
 import { ConfirmButton } from "../components/ConfirmButton";
 import { Empty, Failed, Loading, Said } from "../components/State";
 import { StatusPill } from "../components/Status";
 import { localToday, money, parseIso, parseMoney, shortDate, when } from "../format";
+import { keyToMark, markKey, possessive, roleOf, type MePerson, type PeopleOut, type SharedOut } from "../types-people";
+import { WhoTag } from "./Shared";
 
 interface Item {
   id: number;
@@ -23,6 +26,7 @@ interface Item {
   source: string;
   other?: boolean;
   needs_update?: boolean;
+  account_id?: number | null;
 }
 
 interface Overview {
@@ -82,32 +86,142 @@ function jumpToOther() {
   document.getElementById("other")?.scrollIntoView({ block: "start", behavior: "smooth" });
 }
 
-function Group({ title, items, total, tone }: { title: string; items: Item[]; total: number; tone: string }) {
+// ---- whose each account is ---------------------------------------------------------------------------------------
+
+interface Choice { key: string; word: string; shared: boolean }
+interface Marks {
+  keyOf: (accountId: number) => string;
+  choices: Choice[];
+  /** A person with everything sees the owner's accounts tagged as the owner's; the owner sees them untagged. */
+  tagOwner: boolean;
+  reload: () => void;
+}
+
+/** The account an overview row is: an account row, or a debt kept against an account. Plans, advances and what you
+ * own beyond the accounts are not accounts, so they carry no mark. */
+function accountIdOf(a: Item): number | null {
+  if (a.other) return null;
+  if (a.source.startsWith("account:")) return a.id;
+  if (a.source.startsWith("debt:") && a.account_id) return a.account_id;
+  return null;
+}
+
+/** The marks, once someone else signs in: the owner reads them with the people; a person with everything reads
+ * which accounts are shared and which are theirs. */
+function useMarks(): { marks: Marks | null; error: ApiError | null; retry: () => void } {
+  const me = useApi<MePerson>("/api/auth/me");
+  const role = roleOf(me.data);
+  const pid = me.data?.person_id ?? null;
+  const people = useApi<PeopleOut>(me.data && role === "owner" ? "/api/v1/people" : null);
+  const sharedAll = useApi<SharedOut>(me.data && role === "everything" ? "/api/v1/shared" : null);
+  const theirs = useApi<SharedOut>(me.data && role === "everything" && pid ? `/api/v1/shared?person_id=${pid}` : null);
+  const reload = () => {
+    people.reload();
+    sharedAll.reload();
+    theirs.reload();
+  };
+  // The demo and an older server have no people: the marks stay out of sight.
+  const missing = (e: ApiError | null) => Boolean(e && (e.status === 404 || e.status === 401));
+  const error = [people.error, sharedAll.error, theirs.error].find((e) => e && !missing(e)) ?? null;
+  if (role === "owner" && people.data && people.data.people.length > 0) {
+    const d = people.data;
+    const keys = new Map(d.accounts.map((a) => [a.id, markKey(a)] as [number, string]));
+    return {
+      marks: {
+        keyOf: (id) => keys.get(id) ?? "owner",
+        choices: [{ key: "owner", word: "Yours", shared: false }, { key: "shared", word: "Shared", shared: true }, ...d.people.map((p) => ({ key: `p${p.id}`, word: possessive(p.display_name), shared: false }))],
+        tagOwner: false,
+        reload,
+      },
+      error,
+      retry: reload,
+    };
+  }
+  if (role === "everything" && pid && sharedAll.data && theirs.data) {
+    const keys = new Map<number, string>();
+    for (const a of theirs.data.accounts) if (a.whose === "theirs") keys.set(a.id, `p${pid}`);
+    for (const a of sharedAll.data.accounts) keys.set(a.id, "shared");
+    return {
+      marks: {
+        keyOf: (id) => keys.get(id) ?? "owner",
+        choices: [{ key: "owner", word: possessive(me.data?.owner || "the owner"), shared: false }, { key: "shared", word: "Shared", shared: true }, { key: `p${pid}`, word: "Yours", shared: false }],
+        tagOwner: true,
+        reload,
+      },
+      error,
+      retry: reload,
+    };
+  }
+  return { marks: null, error, retry: reload };
+}
+
+function MarkTag({ id, marks }: { id: number; marks: Marks }) {
+  const key = marks.keyOf(id);
+  const choice = marks.choices.find((c) => c.key === key);
+  if (!choice || (key === "owner" && !marks.tagOwner)) return null;
+  return <> <WhoTag shared={choice.shared} word={choice.word} /></>;
+}
+
+function MarkControl({ id, name, marks }: { id: number; name: string; marks: Marks }) {
+  const key = marks.keyOf(id);
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<Note>(null);
+  async function change(next: string) {
+    const word = marks.choices.find((c) => c.key === next)?.word ?? next;
+    setBusy(true);
+    setSaid(null);
+    try {
+      await api(`/api/v1/accounts/${id}/sharing`, { method: "PUT", body: JSON.stringify(keyToMark(next)) });
+      setSaid({ tone: "info", text: `Kept: ${word}.` });
+      marks.reload();
+    } catch (err) {
+      setSaid({ tone: "error", text: `Couldn't mark it: ${(err as Error).message}` });
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
+      <select className="input" aria-label={`Whose is ${name}`} value={key} disabled={busy} onChange={(e) => change(e.target.value)} style={{ minHeight: 32, padding: "4px 8px", fontSize: 12 }}>
+        {marks.choices.map((c) => <option key={c.key} value={c.key}>{c.word}</option>)}
+      </select>
+      <Said text={said?.text ?? null} tone={said?.tone} />
+    </div>
+  );
+}
+
+function Group({ title, items, total, tone, marks }: { title: string; items: Item[]; total: number; tone: string; marks: Marks | null }) {
+  const cols = marks ? 6 : 5;
   return (
     <section className="card" style={{ padding: "6px 14px", overflowX: "auto" }}>
       <table className="ledger">
-        <thead><tr><th>{title}</th><th>Kind</th><th>From</th><th>Balance as of</th><th style={{ textAlign: "right" }}>Balance</th></tr></thead>
+        <thead><tr><th>{title}</th><th>Kind</th><th>From</th><th>Balance as of</th>{marks && <th>Whose</th>}<th style={{ textAlign: "right" }}>Balance</th></tr></thead>
         <tbody>
-          {items.map((a) => (
-            <tr key={a.source}>
-              <td>
-                {a.other
-                  ? <Link to={{ hash: "#other" }} onClick={jumpToOther} style={{ fontWeight: 700 }}>{a.name}</Link>
-                  : <strong>{a.name}</strong>}
-                {a.institution ? <span style={{ color: "var(--muted)" }}> · {a.institution}</span> : null}
-              </td>
-              <td style={{ color: "var(--ink-2)" }}>{a.other ? (ASSET_WORD[a.kind as AssetKind] ?? a.kind).toLowerCase() : KIND_WORD[a.kind] ?? a.kind}</td>
-              <td style={{ color: "var(--ink-2)" }}>{a.connector ? CONNECTOR_WORD[a.connector] ?? a.connector : "added in the app"}</td>
-              <td style={{ color: "var(--ink-2)" }} title={a.balance_at ? when(a.balance_at) : undefined}>
-                {a.other && a.balance_at
-                  ? <span style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>set {shortDate(a.balance_at.slice(0, 10))}{a.needs_update && <StatusPill status="warn">Update the value</StatusPill>}</span>
-                  : a.connector ? freshness(a.balance_at, a.age_days) : "—"}
-              </td>
-              <td className="num" style={{ textAlign: "right", fontWeight: 700 }}>{a.balance === null || a.balance === undefined ? "—" : money(a.balance)}</td>
-            </tr>
-          ))}
-          {items.length === 0 && <tr><td colSpan={5} style={{ color: "var(--ink-2)" }}>Nothing here yet. <Link to="/settings/connectors">Connect a bank on Settings › Connections</Link>.</td></tr>}
-          <tr><td colSpan={4} style={{ fontWeight: 800 }}>Total</td><td className="num" style={{ textAlign: "right", fontWeight: 800, color: tone }}>{money(total)}</td></tr>
+          {items.map((a) => {
+            const id = accountIdOf(a);
+            return (
+              <tr key={a.source}>
+                <td>
+                  {a.other
+                    ? <Link to={{ hash: "#other" }} onClick={jumpToOther} style={{ fontWeight: 700 }}>{a.name}</Link>
+                    : <strong>{a.name}</strong>}
+                  {a.institution ? <span style={{ color: "var(--muted)" }}> · {a.institution}</span> : null}
+                  {marks && id !== null && <MarkTag id={id} marks={marks} />}
+                </td>
+                <td style={{ color: "var(--ink-2)" }}>{a.other ? (ASSET_WORD[a.kind as AssetKind] ?? a.kind).toLowerCase() : KIND_WORD[a.kind] ?? a.kind}</td>
+                <td style={{ color: "var(--ink-2)" }}>{a.connector ? CONNECTOR_WORD[a.connector] ?? a.connector : "added in the app"}</td>
+                <td style={{ color: "var(--ink-2)" }} title={a.balance_at ? when(a.balance_at) : undefined}>
+                  {a.other && a.balance_at
+                    ? <span style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>set {shortDate(a.balance_at.slice(0, 10))}{a.needs_update && <StatusPill status="warn">Update the value</StatusPill>}</span>
+                    : a.connector ? freshness(a.balance_at, a.age_days) : "—"}
+                </td>
+                {marks && <td>{id !== null ? <MarkControl id={id} name={a.name} marks={marks} /> : <span style={{ color: "var(--muted)" }}>—</span>}</td>}
+                <td className="num" style={{ textAlign: "right", fontWeight: 700 }}>{a.balance === null || a.balance === undefined ? "—" : money(a.balance)}</td>
+              </tr>
+            );
+          })}
+          {items.length === 0 && <tr><td colSpan={cols} style={{ color: "var(--ink-2)" }}>Nothing here yet. <Link to="/settings/connectors">Connect a bank on Settings › Connections</Link>.</td></tr>}
+          <tr><td colSpan={cols - 1} style={{ fontWeight: 800 }}>Total</td><td className="num" style={{ textAlign: "right", fontWeight: 800, color: tone }}>{money(total)}</td></tr>
         </tbody>
       </table>
     </section>
@@ -370,6 +484,7 @@ function OtherAssets({ state, onChanged }: { state: Loaded<Assets>; onChanged: (
 export function Accounts() {
   const { data, error, reload } = useApi<Overview>("/api/v1/accounts/overview");
   const assets = useApi<Assets>("/api/v1/assets");
+  const { marks, error: marksError, retry: marksRetry } = useMarks();
   const { hash } = useLocation();
   useEffect(() => {
     if (hash) document.getElementById(hash.slice(1))?.scrollIntoView({ block: "start", behavior: "smooth" });
@@ -388,8 +503,10 @@ export function Accounts() {
             <div><div className="lab">You owe</div><div className="num" style={{ fontSize: 22, fontWeight: 800, color: "var(--debt-ink)" }}>{money(data.debts.total)}</div></div>
             {data.stale.length > 0 && <StatusPill status="warn">Balance may be out of date: {data.stale.join(", ")}</StatusPill>}
           </section>
-          <Group title="What you have" items={data.assets.items} total={data.assets.total} tone="var(--safe-ink)" />
-          <Group title="What you owe" items={data.debts.items} total={data.debts.total} tone="var(--debt-ink)" />
+          {marksError && <Failed error={marksError} what="which accounts are shared" onRetry={marksRetry} />}
+          {marks && <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Whose: a shared account is seen by everyone who signs in; an account marked for one person is seen by that person; anyone with everything sees every account. <Link to="/shared">See the shared accounts</Link>.</div>}
+          <Group title="What you have" items={data.assets.items} total={data.assets.total} tone="var(--safe-ink)" marks={marks} />
+          <Group title="What you owe" items={data.debts.items} total={data.debts.total} tone="var(--debt-ink)" marks={marks} />
         </>
       )}
       <OtherAssets state={assets} onChanged={() => { assets.reload(); reload(); }} />

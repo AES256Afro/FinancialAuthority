@@ -1,4 +1,5 @@
 // Sign in: the password, then the code from the phone when the second step is on; or a passkey instead of both.
+// The owner and anyone the owner added sign in here, each with their own username.
 import { ArrowLeft, Check, FingerprintPattern } from "lucide-react";
 import { useState } from "react";
 import { ApiError, api } from "../api";
@@ -7,7 +8,7 @@ import { passkeysSupported, passkeyWords, signInWithPasskey } from "../component
 
 type Busy = "password" | "code" | "passkey" | null;
 
-interface LoginAnswer { ok: boolean; user?: string; second_step?: string; ticket?: string }
+interface LoginAnswer { ok: boolean; user?: string; second_step?: string; ticket?: string; kind?: string; role?: string }
 
 // Passkeys are offered only at an https address or on this computer; anywhere else the password is the way in.
 function passkeyHomeWords(): string {
@@ -36,7 +37,7 @@ function Steps() {
 }
 
 export function SignIn({ onDone }: { onDone: () => void }) {
-  const [username, setUsername] = useState("owner");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [ticket, setTicket] = useState<string | null>(null);
   const [code, setCode] = useState("");
@@ -179,7 +180,10 @@ export function SignIn({ onDone }: { onDone: () => void }) {
             </button>
           </>
         )}
-        <div style={{ fontSize: 12, color: "var(--ink-2)" }}>The password is the app's <code>FA_PASSWORD</code> setting. On BoxPilot it was made for you and is on the app's card; with Docker Compose it is in the <code>.env</code> file.</div>
+        <div style={{ fontSize: 12, color: "var(--ink-2)", display: "flex", flexDirection: "column", gap: 6 }}>
+          <span>The owner's password is the app's <code>FA_PASSWORD</code> setting. On BoxPilot it was made for you and is on the app's card; with Docker Compose it is in the <code>.env</code> file.</span>
+          <span>Added by the owner? Use the username they gave you and the password you chose from your link. Forgot it, or lost your phone? Ask the owner for a new link.</span>
+        </div>
       </form>
     </div>
   );

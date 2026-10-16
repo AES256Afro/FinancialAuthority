@@ -131,7 +131,7 @@ def _finance_snapshot(session: Session, today: date) -> dict:
     caveats = projection_caveats(has_income=next_pay is not None, bills=len(bills), unnamed=unconfirmed - len(streams), pending_installments=len(pending_streams))
     paid = paid_periods(session, today)
     facts = _mail_facts(session, today)
-    approvals_waiting = len(session.exec(select(Approval.id).where(Approval.status == "pending")).all())
+    approvals_waiting = len(session.exec(select(Approval.id).where(Approval.status == "pending", Approval.for_person_id == None)).all())  # noqa: E711 - the owner's own; a second person's wait for them
     from ..models import TransactionPair
 
     pairs_waiting = len(session.exec(select(TransactionPair.id).where(TransactionPair.status == "pending")).all())

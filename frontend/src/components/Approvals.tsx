@@ -1,5 +1,7 @@
 // Emails waiting for the owner's OK: what would go, to whom, who asked for it; approve, deny, or approve and
-// always allow that recipient. Nothing leaves until a tap here, or an allowance made here.
+// always allow that recipient. Nothing leaves until a tap here, or an allowance made here. Each person approves
+// only their own sends: someone else's are listed with whose they are, and no button.
+import { User } from "lucide-react";
 import { useState } from "react";
 import { api, useApi } from "../api";
 import { when } from "../format";
@@ -20,6 +22,9 @@ interface ApprovalRow {
   decided_by: string;
   sent_at: string | null;
   error: string;
+  for_person_id?: number | null;
+  mine?: boolean; // left out by an older server: then every send is the caller's
+  whose?: string; // "yours", the owner's username, or the person's name
 }
 
 interface ApprovalsOut {
@@ -39,13 +44,16 @@ export function Approvals({ onChanged }: { onChanged?: () => void }) {
   const [busy, setBusy] = useState<number | null>(null);
   const [note, setNote] = useState<{ text: string; tone: "info" | "error" } | null>(null);
   const data = state.data;
-  const pending = (data?.approvals ?? []).filter((a) => a.status === "pending");
+  const mine = (a: ApprovalRow) => a.mine !== false;
+  const pending = (data?.approvals ?? []).filter((a) => a.status === "pending" && mine(a));
+  const others = (data?.approvals ?? []).filter((a) => a.status === "pending" && !mine(a));
   const recent = (data?.approvals ?? []).filter((a) => a.status !== "pending").slice(0, 5);
 
   function who(a: ApprovalRow): string {
-    if (a.created_kind === "owner") return "you";
+    if (a.created_kind === "owner" || a.created_kind === "person") return mine(a) ? "you" : a.created_by;
     return clients.data?.clients.find((c) => c.client_id === a.created_by)?.name || a.created_by;
   }
+  const whose = (a: ApprovalRow) => a.whose || "someone else";
 
   async function decide(a: ApprovalRow, action: "approve" | "deny") {
     setBusy(a.id);
@@ -68,7 +76,7 @@ export function Approvals({ onChanged }: { onChanged?: () => void }) {
 
   if (state.error && !data) return <Failed error={state.error} what="the emails waiting for your OK" onRetry={state.reload} />;
   if (!data) return <Loading what="the emails waiting for your OK" card={false} />;
-  if (pending.length === 0 && recent.length === 0 && data.allowances.length === 0 && !note) return null;
+  if (pending.length === 0 && others.length === 0 && recent.length === 0 && data.allowances.length === 0 && !note) return null;
   return (
     <section aria-labelledby="approvals-title" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <h2 id="approvals-title" className="lab" style={{ margin: 0 }}>Emails waiting for your OK · {pending.length}</h2>
@@ -88,9 +96,24 @@ export function Approvals({ onChanged }: { onChanged?: () => void }) {
         </div>
       ))}
       {note && <Said text={note.text} tone={note.tone} />}
+      {others.length > 0 && (
+        <>
+          <h3 className="lab" style={{ margin: "4px 0 0" }}>Waiting for someone else's OK · {others.length}</h3>
+          {others.map((a) => (
+            <div key={a.id} className="card" style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6, borderStyle: "dashed" }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 12, color: "var(--ink-2)" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 999, background: "var(--surface-2)", fontWeight: 800 }}><User size={12} aria-hidden="true" />{whose(a)}</span>
+                Asked for by <strong>{who(a)}</strong>{KIND_WORD[a.created_kind] ?? ""} · {when(a.created_at)}
+              </div>
+              <div style={{ fontSize: 13 }}><span style={{ color: "var(--muted)" }}>To</span> <strong>{a.to}</strong> · {a.subject}</div>
+              <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{whose(a)} approves this one. Each person approves only their own emails.</div>
+            </div>
+          ))}
+        </>
+      )}
       {recent.length > 0 && (
         <div style={{ fontSize: 12, color: "var(--muted)" }}>
-          Recently: {recent.map((a) => `${STATUS_WORD[a.status] ?? a.status} to ${a.to} (${a.subject})`).join("; ")}.
+          Recently: {recent.map((a) => `${STATUS_WORD[a.status] ?? a.status} to ${a.to} (${a.subject}${mine(a) ? "" : `, ${whose(a)}`})`).join("; ")}.
         </div>
       )}
       {data.allowances.length > 0 && (
