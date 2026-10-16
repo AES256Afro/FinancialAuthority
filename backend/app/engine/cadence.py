@@ -120,6 +120,27 @@ def payday_for(due: date, which: str) -> date:
     return max(before) if before else min(candidates)
 
 
+def previous_paydays(next_payday: date, cadence: str, count: int, pay_days: str | None = None) -> list[date]:
+    """The `count` paydays before `next_payday`, latest first, stepped back by the cadence itself."""
+    out: list[date] = []
+    if cadence == "semimonthly":
+        year, month = next_payday.year, next_payday.month
+        while len(out) < count:
+            for anchor in sorted(semimonthly_anchors(year, month, pay_days), reverse=True):
+                if anchor < (out[-1] if out else next_payday) and len(out) < count:
+                    out.append(anchor)
+            month -= 1
+            if month < 1:
+                month, year = 12, year - 1
+        return out
+    for k in range(1, count + 1):
+        if cadence == "monthly":
+            out.append(_add_months(next_payday, -k))
+        else:
+            out.append(next_payday - timedelta(days=(7 if cadence == "weekly" else 14) * k))
+    return out
+
+
 def paydays_through(first: date, cadence: str, end: date, at_least: int = 3) -> list[date]:
     """Every payday from `first` through `end`, and never fewer than `at_least` (the windows look one or two
     checks past the end of the line)."""

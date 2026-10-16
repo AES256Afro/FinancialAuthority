@@ -270,3 +270,43 @@ def decide_pair(pair_id: int, body: PairDecisionIn, session: Session = Depends(g
         raise HTTPException(400, str(error)) from error
     services.audit(session, client=principal.name, client_kind=principal.kind, tool="pair_decide", args={"pair": pair_id, "decision": body.decision}, rows=1, redaction=principal.redaction)
     return out
+
+
+# ---- budgets for each paycheck ------------------------------------------------------------------------------
+
+
+@router.get("/budgets")
+def get_budgets(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+    from ..engine.budgets import budget_plan
+
+    return budget_plan(session, today())
+
+
+class BudgetIn(BaseModel):
+    per_paycheck: float
+    rollover: str = "next"
+
+
+@router.put("/budgets/{category}")
+def put_budget(category: str, body: BudgetIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    from ..engine.budgets import budget_plan, save_budget
+
+    try:
+        save_budget(session, category, body.per_paycheck, body.rollover)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    return budget_plan(session, today())
+
+
+@router.delete("/budgets/{category}")
+def delete_budget(category: str, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    from ..engine.budgets import budget_plan
+    from ..models import CategoryBudget
+
+    row = session.exec(select(CategoryBudget).where(CategoryBudget.category == category)).first()
+    if row is None:
+        raise HTTPException(404, "No budget for that category")
+    row.active = False
+    session.add(row)
+    session.commit()
+    return budget_plan(session, today())

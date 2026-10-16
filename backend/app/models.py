@@ -64,6 +64,19 @@ class Transaction(SQLModel, table=True):
         return not (self.is_transfer or self.is_card_payment or self.is_income or self.is_ignored)
 
 
+class CategoryBudget(SQLModel, table=True):
+    """An amount for one spending category for the days one paycheck covers. What is not used carries into the
+    next paycheck when `rollover` is "next"."""
+
+    __tablename__ = "category_budgets"
+    id: int | None = Field(default=None, primary_key=True)
+    category: str = Field(index=True, unique=True)
+    per_paycheck: float = 0.0
+    rollover: str = "next"  # next | none
+    active: bool = True
+    created_at: dt.datetime = Field(default_factory=utcnow)
+
+
 class TransactionPair(SQLModel, table=True):
     """Two rows that are one movement of money (a transfer, a card payment and its credit) or one purchase seen
     twice. `before` keeps both rows' flags as they were, so a "no" puts them back."""

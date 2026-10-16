@@ -184,7 +184,9 @@ def _cadence(session: Session) -> str:
 
 def previous_payday(next_payday: date, cadence: str, before: date) -> date | None:
     """The last payday strictly before `before`, walked back from the next one by cadence."""
-    walk = next_paydays(next_payday - timedelta(days=45), cadence, 8)[1:] + [next_payday]
+    from .cadence import previous_paydays
+
+    walk = [next_payday, *previous_paydays(next_payday, cadence, 8)]
     earlier = [d for d in walk if d < before]
     return max(earlier) if earlier else None
 
