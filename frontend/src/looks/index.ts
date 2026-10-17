@@ -1,5 +1,10 @@
 // Looks are themes. Registering one here is all it takes to appear in Settings › Appearance.
-export type LookId = "light" | "dark" | "console";
+export type LookId = "light" | "dark" | "console" | "contrast";
+
+/** Whether a look draws on a dark ground (the colour roles and the validator use the dark palette). */
+export function isDarkLook(id: string | undefined): boolean {
+  return id === "dark" || id === "console";
+}
 
 export interface Look {
   id: LookId;
@@ -12,6 +17,7 @@ export const LOOKS: Look[] = [
   { id: "light", name: "Paper", description: "Warm paper, ink text. The default.", swatch: { ground: "#f6f4ef", ink: "#141518", accent: "#1baf7a" } },
   { id: "dark", name: "Night", description: "The same shapes on a dark ground.", swatch: { ground: "#121417", ink: "#f2f2ee", accent: "#199e70" } },
   { id: "console", name: "Console", description: "Darker still, squarer corners, a monospace face.", swatch: { ground: "#0b0d10", ink: "#f2f2ee", accent: "#199e70" } },
+  { id: "contrast", name: "Clear", description: "White ground, black ink, firm borders: the most contrast.", swatch: { ground: "#ffffff", ink: "#000000", accent: "#0b5c3f" } },
 ];
 
 // The colour roles the owner may change, each tied to the palette slot it replaces and the CSS token it sets.
@@ -34,7 +40,7 @@ let overrides: ColourOverrides | null = null;
 export function setColourOverrides(next: ColourOverrides | null): void {
   overrides = next;
   const root = document.documentElement;
-  const mode = (root.dataset.look ?? "light") === "light" ? "light" : "dark";
+  const mode = isDarkLook(root.dataset.look) ? "dark" : "light";
   for (const r of ROLES) {
     const v = next?.[mode]?.[r.role];
     if (v) root.style.setProperty(r.token, v);
@@ -48,7 +54,7 @@ export function applyLook(id: LookId): void {
 }
 
 function basePalette(id: LookId) {
-  const dark = id !== "light";
+  const dark = isDarkLook(id);
   return {
     paycheck: dark ? "#3987e5" : "#2a78d6",
     bill: dark ? "#d95926" : "#eb6834",
@@ -61,10 +67,10 @@ function basePalette(id: LookId) {
     later: dark ? "#d55181" : "#e87ba4",
     saving: dark ? "#c98500" : "#eda100",
     surface: dark ? (id === "console" ? "#14171c" : "#1b1e24") : "#ffffff",
-    ink: dark ? "#f2f2ee" : "#141518",
-    ink2: dark ? "#b9bcc6" : "#4e5058",
-    muted: dark ? "#9a9ea8" : "#6b6d75",
-    hairline: dark ? "#2a2e36" : "#e4e1da",
+    ink: dark ? "#f2f2ee" : id === "contrast" ? "#000000" : "#141518",
+    ink2: dark ? "#b9bcc6" : id === "contrast" ? "#1f2023" : "#4e5058",
+    muted: dark ? "#9a9ea8" : id === "contrast" ? "#3b3d42" : "#6b6d75",
+    hairline: dark ? "#2a2e36" : id === "contrast" ? "#8a8c92" : "#e4e1da",
   };
 }
 
@@ -77,7 +83,7 @@ export function defaultRoleColours(mode: "light" | "dark"): Record<Role, string>
 /** The chart colours of a look: the validated palette, with the owner's own role colours where they passed. */
 export function palette(id: LookId) {
   const p = basePalette(id);
-  const mine = overrides?.[id === "light" ? "light" : "dark"];
+  const mine = overrides?.[isDarkLook(id) ? "dark" : "light"];
   if (mine) for (const r of ROLES) if (mine[r.role]) (p as Record<string, string>)[r.slot] = mine[r.role] as string;
   return p;
 }

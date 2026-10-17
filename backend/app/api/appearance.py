@@ -20,7 +20,8 @@ from ..store import get_setting, set_setting
 
 router = APIRouter(prefix="/api/v1", tags=["appearance"])
 
-LOOKS = {"light", "dark", "console"}
+LOOKS = {"light", "dark", "console", "contrast"}
+FONTS = {"regular", "readable"}
 SECTION_KEYS = {"one_thing", "safe", "paycheck", "cover", "saving", "borrowing", "brief", "by_check", "calendar", "view", "next_steps", "purchase", "goals", "sixty", "debts"}
 COLOUR_ROLES = {"housing", "bills", "card", "later", "aside", "saving", "yours"}
 TYPE_SIZES = {"regular", "larger", "largest"}
@@ -31,7 +32,7 @@ MARK_MAX = 300_000
 MARK_TYPES = ("image/png", "image/jpeg", "image/webp", "image/svg+xml")
 SVG_REFUSED = re.compile(r"<script|<foreignobject|<iframe|<embed|<object|javascript:|\bon[a-z]+\s*=|href\s*=\s*[\"']?\s*(?!#)[a-z]+:", re.IGNORECASE)
 
-DEFAULT = {"look": "light", "active": "river", "arrangements": [], "show_as": {}, "colours": None, "brand": {"name": "", "mark": ""}, "type_size": "regular", "density": "comfortable", "quiet": False}
+DEFAULT = {"look": "light", "active": "river", "arrangements": [], "show_as": {}, "colours": None, "brand": {"name": "", "mark": ""}, "type_size": "regular", "density": "comfortable", "quiet": False, "calm": False, "font": "regular"}
 
 
 class SectionIn(BaseModel):
@@ -61,6 +62,8 @@ class AppearanceIn(BaseModel):
     type_size: str = "regular"
     density: str = "comfortable"
     quiet: bool = False
+    calm: bool = False  # one card at a time, no motion, more room
+    font: str = "regular"  # regular | readable
 
 
 def _check_mark(mark: str) -> str:
@@ -95,6 +98,8 @@ def validate(body: AppearanceIn) -> dict[str, Any]:
         raise HTTPException(400, "look is light, dark or console")
     if body.type_size not in TYPE_SIZES or body.density not in DENSITIES:
         raise HTTPException(400, "type size is regular, larger or largest; density is comfortable or compact")
+    if body.font not in FONTS:
+        raise HTTPException(400, "the font is regular or readable")
     if len(body.arrangements) > 20:
         raise HTTPException(400, "at most twenty arrangements")
     arrangements = []
@@ -129,7 +134,7 @@ def validate(body: AppearanceIn) -> dict[str, Any]:
     if len(name) > 40 or any(ch in name for ch in "<>"):
         raise HTTPException(400, "the name is up to 40 characters, without angle brackets")
     return {"look": body.look, "active": body.active, "arrangements": arrangements, "show_as": dict(body.show_as), "colours": colours,
-            "brand": {"name": name, "mark": _check_mark(body.brand.mark)}, "type_size": body.type_size, "density": body.density, "quiet": body.quiet}
+            "brand": {"name": name, "mark": _check_mark(body.brand.mark)}, "type_size": body.type_size, "density": body.density, "quiet": body.quiet, "calm": body.calm, "font": body.font}
 
 
 @router.get("/appearance")

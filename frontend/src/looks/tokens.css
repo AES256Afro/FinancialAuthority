@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* Looks: light (warm paper), dark, console. The series colours are validated for colour-blindness in
+/* Looks: light (warm paper), dark, console, clear (contrast). The series colours are validated for colour-blindness in
    both modes (docs/PLAN.md section 9). Paychecks are blue, bills orange, safe-to-spend aqua, debt violet. */
 :root {
   color-scheme: light;
@@ -81,6 +81,26 @@
   --font: "JetBrains Mono", "Cascadia Mono", Consolas, Manrope, monospace;
 }
 
+/* Clear: the most contrast. White ground, black ink, firm borders; the series colours are the light ones,
+   which the validator checks against a white surface. */
+:root[data-look="contrast"] {
+  --ground: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #efeff0;
+  --hairline: #8a8c92;
+  --ink: #000000;
+  --ink-2: #1f2023;
+  --muted: #3b3d42;
+  --paycheck-ink: #0f3d75;
+  --safe-ink: #064530;
+  --bill-ink: #6e2608;
+  --debt-ink: #231a5c;
+  --warning-ink: #5c3700;
+  --critical-ink: #7d1414;
+}
+:root[data-look="contrast"] a { text-decoration: underline; text-underline-offset: 2px; }
+:root[data-look="contrast"] .card { border-width: 1.5px; }
+
 html, body, #root { min-height: 100%; }
 body {
   margin: 0;
@@ -146,4 +166,12 @@ table.ledger td { padding: 7px 8px 7px 0; border-top: 1px solid var(--surface-2)
 .input { max-width: 100%; }
 label { min-width: 0; max-width: 100%; }
 select.input { text-overflow: ellipsis; }
-select.input { text-overflow: ellipsis; }
+
+/* Calm, from Settings › Appearance: nothing moves, lines get more room, and Today shows one card at a time. */
+:root[data-calm="1"] *, :root[data-calm="1"] *::before, :root[data-calm="1"] *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+:root[data-calm="1"] body { line-height: 1.6; }
+:root[data-calm="1"] :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible { outline-width: 3px; }
+
+/* A reading-friendly face: wide letters that are hard to mistake (Il1, O0), with a little more space. */
+:root[data-font="readable"] { --font: Verdana, Tahoma, "Segoe UI", system-ui, sans-serif; }
+:root[data-font="readable"] body { letter-spacing: .01em; word-spacing: .06em; }

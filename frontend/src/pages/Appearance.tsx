@@ -1,6 +1,7 @@
 // Settings › Appearance: make the app yours. Pick a home (a preset or your own arrangement of sections, each with
 // its picture, any hidden), the look, the colour of each part (checked for colour-blind readers before it can be
-// kept), the app's name and mark, the type size, the density and hiding amounts. Kept on the server, so every
+// kept), the app's name and mark, the type size, the density, hiding amounts, and calm (one card at a time, no
+// motion, a reading-friendly face). Kept on the server, so every
 // device agrees; the page waits for the server's copy before it lets anything change.
 import { ArrowDown, ArrowUp, CircleCheck, Eye, EyeOff, GripVertical, OctagonAlert, TriangleAlert, X } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
@@ -12,7 +13,7 @@ import { ConfirmButton } from "../components/ConfirmButton";
 import { Failed, Loading, Said } from "../components/State";
 
 // Where a save's outcome is said: beside the part of the page whose button caused it.
-type Area = "home" | "look" | "colours" | "name" | "text";
+type Area = "home" | "look" | "colours" | "name" | "text" | "calm";
 
 function H({ children, sub }: { children: string; sub?: string }) {
   return (
@@ -255,7 +256,7 @@ export function Appearance() {
             const on = ap.look === l.id;
             return (
               <button key={l.id} type="button" onClick={() => save("look", { look: l.id as LookId }, `${l.name} is the look now.`)} className="card" aria-pressed={on} style={{ display: "flex", gap: 12, alignItems: "center", padding: 12, cursor: "pointer", border: on ? "2px solid var(--ink)" : "1px solid var(--hairline)", background: "var(--surface)", color: "var(--ink)", font: "inherit", minWidth: "min(220px, 100%)" }}>
-                <span aria-hidden="true" style={{ width: 44, height: 44, borderRadius: 10, background: l.swatch.ground, border: "1px solid var(--hairline)", display: "grid", placeItems: "center" }}>
+                <span aria-hidden="true" style={{ width: 44, height: 44, flexShrink: 0, borderRadius: 10, background: l.swatch.ground, border: "1px solid var(--hairline)", display: "grid", placeItems: "center" }}>
                   <span style={{ width: 18, height: 18, borderRadius: 5, background: l.swatch.accent }} />
                 </span>
                 <span style={{ textAlign: "left" }}><strong>{l.name}</strong><div style={{ fontSize: 12, color: "var(--ink-2)" }}>{l.description}</div></span>
@@ -313,6 +314,24 @@ export function Appearance() {
             Hide amounts until tapped
           </label>
           {said("text")}
+        </div>
+      </section>
+
+      <section>
+        <H sub="For days when the screen is a lot. Calm shows Today one card at a time with Next and Back, and a button that reads the card aloud; nothing slides or fades; lines get more room. Each part is its own switch.">Calm</H>
+        <div className="card" style={{ padding: 14, display: "flex", gap: 22, flexWrap: "wrap", alignItems: "center" }}>
+          <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, minHeight: 32 }}>
+            <input type="checkbox" checked={!!ap.calm} onChange={(e) => save("calm", { calm: e.target.checked }, e.target.checked ? "Calm is on: Today shows one card at a time." : "Calm is off.")} style={{ width: 18, height: 18 }} />
+            Calm: one card at a time, nothing moves
+          </label>
+          <div role="radiogroup" aria-label="Font" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+            <span className="lab">Font</span>
+            {([["regular", "The app's own"], ["readable", "Easy to read"]] as const).map(([f, label]) => (
+              <button key={f} type="button" role="radio" aria-checked={(ap.font ?? "regular") === f} className={`btn${(ap.font ?? "regular") === f ? " dark" : ""}`} onClick={() => save("calm", { font: f }, f === "readable" ? "The easy-to-read face is on: wide letters, more space." : "The app's own face is back.")}>{label}</button>
+            ))}
+          </div>
+          <div style={{ fontSize: 12, color: "var(--ink-2)", flexBasis: "100%" }}>For the most contrast, pick the Clear look above: white ground, black ink, firm borders.</div>
+          {said("calm")}
         </div>
       </section>
     </div>
