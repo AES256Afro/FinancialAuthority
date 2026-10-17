@@ -13,6 +13,10 @@ export interface KeptDocument extends DocumentRow {
   warranty_until?: string | null;
   /** "upload", "mail:<id>", "import:<id>" or "import-folder". */
   came_from?: string;
+  /** "ocr" when its text was read from a photo or a scan on the server (M49). */
+  read_with?: string;
+  /** A receipt kept without its total or day: what its words seem to say, to keep or not. */
+  suggested?: { amount?: number; bought_on?: string } | null;
 }
 
 export interface KeptDocumentsOut {

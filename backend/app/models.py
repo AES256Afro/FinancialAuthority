@@ -317,6 +317,7 @@ class Document(SQLModel, table=True):
     return_by: dt.date | None = None  # the last day to return it
     warranty_until: dt.date | None = None
     source: str = ""  # upload | mail:<message> | import:<batch> | paystub upload
+    read_with: str = ""  # how its text was had: "" (its own text), "ocr" (read from a photo or a scan on this server)
 
 
 class Payment(SQLModel, table=True):

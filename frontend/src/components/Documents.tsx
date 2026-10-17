@@ -43,7 +43,32 @@ function sizeWord(bytes: number): string {
 
 function pagesWord(d: KeptDocument): string {
   if (!d.has_text) return "no text could be read";
-  return `${d.pages} page${d.pages === 1 ? "" : "s"} of text`;
+  return `${d.pages} page${d.pages === 1 ? "" : "s"} of text${d.read_with === "ocr" ? ", read from the picture" : ""}`;
+}
+
+/** What a receipt's words seem to say (its total, its day), offered to keep with one tap; never kept on its own. */
+function Suggested({ d, onChanged }: { d: KeptDocument; onChanged?: () => void }) {
+  const [state, setState] = useState<"idle" | "busy" | "kept" | string>("idle");
+  const s = d.suggested;
+  if (!s || state === "kept") return state === "kept" ? <Said text="Kept with the receipt." /> : null;
+  const parts = [s.amount !== undefined ? `total ${money(s.amount, { cents: true })}` : "", s.bought_on ? `bought ${dayWord(s.bought_on)}` : ""].filter(Boolean);
+  async function keep() {
+    setState("busy");
+    try {
+      await api(`/api/v1/documents/${d.id}`, { method: "PUT", body: JSON.stringify(s) });
+      setState("kept");
+      onChanged?.();
+    } catch (e) {
+      setState((e as Error).message);
+    }
+  }
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 12, background: "var(--surface-2)", borderRadius: 10, padding: "6px 10px" }}>
+      <span className="num" style={{ flex: "1 1 180px", minWidth: 0 }}>Read from it: {parts.join(", ")}. Check it against the receipt.</span>
+      <button type="button" className="btn" style={SMALL} disabled={state === "busy"} onClick={keep}>{state === "busy" ? "Keeping…" : "Keep these"}</button>
+      {state !== "idle" && state !== "busy" && <Said text={state} tone="error" />}
+    </div>
+  );
 }
 
 /** A day in words, with the year when it is not this year: "Sun Nov 8", "Mon Oct 9, 2028". */
@@ -134,7 +159,7 @@ export function SearchBox({ onOpen, placeOf }: { onOpen: (id: number, page: numb
         <button className="btn dark" type="submit" disabled={busy} style={ROW}><Search size={14} aria-hidden="true" />{busy ? "Searching…" : "Search"}</button>
       </form>
       <Said text={note} tone="error" />
-      {hits && hits.length === 0 && <div style={{ fontSize: 13, color: "var(--ink-2)" }}>No document mentions “{asked}”. A photo or a scan has no text to search.</div>}
+      {hits && hits.length === 0 && <div style={{ fontSize: 13, color: "var(--ink-2)" }}>No document mentions “{asked}”. Photos and scans are read on the server; one it could not read has no text to search.</div>}
       {hits && hits.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <span style={{ fontSize: 12, color: "var(--ink-2)" }}>{hits.length} place{hits.length === 1 ? "" : "s"} mention “{asked}”. Tap one to read that page.</span>
@@ -152,7 +177,7 @@ export function SearchBox({ onOpen, placeOf }: { onOpen: (id: number, page: numb
 }
 
 /** One kept file: what it is, its month, a receipt's store, total and dates, and Read, Download and Remove. */
-export function DocLine({ d, first = false, place, onRead, onRemove, extra }: { d: KeptDocument; first?: boolean; place?: string; onRead: (id: number) => void; onRemove: (d: KeptDocument) => Promise<unknown>; extra?: ReactNode }) {
+export function DocLine({ d, first = false, place, onRead, onRemove, extra, onChanged }: { d: KeptDocument; first?: boolean; place?: string; onRead: (id: number) => void; onRemove: (d: KeptDocument) => Promise<unknown>; extra?: ReactNode; onChanged?: () => void }) {
   const receipt = d.kind === "receipt" ? receiptWords(d) : "";
   const Icon = d.kind === "receipt" ? Receipt : FileText;
   const month = d.period ? ` · kept with ${monthWord(d.period)}` : d.period === "" ? " · no month" : "";
@@ -167,9 +192,10 @@ export function DocLine({ d, first = false, place, onRead, onRemove, extra }: { 
         </span>
         {receipt && <span className="num" style={{ fontSize: 12, color: "var(--ink)", overflowWrap: "anywhere" }}>{receipt}</span>}
         {d.note && <span style={{ fontSize: 12, color: "var(--muted)", overflowWrap: "anywhere" }}>{d.note}</span>}
+        <Suggested d={d} onChanged={onChanged} />
       </div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "flex-start" }}>
-        <button type="button" className="btn" style={{ ...SMALL, ...ROW }} disabled={!d.has_text} onClick={() => onRead(d.id)} title={d.has_text ? "Read the text the app took from it" : "No text could be read from it (a photo or a scan). Download it to see it."}>
+        <button type="button" className="btn" style={{ ...SMALL, ...ROW }} disabled={!d.has_text} onClick={() => onRead(d.id)} title={d.has_text ? "Read the text the app took from it" : "No text could be read from it. Download it to see it."}>
           <BookOpen size={14} aria-hidden="true" />Read
         </button>
         <a className="btn" href={`/api/v1/documents/${d.id}/file`} download={d.filename} style={{ ...SMALL, display: "inline-flex", alignItems: "center", gap: 4, textDecoration: "none" }}>
@@ -358,7 +384,7 @@ export function Documents({
       ) : (
         <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column" }}>
           {docs.map((d, i) => (
-            <DocLine key={d.id} d={d} first={i === 0} place={!attachTo && placeOf ? placeOf(d.attach_to) : undefined} onRead={(id) => setOpen({ id, page: 1 })} onRemove={remove} />
+            <DocLine key={d.id} d={d} first={i === 0} place={!attachTo && placeOf ? placeOf(d.attach_to) : undefined} onRead={(id) => setOpen({ id, page: 1 })} onRemove={remove} onChanged={list.reload} />
           ))}
         </ul>
       )}

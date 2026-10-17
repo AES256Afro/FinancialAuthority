@@ -21,7 +21,8 @@ ENV PYTHONUNBUFFERED=1 \
     FA_PORT=8000 \
     FA_OLLAMA_URL=http://host.docker.internal:11434
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+# tesseract-ocr and poppler-utils read photos and scanned PDFs on this server (M49): free, and nothing leaves it.
+RUN apt-get update && apt-get install -y --no-install-recommends curl tesseract-ocr tesseract-ocr-eng poppler-utils \
  && rm -rf /var/lib/apt/lists/* \
  && pip install --no-cache-dir uv
 
