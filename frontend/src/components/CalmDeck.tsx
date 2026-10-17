@@ -25,6 +25,9 @@ export function spokenText(el: HTMLElement, quiet: boolean): string {
 
 export function CalmDeck({ cards, jumpTo }: { cards: DeckCard[]; jumpTo?: string }) {
   const [at, setAt] = useState(0);
+  // Until the person moves, the deck stays on the first card that has something to say, even one that fills in
+  // after the page opens (Getting started loads a moment later), so nothing is skipped unseen.
+  const [moved, setMoved] = useState(false);
   const [filled, setFilled] = useState<boolean[]>([]);
   const [speaking, setSpeaking] = useState(false);
   const boxes = useRef<(HTMLDivElement | null)[]>([]);
@@ -45,7 +48,10 @@ export function CalmDeck({ cards, jumpTo }: { cards: DeckCard[]; jumpTo?: string
   useEffect(() => {
     if (!jumpTo) return;
     const i = boxes.current.findIndex((el) => !!el?.querySelector(`#${CSS.escape(jumpTo)}`));
-    if (i >= 0) setAt(i);
+    if (i >= 0) {
+      setAt(i);
+      setMoved(true);
+    }
   }, [jumpTo, filled]);
 
   const stop = () => {
@@ -55,12 +61,15 @@ export function CalmDeck({ cards, jumpTo }: { cards: DeckCard[]; jumpTo?: string
   useEffect(() => stop, []);
 
   const shown = cards.map((_, i) => i).filter((i) => filled[i] ?? true);
-  const pos = Math.max(0, shown.indexOf(at));
+  const pos = moved ? Math.max(0, shown.indexOf(at)) : 0;
   const current = shown[pos] ?? 0;
   const go = (p: number) => {
     stop();
     const i = shown[Math.min(Math.max(p, 0), shown.length - 1)];
-    if (i !== undefined) setAt(i);
+    if (i !== undefined) {
+      setAt(i);
+      setMoved(true);
+    }
     window.scrollTo({ top: 0 });
   };
   const read = () => {

@@ -82,12 +82,19 @@ test("a receipt is added and kept", async ({ page }, info) => {
 
 test("calm shows Today one card at a time", async ({ page }) => {
   await signIn(page);
+  // Start with calm off, whatever an earlier attempt left, so a retry walks the same way.
+  const kept = await (await page.request.get("/api/v1/appearance")).json();
+  delete kept.saved;
+  await page.request.put("/api/v1/appearance", { headers: { "X-Requested-With": "FinancialAuthority" }, data: { ...kept, calm: false } });
   await page.goto("/settings/appearance");
   const calm = page.getByLabel(/^Calm: one card at a time/);
   await calm.check();
   await expect(page.getByText(/Calm is on/)).toBeVisible();
   await page.goto("/today");
   await expect(page.getByRole("navigation", { name: "Today's cards" })).toBeVisible();
+  await expect(page.getByText(/card 1 of/)).toBeVisible();
+  await page.waitForLoadState("networkidle"); // every card has had its say, so the count is final
+  await expect(page.getByText(/card 1 of/)).toBeVisible(); // still on the first card: nothing was skipped
   await page.getByRole("button", { name: "Next", exact: true }).click();
   await expect(page.getByText(/card 2 of/)).toBeVisible();
   await noSideways(page);
