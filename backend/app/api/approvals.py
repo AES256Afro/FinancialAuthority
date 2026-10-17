@@ -38,9 +38,12 @@ def _mine(principal: auth.Principal) -> int | None:
     return principal.person_id if principal.kind == "person" else None
 
 
-def _check_mine(row: Approval, principal: auth.Principal) -> None:
-    if row.for_person_id != _mine(principal):
-        raise HTTPException(403, "This send is someone else's to approve; each person approves only their own.")
+def _check_mine(row: Approval, principal: auth.Principal, *, deny: bool = False) -> None:
+    if row.for_person_id == _mine(principal):
+        return
+    if deny and principal.kind == "owner" and row.for_person_id is not None and row.for_person_id < 0:
+        return  # a send left by a person the owner removed: the owner may turn it down, never send it
+    raise HTTPException(403, "This send is someone else's to approve; each person approves only their own.")
 
 
 def _whose(session: Session, row: Approval, principal: auth.Principal) -> dict:
@@ -83,9 +86,13 @@ def edit(approval_id: int, body: EditIn, session: Session = Depends(get_session)
     _check_mine(row, principal)
     if row.status != "pending":
         raise HTTPException(409, f"The approval is {row.status}")
-    for field, value in body.model_dump(exclude_unset=True).items():
-        if value is not None:
-            setattr(row, field, value.strip())
+    changed = {f: v.strip() for f, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    try:
+        approvals.check_draft(changed.get("to", row.to), changed.get("subject", row.subject), changed.get("body", row.body))
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    for field, value in changed.items():
+        setattr(row, field, value)
     session.add(row)
     session.commit()
     session.refresh(row)
@@ -110,7 +117,7 @@ def deny(approval_id: int, session: Session = Depends(get_session), principal: a
     row = session.get(Approval, approval_id)
     if row is None:
         raise HTTPException(404, "No such approval")
-    _check_mine(row, principal)
+    _check_mine(row, principal, deny=True)
     try:
         row = approvals.deny(session, row, decided_by=principal.name)
     except ValueError as error:

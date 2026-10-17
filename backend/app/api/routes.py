@@ -267,18 +267,18 @@ class KeyIn(BaseModel):
 def list_keys(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     rows = session.exec(select(ApiKey).order_by(ApiKey.created_at.desc())).all()
     return {"keys": [
-        {"id": k.id, "name": k.name, "prefix": k.prefix, "scopes": sorted(k.scope_set), "redaction": k.redaction, "created_at": k.created_at.isoformat(),
+        {"id": k.id, "name": k.name, "prefix": k.prefix, "scopes": sorted(k.scope_set), "redaction": k.redaction, "created_at": k.created_at.isoformat(), "person_id": k.person_id,
          "last_used_at": k.last_used_at.isoformat() if k.last_used_at else None, "revoked": k.revoked_at is not None}
         for k in rows
     ]}
 
 
 @router.post("/keys")
-def create_key(body: KeyIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+def create_key(body: KeyIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     if body.redaction not in ("full", "merchants", "aggregates"):
         raise HTTPException(400, "redaction must be full, merchants or aggregates")
     try:
-        key, token = auth.create_key(session, body.name, set(body.scopes), body.redaction)
+        key, token = auth.create_key(session, body.name, set(body.scopes), body.redaction, person_id=principal.person_id)
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
     return {"id": key.id, "name": key.name, "prefix": key.prefix, "scopes": sorted(key.scope_set), "token": token, "note": "Shown once. Keep it in the client, not in chat."}

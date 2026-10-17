@@ -119,9 +119,14 @@ def update_account(account_id: int, body: MailAccountIn, session: Session = Depe
     account = session.get(MailAccount, account_id)
     if account is None:
         raise HTTPException(404, "No such mailbox")
-    for field, value in body.model_dump(exclude_unset=True).items():
-        if value is None:
-            continue
+    changes = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    # The stored password is sent only to the servers it was saved for: moving the mailbox to another server, port
+    # or encryption (for reading or for sending) needs the password typed again.
+    where = ("host", "port", "use_ssl", "starttls", "username", "smtp_host", "smtp_port", "smtp_ssl", "smtp_starttls")
+    moved = [k for k in where if k in changes and (mailbox_host(body.kind or account.kind, changes[k]) if k == "host" else changes[k]) != getattr(account, k)]
+    if moved and not changes.get("password"):
+        raise HTTPException(400, "Changing where this mailbox connects needs its password again: type it with the change.")
+    for field, value in changes.items():
         if field == "password":
             account.password_enc = crypto.encrypt(value)
         elif field == "kind" and value not in PRESETS:

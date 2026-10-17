@@ -69,16 +69,23 @@ def sending_account(session: Session, account_id: int | None) -> MailAccount | N
     return session.exec(select(MailAccount).where(MailAccount.active == True, MailAccount.smtp_host != "").order_by(MailAccount.id)).first()  # noqa: E712
 
 
-def create(session: Session, *, to: str, subject: str, body: str, reason: str = "", source: str = "", created_by: str = "owner", created_kind: str = "owner", account_id: int | None = None,
-           for_person_id: int | None = None) -> Approval:
+def check_draft(to: str, subject: str, body: str) -> None:
+    """One recipient, as the mail library reads it, and a subject and a body. Checked when a send is queued, when it
+    is edited, and again just before it goes."""
     from email.utils import getaddresses
 
-    to = to.strip()
+    to = (to or "").strip()
     found = [addr for _, addr in getaddresses([to]) if addr]
     if len(found) != 1 or found[0] != to or "@" not in to or any(c in to for c in " ,;<>\r\n"):
         raise ValueError("the recipient must be one email address")
-    if not subject.strip() or not body.strip():
+    if not (subject or "").strip() or not (body or "").strip():
         raise ValueError("a subject and a body are needed")
+
+
+def create(session: Session, *, to: str, subject: str, body: str, reason: str = "", source: str = "", created_by: str = "owner", created_kind: str = "owner", account_id: int | None = None,
+           for_person_id: int | None = None) -> Approval:
+    to = to.strip()
+    check_draft(to, subject, body)
     row = Approval(kind="send", to=to, subject=subject.strip()[:200], body=body.strip()[:20000], reason=reason[:300], source=source[:100], created_by=created_by, created_kind=created_kind, account_id=account_id,
                    for_person_id=for_person_id)
     session.add(row)
@@ -133,6 +140,14 @@ def deny(session: Session, row: Approval, *, decided_by: str = "owner") -> Appro
 def send(session: Session, row: Approval) -> Approval:
     """Send an approved draft through the chosen mailbox; record the message id or the failure."""
     account = sending_account(session, row.account_id)
+    try:
+        check_draft(row.to, row.subject, row.body)
+    except ValueError as error:
+        row.status, row.error = "failed", f"not sent: {error}"
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return row
     if account is None:
         row.status, row.error = "failed", "no mailbox can send: set the SMTP server on Settings › Connectors"
     else:

@@ -344,19 +344,19 @@ async def consent_post(request: Request, req: str = Form(""), decision: str = Fo
         principal = auth.principal_from_request(request, session)
     if decision == "signin":
         ip = auth._client_ip(request)
-        if auth._locked(ip) or auth._account_wait() > 0:
+        if auth._locked(ip) or auth._account_wait(settings.username) > 0:
             return _page("Sign in", _signin_body(req, "Too many failed sign-ins. Wait a minute, then try again."))
         from .factors import check_code, second_step_on
 
         ok = auth.auth_enabled() and hmac.compare_digest(username.encode(), settings.username.encode()) and hmac.compare_digest(password.encode(), settings.password.encode())
         if not ok and auth.auth_enabled():
-            auth._record_failure(ip)
+            auth._record_failure(ip, username=settings.username)
             with session_scope() as session:
                 needs_code = second_step_on(session)
             return _page("Sign in", _signin_body(req, "Wrong username or password.", code=needs_code))
         with session_scope() as session:
             if auth.auth_enabled() and second_step_on(session) and not check_code(session, code):
-                auth._record_failure(ip)
+                auth._record_failure(ip, username=settings.username)
                 return _page("Sign in", _signin_body(req, "Type the code your authenticator app shows now, or a recovery code.", code=True))
         response = _page("Allow access", _consent_body(data, req, await _client_name(data["client_id"])))
         with session_scope() as session:

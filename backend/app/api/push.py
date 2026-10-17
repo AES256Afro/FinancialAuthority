@@ -70,12 +70,13 @@ def devices(session: Session = Depends(get_session), _: auth.Principal = Depends
 
 
 @router.post("/devices")
-def subscribe_device(body: SubscribeIn, request: Request, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_owner)) -> dict:
+def subscribe_device(body: SubscribeIn, request: Request, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_owner)) -> dict:
     from .. import webpush
 
     origin = str(request.base_url).rstrip("/")
     try:
-        row = webpush.subscribe(session, endpoint=body.endpoint, p256dh=body.keys.get("p256dh", ""), auth=body.keys.get("auth", ""), label=body.label, origin=origin)
+        row = webpush.subscribe(session, endpoint=body.endpoint, p256dh=body.keys.get("p256dh", ""), auth=body.keys.get("auth", ""), label=body.label, origin=origin,
+                                person_id=principal.person_id)
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
     except crypto.DataKeyMissing as error:

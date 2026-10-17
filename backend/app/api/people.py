@@ -88,7 +88,7 @@ def change_person(person_id: int, body: PersonEdit, session: Session = Depends(g
     session.add(person)
     session.commit()
     if body.active is False or body.role is not None:
-        people.end_sessions(session, person.id)  # a new role starts with a new sign-in
+        people.end_access(session, person.id)  # a new role starts with a new sign-in, and nothing they set up carries over
     services.audit(session, client=principal.name, client_kind="owner", tool="person_change", args=body.model_dump(exclude_none=True) | {"person": person_id}, rows=1)
     return _overview(session)
 
@@ -110,9 +110,14 @@ def remove_person(person_id: int, session: Session = Depends(get_session), princ
     person = session.get(Person, person_id)
     if person is None:
         raise HTTPException(404, "No such person")
-    people.end_sessions(session, person.id)
+    people.end_access(session, person.id)
     for key in session.exec(select(Passkey).where(Passkey.person_id == person.id)).all():
         session.delete(key)
+    from ..models import Approval
+
+    for row in session.exec(select(Approval).where(Approval.for_person_id == person.id)).all():
+        row.for_person_id = -person.id  # theirs in the history; a new person given the same number never inherits it
+        session.add(row)
     for a in session.exec(select(Account).where(Account.person_id == person.id)).all():
         a.person_id = None  # the account stays; it is no longer marked as theirs
         session.add(a)

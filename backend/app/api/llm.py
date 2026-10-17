@@ -115,10 +115,11 @@ async def catalog(body: CatalogIn, session: Session = Depends(get_session), prin
     if provider == "ollama":
         p = Ollama("", base_url or settings.ollama_url)
     elif provider == "openai":
-        saved = {settings.openai_base_url or "https://api.openai.com/v1"} | {r.get("base_url") for r in role_settings(session).values() if r.get("provider") == "openai" and r.get("base_url")}
+        from ..llm.roles import key_for_url
+
         target = base_url or settings.openai_base_url or "https://api.openai.com/v1"
-        # The stored key goes only to an address the owner saved for it, never to one typed into a request.
-        p = OpenAICompatible("", target, secret(session, "openai") if target in saved else "")
+        # The stored key goes only to an address it was saved for, never to one typed into a request.
+        p = OpenAICompatible("", target, key_for_url(session, target))
     else:
         p = Anthropic("", secret(session, "anthropic"))
     try:
