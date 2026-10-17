@@ -457,6 +457,8 @@ class InstallmentPlan(SQLModel, table=True):
     balance_at: dt.date | None = None  # the statement period the balance is from
     pay_from_account_id: int | None = Field(default=None, foreign_key="accounts.id")  # the account the payments come out of; a card means they ride that card
     interest_paid: float = 0.0  # interest charged so far, as the lender's statements add it up
+    autopay: bool | None = None  # from the lender's AutoPay notices: on, off, or not said
+    dates_estimated: bool = False  # made from an approval before the lender set the dates
 
 
 class Advance(SQLModel, table=True):

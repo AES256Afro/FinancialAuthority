@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { AdvanceExit } from "../components/AdvanceExit";
 import { Failed, Loading, Said, useWidth } from "../components/State";
-import { StatusPill } from "../components/Status";
+import { SeverityTag, StatusPill } from "../components/Status";
 import { money, monthDay, shortDate } from "../format";
 import { palette } from "../looks";
 import { getPrefs } from "../prefs";
@@ -62,7 +62,7 @@ interface Borrowing {
   typical_per_period: number;
   next_payday: string | null;
   installments: Stream[];
-  loans: { id: number; provider: string; merchant: string; loan_id: string; loan_amount: number | null; total: number; finance_charge: number; installment: number; count: number; remaining: number; next_date: string; ends: string; left_to_pay: number; interest_left: number | null; from_lender: boolean; balance?: number | null; balance_at?: string | null; apr?: number | null; interest_paid?: number }[];
+  loans: { id: number; provider: string; merchant: string; loan_id: string; loan_amount: number | null; total: number; finance_charge: number; installment: number; count: number; remaining: number; next_date: string; ends: string; left_to_pay: number; interest_left: number | null; from_lender: boolean; autopay?: boolean | null; dates_estimated?: boolean; balance?: number | null; balance_at?: string | null; apr?: number | null; interest_paid?: number }[];
   loans_left_to_pay: number;
   loans_finance_charge: number;
   becomes: { per_paycheck: number; years: number; name: string; after_tax: number; guaranteed: boolean } | null;
@@ -337,18 +337,19 @@ export function Borrowing() {
           </div>
           <div style={{ overflowX: "auto" }}>
           <table className="ledger" style={{ fontSize: 13 }}>
-            <thead><tr><th>Loan</th><th style={{ textAlign: "right" }}>Borrowed</th><th style={{ textAlign: "right" }}>Owed</th><th style={{ textAlign: "right" }}>Rate</th><th style={{ textAlign: "right" }}>Finance charge</th><th style={{ textAlign: "right" }}>Interest so far</th><th style={{ textAlign: "right" }}>Each</th><th>Next</th></tr></thead>
+            <thead><tr><th>Loan</th><th>AutoPay</th><th style={{ textAlign: "right" }}>Borrowed</th><th style={{ textAlign: "right" }}>Owed</th><th style={{ textAlign: "right" }}>Rate</th><th style={{ textAlign: "right" }}>Finance charge</th><th style={{ textAlign: "right" }}>Interest so far</th><th style={{ textAlign: "right" }}>Each</th><th>Next</th></tr></thead>
             <tbody>
               {d.loans.map((l) => (
                 <tr key={l.id}>
                   <td><strong>{l.merchant || l.provider}</strong><div style={{ fontSize: 11, color: "var(--muted)" }}>{l.provider}{l.loan_id ? ` · ${l.loan_id}` : ""}{l.balance_at ? ` · statement ${shortDate(l.balance_at)}` : l.from_lender ? " · from the confirmation email" : " · typed in"}</div></td>
+                  <td style={{ whiteSpace: "nowrap" }}>{l.autopay === true ? <SeverityTag severity="good" word="On" /> : l.autopay === false ? <SeverityTag severity="warning" word="Off" /> : <span style={{ fontSize: 12, color: "var(--muted)" }}>not said</span>}</td>
                   <td className="num" style={{ textAlign: "right" }}>{l.loan_amount !== null ? money(l.loan_amount) : money(l.total)}</td>
                   <td className="num" style={{ textAlign: "right", fontWeight: 800 }}>{money(l.balance ?? l.left_to_pay)}</td>
                   <td className="num" style={{ textAlign: "right", color: (l.apr ?? 0) > 0 ? "var(--critical-ink)" : "var(--safe-ink)" }}>{l.apr !== null && l.apr !== undefined ? `${l.apr}%` : l.finance_charge > 0 ? "not stated" : "0%"}</td>
                   <td className="num" style={{ textAlign: "right", color: l.finance_charge > 0 ? "var(--critical-ink)" : "var(--ink-2)" }}>{l.finance_charge > 0 ? <>{money(l.finance_charge)}<div style={{ fontSize: 11, color: "var(--muted)" }}>over its life</div></> : "none"}</td>
                   <td className="num" style={{ textAlign: "right", color: l.interest_paid ? "var(--critical-ink)" : "var(--ink-2)" }}>{l.interest_paid ? money(l.interest_paid) : "—"}</td>
                   <td className="num" style={{ textAlign: "right" }}>{money(l.installment, { cents: true })}</td>
-                  <td>{shortDate(l.next_date)}{l.remaining ? ` · about ${l.remaining} left` : ""}</td>
+                  <td>{shortDate(l.next_date)}{l.dates_estimated ? " (estimated until the lender sets the dates)" : ""}{l.remaining ? ` · about ${l.remaining} left` : ""}</td>
                 </tr>
               ))}
             </tbody>
