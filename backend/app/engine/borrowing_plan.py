@@ -1,0 +1,164 @@
+"""A borrowing plan with its reasons (M54): what the pay-later loans take each month and how that steps down as they
+end, which are at the finish line, what each still costs in interest, and in what order money beyond the scheduled
+payments does the most good. Worked out here, with no model, from the plans (the lender's own schedules where the
+app has them), the rates on the lender's statement, and the paycheck windows. Not financial advice.
+
+The logic, in the order a person would apply it:
+1. Every scheduled payment on its day; a loan without AutoPay is named, since a missed one costs the most.
+2. The finish line: a loan with one or two payments left ends on its own; the plan says when, and how many loans
+   are left to watch after it.
+3. Money beyond the schedule goes to the highest rate first (it saves the most interest per dollar); a loan at 0%
+   is paid on schedule, since paying it early saves nothing. Each loan says what $100 early would save.
+4. Whether there is any such money: the paycheck windows say what is left after every bill and payment; while that
+   is short, the plan is only step 1, and it says when the stairs step down and money frees up."""
+
+from __future__ import annotations
+
+import json
+from datetime import date
+from typing import Any
+
+from sqlmodel import Session, select
+
+from ..models import InstallmentPlan
+from .borrowing import plan_provider
+
+NOT_ADVICE = "Worked out by the app from your loans' schedules and rates and your paycheck plan. A lender's payoff quote may differ a little. Not financial advice."
+FINISH = 2  # payments left at which a loan is at the finish line
+MONTHS = 18
+
+
+def _money(v: float) -> float:
+    return round(float(v), 2)
+
+
+def _upcoming(p: InstallmentPlan, today: date) -> list[dict[str, Any]]:
+    """The payments still to come: the lender's schedule where there is one, else the installment on the cadence."""
+    sched = sorted((e for e in json.loads(p.schedule or "[]") if e.get("date", "") >= today.isoformat()), key=lambda e: e["date"])
+    if sched:
+        return sched[: max(0, p.remaining)] if p.remaining else sched
+    out, d = [], p.next_date
+    from datetime import timedelta
+
+    for _ in range(max(0, p.remaining)):
+        out.append({"date": d.isoformat(), "amount": p.installment})
+        d = d + timedelta(days=p.cadence_days or 30)
+    return out
+
+
+def payoff_estimate(payments: list[dict[str, Any]], apr: float | None) -> float:
+    """What it would take to end the loan today: the payments left, each brought back to today at the loan's rate
+    (simple interest, monthly). At 0% it is simply what is left to pay."""
+    left = sum(e["amount"] for e in payments)
+    if not apr:
+        return _money(left)
+    r = apr / 100 / 12
+    return _money(sum(e["amount"] / (1 + r) ** (i + 1) for i, e in enumerate(payments)))
+
+
+def borrowing_plan(session: Session, today: date) -> dict[str, Any]:
+    plans = [p for p in session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all() if p.remaining > 0]  # noqa: E712
+    loans = []
+    for p in plans:
+        pays = _upcoming(p, today)
+        if not pays:
+            continue
+        left = _money(sum(e["amount"] for e in pays))
+        payoff = payoff_estimate(pays, p.apr)
+        interest = _money(max(0.0, left - payoff))
+        loans.append({
+            "id": p.id, "name": p.merchant or p.provider, "lender": plan_provider(p), "next_date": pays[0]["date"], "next_amount": _money(pays[0]["amount"]),
+            "payments_left": len(pays), "ends": pays[-1]["date"], "left_to_pay": left, "payoff_estimate": payoff, "interest_ahead": interest,
+            "apr": p.apr, "autopay": p.autopay, "early_100_saves": _money(interest / payoff * 100) if payoff and interest else 0.0,
+            "payments": pays, "source": f"plan:{p.id}", "dates_from_lender": not p.dates_estimated,
+        })
+    loans.sort(key=lambda l: (l["ends"], l["name"]))
+
+    # The stairs: what the loans take each month, for the next year and a half
+    months: list[str] = []
+    y, m = today.year, today.month
+    for i in range(MONTHS):
+        mm = m - 1 + i
+        months.append(f"{y + mm // 12:04d}-{mm % 12 + 1:02d}")
+    stairs = []
+    for month in months:
+        parts = [{"id": l["id"], "name": l["name"], "amount": _money(sum(e["amount"] for e in l["payments"] if e["date"][:7] == month))} for l in loans]
+        parts = [x for x in parts if x["amount"] > 0]
+        stairs.append({"month": month, "total": _money(sum(x["amount"] for x in parts)), "parts": parts})
+    while stairs and stairs[-1]["total"] == 0 and len(stairs) > 6:
+        stairs.pop()
+
+    # The finish line
+    finish = [l for l in loans if l["payments_left"] <= FINISH]
+    after = len(loans) - len(finish)
+    last_finish = max((l["ends"] for l in finish), default=None)
+    freed_from = None
+    if last_finish:
+        first_after = next((s for s in stairs if s["month"] > last_finish[:7]), None)
+        now = next((s for s in stairs if s["total"] > 0), None)
+        if first_after and now:
+            freed_from = {"month": first_after["month"], "per_month_before": now["total"], "per_month_after": first_after["total"], "freed": _money(now["total"] - first_after["total"])}
+
+    # The order for money beyond the schedule: highest rate first; 0% last, on schedule
+    order = sorted((l for l in loans if l["interest_ahead"] > 0), key=lambda l: (-(l["apr"] or 0), l["payoff_estimate"]))
+    zero = [l for l in loans if l["interest_ahead"] <= 0]
+
+    # Is there money beyond the schedule? The paycheck windows say what is left after everything.
+    room = None
+    try:
+        from .snapshot import finance_snapshot
+
+        snap = finance_snapshot(session, today)
+        windows = snap.get("windows") or []
+        if windows:
+            lows = [float(w["safe"]) for w in windows]
+            room = {"safe_now": _money(snap["safe_to_spend"]["amount"]), "least_after_a_payday": _money(min(lows)), "windows": len(windows),
+                    "first_with_room": next((w["start"] for w in windows if float(w["safe"]) > 0), None)}
+    except Exception:  # noqa: BLE001 - the plan stands without the paycheck view
+        room = None
+
+    steps = []
+    off = [l for l in loans if l["autopay"] is False]
+    unknown = [l for l in loans if l["autopay"] is None]
+    steps.append({"kind": "keep", "text": f"Keep every scheduled payment: {len(loans)} loan{'s' if len(loans) != 1 else ''}, ${sum(l['left_to_pay'] for l in loans):,.2f} still to pay."
+                  + (f" AutoPay is off on {', '.join(l['name'] + ' (' + _day(l['next_date']) + ', $' + format(l['next_amount'], ',.2f') + ')' for l in off)}: pay it on its day, or turn AutoPay on in the lender's app." if off else "")
+                  + (f" AutoPay is not known for {len(unknown)}." if unknown else ""), "sources": [l["source"] for l in loans]})
+    if finish:
+        names = "; ".join(f"{l['name']}: {l['payments_left']} payment{'s' if l['payments_left'] != 1 else ''} left, done {_day(l['ends'])}" for l in finish)
+        line = f"At the finish line: {names}. After {_day(last_finish)} you watch {after} loan{'s' if after != 1 else ''} instead of {len(loans)}."
+        if freed_from and freed_from["freed"] > 0:
+            line += f" From {_month(freed_from['month'])} the loans take ${freed_from['per_month_after']:,.2f} a month instead of ${freed_from['per_month_before']:,.2f}: ${freed_from['freed']:,.2f} frees up."
+        steps.append({"kind": "finish", "text": line, "sources": [l["source"] for l in finish]})
+    if order:
+        top = order[0]
+        steps.append({"kind": "extra", "text": f"Money beyond the schedule goes to {top['name']} first ({top['apr']}% a year): each $100 paid early saves about ${top['early_100_saves']:,.2f} in interest. "
+                      + ("Then " + ", ".join(f"{l['name']} ({l['apr']}%)" for l in order[1:4]) + "." if len(order) > 1 else ""), "sources": [l["source"] for l in order]})
+    if zero:
+        steps.append({"kind": "zero", "text": f"{', '.join(l['name'] for l in zero)}: no interest ahead, so paying early saves nothing; pay on schedule.", "sources": [l["source"] for l in zero]})
+    if room is not None:
+        if room["least_after_a_payday"] < 0:
+            text = (f"Right now there is no room beyond the schedule: the paycheck plan runs short (safe to spend ${room['safe_now']:,.2f}). Keep to step one; "
+                    + (f"the money that frees up from {_month(freed_from['month'])} is the first to put toward step three." if freed_from and freed_from["freed"] > 0 else "add room by moving a bill or pausing a goal on Cover."))
+        else:
+            text = f"After every bill and payment, the leanest paycheck still leaves ${room['least_after_a_payday']:,.2f}. Part of that can go to step three."
+        steps.append({"kind": "room", "text": text, "sources": ["snapshot.windows"]})
+
+    totals = {"loans": len(loans), "left_to_pay": _money(sum(l["left_to_pay"] for l in loans)), "payoff_estimate": _money(sum(l["payoff_estimate"] for l in loans)),
+              "interest_ahead": _money(sum(l["interest_ahead"] for l in loans))}
+    for l in loans:
+        l.pop("payments")
+    return {"as_of": today.isoformat(), "loans": loans, "stairs": stairs, "finish_line": [{"name": l["name"], "ends": l["ends"], "payments_left": l["payments_left"], "left_to_pay": l["left_to_pay"], "source": l["source"]} for l in finish],
+            "freed": freed_from, "order": [{"name": l["name"], "apr": l["apr"], "early_100_saves": l["early_100_saves"], "source": l["source"]} for l in order],
+            "room": room, "steps": steps, "totals": totals, "not_advice": NOT_ADVICE}
+
+
+def _day(iso: str | None) -> str:
+    if not iso:
+        return ""
+    d = date.fromisoformat(iso)
+    return f"{d:%a %b} {d.day}"
+
+
+def _month(ym: str) -> str:
+    d = date.fromisoformat(ym + "-01")
+    return f"{d:%B %Y}"

@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { AdvanceExit } from "../components/AdvanceExit";
+import { BorrowingPlan } from "../components/BorrowingPlan";
 import { Failed, Loading, Said, useWidth } from "../components/State";
 import { SeverityTag, StatusPill } from "../components/Status";
 import { money, monthDay, shortDate } from "../format";
@@ -386,6 +387,7 @@ export function Borrowing() {
         </section>
       )}
 
+      <BorrowingPlan />
       <AdvanceExit />
 
       <section className="card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 8 }}>
