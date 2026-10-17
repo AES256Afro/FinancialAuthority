@@ -3,7 +3,7 @@
 // only sum here is the split form's "left to place" hint, which checks what was typed against the row's own amount.
 // A row with a receipt kept says so; its editor lists the receipt and takes a new one. /transactions?open=<id> opens
 // that row (from a receipt on Documents), with &around=<day> listing the days around the purchase.
-import { ArrowDownLeft, ArrowLeftRight, Clock, CreditCard, Eye, EyeOff, Pencil, Plus, Receipt, Split, Tag, X } from "lucide-react";
+import { ArrowDownLeft, ArrowLeftRight, Briefcase, Clock, CreditCard, Eye, EyeOff, Pencil, Plus, Receipt, Split, Tag, X } from "lucide-react";
 import { Fragment, memo, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, useApi } from "../api";
@@ -13,6 +13,7 @@ import { LedgerRules } from "../components/LedgerRules";
 import { Empty, Failed, Loading, Said } from "../components/State";
 import { flow, money, parseIso, parseMoney, shortDate } from "../format";
 import type { TransactionRow } from "../types";
+import type { BusinessOverview } from "../types-business";
 
 type Kind = "spending" | "transfer" | "card payment" | "income";
 interface Part {
@@ -382,6 +383,10 @@ export function Transactions() {
   const [bulkRemove, setBulkRemove] = useState("");
   const [busy, setBusy] = useState(false);
   const allBox = useRef<HTMLInputElement>(null);
+  // Marking rows as a business's: which business, the business share (1, 0.5 or another %), and the tax line. The
+  // businesses and their lines are asked for only once rows are selected.
+  const [biz, setBiz] = useState({ open: false, id: "", share: "1", other: "", line: "" });
+  const businessInfo = useApi<BusinessOverview>(selected.size > 0 ? "/api/v1/business" : null);
 
   // A new search starts with nothing selected, nothing open and nothing said.
   useEffect(() => {
@@ -464,11 +469,32 @@ export function Transactions() {
     }
   }
 
+  async function markBusiness(businessId: number | null, share: number, taxLine: string, what: string) {
+    const ids = [...selected];
+    setBusy(true);
+    try {
+      const r = await api<{ marked: number }>("/api/v1/business/mark", { method: "POST", body: JSON.stringify({ ids, business_id: businessId, share, tax_line: taxLine }) });
+      setSaid({ id: null, tone: "info", text: `Marked ${r.marked} row${r.marked === 1 ? "" : "s"}: ${what}.` });
+      setSelected(new Set());
+      setBiz((b) => ({ ...b, open: false, share: "1", other: "" }));
+      reload();
+    } catch (err) {
+      setSaid({ id: null, tone: "error", text: `Couldn't mark them: ${(err as Error).message}` });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // A row's own message shows inside its open editor. It shows here instead for many rows at once, and when the row
   // has left the list (hidden, or now a transfer) or its editor is closed.
   const saidHere = said && (said.id === null || !shownIds.has(said.id) || openId !== said.id) ? said : null;
   const n = selected.size;
   const newCategory = bulkCategory.trim();
+  const businesses = businessInfo.data?.businesses ?? [];
+  const bizChosen = businesses.find((b) => String(b.id) === biz.id) ?? businesses.find((b) => b.active) ?? businesses[0] ?? null;
+  const bizOther = Number(biz.other.trim());
+  const bizShare = biz.share === "other" ? (biz.other.trim() && bizOther > 0 && bizOther <= 100 ? bizOther / 100 : null) : Number(biz.share);
+  const bizLine = businessInfo.data?.lines.find((l) => l.key === biz.line) ?? null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -546,7 +572,56 @@ export function Transactions() {
               <button type="button" className="btn" disabled={busy} onClick={() => applyBulk({ hidden: true }, "hidden")} style={{ ...SMALL, display: "inline-flex", alignItems: "center", gap: 4 }}><EyeOff size={13} aria-hidden="true" /> Hide them</button>
               <button type="button" className="btn" disabled={busy} onClick={() => applyBulk({ hidden: false }, "shown again")} style={{ ...SMALL, display: "inline-flex", alignItems: "center", gap: 4 }}><Eye size={13} aria-hidden="true" /> Show them</button>
             </div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <button type="button" className={biz.open ? "btn dark" : "btn"} disabled={busy} aria-expanded={biz.open} onClick={() => setBiz((b) => ({ ...b, open: !b.open }))} style={{ ...SMALL, display: "inline-flex", alignItems: "center", gap: 4 }}><Briefcase size={13} aria-hidden="true" /> Mark as business</button>
+              <button type="button" className="btn" disabled={busy} onClick={() => markBusiness(null, 1, "", "not business")} style={SMALL}>Not business</button>
+            </div>
           </div>
+          {biz.open && (
+            <div role="group" aria-label="Mark them as a business's" style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", borderTop: "1px solid var(--surface-2)", paddingTop: 10 }}>
+              {!businessInfo.data ? (
+                businessInfo.error ? <Said text={`Couldn't load your businesses: ${businessInfo.error.message}`} tone="error" /> : <span style={{ fontSize: 12, color: "var(--ink-2)" }}>Loading your businesses…</span>
+              ) : !bizChosen ? (
+                <span style={{ fontSize: 13, color: "var(--ink-2)" }}>No business on file yet. <Link to="/business">Add it on Business</Link> first.</span>
+              ) : (
+                <>
+                  {businesses.length > 1 && (
+                    <label style={FIELD}>
+                      <span className="lab">Which business</span>
+                      <select className="input" value={bizChosen.id} onChange={(e) => setBiz((b) => ({ ...b, id: e.target.value }))} style={{ minHeight: 34, padding: "4px 10px", maxWidth: "100%" }}>
+                        {businesses.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                      </select>
+                    </label>
+                  )}
+                  <label style={FIELD}>
+                    <span className="lab">Business share</span>
+                    <select className="input" value={biz.share} onChange={(e) => setBiz((b) => ({ ...b, share: e.target.value }))} style={{ minHeight: 34, padding: "4px 10px" }}>
+                      <option value="1">All of it (100%)</option>
+                      <option value="0.5">Half (50%)</option>
+                      <option value="other">Another share</option>
+                    </select>
+                  </label>
+                  {biz.share === "other" && (
+                    <label style={FIELD}>
+                      <span className="lab">Share, in %</span>
+                      <input className="input" inputMode="decimal" value={biz.other} onChange={(e) => setBiz((b) => ({ ...b, other: e.target.value }))} placeholder="30" style={{ minHeight: 34, padding: "4px 10px", width: 90 }} />
+                    </label>
+                  )}
+                  <label style={FIELD}>
+                    <span className="lab">Tax line</span>
+                    <select className="input" value={biz.line} onChange={(e) => setBiz((b) => ({ ...b, line: e.target.value }))} style={{ minHeight: 34, padding: "4px 10px", maxWidth: "100%" }}>
+                      <option value="">Not chosen yet</option>
+                      {businessInfo.data.lines.map((l) => <option key={l.key} value={l.key}>Line {l.line}: {l.words}</option>)}
+                    </select>
+                  </label>
+                  <button type="button" className="btn dark" disabled={busy || bizShare === null} onClick={() => bizShare !== null && markBusiness(bizChosen.id, bizShare, biz.line, `${bizChosen.name}'s, ${biz.share === "1" ? "all of it" : biz.share === "0.5" ? "half" : `${biz.other.trim()}%`}${bizLine ? `, line ${bizLine.line} (${bizLine.words.toLowerCase()})` : ""}`)} style={SMALL}>
+                    Mark {n} as the business's
+                  </button>
+                  {biz.share === "other" && bizShare === null && biz.other.trim() !== "" && <Said text="The share is a number from 1 to 100." tone="error" />}
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
       {saidHere && <div><Said text={saidHere.text} tone={saidHere.tone} /></div>}

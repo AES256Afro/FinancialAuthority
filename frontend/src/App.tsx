@@ -23,6 +23,11 @@ const Chat = lazy(() => import("./pages/Chat").then((m) => ({ default: m.Chat })
 const Clients = lazy(() => import("./pages/Clients").then((m) => ({ default: m.Clients })));
 const Confirm = lazy(() => import("./pages/Confirm").then((m) => ({ default: m.Confirm })));
 const Borrowing = lazy(() => import("./pages/Borrowing").then((m) => ({ default: m.Borrowing })));
+const Business = lazy(() => import("./pages/Business").then((m) => ({ default: m.Business })));
+const WriteOffs = lazy(() => import("./pages/WriteOffs").then((m) => ({ default: m.WriteOffs })));
+const Invoices = lazy(() => import("./pages/Invoices").then((m) => ({ default: m.Invoices })));
+const Miles = lazy(() => import("./pages/Miles").then((m) => ({ default: m.Miles })));
+const Taxes = lazy(() => import("./pages/Taxes").then((m) => ({ default: m.Taxes })));
 const Housing = lazy(() => import("./pages/Housing").then((m) => ({ default: m.Housing })));
 const Move = lazy(() => import("./pages/Move").then((m) => ({ default: m.Move })));
 const CheckIn = lazy(() => import("./pages/CheckIn").then((m) => ({ default: m.CheckIn })));
@@ -146,6 +151,11 @@ export default function App() {
         <Route path="/accounts" element={<Accounts />} />
         <Route path="/investments" element={<Investments />} />
         <Route path="/outlook" element={<Outlook />} />
+        <Route path="/business" element={<Business />} />
+        <Route path="/business/write-offs" element={<WriteOffs />} />
+        <Route path="/business/invoices" element={<Invoices />} />
+        <Route path="/business/miles" element={<Miles />} />
+        <Route path="/taxes" element={<Taxes />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/confirm" element={<Confirm onChanged={snapshot.reload} />} />
         <Route path="/shared" element={<Shared me={me.data} />} />

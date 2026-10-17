@@ -1,7 +1,7 @@
 // The app shell: a rail on wide screens, tabs on a phone, and the header with the payday chip and Sign out. A second
 // person who sees the shared accounts only gets a shell of their own: Shared money, their sign-in, and Sign out;
 // nothing here asks the server for what that sign-in cannot reach.
-import { ArrowLeftRight, BarChart3, BellDot, BookOpen, Clock, Download, Eye, EyeOff, FileText, FolderOpen, Gauge, History, Home, KeyRound, Landmark, LayoutGrid, List, LogOut, Mail, MessageSquare, Mountain, PieChart, PiggyBank, Receipt, Repeat, Settings, Telescope, TrendingUp, Truck, UserRound, Wallet, Waves, type LucideIcon } from "lucide-react";
+import { ArrowLeftRight, BarChart3, BellDot, BookOpen, Briefcase, Clock, Download, Eye, EyeOff, FileText, FolderOpen, Gauge, History, Home, KeyRound, Landmark, LayoutGrid, List, LogOut, Mail, MessageSquare, Mountain, PieChart, PiggyBank, Receipt, Repeat, Scale, Settings, Telescope, TrendingUp, Truck, UserRound, Wallet, Waves, type LucideIcon } from "lucide-react";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { api, useApi } from "../api";
@@ -43,6 +43,8 @@ export const NAV_ITEMS: NavItem[] = [
   { to: "/move", label: "Moving home", icon: Truck, group: "plan", phone: false, hint: "The cost to get into your next home, and whether the money holds." },
   { to: "/switch", label: "Switch banks", icon: ArrowLeftRight, group: "plan", phone: false, hint: "Move your paycheck and bills from one bank to another, step by step." },
   { to: "/outlook", label: "Outlook", icon: Telescope, group: "plan", phone: false, hint: "Savings and investments over the years ahead." },
+  { to: "/business", label: "Business", icon: Briefcase, group: "plan", phone: false, hint: "Your business: setting it up, its money, invoices and what may be written off." },
+  { to: "/taxes", label: "Taxes", icon: Scale, group: "plan", phone: false, hint: "The tax year as it goes: dates, deductions to check, and what never counts." },
   { to: "/accounts", label: "Accounts", icon: Landmark, group: "records", phone: false, hint: "Every account and its balance." },
   { to: "/investments", label: "Investing", icon: TrendingUp, group: "records", phone: false, hint: "Holdings in your investment accounts." },
   { to: "/transactions", label: "Transactions", icon: List, group: "records", phone: false, hint: "Search everything that went in or out." },
@@ -115,7 +117,7 @@ function DemoBanner() {
 }
 
 // One name per page: the menu label, the browser tab's title and the page's heading say the same words.
-const PAGE_NAMES: Record<string, string> = { "/shared": "Shared money", "/settings/people": "People", "/glossary": "Words", "/checkin": "Weekly check-in", "/welcome": "Setup steps", "/settings/setup": "Setting up", "/settings/appearance": "Appearance", "/settings/connectors": "Connections", "/settings/models": "Models", "/settings/clients": "Apps and keys", "/settings/notifications": "Notifications", "/settings/backups": "Backups", "/settings/jobs": "Jobs", "/settings/audit": "Activity", "/settings/security": "Sign-in and security", "/settings/privacy": "Privacy" };
+const PAGE_NAMES: Record<string, string> = { "/shared": "Shared money", "/settings/people": "People", "/glossary": "Words", "/checkin": "Weekly check-in", "/welcome": "Setup steps", "/settings/setup": "Setting up", "/settings/appearance": "Appearance", "/settings/connectors": "Connections", "/settings/models": "Models", "/settings/clients": "Apps and keys", "/settings/notifications": "Notifications", "/settings/backups": "Backups", "/settings/jobs": "Jobs", "/settings/audit": "Activity", "/settings/security": "Sign-in and security", "/settings/privacy": "Privacy", "/business/write-offs": "Write-offs", "/business/invoices": "Invoices", "/business/miles": "Miles", "/data-check": "Data check" };
 
 /** The page's name in the browser tab and the window list, from the section it belongs to. A second person's
  * sign-in page is "Your sign-in", as their menu and the page say. */

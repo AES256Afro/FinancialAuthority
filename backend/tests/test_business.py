@@ -116,3 +116,19 @@ def test_a_company_that_only_shares_a_word_with_a_provider_is_not_suggested():
 
     utilities = next(p for k, _, p in FINDER if k == "utilities")
     assert utilities.search("SPECTRUM INTERNET 123") and utilities.search("Comcast") and not utilities.search("SPECTRUM LABORATORIES")
+
+
+
+def test_the_tax_center_reads_cleanly_and_matches_only_car_loans(owner: TestClient):
+    from app.models import Bill
+
+    with Session(engine) as session:
+        session.add_all([Bill(name="Example Car Loan", amount=412.0, due_day=28), Bill(name="Car insurance", amount=120.0, due_day=5),
+                         Bill(name="Card minimum", amount=45.0, due_day=25)])
+        session.commit()
+    owner.post("/api/v1/business", json={"name": "Example Studio"})
+    t = owner.get("/api/v1/taxes/2026").json()
+    assert t["checks"][0]["loans_seen"] == ["Example Car Loan"]
+    assert "Your business shows" in t["said"] and "Next: " in t["said"]
+    assert all("itemizable" in c for c in t["itemizable_categories"])
+    assert owner.post("/api/v1/business/setup/ein", json={"done": True}).status_code == 400
