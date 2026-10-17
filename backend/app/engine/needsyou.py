@@ -118,6 +118,7 @@ def plan_many(session: Session, facts: list[ExtractedFact], today: date, *, loos
     """What confirming these together would do, each one: apply it, set it aside (with why), or leave it for its own
     card. Newest is judged against every notice for the same bill, waiting or already answered, so sending them in
     parts gives the same result as sending them at once."""
+    from .borrowing import older_than_listing
     from .recurring import bill_named, merchant_key
 
     bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
@@ -149,6 +150,8 @@ def plan_many(session: Session, facts: list[ExtractedFact], today: date, *, loos
             step.update(do="skip", why="already answered")
         elif ref is not None and ref.trust == "crit":
             step.update(do="own_card", why=f"check the sender first: {ref.trust_why}")
+        elif f.kind == "installment" and older_than_listing(session, fields):
+            step.update(do="apply", record=True)  # the lender's own newer list of open loans already has what it says
         elif f.kind == "installment" and fields.get("notice") == "autopay":
             from .borrowing import plan_for_notice
 

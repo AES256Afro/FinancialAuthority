@@ -595,6 +595,24 @@ def reread_lender_notices(session: Session) -> int:
     return n
 
 
+def lender_listed_on(session: Session, lender: str = "Affirm") -> date | None:
+    """The last day the app saw the lender's own complete list of open loans: a monthly statement (it lists every
+    active loan) or the owner's account read on screen (the baseline). Mail older than that is history."""
+    from ..store import get_setting
+
+    if lender.lower() != "affirm":
+        return None
+    days = [str((get_setting(session, "affirm", {}) or {}).get("period_end") or ""), str((get_setting(session, "baseline.affirm", {}) or {}).get("as_of") or "")]
+    days = [d for d in days if d]
+    return date.fromisoformat(max(days)) if days else None
+
+
+def older_than_listing(session: Session, fields: dict) -> bool:
+    """A lender email sent before the lender's own latest complete list: what it says is already in that list."""
+    listed = lender_listed_on(session, str(fields.get("provider") or "Affirm"))
+    return bool(listed and fields.get("message_date") and str(fields["message_date"]) < listed.isoformat())
+
+
 def approval_has_ended(fields: dict, today: date) -> bool:
     """An approval whose every payment would have fallen by now (sent, plus each payment's gap, plus a month's grace)."""
     if not fields.get("message_date"):
@@ -608,6 +626,8 @@ def apply_lender_notice(session: Session, fields: dict, today: date) -> Installm
     a new one whose dates are estimated until the lender sets them. Raises ValueError when nothing matches."""
     import json
 
+    if older_than_listing(session, fields):
+        raise ValueError("Affirm's own list of open loans is newer than this email, so it changes nothing")
     plan = plan_for_notice(session, fields)
     sent = date.fromisoformat(fields["message_date"]) if fields.get("message_date") else today
     if fields.get("notice") == "autopay":
@@ -654,6 +674,14 @@ def plan_from_fields(session: Session, fields: dict, amount: float | None, remai
     provider = str(fields.get("provider") or provider_of(str(fields.get("sender", "")) + " " + str(fields.get("sender_name", "")), INSTALLMENT_PROVIDERS) or fields.get("sender_name") or "Lender")
     merchant = str(fields.get("merchant") or "")
     existing = session.exec(select(InstallmentPlan).where(InstallmentPlan.loan_id == loan_id)).first() if loan_id else None
+    sent = str(fields.get("message_date") or "")
+    if existing is not None and existing.schedule_as_of and sent and sent < existing.schedule_as_of.isoformat():
+        # The lender confirmed this plan's dates later than this email: only what the plan lacks is taken from it.
+        existing.finance_charge = existing.finance_charge or float(fields.get("finance_charge") or 0.0)
+        existing.loan_amount = existing.loan_amount or (float(fields["loan_amount"]) if fields.get("loan_amount") else None)
+        session.add(existing)
+        session.commit()
+        return existing
     if schedule:
         upcoming = [s for s in schedule if s["date"] >= today.isoformat()]
         gaps = [(date.fromisoformat(b["date"]) - date.fromisoformat(a["date"])).days for a, b in zip(schedule, schedule[1:])]

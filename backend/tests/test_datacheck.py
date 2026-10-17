@@ -171,3 +171,23 @@ def test_an_older_autopay_email_never_overwrites_dates_the_lender_confirmed_late
         apply_lender_notice(session, old, TODAY)
         kept = session.exec(select(InstallmentPlan).where(InstallmentPlan.loan_id == "L-2")).one()
         assert json.loads(kept.schedule)[-1]["amount"] == 47.41
+
+
+
+def test_lender_mail_older_than_the_lenders_own_list_is_history(owner: TestClient):
+    """Once the app has Affirm's complete list of open loans (a statement, or the account read on screen), an older
+    approval, AutoPay notice or loan confirmation changes nothing: it is marked read."""
+    from app.store import set_setting
+
+    with Session(engine) as session:
+        set_setting(session, "baseline.affirm", {"as_of": "2026-10-17"})
+        old = ExtractedFact(kind="installment", status="pending", fields=json.dumps({"provider": "Affirm", "notice": "approved", "merchant": "Example Store", "installment": 60.55,
+                                                                                   "count": 3, "cadence_days": 30, "message_date": "2026-09-10"}))
+        session.add(old)
+        session.commit()
+        fid = old.id
+    plan = owner.post("/api/v1/needs-you/facts", json={"ids": [fid], "action": "preview"}).json()
+    assert plan["said"] == "Confirming this one marks 1 as read (they change nothing in the plan)."
+    owner.post("/api/v1/needs-you/facts", json={"ids": [fid], "action": "confirm"})
+    with Session(engine) as session:
+        assert session.exec(select(InstallmentPlan)).all() == []
