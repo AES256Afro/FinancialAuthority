@@ -20,6 +20,7 @@ from sqlmodel import Session, select
 
 from ..models import Bill, Document, Home, HomeCharge, HomeCost, Utility
 from .billdates import bill_dates
+from .recurring import bill_keys, merchant_key
 
 KINDS = ("rent", "mortgage", "other")
 CHARGE_KINDS = ("rent", "pet", "fee", "utility", "insurance", "principal_interest", "escrow", "pmi", "hoa", "parking", "other")
@@ -55,15 +56,75 @@ def _end_due(home: Home) -> date | None:
     return home.ends_on - timedelta(days=1) if home.ends_on else None
 
 
-def sync_bills(session: Session, home: Home) -> None:
-    """Make the home's bills match its charges, costs and dates. Bills it no longer needs are turned off."""
+def _today(today: date | None) -> date:
+    """The owner's day (the routes pass theirs), never the server's: a bill added on a US evening is today's."""
+    if today is not None:
+        return today
+    from ..clock import local_today
+
+    return local_today()
+
+
+def _remember(b: Bill, *names: str) -> None:
+    """Keep the names a bill carried before Housing renamed it, so its payments, which the bank still names the old
+    way, keep matching (see recurring.bill_keys)."""
+    if b.id is None:
+        return
+    try:
+        kept = [str(n) for n in json.loads(b.match_names or "[]") if n]
+    except (ValueError, TypeError):
+        kept = []
+    for n in names:
+        n = (n or "").strip()
+        if n and n not in kept and n != b.name and n != (b.pays_to or ""):
+            kept.append(n)
+    b.match_names = json.dumps(kept[-8:])
+
+
+def _near(a: float, b: float) -> bool:
+    return abs(float(a) - float(b)) <= 0.05 * max(abs(float(b)), 1.0)
+
+
+def rent_bill_for(session: Session, home: Home, amount: float) -> Bill | None:
+    """A rent or mortgage bill already on the list that is this home's rent: tied to no home and no utility, on the
+    home's due day, within 5% of what the home's rent comes to."""
+    for b in session.exec(select(Bill).where(Bill.active == True, Bill.home_id == None, Bill.utility_id == None)).all():  # noqa: E711, E712
+        if (b.category or "").lower() in ("rent", "mortgage") and int(b.due_day or 0) == int(home.due_day or 1) and _near(b.amount, amount):
+            return b
+    return None
+
+
+def same_bill_for(session: Session, *, names: list[str], amount: float, due_day: int, category: str) -> Bill | None:
+    """A bill already on the list that a home's own charge (renter's insurance, parking paid elsewhere) duplicates:
+    tied to no home and no utility, on the same due day, within 5% of the amount, and of the same kind or under the
+    same name."""
+    keys = [k for k in (merchant_key(n) for n in names) if k]
+    for b in session.exec(select(Bill).where(Bill.active == True, Bill.home_id == None, Bill.utility_id == None)).all():  # noqa: E711, E712
+        if int(b.due_day or 0) != int(due_day) or not _near(b.amount, amount):
+            continue
+        same_kind = bool(category) and (b.category or "").lower() == category.lower() and category.lower() not in ("housing", "")
+        named = any(k == bk or k.startswith(bk) or bk.startswith(k) for k in keys for bk in bill_keys(b))
+        if same_kind or named:
+            return b
+    return None
+
+
+def sync_bills(session: Session, home: Home, today: date | None = None) -> None:
+    """Make the home's bills match its charges, costs and dates. Bills it no longer needs are turned off. A rent bill
+    already on the list for the same rent (same due day, within 5%) becomes the home's rent bill instead of a second
+    one, and so does a bill an "other" charge duplicates. The home's utilities follow its dates."""
     charges = charges_of(session, home.id)
     with_rent = [c for c in charges if c.pays_to == "home"]
     known = [c for c in with_rent if c.amount is not None]
     word = {"rent": "Rent", "mortgage": "Mortgage"}.get(home.kind, "Housing")
     bill = _bill(session, home.bill_id)
     if known and home.active:
-        bill = bill or Bill(name="", amount=0.0, created_on=date.today())
+        if bill is None and not (home.starts_on and home.starts_on > _today(today)):
+            # The home lived in now, with the rent already on the list: the same rent, counted once. A home moved
+            # into later never takes it: the rent on the list is the one paid until then.
+            bill = rent_bill_for(session, home, sum(c.amount for c in known))
+        bill = bill or Bill(name="", amount=0.0, created_on=_today(today))
+        old_name, old_pays = bill.name, bill.pays_to
         bill.name = f"{word} · {home.name}"[:80]
         bill.amount = _money(sum(c.amount for c in known))
         bill.amount_mode = "estimate" if any(c.estimate for c in known) or len(known) < len(with_rent) else "fixed"
@@ -74,6 +135,7 @@ def sync_bills(session: Session, home: Home) -> None:
         bill.pay_from_account_id = home.pay_from_account_id or bill.pay_from_account_id
         bill.category, bill.kind, bill.home_id, bill.active = word if word != "Housing" else "Rent", "bill", home.id, True
         bill.pays_to = home.payee or bill.pays_to
+        _remember(bill, old_name, old_pays)
         session.add(bill)
         session.flush()
         home.bill_id = bill.id
@@ -88,13 +150,19 @@ def sync_bills(session: Session, home: Home) -> None:
             continue
         b = _bill(session, c.bill_id)
         if c.amount is not None and home.active:
-            b = b or Bill(name="", amount=0.0, created_on=date.today())
+            category = "Insurance" if c.kind == "insurance" else "Housing"
+            due_day = max(1, min(31, c.due_day or home.due_day or 1))
+            if b is None and not (home.starts_on and home.starts_on > _today(today)):
+                b = same_bill_for(session, names=[c.name, c.payee], amount=c.amount, due_day=due_day, category=category)  # already on the list: counted once
+            b = b or Bill(name="", amount=0.0, created_on=_today(today))
+            old_name, old_pays = b.name, b.pays_to
             b.name, b.amount = f"{c.name}"[:80], _money(c.amount)
             b.amount_mode = "estimate" if c.estimate else "fixed"
-            b.cadence, b.due_day = "monthly", max(1, min(31, c.due_day or home.due_day or 1))
+            b.cadence, b.due_day = "monthly", due_day
             b.starts_on, b.ends_on = c.starts_on or home.first_due or home.starts_on, c.ends_on or _end_due(home)
-            b.category = "Insurance" if c.kind == "insurance" else "Housing"
+            b.category = category
             b.pays_to = c.payee or b.pays_to
+            _remember(b, old_name, old_pays)
             b.kind, b.home_id, b.active = "bill", home.id, True
             session.add(b)
             session.flush()
@@ -106,7 +174,7 @@ def sync_bills(session: Session, home: Home) -> None:
     for cost in costs_of(session, home.id):
         b = _bill(session, cost.bill_id)
         if cost.amount is not None and cost.amount > 0 and cost.due_on and not cost.paid and home.active:
-            b = b or Bill(name="", amount=0.0, created_on=date.today())
+            b = b or Bill(name="", amount=0.0, created_on=_today(today))
             b.name, b.amount = f"{cost.name}"[:80], _money(cost.amount)
             b.cadence, b.due_day, b.starts_on, b.ends_on = "monthly", cost.due_on.day, cost.due_on, cost.due_on  # one date, once
             b.category, b.kind, b.home_id, b.active, b.amount_mode = "Moving", "bill", home.id, True, "fixed"
@@ -120,20 +188,35 @@ def sync_bills(session: Session, home: Home) -> None:
             session.add(b)
     session.add(home)
     session.commit()
+    # The home's utilities start and stop with it: a change of its dates, or its removal, reaches their bills.
+    for u in session.exec(select(Utility).where(Utility.home_id == home.id)).all():
+        sync_utility(session, u, today)
 
 
-def sync_utility(session: Session, u: Utility) -> None:
-    """A utility billed on its own (directly, or by a billing company) with a known amount makes its own bill."""
+def utility_dates(u: Utility, home: Home | None) -> tuple[date | None, date | None]:
+    """When a utility's bill runs: its own dates, else its home's (from moving in to the day before moving out). One
+    that moves with you is not stopped by the move."""
+    starts = u.starts_on or (home.starts_on if home is not None else None)
+    ends = u.ends_on or (_end_due(home) if home is not None and not u.moves_with_you else None)
+    return starts, ends
+
+
+def sync_utility(session: Session, u: Utility, today: date | None = None) -> None:
+    """A utility billed on its own (directly, or by a billing company) with a known amount makes its own bill, from
+    its home's move-in to its move-out unless it has dates of its own. A utility of a removed home has no bill."""
     b = _bill(session, u.bill_id)
-    if u.active and u.billed in ("direct", "submetered") and u.amount is not None:
-        b = b or Bill(name="", amount=0.0, created_on=date.today())
+    home = session.get(Home, u.home_id) if u.home_id else None
+    if u.active and (home is None or home.active) and u.billed in ("direct", "submetered") and u.amount is not None:
+        b = b or Bill(name="", amount=0.0, created_on=_today(today))
+        old_name, old_pays = b.name, b.pays_to
         who = u.billing_company if u.billed == "submetered" and u.billing_company else u.provider
         b.name = (f"{SERVICE_WORDS[u.service]} · {who}" if u.service in SERVICE_WORDS and u.service != "other" else who or "Service").strip(" ·")[:80]
         b.amount, b.amount_mode = _money(u.amount), "estimate" if u.estimate else "fixed"
         b.cadence, b.due_day = "monthly", max(1, min(31, u.due_day or 1))
-        b.starts_on, b.ends_on = u.starts_on, u.ends_on
+        b.starts_on, b.ends_on = utility_dates(u, home)
         b.category, b.kind, b.utility_id, b.active = b.category or "Utilities", "bill", u.id, True
         b.pays_to = who or b.pays_to
+        _remember(b, old_name, old_pays)  # the bank's own name for its payments (a bill linked here) keeps matching
         session.add(b)
         session.flush()
         u.bill_id = b.id
@@ -144,7 +227,25 @@ def sync_utility(session: Session, u: Utility) -> None:
     session.commit()
 
 
-def adopt_bill(session: Session, bill: Bill, *, name: str, kind: str = "rent") -> Home:
+def adopt_into(session: Session, bill: Bill, home: Home, today: date | None = None) -> Home:
+    """A rent bill already on the list is an existing home's rent: it becomes the home's rent bill (keeping its own
+    name for matching), and the bill the home made for itself is turned off, so the rent is counted once."""
+    own = _bill(session, home.bill_id)
+    if own is not None and own.id != bill.id:
+        own.active = False
+        session.add(own)
+    if not any(c.pays_to == "home" and c.amount is not None for c in charges_of(session, home.id)):
+        session.add(HomeCharge(home_id=home.id, name="Rent" if home.kind == "rent" else "Payment", kind="rent" if home.kind == "rent" else "principal_interest", amount=_money(bill.amount)))
+    home.bill_id = bill.id
+    home.payee = home.payee or bill.pays_to or bill.name
+    bill.home_id = home.id
+    session.add_all([home, bill])
+    session.commit()
+    sync_bills(session, home, today)
+    return home
+
+
+def adopt_bill(session: Session, bill: Bill, *, name: str, kind: str = "rent", today: date | None = None) -> Home:
     """A rent bill already on the list becomes a home: its amount the rent, its due day the home's."""
     home = Home(name=name.strip()[:80] or bill.name, kind=kind if kind in KINDS else "rent", payee=bill.pays_to or bill.name, due_day=bill.due_day, autopay=bill.autopay, grace_days=bill.grace_days,
                 late_fee=bill.late_fee, pay_from_account_id=bill.pay_from_account_id, bill_id=bill.id)
@@ -154,8 +255,48 @@ def adopt_bill(session: Session, bill: Bill, *, name: str, kind: str = "rent") -
     bill.home_id = home.id
     session.add(bill)
     session.commit()
-    sync_bills(session, home)
+    sync_bills(session, home, today)
     return home
+
+
+def _day(d: date) -> str:
+    return f"{d:%a %b} {d.day}, {d.year}"
+
+
+def start_move(session: Session, home: Home, was_start: date | None, today: date) -> list[str]:
+    """Moving is a home with a start date, and the home lived in until then ends on that date: its rent and its
+    utilities stop there (M37). A home that already has an end keeps it, unless that end was this home's old move-in
+    date (the move changed date, so the end follows it). Returns what was done, in words, for the page to say."""
+    said: list[str] = []
+    if not home.active or not home.starts_on or home.starts_on <= today:
+        return said
+    for other in session.exec(select(Home).where(Home.active == True, Home.id != home.id)).all():  # noqa: E712
+        if other.starts_on is not None and other.starts_on > today:
+            continue  # another home not moved into yet: not the one being left
+        if other.ends_on is None or (was_start is not None and other.ends_on == was_start and other.ends_on != home.starts_on):
+            other.ends_on = home.starts_on
+            session.add(other)
+            session.commit()
+            sync_bills(session, other, today)
+            said.append(f"{other.name} now ends on {_day(home.starts_on)}, the day you move into {home.name}: its rent and utilities stop there. Change its end date on Housing if you keep it.")
+    return said
+
+
+def call_off_move(session: Session, home: Home, today: date) -> list[str]:
+    """A home moved into later is removed: the home it would have ended goes on, as before the move was added,
+    unless notice to leave it was given (it ends either way)."""
+    said: list[str] = []
+    if not home.starts_on or home.starts_on <= today:
+        return said
+    for other in session.exec(select(Home).where(Home.active == True, Home.ends_on == home.starts_on)).all():  # noqa: E712
+        if other.notice_given_on:
+            continue
+        other.ends_on = None
+        session.add(other)
+        session.commit()
+        sync_bills(session, other, today)
+        said.append(f"{other.name} no longer ends on {_day(home.starts_on)}: with {home.name} removed, its rent and utilities go on.")
+    return said
 
 
 def notice(home: Home, today: date) -> dict[str, Any] | None:
@@ -249,6 +390,16 @@ def overview(session: Session, today: date) -> dict[str, Any]:
     upcoming = next((h for h in out if h["state"] == "upcoming"), None)
     loose = session.exec(select(Utility).where(Utility.home_id == None, Utility.active == True)).all()  # noqa: E711, E712
     rent_bills = [b for b in session.exec(select(Bill).where(Bill.active == True, Bill.home_id == None)).all() if (b.category or "").lower() in ("rent", "mortgage")]  # noqa: E711, E712
+    warnings: list[str] = []
+    for b in rent_bills:
+        # A rent bill on the list beside a home with its own rent may be the same rent counted twice; beside only a
+        # home moved into later, it is the rent paid now, and it does not stop at the move until it is a home's.
+        living = [h for h in out if h["bill_id"] and h["state"] == "current"]
+        if living:
+            h = next((h for h in living if h["due_day"] == b.due_day), living[0])
+            warnings.append(f"{b.name} (${b.amount:,.2f} on day {b.due_day} of each month) is on your bills list, and {h['name']} has its own rent. If it is the same rent it is counted twice: make {b.name} the rent of {h['name']}. If it is a different rent, leave both.")
+        elif upcoming and not current:
+            warnings.append(f"{b.name} (${b.amount:,.2f} on day {b.due_day} of each month) is not tied to a home, so it does not stop when you move to {upcoming['name']}. Make it the home you live in now, and it ends on the move date.")
     move = None
     if current and upcoming:
         dated = sorted((c for c in upcoming["costs"] if c["due_on"] and not c["paid"]), key=lambda c: c["due_on"])
@@ -257,29 +408,38 @@ def overview(session: Session, today: date) -> dict[str, Any]:
                 "costs_total": upcoming["costs_total"], "costs_missing": upcoming["costs_missing"], "old_ends_on": current["ends_on"], "old_notice": current["notice"],
                 "first_cost": check}
     return {"as_of": today.isoformat(), "homes": out, "current_id": current["id"] if current else None, "upcoming_id": upcoming["id"] if upcoming else None, "move": move,
-            "utilities_unassigned": [utility_out(u) for u in loose], "rent_bills_to_adopt": [{"id": b.id, "name": b.name, "amount": b.amount, "due_day": b.due_day} for b in rent_bills],
+            "utilities_unassigned": [utility_out(u) for u in loose], "rent_bills_to_adopt": [{"id": b.id, "name": b.name, "amount": b.amount, "due_day": b.due_day} for b in rent_bills], "warnings": warnings,
             "not_advice": "Your housing as you entered it, counted in every figure. Not financial or legal advice; your lease is what holds."}
 
 
 def move_check(session: Session, today: date, home_id: int) -> dict[str, Any]:
-    """Whether the paychecks before a move cover the costs of getting in: the lowest balance from today to a month
-    after the move, at the usual pace, with every cost and the new home's bills already counted."""
-    from .scenario import run_scenario
+    """Whether the paychecks before a move cover the costs of getting in: the lowest left to spend (after the safety
+    cushion, the bills kept and the usual spending) from today to a month after the move, with every cost and the new
+    home's bills already counted. The plan is run far enough to reach a month after the move; if it still does not,
+    the verdict is "unknown", never "Covered"."""
+    from .scenario import HORIZON, run_scenario
 
     home = session.get(Home, home_id)
     if home is None or not home.starts_on:
         raise KeyError(home_id)
-    run = run_scenario(session, today, {"name": home.name, "move_date": home.starts_on.isoformat(), "one_offs": [], "recurring": [], "stop_bills": []})
-    until = (home.starts_on + timedelta(days=31)).isoformat()
-    path = [p for p in run["baseline"]["path"] if p["date"] <= until]
-    low = min(path, key=lambda p: p["at_pace"]) if path else None
+    until_day = home.starts_on + timedelta(days=31)
+    run = run_scenario(session, today, {"name": home.name, "move_date": home.starts_on.isoformat(), "one_offs": [], "recurring": [], "stop_bills": []},
+                       horizon_days=max(HORIZON, (until_day - today).days + 1))
+    until = until_day.isoformat()
+    whole = run["baseline"]["path"]
+    path = [p for p in whole if p["date"] <= until]
     out = home_out(session, home, today)
+    if not whole or whole[-1]["date"] < until:
+        seen = date.fromisoformat(whole[-1]["date"]) if whole else today
+        return {"home": out, "move_on": home.starts_on.isoformat(), "low": None, "holds": None, "status": "unknown",
+                "word": f"The plan sees through {seen:%a %b} {seen.day}, {seen.year}; the move is after it, so it cannot say yet whether the move is covered.", "path": path, "caveats": run["caveats"]}
+    low = min(path, key=lambda p: p["at_pace"]) if path else None
     holds = low is None or low["at_pace"] >= 0
     on = f"{date.fromisoformat(low['date']):%a %b} {date.fromisoformat(low['date']).day}" if low else ""
     return {
         "home": out, "move_on": home.starts_on.isoformat(), "low": low, "holds": holds,
         "status": "good" if holds else "crit",
-        "word": (f"Covered: at your usual spending the lowest balance before a month after the move is ${low['at_pace']:,.2f}, on {on}." if holds and low else
-                 f"Short: at your usual spending the balance falls ${-low['at_pace']:,.2f} below the cushion on {on}." if low else "No paycheck on file to check against."),
+        "word": (f"Covered: at your usual spending, the lowest left to spend before a month after the move is ${low['at_pace']:,.2f}, on {on}, after keeping the safety cushion and the money for bills." if holds and low else
+                 f"Short: at your usual spending, you would be ${-low['at_pace']:,.2f} short on {on}, after keeping the safety cushion and the money for bills." if low else "No paycheck on file to check against."),
         "path": path, "caveats": run["caveats"],
     }

@@ -246,9 +246,17 @@ def ensure_borrowing_rules(session: Session) -> int:
     return changed
 
 
+def owed_advances(session: Session) -> list[dict]:
+    """The advances owed back, from the advances register: the one source the snapshot's "Advance apps take back",
+    Debts and Accounts count, so Borrowing says the same. Each owes its amount and its fee, on its repay date."""
+    rows = session.exec(select(Advance).where(Advance.repaid == False).order_by(Advance.repay_date, Advance.id)).all()  # noqa: E712
+    return [{"provider": a.provider, "amount": _money(a.amount + a.fee), "advanced": _money(a.amount), "fee": _money(a.fee), "taken_on": a.taken_on, "repay_date": a.repay_date,
+             "repaid": False, "source": f"advance:{a.id}", "sources": [f"advance:{a.id}"]} for a in rows]
+
+
 def borrowing_summary(session: Session, today: date) -> dict:
     """The light figures the snapshot, the brief and the watchlist carry: fees in the last ninety days, what
-    stands outstanding, and what was taken since the last payday."""
+    stands outstanding (owed back, from the advances register), and what was taken since the last payday."""
     from .cadence import income_days
 
     advance_rows, _installments = _rows(session, today)
@@ -257,7 +265,7 @@ def borrowing_summary(session: Session, today: date) -> dict:
     paired = pair_advances(advance_rows, next_payday, today, _scheduled_paydays(session, today))
     since = today - timedelta(days=WINDOW_DAYS)
     fees = sum(p["fee"] for p in paired["pairs"] if p["taken_on"] >= since) + sum(t["amount"] for t in paired["tips"] if t["date"] >= since)
-    outstanding = [p for p in paired["pairs"] if not p["repaid"] and not p.get("stale")]
+    outstanding = owed_advances(session)
     last_payday = previous_payday(pay[0], pay[1].cadence or "biweekly", today, income_days(pay[1])) if pay else None
     since_payday = [p for p in paired["pairs"] if last_payday and p["taken_on"] >= last_payday and p["taken_on"] <= today]
     return {
@@ -356,7 +364,12 @@ def borrowing_overview(session: Session, today: date) -> dict:
     tips = [t for t in paired["tips"] if t["date"] >= since]
     fees = sum(p["fee"] for p in pairs) + sum(t["amount"] for t in tips)
     advanced = sum(p["amount"] for p in pairs)
-    outstanding = [p for p in paired["pairs"] if not p["repaid"] and not p.get("stale")]
+    # What is owed back comes from the advances register, as the snapshot, Debts and Accounts count it; the ledger
+    # pairs give the fees, the cycle and the history.
+    outstanding = owed_advances(session)
+    owed_by_provider: dict[str, float] = {}
+    for p in outstanding:
+        owed_by_provider[p["provider"]] = owed_by_provider.get(p["provider"], 0.0) + p["amount"]
     unresolved = [p for p in pairs if p.get("stale")]
     by_provider: dict[str, dict] = {}
     for p in pairs:
@@ -367,8 +380,9 @@ def borrowing_overview(session: Session, today: date) -> dict:
         row["typical_advance"].append(p["amount"])
         if p["days"]:
             row["days"].append(p["days"])
-        if not p["repaid"]:
-            row["outstanding"] += p["amount"]
+    for name, owed in owed_by_provider.items():
+        if name in by_provider:
+            by_provider[name]["outstanding"] = owed
     for t in tips:
         row = by_provider.setdefault(t["provider"], {"provider": t["provider"], "advances": 0, "advanced": 0.0, "fees": 0.0, "outstanding": 0.0, "typical_advance": [], "days": []})
         row["fees"] += t["amount"]
@@ -434,7 +448,6 @@ def borrowing_overview(session: Session, today: date) -> dict:
     loans.sort(key=lambda l: l["next_date"])
     installment_interest = _money(sum(l["finance_charge"] for l in loans))
     left_to_pay = _money(sum((l.get("balance") or l["left_to_pay"]) for l in loans))
-    statement = get_setting(session, "affirm", {}) or {}
 
     cards = [a for a in session.exec(select(Account).where(Account.active == True, Account.kind == "card")).all()]  # noqa: E712
     card_balance = _money(sum((a.balance or 0.0) for a in cards))
@@ -447,11 +460,11 @@ def borrowing_overview(session: Session, today: date) -> dict:
         debt = next((d for d in debts if d.account_id == a.id), None)
         limit = (debt.credit_limit if debt and debt.credit_limit else None) or a.credit_limit
         balance = float(a.balance or 0.0)
-        statement = next_due(int(debt.statement_day), today) if debt and debt.statement_day else None
+        next_statement = next_due(int(debt.statement_day), today) if debt and debt.statement_day else None  # the card's own; the Affirm statement is apart
         due = next_due(int(debt.due_day), today) if debt and debt.due_day else None
         credit.append({
             "account_id": a.id, "debt_id": debt.id if debt else None, "name": a.name, "balance": _money(balance), "credit_limit": limit, "utilisation": round(balance / limit, 4) if limit else None, "utilisation_status": _limit_status(balance / limit if limit else None),
-            "apr": debt.apr if debt else None, "pay_in_full": debt.pay_in_full if debt else None, "statement_day": debt.statement_day if debt else None, "next_statement": statement.isoformat() if statement else None,
+            "apr": debt.apr if debt else None, "pay_in_full": debt.pay_in_full if debt else None, "statement_day": debt.statement_day if debt else None, "next_statement": next_statement.isoformat() if next_statement else None,
             "due_day": debt.due_day if debt else None, "next_due": due.isoformat() if due else None,
             "interest_month_if_carried": _money(balance * (debt.apr if debt else 0.0) / 100.0 / 12.0),
         })
@@ -478,12 +491,12 @@ def borrowing_overview(session: Session, today: date) -> dict:
     steps: list[dict] = []
     if outstanding:
         total_out = _money(sum(p["amount"] for p in outstanding))
-        steps.append({"n": 1, "text": f"{len(outstanding)} advance{'s' if len(outstanding) != 1 else ''} ({', '.join(sorted({p['provider'] for p in outstanding}))}) comes out of the next paycheck: ${total_out:,.2f}. The plan already holds it back.", "action": "Today", "link": "/today"})
+        steps.append({"n": 1, "text": f"{len(outstanding)} advance{'s' if len(outstanding) != 1 else ''} ({', '.join(sorted({p['provider'] for p in outstanding}))}) {'come' if len(outstanding) != 1 else 'comes'} out of the next paycheck: ${total_out:,.2f} with the fees. The plan already holds it back.", "action": "Today", "link": "/today"})
     if typical_period > 0:
         steps.append({"n": len(steps) + 1, "text": f"The cycle runs on about ${typical_period:,.0f} advanced each pay period and ${fees_month:,.0f} a month in fees. Keeping ${typical_period:,.0f} of one paycheck unspent ends it: the next period is paid from that instead of from an advance.", "action": "Set it as a goal", "link": "/today#goals"})
     unknown = [i for i in installments if i["active"] and i["status"] != "plan"]
     if unknown:
-        steps.append({"n": len(steps) + 1, "text": f"{len(unknown)} installment stream{'s' if len(unknown) != 1 else ''} ({', '.join(sorted({i['provider'] for i in unknown}))}) {'are' if len(unknown) != 1 else 'is'} not on the register as plans with an end date, so the windows cannot see when they stop. Enter the payments left on each; the lender's app shows it.", "action": "Below", "link": "/borrowing#installments"})
+        steps.append({"n": len(steps) + 1, "text": f"{len(unknown)} installment stream{'s' if len(unknown) != 1 else ''} ({', '.join(sorted({i['provider'] for i in unknown}))}) {'are' if len(unknown) != 1 else 'is'} not on your list of pay-later plans with an end date, so the plan cannot see when they stop. Enter the payments left on each; the lender's app shows it.", "action": "Below", "link": "/borrowing#installments"})
     if installments_month > 0:
         steps.append({"n": len(steps) + 1, "text": f"Installments take about ${installments_month:,.0f} a month. As each plan ends, that payment is free; the engine moves it to the next plan or the goal when you say so.", "action": "Plans", "link": "/borrowing#installments"})
     for c in credit:
@@ -495,10 +508,10 @@ def borrowing_overview(session: Session, today: date) -> dict:
             carried = f" Carried a month at {c['apr']:g}% it costs ${c['interest_month_if_carried']:,.0f}." if not c["pay_in_full"] else ""
             steps.append({"n": len(steps) + 1, "text": f"{c['name']} is at {use}.{closes}{carried}", "action": "Debts", "link": "/debts"})
         else:
-            steps.append({"n": len(steps) + 1, "text": f"{c['name']} carries ${c['balance']:,.0f}. Paid in full from the next checks, it costs nothing; carried, its APR applies. Enter the card's APR, line and statement day on the Debts page and the cost and the use show here.", "action": "Debts", "link": "/debts"})
+            steps.append({"n": len(steps) + 1, "text": f"{c['name']} carries ${c['balance']:,.0f}. Paid in full from the next checks, it costs nothing; carried, its APR applies. Enter the card's APR, credit limit and statement day on the Debts page and the cost and the use show here.", "action": "Debts", "link": "/debts"})
     steps.append({"n": len(steps) + 1, "text": "Credit: advance apps and pay-in-four plans do not build it, and a missed Affirm payment can hurt it. What moves a score is every card and loan payment on time, and the card balance kept well under its limit at statement time.", "action": "Accounts", "link": "/accounts"})
 
-    sources = sorted({src for p in pairs for src in p["sources"]} | {src for s in streams for src in s["sources"]} | {f"account:{a.id}" for a in cards})
+    sources = sorted({src for p in pairs for src in p["sources"]} | {src for s in streams for src in s["sources"]} | {f"account:{a.id}" for a in cards} | {p["source"] for p in outstanding})
     return {
         "as_of": today.isoformat(), "window_days": WINDOW_DAYS,
         "cost": {"fees_90d": _money(fees), "fees_month": fees_month, "fees_year": fees_year, "advanced_90d": _money(advanced), "advances_90d": len(pairs), "tips_90d": _money(sum(t["amount"] for t in tips)), "installments_month": installments_month, "card_balance": card_balance, "card_interest_month": card_interest_month,
@@ -508,7 +521,7 @@ def borrowing_overview(session: Session, today: date) -> dict:
         "cycle": cycle, "typical_per_period": typical_period, "next_payday": next_payday.isoformat() if next_payday else None,
         "unresolved": [{**{k: (v.isoformat() if isinstance(v, date) else v) for k, v in p.items()}} for p in unresolved], "unresolved_total": _money(sum(p["amount"] for p in unresolved)),
         "advances": [{**{k: (v.isoformat() if isinstance(v, date) else v) for k, v in p.items()}} for p in sorted(pairs, key=lambda p: p["taken_on"], reverse=True)],
-        "installments": installments, "loans": loans, "loans_left_to_pay": left_to_pay, "loans_finance_charge": installment_interest, "statement": statement, "becomes": becomes, "steps": steps, "sources": sources,
+        "installments": installments, "loans": loans, "loans_left_to_pay": left_to_pay, "loans_finance_charge": installment_interest, "statement": affirm_stmt, "becomes": becomes, "steps": steps, "sources": sources,
         "not_advice": NOT_ADVICE + " What an advance costs is its fee over the days it is out; what a plan costs needs the lender's own figures, which only you can enter.",
     }
 

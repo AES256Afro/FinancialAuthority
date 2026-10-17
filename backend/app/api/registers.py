@@ -115,7 +115,11 @@ def classify(series_id: int, body: ClassifyIn, session: Session = Depends(get_se
         session.flush()
         created = {"income": {"id": income.id, "name": income.name, "cadence": income.cadence, "expected_net": income.expected_net, "next_date": income.next_date.isoformat()}}
     elif body.kind == "installment":
-        remaining = body.remaining or 1
+        # The payments left are the owner's to say: a plan never defaults to one, which would stop counting it after
+        # the next charge and make the money it still takes look free.
+        if body.remaining is None or body.remaining < 1 or body.remaining > 120:
+            raise HTTPException(400, "Type how many payments are left, like 4. The lender's app shows it.")
+        remaining = body.remaining
         plan = InstallmentPlan(provider=name, merchant=name, total=round(amount * (series.charges_seen + remaining), 2), installment=round(amount, 2), count=series.charges_seen + remaining,
                                remaining=remaining, next_date=series.next_expected, cadence_days={"weekly": 7, "biweekly": 14, "monthly": 30}.get(series.cadence, 14))
         session.add(plan)
@@ -134,11 +138,40 @@ def classify(series_id: int, body: ClassifyIn, session: Session = Depends(get_se
 
 @router.get("/bills")
 def list_bills(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
-    from ..engine.billdates import per_year
+    from ..engine.billdates import monthly_cost
 
     rows = session.exec(select(Bill).where(Bill.active == True).order_by(Bill.due_day)).all()  # noqa: E712
-    monthly = sum(float(b.amount) * per_year(b) / 12.0 for b in rows)
-    return {"bills": [bill_out(b) for b in rows], "monthly_total": round(monthly, 2), "monthly_basis": "each bill by its own cadence: weekly 52 a year, every two weeks 26, twice a month 24, monthly 12, quarterly 4, yearly 1"}
+    cost = monthly_cost(rows, today())
+    return {"bills": [bill_out(b) for b in rows], "monthly_total": cost["total"], "monthly_basis": cost["basis"], "monthly_sources": cost["sources"],
+            "one_time": cost["one_time"], "starting_later": cost["starting_later"], "paid_from_choices": _paid_from_choices(session)}
+
+
+def _paid_from_choices(session: Session) -> list[dict]:
+    """Which paycheck a bill can be paid from, as the real pay schedule runs (engine.cadence.paid_from_choices)."""
+    from ..engine.cadence import paid_from_choices
+
+    return paid_from_choices(session.exec(select(Income).where(Income.active == True)).all(), today())  # noqa: E712
+
+
+def _check_paid_from(session: Session, value: str) -> None:
+    if value not in PAID_FROM:
+        raise HTTPException(400, "paid_from is due, mid or end")
+    if value not in {c["value"] for c in _paid_from_choices(session)}:
+        raise HTTPException(400, "Your paycheck does not come twice a month, so there is no 15th or end-of-month check to pay it from. It is paid from the check before it is due.")
+
+
+def _need_anchor(session: Session, bill: Bill) -> None:
+    """A bill that comes every few months needs its next due date: from the ledger when it shows one, else asked."""
+    from ..engine.billdates import unanchored
+    from ..engine.payments import anchor_from_ledger
+
+    if not unanchored(bill):
+        return
+    found = anchor_from_ledger(session, bill, today())
+    if found is None:
+        every = {"quarterly": "quarterly", "semiannual": "twice-a-year", "yearly": "yearly"}.get(bill.cadence or "", "")
+        raise HTTPException(400, f"A {every} bill needs its next due date: pick the day it is next due.")
+    bill.anchor_date = found
 
 
 class BillIn(BaseModel):
@@ -160,6 +193,7 @@ class BillIn(BaseModel):
 
 
 PAID_FROM = {"due", "mid", "end"}
+CLEARABLE = {"pay_from_account_id", "anchor_date"}  # sent as null, these clear; any other null leaves the field as it is
 CADENCES = ("weekly", "biweekly", "monthly", "quarterly", "semiannual", "yearly")
 
 
@@ -167,13 +201,14 @@ CADENCES = ("weekly", "biweekly", "monthly", "quarterly", "semiannual", "yearly"
 def create_bill(body: BillIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     if not body.name or body.amount is None or body.due_day is None:
         raise HTTPException(400, "A bill needs a name, an amount and a due day")
-    if body.paid_from and body.paid_from not in PAID_FROM:
-        raise HTTPException(400, "paid_from is due, mid or end")
+    if body.paid_from:
+        _check_paid_from(session, body.paid_from)
     if body.cadence and body.cadence not in CADENCES:
         raise HTTPException(400, f"cadence is one of {', '.join(CADENCES)}")
     bill = Bill(name=body.name, kind=body.kind or "bill", amount=body.amount, amount_mode=body.amount_mode or "fixed", due_day=max(1, min(31, body.due_day)), paid_from=body.paid_from or "due",
                 cadence=body.cadence or "monthly", anchor_date=body.anchor_date,
                 autopay=bool(body.autopay), movable=body.movable if body.movable is not None else True, grace_days=body.grace_days or 0, late_fee=body.late_fee or 0.0, category=body.category or "", created_on=today())
+    _need_anchor(session, bill)
     session.add(bill)
     session.commit()
     session.refresh(bill)
@@ -187,12 +222,23 @@ def update_bill(bill_id: int, body: BillIn, session: Session = Depends(get_sessi
     if bill is None:
         raise HTTPException(404, "No such bill")
     rematch = False
-    for field, value in body.model_dump(exclude_unset=True).items():
-        if value is None:
+    sent = body.model_dump(exclude_unset=True)
+    # A field left out stays as it is. A field sent empty stays too, except the two that can be cleared: the paying
+    # account (back to checking, so the bill no longer rides a card) and the next due date.
+    for field, value in sent.items():
+        if value is None and field not in CLEARABLE:
             continue
+        if field == "pay_from_account_id" and value is not None:
+            from ..models import Account
+
+            account = session.get(Account, int(value))
+            if account is None or not account.active:
+                raise HTTPException(400, "That account is not on file")
         if field == "due_day":
             value = max(1, min(31, int(value)))
             rematch = rematch or value != bill.due_day
+        if field == "paid_from" and value != (bill.paid_from or "due"):
+            _check_paid_from(session, value)
         if field == "paid_from" and value not in PAID_FROM:
             raise HTTPException(400, "paid_from is due, mid or end")
         if field == "kind" and value not in ("bill", "subscription"):
@@ -202,6 +248,8 @@ def update_bill(bill_id: int, body: BillIn, session: Session = Depends(get_sessi
         if field in ("cadence", "anchor_date"):
             rematch = True
         setattr(bill, field, value)
+    if bill.active and ("cadence" in sent or "anchor_date" in sent):
+        _need_anchor(session, bill)  # a change of how often it comes, or of its date, needs a date it can be placed on
     session.add(bill)
     if rematch:
         from ..engine.payments import match_payments
@@ -217,11 +265,98 @@ def update_bill(bill_id: int, body: BillIn, session: Session = Depends(get_sessi
     return bill_out(bill)
 
 
+def income_out(i: Income) -> dict:
+    return {"id": i.id, "name": i.name, "cadence": i.cadence, "expected_net": i.expected_net, "expected_net_end": i.expected_net_end, "next_date": i.next_date.isoformat(), "series_id": i.series_id,
+            "pay_days": i.pay_days, "pay_day": i.pay_day}
+
+
 @router.get("/incomes")
 def list_incomes(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
     rows = session.exec(select(Income).where(Income.active == True)).all()  # noqa: E712
-    return {"incomes": [{"id": i.id, "name": i.name, "cadence": i.cadence, "expected_net": i.expected_net, "expected_net_end": i.expected_net_end, "next_date": i.next_date.isoformat(), "series_id": i.series_id,
-                         "pay_days": i.pay_days, "pay_day": i.pay_day} for i in rows]}
+    return {"incomes": [income_out(i) for i in rows]}
+
+
+PAY_CADENCES = ("weekly", "biweekly", "semimonthly", "monthly")
+
+
+class NewIncomeIn(BaseModel):
+    name: str = ""
+    cadence: str = "biweekly"
+    expected_net: float | str | None = None
+    next_date: str | None = None  # YYYY-MM-DD
+    pay_days: str = ""
+    pay_day: int | None = None  # monthly only: the day of the month it pays, 31 for month end
+
+
+def _new_income(session: Session, *, name: str, cadence: str, expected_net: float | None, next_date: date | None, pay_days: str, pay_day: int | None) -> Income:
+    """A paycheck typed by the owner, checked in plain words: what it is called, how often it comes, what lands, and
+    the next payday (today or later)."""
+    from ..engine.cadence import PAY_DAYS, pay_day_from
+
+    if cadence not in PAY_CADENCES:
+        raise HTTPException(400, "How often it comes is one of: every week, every two weeks, twice a month, monthly (weekly, biweekly, semimonthly, monthly).")
+    if expected_net is None or not 0 < float(expected_net) <= 1_000_000:
+        raise HTTPException(400, "Type the take-home pay, what lands in the account, like 1850 or 1850.25.")
+    if next_date is None:
+        raise HTTPException(400, "Pick the next payday.")
+    if next_date < today():
+        raise HTTPException(400, "The next payday is today or later.")
+    if (pay_days or "") not in PAY_DAYS:
+        raise HTTPException(400, 'Twice a month is "the 15th and the last day" (pay_days "") or "the 1st and the 15th" (pay_days "1,15").')
+    if pay_day is not None and not 1 <= int(pay_day) <= 31:
+        raise HTTPException(400, "The day of the month it pays is 1 to 31; 31 means the last day of every month.")
+    income = Income(name=(name or "").strip()[:80] or "Paycheck", cadence=cadence, expected_net=round(float(expected_net), 2), next_date=next_date,
+                    pay_days=(pay_days or "") if cadence == "semimonthly" else "", pay_day=(int(pay_day) if pay_day else pay_day_from(next_date)) if cadence == "monthly" else 0)
+    session.add(income)
+    session.commit()
+    session.refresh(income)
+    mark_pending(session, f"paycheck added: {income.name}")
+    return income
+
+
+@router.post("/incomes")
+def create_income(body: NewIncomeIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    """Add a paycheck by hand, so the plan counts real pay on a real payday instead of a placeholder."""
+    try:
+        net = float(str(body.expected_net).replace(",", "").replace("$", "").strip()) if body.expected_net not in (None, "") else None
+    except ValueError as error:
+        raise HTTPException(400, "Type the take-home pay, what lands in the account, like 1850 or 1850.25.") from error
+    try:
+        when = date.fromisoformat(body.next_date) if body.next_date else None
+    except ValueError as error:
+        raise HTTPException(400, "Pick the next payday, as a date like 2026-10-30.") from error
+    income = _new_income(session, name=body.name, cadence=body.cadence, expected_net=net, next_date=when, pay_days=body.pay_days, pay_day=body.pay_day)
+    return income_out(income)
+
+
+class FromPaystubIn(BaseModel):
+    cadence: str = "biweekly"
+    name: str = ""
+    pay_days: str = ""
+    pay_day: int | None = None
+
+
+@router.post("/incomes/from-paystub/{paystub_id}")
+def income_from_paystub(paystub_id: int, body: FromPaystubIn | None = None, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    """Use a confirmed paystub as the paycheck: its take-home pay, and its pay date stepped by the cadence to the
+    next payday that is today or later."""
+    from ..engine.cadence import next_paydays
+    from ..models import Paystub
+
+    body = body or FromPaystubIn()
+    stub = session.get(Paystub, paystub_id)
+    if stub is None:
+        raise HTTPException(404, "No such paystub")
+    if body.cadence not in PAY_CADENCES:
+        raise HTTPException(400, "How often it comes is one of: every week, every two weeks, twice a month, monthly (weekly, biweekly, semimonthly, monthly).")
+    next_date = stub.pay_date
+    if next_date < today():
+        later = [d for d in next_paydays(stub.pay_date, body.cadence, 60, body.pay_days or "", int(body.pay_day or 0)) if d >= today()]
+        if not later:
+            raise HTTPException(400, "That paystub is too old to step to the next payday; type the paycheck instead.")
+        next_date = later[0]
+    income = _new_income(session, name=body.name or stub.employer, cadence=body.cadence, expected_net=stub.net, next_date=next_date, pay_days=body.pay_days, pay_day=body.pay_day)
+    return income_out(income)
 
 
 class IncomeIn(BaseModel):

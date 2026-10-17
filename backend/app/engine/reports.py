@@ -90,18 +90,22 @@ def spending_summary(session: Session, today: date, *, months: int = 6, by: str 
     }
 
 
-def net_worth(session: Session, today: date) -> dict:
-    accounts = session.exec(select(Account).where(Account.active == True)).all()  # noqa: E712
+def _account_out(a: Account, today: date) -> dict:
+    return {"id": a.id, "name": a.name, "institution": a.institution, "kind": a.kind, "balance": a.balance, "balance_at": a.balance_at.isoformat() if a.balance_at else None, "connector": a.connector, "source": f"account:{a.id}",
+            "age_days": max(0, (today - a.balance_at.date()).days) if a.balance_at else None}
+
+
+def owed(session: Session, today: date, accounts: list[Account] | None = None) -> dict:
+    """Everything owed, once: each debt on file, each debt account no debt row follows, each pay-later plan still
+    running and each advance not yet repaid. The Debts page, Accounts and the home card all count this one list.
+    A pay-later plan's minimum is what it takes a month (its installment over its own cadence: a $38 payment every
+    two weeks is about $81 a month); the installment itself is kept beside it."""
+    if accounts is None:
+        accounts = session.exec(select(Account).where(Account.active == True)).all()  # noqa: E712
     debts = session.exec(select(Debt).where(Debt.active == True)).all()  # noqa: E712
     plans = session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all()  # noqa: E712
     advances = session.exec(select(Advance).where(Advance.repaid == False)).all()  # noqa: E712
     linked = {d.account_id for d in debts if d.account_id}
-
-    def account_out(a: Account) -> dict:
-        return {"id": a.id, "name": a.name, "institution": a.institution, "kind": a.kind, "balance": a.balance, "balance_at": a.balance_at.isoformat() if a.balance_at else None, "connector": a.connector, "source": f"account:{a.id}",
-                "age_days": max(0, (today - a.balance_at.date()).days) if a.balance_at else None}
-
-    assets = [account_out(a) for a in accounts if a.kind in ASSET_KINDS]
     by_id = {a.id: a for a in accounts}
 
     def debt_out(d: Debt) -> dict:
@@ -112,25 +116,43 @@ def net_worth(session: Session, today: date) -> dict:
             "utilisation": round(d.balance / limit, 4) if limit else None, "utilisation_status": limit_status(d.balance / limit if limit else None), "interest_month_if_carried": _money(max(0.0, d.balance) * d.apr / 100.0 / 12.0) if d.apr else 0.0,
         }
 
-    owed = [debt_out(d) for d in debts]
-    owed += [{**account_out(a), "apr": None, "minimum": None, "credit_limit": a.credit_limit, "utilisation": round((a.balance or 0.0) / a.credit_limit, 4) if a.credit_limit else None,
+    items = [debt_out(d) for d in debts]
+    items += [{**_account_out(a, today), "apr": None, "minimum": None, "credit_limit": a.credit_limit, "utilisation": round((a.balance or 0.0) / a.credit_limit, 4) if a.credit_limit else None,
                "utilisation_status": limit_status((a.balance or 0.0) / a.credit_limit if a.credit_limit else None)} for a in accounts if a.kind in DEBT_KINDS and a.id not in linked and a.balance]
-    owed += [{"id": p.id, "name": (f"{p.provider} · {p.merchant}" if p.merchant and p.merchant.lower() != p.provider.lower() else p.provider) + (f" · {p.remaining} of {p.count} left" if not p.balance else ""), "kind": "bnpl",
-              "balance": _money(p.balance) if p.balance else _money(p.installment * p.remaining), "apr": p.apr if p.apr is not None else 0.0, "minimum": p.installment, "source": f"plan:{p.id}", "finance_charge": p.finance_charge, "interest_paid": p.interest_paid,
-              "ends": (p.next_date + timedelta(days=p.cadence_days * max(0, p.remaining - 1))).isoformat(), "balance_at": p.balance_at.isoformat() if p.balance_at else None, "loan_id": p.loan_id} for p in plans if p.remaining > 0 or (p.balance or 0) > 0]
-    owed += [{"id": a.id, "name": f"{a.provider} advance", "kind": "advance", "balance": _money(a.amount + a.fee), "apr": None, "minimum": None, "source": f"advance:{a.id}"} for a in advances]
+    items += [{"id": p.id, "name": (f"{p.provider} · {p.merchant}" if p.merchant and p.merchant.lower() != p.provider.lower() else p.provider) + (f" · {p.remaining} of {p.count} left" if not p.balance else ""), "kind": "bnpl",
+               "balance": _money(p.balance) if p.balance else _money(p.installment * p.remaining), "apr": p.apr if p.apr is not None else 0.0, "minimum": _plan_month(p), "installment": _money(p.installment), "every_days": p.cadence_days,
+               "minimum_word": f"about ${_plan_month(p):,.2f} a month: ${p.installment:,.2f} every {p.cadence_days} days" if p.cadence_days and p.cadence_days != 30 else f"${p.installment:,.2f} a month",
+               "source": f"plan:{p.id}", "finance_charge": p.finance_charge, "interest_paid": p.interest_paid,
+               "ends": (p.next_date + timedelta(days=p.cadence_days * max(0, p.remaining - 1))).isoformat(), "balance_at": p.balance_at.isoformat() if p.balance_at else None, "loan_id": p.loan_id} for p in plans if p.remaining > 0 or (p.balance or 0) > 0]
+    items += [{"id": a.id, "name": f"{a.provider} advance", "kind": "advance", "balance": _money(a.amount + a.fee), "apr": None, "minimum": None, "source": f"advance:{a.id}"} for a in advances]
+    return {"total": _money(sum((d["balance"] or 0.0) for d in items)), "items": items,
+            "words": "everything owed: cards, loans, pay-later plans and advance apps, each counted once"}
+
+
+def _plan_month(p: InstallmentPlan) -> float:
+    """What a pay-later plan takes a month: its installment over its own cadence, and never more than is left."""
+    per_month = float(p.installment or 0.0) * 30.0 / max(1, int(p.cadence_days or 30))
+    left = float(p.balance) if p.balance else float(p.installment or 0.0) * max(0, int(p.remaining or 0))
+    return _money(min(per_month, left) if left > 0 else per_month)
+
+
+def net_worth(session: Session, today: date) -> dict:
+    accounts = session.exec(select(Account).where(Account.active == True)).all()  # noqa: E712
+    assets = [_account_out(a, today) for a in accounts if a.kind in ASSET_KINDS]
+    debts_owed = owed(session, today, accounts)
+    owed_items = debts_owed["items"]
     from .assets import assets_overview
 
     others = assets_overview(session, today)
     assets += [{"id": o["id"], "name": o["name"], "institution": "", "kind": o["kind"], "balance": o["value_now"], "balance_at": o["value_on"], "connector": "owner", "source": o["source"],
                 "age_days": max(0, (today - date.fromisoformat(o["value_on"])).days), "other": True, "needs_update": o["needs_update"]} for o in others["items"]]
     assets_total = sum((a["balance"] or 0.0) for a in assets)
-    debts_total = sum((d["balance"] or 0.0) for d in owed)
+    debts_total = debts_owed["total"]
     stale = [a["name"] for a in assets if not a.get("other") and a["balance_at"] and date.fromisoformat(a["balance_at"][:10]) < today - timedelta(days=3)]
     return {
         "as_of": today.isoformat(),
         "assets": {"total": _money(assets_total), "items": assets},
-        "debts": {"total": _money(debts_total), "items": owed},
+        "debts": {"total": _money(debts_total), "items": owed_items},
         "net": _money(assets_total - debts_total),
         "stale": stale,
         "not_advice": NOT_ADVICE,

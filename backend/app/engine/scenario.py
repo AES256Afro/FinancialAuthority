@@ -40,7 +40,7 @@ def load_inputs(session: Session, today: date, horizon_days: int = HORIZON) -> d
     def net_for(payday: date) -> float:
         return schedule["amounts"].get(payday, 0.0)
 
-    from .payments import paid_periods
+    from .payments import paid_periods, unposted_periods
 
     bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
     plans = session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all()  # noqa: E712
@@ -55,6 +55,7 @@ def load_inputs(session: Session, today: date, horizon_days: int = HORIZON) -> d
     return {
         "today": today, "cash": cash, "buffer": buffer, "has_income": schedule["known"], "cadence": schedule["cadence"], "paydays": paydays, "net_for": net_for, "pay_amounts": {d: net_for(d) for d in paydays},
         "pay_days": schedule["pay_days"], "payday_today": any(scheduled_payday(i, today) == today for i in incomes), "paid": paid_periods(session, today),
+        "late": unposted_periods(session, today), "checks_by_day": schedule["semimonthly"],
         "bills": bills, "plans": plans, "advances": advances, "debts": debts, "accounts": by_id, "card_mode": card_mode,
         "planned": planned_to_cards(session, today), "extra": pending_installment_events(pending_streams, today, horizon_days=horizon_days, plans=plans) + planned_events(session, today), "pace": pace, "horizon_days": horizon_days,
     }
@@ -63,7 +64,8 @@ def load_inputs(session: Session, today: date, horizon_days: int = HORIZON) -> d
 def assembled(inp: dict, horizon_days: int | None = None) -> dict:
     """The registers as the plan counts them, from the inputs above: assemble with every input it takes."""
     return assemble(bills=inp["bills"], plans=inp["plans"], advances=inp["advances"], today=inp["today"], accounts=inp["accounts"], paydays=inp["paydays"], card_mode=inp["card_mode"], debts=inp["debts"], planned=inp["planned"],
-                    extra=inp["extra"], card_pace_by_account=inp["pace"]["per_day_by_account"], horizon_days=horizon_days or inp["horizon_days"], paid=inp["paid"], pay_days=inp["pay_days"])
+                    extra=inp["extra"], card_pace_by_account=inp["pace"]["per_day_by_account"], horizon_days=horizon_days or inp["horizon_days"], paid=inp["paid"], pay_days=inp["pay_days"],
+                    late=inp.get("late"), checks_by_day=inp.get("checks_by_day", True))
 
 
 def baseline_events(inp: dict) -> list[dict]:
@@ -133,8 +135,9 @@ def windows_for(inp: dict, events: list[dict]) -> list[dict]:
     return [{"start": inp["today"].isoformat(), "end": ((paydays[0] - timedelta(days=1)) if paydays else inp["today"]).isoformat(), "paycheck": 0.0, "total": _money(sum(e["amount"] for e in before)), "items": [{**e, "date": e["date"].isoformat(), "window_date": wdate(e).isoformat()} for e in sorted(before, key=lambda e: -e["amount"])[:8]], "before_payday": True}] + out
 
 
-def run_scenario(session: Session, today: date, spec: dict) -> dict:
-    inp = load_inputs(session, today)
+def run_scenario(session: Session, today: date, spec: dict, horizon_days: int = HORIZON) -> dict:
+    """The scenario against the baseline over `horizon_days` (180 by default; a move further out asks for more)."""
+    inp = load_inputs(session, today, horizon_days=max(HORIZON, int(horizon_days)))
     move_date = date.fromisoformat(spec["move_date"]) if isinstance(spec.get("move_date"), str) else (spec.get("move_date") or today + timedelta(days=30))
     base_events = baseline_events(inp)
     base_path = run_path(inp, base_events)
@@ -174,7 +177,7 @@ def run_scenario(session: Session, today: date, spec: dict) -> dict:
     verdict = "passes" if scen_low["value"] >= 0 else "short"
     low_on = date.fromisoformat(str(scen_low["date"])[:10])
     low_word = f"{low_on:%a %b} {low_on.day}"
-    summary = (f"A move on {move_date:%a %b} {move_date.day} holds: the lowest balance is ${scen_low['value']:,.0f}, on {low_word}." if verdict == "passes"
+    summary = (f"A move on {move_date:%a %b} {move_date.day} holds: the lowest left to spend (after the safety cushion, the bills kept and your usual spending) is ${scen_low['value']:,.0f}, on {low_word}." if verdict == "passes"
                else f"A move on {move_date:%a %b} {move_date.day} runs ${shortfall:,.0f} short at your usual spending, lowest on {low_word}" + (f"; the first date that holds is {first_passes:%a %b} {first_passes.day}." if first_passes else "; no date inside the horizon holds at this pace."))
     return {
         "as_of": today.isoformat(), "name": spec.get("name") or "Scenario", "move_date": move_date.isoformat(), "horizon_days": inp["horizon_days"], "cadence": inp["cadence"],
