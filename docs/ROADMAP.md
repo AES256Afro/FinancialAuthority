@@ -274,7 +274,7 @@ Six audits (security twice, the engine, the plumbing, and the screens twice) fou
 - ☐ **M47 Tests that guard the money.** Property checks on many made-up households, browser runs of sign-in, a second person, a move and a receipt, and golden answers that must not drift. *Invariant checks done; browser runs remain.*
 - ✅ **M48 Credit health from your own data.** (built 2026-10-16) Each card's share of its limit on its statement day, what to pay before then, and the on-time record; no credit pull.
 - ☐ **M49 Reading photos for free.** Photos of receipts and leases read on the server with a free OCR in the image.
-- ☐ **M50 Tax-time pack.** The year's tax categories, receipts, paystub totals and statements in one export.
+- ✅ **M50 Tax-time pack.** (built 2026-10-17) On Reports › Tax time: the categories a return asks about, the paystubs summed (gross, net and each deduction), the receipts kept by their purchase's category, and each account's statements month by month; one .zip with a summary, a spreadsheet and the files in folders, for the owner only.
 - ✅ **M51 Watching the app itself.** (built 2026-10-17) An hourly sample of every part (disk, restore points, each mailbox and bank link, the jobs, the public address, the phone); thirty days drawn a square per day on Jobs; the phone told once when a part breaks, daily while it stays broken, and once when fixed, never with a job's own error text.
 
 Left out on purpose: multi-currency and crypto (little use for one US household), a bill-negotiation or cancellation concierge (it would act for the owner and take a share), and paid data sources (SimpleFIN, valuation and credit-score services), each possible later as an opt-in.
