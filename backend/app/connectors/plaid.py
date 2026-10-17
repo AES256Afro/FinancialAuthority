@@ -18,13 +18,16 @@ import httpx
 from sqlmodel import Session, select
 
 from .. import crypto
-from ..models import BankLink
-from .banks import PLAID_CATEGORIES, PLAID_DETAILED, PLAID_KINDS, SAVINGS_SUBTYPES, bank_settings, finish_link, link_token, remove_transaction, upsert_account, upsert_holding, upsert_transaction
+from ..jobs.writing import one_writer
+from ..models import BankLink, Transaction
+from .banks import (PLAID_CATEGORIES, PLAID_DETAILED, PLAID_KINDS, SAVINGS_SUBTYPES, SEEN, bank_settings, duplicate_of, finish_link, link_token, remove_transaction, tx_hash,
+                    upsert_account, upsert_holding, upsert_transaction)
 from .base import Connector, SyncResult
 
 log = logging.getLogger("fa.plaid")
 
 HOSTS = {"sandbox": "https://sandbox.plaid.com", "production": "https://production.plaid.com"}
+LINK_NOTES = "fa_link_notes"  # session.info: what a link sync has to say beyond its counts
 PLAID_VERSION = "2020-09-14"
 ClientFactory = Callable[[], httpx.Client]
 
@@ -203,20 +206,29 @@ class PlaidConnector(Connector):
         from ..usage import flush
 
         for link in links:
-            try:
-                n_ins, n_upd, n_rem, account_ids = self.sync_link(session, api, link)
-                inserted, updated, removed = inserted + n_ins, updated + n_upd, removed + n_rem
-                flush(session)
-                finish_link(session, link, ok=True, accounts=account_ids)
-                notes.append(f"{link.institution}: {n_ins} new, {n_upd} changed, {n_rem} removed")
-            except Exception as error:  # noqa: BLE001 - one link's failure is recorded on it and never stops the others
-                session.rollback()
-                ok = False
-                if isinstance(error, PlaidError) and error.code == "ITEM_LOGIN_REQUIRED":
-                    link.needs_login = True
-                message = str(error) if isinstance(error, PlaidError) else f"{type(error).__name__}: {error}"
-                finish_link(session, link, ok=False, error=message[:300])
-                notes.append(f"{link.institution}: {message[:120]}")
+            # One sync of a link at a time, whoever asks (the hour, Sync now, a webhook, the first sync after
+            # linking): two from the same cursor would write the same rows and balances twice.
+            with one_writer():
+                session.info.pop(SEEN, None)  # the accounts this link takes; every other link's are on its list
+                try:
+                    session.refresh(link)
+                    if not link.active:
+                        continue  # removed while this sync waited its turn
+                    n_ins, n_upd, n_rem, account_ids = self.sync_link(session, api, link)
+                    inserted, updated, removed = inserted + n_ins, updated + n_upd, removed + n_rem
+                    flush(session)
+                    finish_link(session, link, ok=True, accounts=account_ids)
+                    notes.append(f"{link.institution}: {n_ins} new, {n_upd} changed, {n_rem} removed" + "".join(f"; {n}" for n in session.info.pop(LINK_NOTES, [])))
+                except Exception as error:  # noqa: BLE001 - one link's failure is recorded on it and never stops the others
+                    session.rollback()
+                    session.info.pop(LINK_NOTES, None)
+                    session.info.pop(SEEN, None)
+                    ok = False
+                    if isinstance(error, PlaidError) and error.code == "ITEM_LOGIN_REQUIRED":
+                        link.needs_login = True
+                    message = str(error) if isinstance(error, PlaidError) else f"{type(error).__name__}: {error}"
+                    finish_link(session, link, ok=False, error=message[:300])
+                    notes.append(f"{link.institution}: {message[:120]}")
         flush(session)
         session.commit()
         return SyncResult(ok=ok, summary="; ".join(notes), inserted=inserted, details={"updated": updated, "removed": removed})
@@ -239,6 +251,7 @@ class PlaidConnector(Connector):
             holdings = self.fetch_holdings(api, token)
         institution = link.institution or str((got.get("item") or {}).get("institution_name") or "")
         accounts = {}
+        listed: list[str] = []
         for a in got.get("accounts", []):
             balances = a.get("balances") or {}
             current = balances.get("current")
@@ -247,38 +260,52 @@ class PlaidConnector(Connector):
             # What can be spent is the available balance (holds and pending debits already out); a card owes its current balance.
             balance = available if (kind in ("checking", "savings", "cash") and available is not None) else current
             limit = balances.get("limit")
-            accounts[a["account_id"]] = upsert_account(
-                session, provider="plaid", external_id=a["account_id"], name=str(a.get("name") or a.get("official_name") or "Account"), institution=institution,
+            name = str(a.get("name") or a.get("official_name") or "Account")
+            listed.append(a["account_id"])
+            if duplicate_of(session, link=link, external_id=a["account_id"], institution=institution, last4=str(a.get("mask") or "")) is not None:
+                # The same account is read through another link to this bank: it stays with that one.
+                session.info.setdefault(LINK_NOTES, []).append(f"{name} is already read through your other {institution or 'bank'} link, so this link leaves it out; remove one of the two links")
+                continue
+            account = upsert_account(
+                session, provider="plaid", external_id=a["account_id"], name=name, institution=institution,
                 kind=kind, balance=float(balance) if balance is not None else None, last4=str(a.get("mask") or ""),
                 subtype=investment_subtype(a.get("subtype")) if kind == "investment" else "", credit_limit=float(limit) if (limit is not None and kind == "card") else None,
             )
+            if account.active:
+                accounts[a["account_id"]] = account  # an account the owner removed gets no balance, holdings or rows
         if holdings is not None:
             self.write_holdings(session, holdings, accounts)
         inserted = updated = removed = 0
+        # Every page's new and changed rows first, then every removal: a pending row's removal can come a page
+        # before the posted row that replaces it, and what is kept with the pending row must move, not vanish.
         for page in pages:
             for tx in page.get("added", []) + page.get("modified", []):
                 account = accounts.get(tx["account_id"])
                 if account is None:
                     continue
                 pending = bool(tx.get("pending"))
-                # A pending charge is kept, marked pending, so it shows minutes after the purchase; the checking
-                # balance Plaid reports already has it taken off. When it posts, Plaid sends a new row that names
-                # the pending one, and the pending row goes: never counted twice.
-                if not pending and tx.get("pending_transaction_id"):
-                    removed += int(remove_transaction(session, "plaid", str(tx["pending_transaction_id"])))
                 new = upsert_transaction(
                     session, provider="plaid", tx_id=tx["transaction_id"], account=account, when=date.fromisoformat(tx.get("authorized_date") or tx["date"]) if pending else date.fromisoformat(tx["date"]), amount=float(tx["amount"]),
                     merchant=str(tx.get("merchant_name") or tx.get("name") or ""), raw_name=str(tx.get("name") or ""), category=category_for(tx),
                     posted=None if pending else date.fromisoformat(tx["date"]), pending=pending,
                 )
                 inserted, updated = inserted + int(new), updated + int(not new)
+                # A pending charge is kept, marked pending, so it shows minutes after the purchase; the checking
+                # balance Plaid reports already has it taken off. When it posts, Plaid sends a new row that names
+                # the pending one, and the pending row goes: never counted twice. Its receipt, split, note,
+                # category and tags move to the posted row.
+                if not pending and tx.get("pending_transaction_id"):
+                    session.flush()
+                    posted = session.exec(select(Transaction).where(Transaction.row_hash == tx_hash("plaid", str(tx["transaction_id"])))).first()
+                    removed += int(remove_transaction(session, "plaid", str(tx["pending_transaction_id"]), replaced_by=posted))
+        for page in pages:
             for tx in page.get("removed", []):
                 removed += int(remove_transaction(session, "plaid", tx["transaction_id"]))
         link.cursor = cursor
         link.needs_login = False
         session.commit()
         self.register_webhook(api, link, token)
-        return inserted, updated, removed, list(accounts)
+        return inserted, updated, removed, listed
 
     def register_webhook(self, api: PlaidClient, link: BankLink, token: str) -> None:
         """An item made before the app was published learns the notice address once; a failure only means the

@@ -40,6 +40,41 @@ function includes(value: unknown, needle: string): boolean {
   return typeof value === "string" && value.toLowerCase().includes(needle);
 }
 
+// The words of a document search, as the app splits them: two letters or more, at most eight.
+function searchWords(q: string): string[] {
+  return (q.toLowerCase().match(/[\w$.%-]+/g) ?? []).filter((w) => w.length > 1).slice(0, 8);
+}
+
+/** Document search over the recorded pages: each place the words appear, with its page and the lines around it. */
+function searchDocuments(data: DemoData, q: string): Json {
+  const words = searchWords(q);
+  const hits: { document_id: unknown; title: unknown; kind: unknown; attach_to: unknown; page: unknown; score: number; snippet: string }[] = [];
+  if (!words.length) return { hits };
+  for (const [key, value] of Object.entries(data.responses)) {
+    if (!/^GET \/api\/v1\/documents\/\d+\/pages\/\d+$/.test(key)) continue;
+    const page = value as { id: unknown; title: unknown; kind: unknown; attach_to: unknown; page: unknown; text?: string };
+    const text = page.text ?? "";
+    const low = text.toLowerCase();
+    const score = words.reduce((n, w) => n + (low.split(w).length - 1), 0);
+    if (!score) continue;
+    const at = Math.min(...words.map((w) => low.indexOf(w)).filter((i) => i >= 0));
+    hits.push({ document_id: page.id, title: page.title, kind: page.kind, attach_to: page.attach_to, page: page.page, score, snippet: text.slice(Math.max(0, at - 160), at + 240).replace(/\s+/g, " ").trim() });
+  }
+  hits.sort((a, b) => b.score - a.score);
+  return { hits: hits.slice(0, 10) };
+}
+
+/** A bill's date check: the recorded day, else the nearest recorded day for that bill (and the page says so). */
+function moveCheck(data: DemoData, billId: string, day: number): Response {
+  const prefix = `GET /api/v1/bills/${billId}/move_check?day=`;
+  const days = Object.keys(data.responses).filter((k) => k.startsWith(prefix)).map((k) => Number(k.slice(prefix.length))).filter((d) => Number.isFinite(d));
+  if (!days.length) return json({ detail: "The demo has this check for the bills whose date can move. Pick one of those." }, 404);
+  const nearest = days.reduce((a, b) => (Math.abs(b - day) < Math.abs(a - day) ? b : a));
+  const th = nearest % 100 >= 11 && nearest % 100 <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[nearest % 10] ?? "th";
+  if (nearest !== day) flash(`In the demo, this check uses the nearest day it has: the ${nearest}${th}.`);
+  return json(data.responses[`${prefix}${nearest}`]);
+}
+
 function nearestCheck(data: DemoData, amount: number, installments: string | null): Json {
   const step = amount <= 1000 ? 10 : 50;
   const rounded = Math.min(3000, Math.max(0, Math.round(amount / step) * step));
@@ -95,6 +130,10 @@ async function get(path: string): Promise<Response> {
   }
   if (base === "/api/v1/models/catalog") return json({ models: [], error: "The demo has no model server." });
   if (base.startsWith("/api/v1/mail/messages/")) return json({ detail: "This message is not in the demo." }, 404);
+  if (base === "/api/v1/documents/search") return json(searchDocuments(data, params.get("q") ?? ""));
+  const dateCheck = base.match(/^\/api\/v1\/bills\/(\d+)\/move_check$/);
+  if (dateCheck) return moveCheck(data, dateCheck[1], Number(params.get("day") ?? 0));
+  if (base === "/api/v1/receipts/candidates") return json({ candidates: [] });
   // A page asked with other choices than the recorded ones gets the recorded answer for that page.
   const plain = data.responses[`GET ${base}`];
   if (plain !== undefined) return json(plain);
@@ -116,6 +155,17 @@ function sse(events: Json[]): Response {
   });
   return new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream" } });
 }
+
+// Writes whose screen puts the answer in place of what it shows (Housing, Moving home, utilities, people, saving,
+// privacy, a bank move): the recorded page comes back, so the screen stays whole and shows what it showed.
+const PAGE_AFTER_WRITE: [RegExp, (m: RegExpMatchArray) => string][] = [
+  [/^\/api\/v1\/housing(\/|$)/, () => "GET /api/v1/housing"],
+  [/^\/api\/v1\/utilities(\/|$)/, () => "GET /api/v1/utilities"],
+  [/^\/api\/v1\/people(\/|$)/, () => "GET /api/v1/people"],
+  [/^\/api\/v1\/saving$/, () => "GET /api/v1/saving"],
+  [/^\/api\/v1\/privacy\/models\//, () => "GET /api/v1/privacy"],
+  [/^\/api\/v1\/moves\/(\d+)/, (m) => `GET /api/v1/moves/${m[1]}`],
+];
 
 async function write(path: string, method: string, body: unknown): Promise<Response> {
   const data = await load();
@@ -184,6 +234,14 @@ async function write(path: string, method: string, body: unknown): Promise<Respo
   if (/^\/api\/v1\/(banks\/(plaid|teller)\/settings|mail\/accounts|push|models\/secrets)/.test(base)) {
     flash("This is the demo: keys are not saved here.");
     return json({ detail: "This is the demo, so nothing you paste here is saved anywhere. Paste keys only in your own FinancialAuthority, on its Settings › Connectors page." }, 409);
+  }
+  for (const [pattern, page] of PAGE_AFTER_WRITE) {
+    const m = base.match(pattern);
+    const recorded = m ? data.responses[page(m)] : undefined;
+    if (recorded !== undefined) {
+      flash("In the demo, changes are not kept.");
+      return json(recorded);
+    }
   }
   flash("In the demo, changes are not kept.");
   return json({ ok: true });

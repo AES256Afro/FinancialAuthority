@@ -16,6 +16,7 @@ import sys
 import tempfile
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT.parent / "frontend" / "demo" / "demo-data.json"
@@ -57,6 +58,43 @@ GETS = [
     "/api/v1/reports/custom?rows=category&period=last_365", "/api/v1/restore-points/offbox", "/api/v1/watch", "/api/v1/housing", "/api/v1/utilities", "/api/v1/documents",
     "/api/v1/people", "/api/v1/shared", "/api/v1/receipts", "/api/v1/documents/months",
 ]
+
+# The days a bill's date check is recorded for, per bill whose date can move; the demo answers the nearest one.
+MOVE_DAYS = (1, 3, 5, 8, 10, 13, 15, 18, 20, 22, 25, 28)
+
+
+def _js_number(value: float) -> str:
+    """A number as the browser's String() writes it, so a recorded path matches the one the page asks for."""
+    return str(int(value)) if float(value).is_integer() else repr(float(value))
+
+
+def _component(value: str) -> str:
+    """encodeURIComponent: what the page does to each query value."""
+    return quote(value, safe="-_.!~*'()")
+
+
+def page_answers(client: TestClient, responses: dict[str, object]) -> None:
+    """The answers the pages ask for with an id or a choice in the path: Moving home's check for the home moved to,
+    each movable bill's date check on the recorded days, and the purchases each kept receipt may belong to."""
+    def keep(path: str) -> None:
+        r = client.get(path)
+        if r.status_code == 200:
+            responses[f"GET {path}"] = r.json()
+        else:
+            print(f"skip {path}: {r.status_code}", file=sys.stderr)
+
+    upcoming = (responses.get("GET /api/v1/housing") or {}).get("upcoming_id")  # type: ignore[union-attr]
+    if upcoming is not None:
+        keep(f"/api/v1/housing/{upcoming}/move")  # Moving home checks the home you move to
+    for bill in (responses.get("GET /api/v1/bills") or {}).get("bills", []):  # type: ignore[union-attr]
+        if bill.get("movable"):
+            for day in MOVE_DAYS:
+                if day != bill.get("due_day"):
+                    keep(f"/api/v1/bills/{bill['id']}/move_check?day={day}")
+    for receipt in (responses.get("GET /api/v1/receipts") or {}).get("receipts", []):  # type: ignore[union-attr]
+        if receipt.get("amount") is not None and receipt.get("bought_on"):
+            keep(f"/api/v1/receipts/candidates?amount={_component(_js_number(receipt['amount']))}&bought_on={_component(receipt['bought_on'])}&merchant={_component(receipt.get('merchant') or '')}")
+
 
 REVIEW = {"notes": [
     {"kind": "tighten", "text": "The buffer of $200 is thin for a household carrying two advances; I would hold $300 until both are gone.", "action": {"type": "buffer", "value": 300}},
@@ -167,6 +205,7 @@ def main() -> None:
                 print(f"skip {path}: {r.status_code}", file=sys.stderr)
                 continue
             responses[f"GET {path}"] = r.json()
+        page_answers(client, responses)
         for doc in responses["GET /api/v1/documents"]["documents"]:  # type: ignore[index]
             for n in range(1, doc["pages"] + 1):
                 responses[f"GET /api/v1/documents/{doc['id']}/pages/{n}"] = client.get(f"/api/v1/documents/{doc['id']}/pages/{n}").json()

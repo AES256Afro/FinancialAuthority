@@ -9,13 +9,41 @@ from sqlmodel import Session, select
 from ..engine.borrowing import plan_covers_series
 from ..engine.recurring import detect, merchant_key
 from ..models import Bill, Income, InstallmentPlan, RecurringSeries, Transaction
+from .writing import one_writer
 
 
 def _series_key(found: dict) -> tuple:
     return (found["merchant_key"], found["cadence"], round(found["typical_amount"]))
 
 
+def _one_per_key(session: Session) -> dict[tuple, RecurringSeries]:
+    """The series register by key, one series per key. Two runs at once (before they were serialised) could each
+    add the same series; of such twins the one the owner confirmed or a bill or paycheck uses is kept, else the
+    oldest, and a twin nobody confirmed or uses is removed. Twins that are both in use are left for the owner."""
+    by_key: dict[tuple, list[RecurringSeries]] = {}
+    for s in session.exec(select(RecurringSeries).order_by(RecurringSeries.id)).all():
+        by_key.setdefault(_series_key({"merchant_key": s.merchant_key, "cadence": s.cadence, "typical_amount": s.typical_amount}), []).append(s)
+    used = {b.series_id for b in session.exec(select(Bill)).all() if b.series_id} | {i.series_id for i in session.exec(select(Income)).all() if i.series_id}
+    out: dict[tuple, RecurringSeries] = {}
+    for key, rows in by_key.items():
+        keeper = next((s for s in rows if s.confirmed or s.id in used), rows[0])
+        out[key] = keeper
+        for s in rows:
+            if s is not keeper and not s.confirmed and s.id not in used:
+                session.delete(s)
+    session.flush()
+    return out
+
+
 def run_detection(session: Session, today: date, lookback_days: int = 400) -> dict:
+    """Detection under the write lock (jobs/writing.py): a second run waits for the first and reads what it added,
+    so the same series is never added twice. What the caller wrote is committed first, as the run commits anyway."""
+    session.commit()
+    with one_writer():
+        return _run_detection(session, today, lookback_days)
+
+
+def _run_detection(session: Session, today: date, lookback_days: int) -> dict:
     from ..engine.pairs import find_pairs
 
     pairs = find_pairs(session, today)  # transfers and card payments first, so they never look like spending
@@ -29,7 +57,7 @@ def run_detection(session: Session, today: date, lookback_days: int = 400) -> di
     income_rows = [r for r in rows if _is_income_row(r)]
     found = detect(spending, today, lookback_days, include_inactive=True) + detect(income_rows, today, lookback_days, include_inactive=True, income=True)
 
-    existing = {(_series_key({"merchant_key": s.merchant_key, "cadence": s.cadence, "typical_amount": s.typical_amount})): s for s in session.exec(select(RecurringSeries)).all()}
+    existing = _one_per_key(session)
     bills = {}
     for b in session.exec(select(Bill).where(Bill.active == True)).all():  # noqa: E712
         bills[b.name.lower()] = b

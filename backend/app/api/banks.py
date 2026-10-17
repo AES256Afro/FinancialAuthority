@@ -49,16 +49,21 @@ class EnrollIn(BaseModel):
 
 
 def detect_after(session: Session, result) -> dict:  # noqa: ANN001
-    """New rows may complete a recurring series: run detection now, so a freshly linked bank shows its
-    bills and paychecks on the next screen instead of after the six-hourly job."""
+    """New rows may complete a recurring series and pay a bill: run detection, borrowing and payment matching now,
+    the chain the scheduled bank sync runs, so a freshly linked or synced bank shows its bills paid and its
+    paychecks on the next screen instead of after the next scheduled run."""
     if not result.inserted:
         return {}
     from ..engine.borrowing import sync_borrowing
+    from ..engine.payments import match_payments
     from ..jobs.detect import run_detection
+    from ..jobs.writing import one_writer
     from .routes import today
 
-    out = run_detection(session, today())
-    sync_borrowing(session, today())
+    with one_writer():
+        out = run_detection(session, today())
+        sync_borrowing(session, today())
+        out["payments"] = match_payments(session, today())
     return out
 
 
@@ -210,15 +215,36 @@ def sync_link(link_id: int, session: Session = Depends(get_session), _: auth.Pri
 
 
 @router.delete("/{link_id}")
-def remove_link(link_id: int, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+def remove_link(link_id: int, accounts: str = "keep", session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    """Remove a bank link. Its accounts stay as they are with `accounts=keep` (the default: linking the bank again
+    takes them over, history and all), or become history with `accounts=history`: kept with their rows, no longer
+    counted. Linking the bank again brings history accounts back too."""
+    from ..connectors.banks import sync_card_debt
+
+    if accounts not in ("keep", "history"):
+        raise HTTPException(400, "accounts is keep (they stay, for linking the bank again) or history (kept, no longer counted)")
     link = session.get(BankLink, link_id)
     if link is None:
         raise HTTPException(404, "No such link")
+    ids = [i for i in (link.accounts or "").split(",") if i]
+    provider = link.provider
     if link.provider == "plaid":
         plaid().disconnect(session, plaid().api(session), link)
     else:
         teller().disconnect(session, link)
-    return {"ok": True}
+    if accounts == "keep":
+        return {"ok": True}
+    retired = 0
+    if ids:
+        for a in session.exec(select(Account).where(Account.connector == provider, Account.external_id.in_(ids))).all():  # type: ignore[attr-defined]
+            if a.active:
+                a.active = False
+                session.add(a)
+                if a.kind == "card":
+                    sync_card_debt(session, a)  # its card debt stops counting with it
+                retired += 1
+        session.commit()
+    return {"ok": True, "accounts_retired": retired}
 
 
 

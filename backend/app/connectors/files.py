@@ -15,6 +15,7 @@ from typing import Any
 from sqlmodel import Session, select
 
 from ..engine.rules import apply_rules, rules_for
+from ..jobs.writing import one_writer
 from ..models import Account, Transaction, utcnow
 from .banks import record_balance, upsert_holding
 from .base import SyncResult
@@ -290,7 +291,15 @@ def import_rows(session: Session, rows: list[dict], *, source_file: str, account
     this or an overlapping file brought is skipped by its key. A row the account already holds from any other
     source (a bank link, an export, the same statement in another format) on the same amount within three days,
     by the same name or on the same day, is the same transaction seen twice and is not added. A key repeated
-    within one file is a real repeat purchase. The import is logged with a restore point, so it can be undone."""
+    within one file is a real repeat purchase. The import is logged with a restore point, so it can be undone. It
+    runs under the write lock: the same file dropped and uploaded at once imports once."""
+    with one_writer():
+        return _import_rows(session, rows, source_file=source_file, account_name=account_name, institution=institution, kind=kind, account_id=account_id,
+                            account_number=account_number, via=via)
+
+
+def _import_rows(session: Session, rows: list[dict], *, source_file: str, account_name: str, institution: str, kind: str, account_id: int | None, account_number: str,
+                 via: str) -> SyncResult:
     from .. import importlog
 
     account, created = _target_account(session, account_id=account_id, account_name=account_name, account_number=account_number, institution=institution, kind=kind)
@@ -431,7 +440,13 @@ def parse_bills_rows(text: str, mapping: dict | None = None) -> list[dict]:
 def import_bills(session: Session, rows: list[dict], *, source_file: str, today: date | None = None) -> SyncResult:
     """Each row becomes a bill on the register, or updates the bill of the same name. A row without a due day
     (no due-day, next-date or date column it could come from) is skipped and said so. A new bill is dated today,
-    so no payment is looked for in the months before it was added."""
+    so no payment is looked for in the months before it was added. Under the write lock, so a list imported twice
+    at once never makes each bill twice."""
+    with one_writer():
+        return _import_bills(session, rows, source_file=source_file, today=today)
+
+
+def _import_bills(session: Session, rows: list[dict], *, source_file: str, today: date | None) -> SyncResult:
     from ..clock import local_today
     from ..engine.recurring import bill_named, merchant_key, suggest_kind
     from ..models import Bill

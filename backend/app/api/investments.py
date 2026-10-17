@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from sqlmodel import Session
 
 from .. import auth
-from ..connectors.banks import record_balance
+from ..connectors.banks import mark_removed, record_balance
 from ..db import get_session
 from ..engine.investments import investments_overview
 from ..llm.reviewer import mark_pending
@@ -145,5 +145,5 @@ def remove_account(account_id: int, session: Session = Depends(get_session), _: 
         raise HTTPException(404, "No such investment account")
     account.active = False
     session.add(account)
-    session.commit()
+    mark_removed(session, account.id)  # a bank link that still lists it (an old 401k on the same sign-in) leaves it removed; this commits
     return overview(session)
