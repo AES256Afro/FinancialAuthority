@@ -36,7 +36,7 @@ jobs:
       - name: No secret in a committed file
         run: |
           ! git grep -nI -E '(FA_(PASSWORD|SESSION_SECRET|DATA_KEY)=[^$ ]{6,})|(-----BEGIN [A-Z ]*PRIVATE KEY-----$)|(fa_[A-Za-z0-9]{32,})' -- ':!*.md' ':!backend/tests/*'
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -69,7 +69,7 @@ jobs:
           python-version: "3.12"
       - run: uv sync --frozen
         working-directory: backend
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
