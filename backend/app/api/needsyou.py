@@ -65,6 +65,13 @@ def answer_many(body: ManyIn, session: Session = Depends(get_session), principal
         if step["do"] != "apply":
             failed.append({"id": fid, "error": step["why"]})
             continue
+        if step.get("record"):
+            # A notice that changes nothing in the plan is kept as read; nothing is applied.
+            fact.status, fact.applied_to, fact.resolved_at = "confirmed", "read: changes nothing in the plan", utcnow()
+            session.add(fact)
+            session.commit()
+            done.append({"id": fid, "applied_to": ""})
+            continue
         ref = session.get(MessageRef, fact.message_ref_id) if fact.message_ref_id else None
         try:
             applied = apply_fact(session, fact, ref, ConfirmIn(apply=True), owner=principal.full)
