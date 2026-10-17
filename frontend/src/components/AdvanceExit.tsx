@@ -66,14 +66,14 @@ function Rows({ steps }: { steps: ExitStep[] }) {
             <div style={{ height: 12, borderRadius: 6, background: "var(--surface-2)", overflow: "hidden" }} aria-hidden="true">
               <div style={{ width: `${(s.borrow / scale) * 100}%`, height: "100%", background: "var(--later)", borderRadius: 6 }} />
             </div>
-            <span style={{ fontSize: 12, color: "var(--ink-2)", display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <span style={{ fontSize: 12, color: "var(--ink-2)", lineHeight: 1.5 }}>
               {s.borrow > 0 ? (
-                <><TriangleAlert size={13} aria-hidden="true" style={{ color: "var(--warning-ink)" }} />Needs <strong className="num">{money(s.borrow)}</strong> (fee <span className="num">{money(s.fee, { cents: true })}</span>)</>
+                <><TriangleAlert size={13} aria-hidden="true" style={{ display: "inline-block", color: "var(--warning-ink)", verticalAlign: -2, marginRight: 4 }} />Short by <strong className="num">{money(s.borrow)}</strong>; the smallest advance that covers it costs <span className="num">{money(s.fee, { cents: true })}</span></>
               ) : (
-                <><CircleCheck size={13} aria-hidden="true" style={{ color: "var(--safe-ink)" }} />No new advance</>
+                <><CircleCheck size={13} aria-hidden="true" style={{ display: "inline-block", color: "var(--safe-ink)", verticalAlign: -2, marginRight: 4 }} />No new advance</>
               )}
-              {s.pays_back > 0 && <> · pays back <span className="num">{money(s.pays_back, { cents: true })}</span></>}
-              {" "}· leaves <span className="num">{money(s.left)}</span>
+              {s.pays_back > 0 && <>. Pays back <span className="num">{money(s.pays_back, { cents: true })}</span></>}
+              . Leaves <span className="num">{money(s.left)}</span>.
             </span>
           </div>
         </div>

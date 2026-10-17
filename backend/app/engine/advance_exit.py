@@ -54,7 +54,11 @@ def exit_plan(session: Session, today: date) -> dict[str, Any]:
     fees_habit = _money(usual * rate * len(steps))
     if free_from:
         d = date.fromisoformat(free_from)
-        saving = f"That saves about ${max(0.0, fees_habit - fees_plan):,.2f} in fees over these {len(steps)} paychecks against taking ${usual:,.2f} every time."
+        if fees_plan > fees_habit:
+            saving = (f"These paychecks need more than your usual ${usual:,.2f} for now, because of what falls in them; the smallest advances cost ${fees_plan:,.2f} in fees. "
+                      "Moving a bill's date or pausing a goal may close the gap without one: see Cover.")
+        else:
+            saving = f"That saves about ${fees_habit - fees_plan:,.2f} in fees over these {len(steps)} paychecks against taking ${usual:,.2f} every time."
         if free_from == steps[0]["payday"]:
             word = f"None of the next {len(steps)} paychecks needs a new advance: pay back what is on file on its day, and take nothing new. {saving}"
         else:

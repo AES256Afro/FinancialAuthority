@@ -46,7 +46,7 @@ const STATE: Record<Step["state"], { severity: string; word: string; fill: strin
   open: { severity: "info", word: "No date yet", fill: "var(--surface-2)" },
 };
 
-const SMALL = { minHeight: 32, padding: "4px 10px", fontSize: 13 } as const;
+const SMALL = { minHeight: 32, padding: "4px 10px", fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" } as const;
 
 export function MovePlan({ onChanged }: { onChanged?: () => void }) {
   const state = useApi<Plan>("/api/v1/move/plan");
@@ -88,8 +88,8 @@ function PlanBody({ plan, setPlan }: { plan: Plan; setPlan: (p: Plan) => void })
         </div>
         <div style={{ fontSize: 13, color: "var(--ink-2)", display: "flex", flexWrap: "wrap", gap: "4px 14px" }}>
           <span><strong>{done}</strong> of {total} done</span>
-          {(plan.counts.late ?? 0) > 0 && <span style={{ color: "var(--critical-ink)" }}><OctagonAlert size={13} aria-hidden="true" style={{ verticalAlign: -2 }} /> {plan.counts.late} late</span>}
-          {(plan.counts.soon ?? 0) > 0 && <span style={{ color: "var(--warning-ink)" }}><TriangleAlert size={13} aria-hidden="true" style={{ verticalAlign: -2 }} /> {plan.counts.soon} this week</span>}
+          {(plan.counts.late ?? 0) > 0 && <span style={{ color: "var(--critical-ink)" }}><OctagonAlert size={13} aria-hidden="true" style={{ display: "inline-block", verticalAlign: -2 }} /> {plan.counts.late} late</span>}
+          {(plan.counts.soon ?? 0) > 0 && <span style={{ color: "var(--warning-ink)" }}><TriangleAlert size={13} aria-hidden="true" style={{ display: "inline-block", verticalAlign: -2 }} /> {plan.counts.soon} this week</span>}
           {plan.next && <span>Next: {plan.next.title}{plan.next.date ? `, ${shortDate(plan.next.date)}` : ""}</span>}
         </div>
       </div>
@@ -133,7 +133,7 @@ function StepRow({ step, setPlan, letter }: { step: Step; setPlan: (p: Plan) => 
           ) : (
             <button type="button" className="btn" style={SMALL} aria-pressed={step.done} disabled={busy} onClick={toggle}>
               {step.done ? <SquareCheck size={15} aria-hidden="true" /> : <Square size={15} aria-hidden="true" />}
-              {step.done ? " Done (tap to undo)" : " Mark done"}
+              {step.done ? "Done (tap to undo)" : "Mark done"}
             </button>
           )}
           {step.link && step.link !== "/move" && <Link to={step.link} style={{ fontSize: 13 }}>Open {step.link === "/housing" ? "Housing" : step.link.replace("/", "")}</Link>}
@@ -174,7 +174,7 @@ function Letter({ plan, setPlan }: { plan: Plan; setPlan: (p: Plan) => void }) {
     }
   }
   if (!open) {
-    return <div><button type="button" className="btn" style={SMALL} aria-expanded={false} onClick={() => setOpen(true)}><Mail size={15} aria-hidden="true" /> Show the notice letter</button></div>;
+    return <div><button type="button" className="btn" style={SMALL} aria-expanded={false} onClick={() => setOpen(true)}><Mail size={15} aria-hidden="true" />Show the notice letter</button></div>;
   }
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 10, borderRadius: 10, background: "var(--surface-2)" }}>
@@ -184,7 +184,7 @@ function Letter({ plan, setPlan }: { plan: Plan; setPlan: (p: Plan) => void }) {
       </label>
       {unfilled && <div style={{ fontSize: 12, color: "var(--warning-ink)", display: "flex", gap: 6, alignItems: "center" }}><TriangleAlert size={14} aria-hidden="true" />Some parts in brackets are still to fill in.</div>}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-        <button type="button" className="btn" style={SMALL} onClick={copy}><Copy size={15} aria-hidden="true" /> Copy the letter</button>
+        <button type="button" className="btn" style={SMALL} onClick={copy}><Copy size={15} aria-hidden="true" />Copy the letter</button>
       </div>
       <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         <span className="lab">Or email it{plan.landlord ? ` to ${plan.landlord}` : ""}: their address</span>
