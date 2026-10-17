@@ -60,6 +60,9 @@ class Transaction(SQLModel, table=True):
     source_ref: str = ""
     row_hash: str = Field(index=True, unique=True)
     import_id: int | None = Field(default=None, index=True)  # the import that brought it, so that import can be undone
+    business_id: int | None = Field(default=None, index=True)  # a business cost or income (M57): which business
+    business_share: float = 1.0  # the part that is the business's (a phone used half for work: 0.5)
+    tax_line: str = ""  # where a business cost goes on Schedule C (engine/taxrules.py TAX_LINES)
     created_at: dt.datetime = Field(default_factory=utcnow)
 
     @property
@@ -565,6 +568,61 @@ class JobRun(SQLModel, table=True):
     finished_at: dt.datetime | None = None
     ok: bool | None = None
     summary: str = ""
+
+
+class Business(SQLModel, table=True):
+    """A business the owner runs (M56): the bare minimum to be paid for work and keep its costs apart. Never holds
+    the EIN or any ID number: only whether one is on file."""
+
+    __tablename__ = "businesses"
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    kind: str = "sole_prop"  # sole_prop | llc
+    state: str = "TX"
+    started_on: dt.date | None = None  # when it began: start-up costs before this count from this day
+    what_it_does: str = ""
+    ein_on_file: bool = False  # whether an EIN exists (the number itself stays with the owner)
+    assumed_name: bool = False  # an assumed name (DBA) certificate filed
+    account_id: int | None = Field(default=None, foreign_key="accounts.id")  # its own bank account, when it has one
+    home_office_sqft: int | None = None  # a space used only and regularly for the business
+    active: bool = True
+    created_at: dt.datetime = Field(default_factory=utcnow)
+
+
+class Invoice(SQLModel, table=True):
+    """An invoice the business sent (money in) or received (money out), matched to its deposit or payment when
+    paid (M57)."""
+
+    __tablename__ = "invoices"
+    id: int | None = Field(default=None, primary_key=True)
+    business_id: int = Field(index=True)
+    direction: str = "out"  # out: you bill someone; in: someone bills the business
+    number: str = ""
+    counterparty: str = ""
+    issued_on: dt.date
+    due_on: dt.date | None = None
+    lines: str = "[]"  # JSON [{what, quantity, price}]
+    amount: float = 0.0
+    status: str = "draft"  # draft | sent | paid | void
+    paid_on: dt.date | None = None
+    transaction_id: int | None = Field(default=None, foreign_key="transactions.id")
+    tax_line: str = ""  # for an invoice received: where the cost goes on Schedule C
+    note: str = ""
+    created_at: dt.datetime = Field(default_factory=utcnow)
+
+
+class Trip(SQLModel, table=True):
+    """A business trip by car, logged as it happens (M60): the day, the miles and why. Commuting is never one."""
+
+    __tablename__ = "trips"
+    id: int | None = Field(default=None, primary_key=True)
+    business_id: int = Field(index=True)
+    day: dt.date = Field(index=True)
+    miles: float
+    purpose: str
+    start: str = ""
+    end: str = ""
+    created_at: dt.datetime = Field(default_factory=utcnow)
 
 
 class HealthSample(SQLModel, table=True):
