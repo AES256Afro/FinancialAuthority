@@ -112,6 +112,7 @@ function factDone(f: FactRow, kept: FactRow, who: string, typed: number | null, 
     return { text: `Imported the Rocket Money export${said ? `: ${said}` : ""}. Rows already here were not added twice.`, to: "/settings/backups", link: "Undo it on Backups" };
   }
   if (what === "bill") return { text: `${who || "The bill"} is on your bills list${typed !== null ? ` at ${money(typed, { cents: true })}` : ""}${due ? `, due ${shortDate(due)}` : ""}.`, to: "/bills", link: "See it on Bills" };
+  if (what === "paystub" && (kept as FactRow & { no_paycheck?: boolean }).no_paycheck) return { text: "Kept the paystub. No paycheck is on file yet, so the plan cannot count your pay: use this stub as your paycheck on Paystubs.", to: "/paystubs#paycheck", link: "Use it as your paycheck" };
   if (what === "paystub") return { text: "Kept the paystub. Every figure counts it now.", to: "/paystubs", link: "See it on Paystubs" };
   if (what === "plan") return { text: `Kept the pay-later plan${who ? ` from ${who}` : ""}. Its payments are counted until it ends.`, to: "/borrowing#installments", link: "See it on Borrowing" };
   if (what === "account") return { text: "Kept the balance.", to: "/investments", link: "See it on Investments" };

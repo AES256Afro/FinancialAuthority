@@ -430,7 +430,7 @@ function MoveCheck({ homeId, version }: { homeId: number; version: string }) {
         <Loading what="the check against your paychecks" card={false} />
       ) : (
         <>
-          <div><StatusPill status={d.status}>{withDates(d.word)}</StatusPill></div>
+          <div><StatusPill status={d.status === "unknown" ? "warn" : d.status}>{withDates(d.word)}</StatusPill></div>
           {d.path.length > 1 ? <PathChart path={d.path} moveOn={d.move_on} low={d.low} /> : <Empty card={false} to="/paystubs#paycheck" action="Add your paycheck">No days to draw yet.</Empty>}
           {d.caveats.length > 0 && (
             <ul style={{ margin: 0, paddingLeft: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 4 }}>

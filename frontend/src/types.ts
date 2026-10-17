@@ -622,6 +622,10 @@ export interface HousingOut {
   move: HousingMove | null;
   utilities_unassigned: UtilityRow[];
   rent_bills_to_adopt: { id: number; name: string; amount: number; due_day: number }[];
+  /** The engine's sentences about a rent that may be counted twice or may not stop at the move. */
+  warnings?: string[];
+  /** What a change did, in words (an add or a change of a home may end or move another). */
+  said?: string | null;
   not_advice: string;
 }
 
@@ -644,8 +648,8 @@ export interface MoveCheckOut {
   home: HomeRow;
   move_on: string;
   low: MovePathPoint | null;
-  holds: boolean;
-  status: "good" | "crit";
+  holds: boolean | null;
+  status: "good" | "crit" | "unknown";
   word: string;
   path: MovePathPoint[];
   caveats: string[];

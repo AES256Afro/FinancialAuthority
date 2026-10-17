@@ -38,6 +38,8 @@ interface Moves {
   plan_low: number;
   movable: number;
   caveats?: string[];
+  /** Why nothing is suggested, when the low point comes before any move could take effect. */
+  note?: string | null;
   drafts_only: string;
   not_advice: string;
 }
@@ -90,7 +92,7 @@ export function DateMoves({ refreshKey }: { refreshKey?: number }) {
         <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
           {data.movable === 0
             ? <>No bill is marked as one whose date can move yet. In your bills list above, tick <strong>Date can move</strong> on each bill whose biller allows a date change, then Save.</>
-            : "No move lifts the lowest left to spend by a dollar or more; the dates are already as good as they get."}
+            : data.note || "No move lifts the lowest left to spend by a dollar or more; the dates are already as good as they get."}
         </div>
       )}
       {data && data.plan.length > 0 && (

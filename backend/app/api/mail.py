@@ -520,7 +520,13 @@ def confirm_fact(fact_id: int, body: ConfirmIn, session: Session = Depends(get_s
         from ..llm.reviewer import mark_pending
 
         mark_pending(session, f"{fact.kind} confirmed")
-    return fact_out(fact, ref)
+    out = fact_out(fact, ref)
+    if applied.startswith("paystub:"):
+        from ..models import Income
+
+        if session.exec(select(Income).where(Income.active == True)).first() is None:  # noqa: E712
+            out["no_paycheck"], out["paystub_id"] = True, int(applied.split(":")[1])  # the screen offers it as the paycheck
+    return out
 
 
 @router.post("/facts/{fact_id}/reject")
