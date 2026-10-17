@@ -147,6 +147,7 @@ def erase(body: EraseIn, request: Request, session: Session = Depends(get_sessio
             else:
                 erased[table] = connection.execute(text(f'DELETE FROM "{table}"')).rowcount or 0
         connection.execute(text("PRAGMA foreign_keys=ON"))
+    engine.dispose()  # PRAGMA foreign_keys is ignored inside a transaction: new connections set it again
     with engine.connect() as connection:
         connection.execute(text("VACUUM"))  # freed pages hold the old rows until the file is rebuilt
     from ..restore import folder

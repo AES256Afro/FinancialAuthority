@@ -179,6 +179,10 @@ def update_debt(debt_id: int, body: DebtIn, session: Session = Depends(get_sessi
         raise HTTPException(404, "No such debt")
     for field, value in body.model_dump(exclude_unset=True).items():
         if value is None:
+            if field in ("apr", "minimum"):
+                setattr(debt, field, 0.0)  # sent empty on purpose: not known (the register keeps 0 for that)
+            elif field in ("credit_limit", "statement_day", "due_day"):
+                setattr(debt, field, None)  # sent empty on purpose: cleared
             continue
         if field in ("statement_day", "due_day"):
             value = max(1, min(31, int(value)))

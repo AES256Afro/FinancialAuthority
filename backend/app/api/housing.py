@@ -309,6 +309,10 @@ def _apply_utility(u: Utility, body: UtilityIn, session: Session) -> None:
         bill = session.get(Bill, body.bill_id)
         if bill is None or not bill.active or bill.home_id or (bill.utility_id and bill.utility_id != u.id):
             raise HTTPException(400, "That bill is not on the list, or it already belongs to a home or another utility")
+        old = session.get(Bill, u.bill_id) if u.bill_id else None
+        if old is not None and old.id != bill.id and old.utility_id == u.id:
+            old.active = False  # the utility's own bill gives way to the one already on the list, never both counted
+            session.add(old)
         u.bill_id = bill.id
         bill.pays_to = bill.pays_to or bill.name  # its payments keep matching under the new name (kept in match_names when the utility renames it)
         if u.amount is None:

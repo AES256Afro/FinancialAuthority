@@ -82,6 +82,7 @@ def link_out(session: Session, link: BankLink) -> dict:
         "id": link.id, "provider": link.provider, "institution": link.institution, "active": link.active, "needs_login": link.needs_login,
         "created_at": link.created_at.isoformat(), "last_sync_at": link.last_sync_at.isoformat() if link.last_sync_at else None, "last_error": link.last_error,
         "accounts": [{"id": a.id, "name": a.name, "kind": a.kind, "balance": a.balance} for a in accounts],
+        "enrollment_id": link.external_id if link.provider == "teller" else None,
     }
 
 

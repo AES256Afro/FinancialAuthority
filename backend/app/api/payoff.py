@@ -41,6 +41,19 @@ def add_person_loan(body: PersonLoanIn, session: Session = Depends(get_session),
         raise HTTPException(400, str(error)) from error
 
 
+@router.delete("/people/{index}")
+def remove_person_loan(index: int, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    from ..engine.payoff import PEOPLE
+    from ..store import set_setting
+
+    rows = people(session)
+    if not 0 <= index < len(rows):
+        raise HTTPException(404, "No such entry")
+    rows.pop(index)
+    set_setting(session, PEOPLE, rows)
+    return {"people": rows}
+
+
 @router.put("/people/{index}")
 def change_person_loan(index: int, body: PersonLoanIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     if not 0 <= index < len(people(session)):

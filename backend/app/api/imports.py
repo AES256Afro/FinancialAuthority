@@ -56,6 +56,12 @@ def preview(file: UploadFile = File(...), kind: str = Form("checking"), _: auth.
     """What the file is, which column is which, and the first rows as they would land. Nothing is written."""
     raw = _raw(file)
     if raw.startswith(b"%PDF"):
+        from ..parsers.affirm_statement import looks_like_affirm_statement
+        from ..parsers.paystub import pdf_text
+
+        if looks_like_affirm_statement(pdf_text(raw)):
+            return {"kind": "affirm", "affirm": True, "filename": file.filename or "statement.pdf", "rows": None, "sample": [],
+                    "note": "This is an Affirm statement: read it on Borrowing, where its loans and payments are kept."}
         found = _statement(raw, kind)
         return _serial({**found, "filename": file.filename or "statement.pdf", "sample": found["rows"][:12], "rows": None})
     text = raw.decode("utf-8-sig", errors="replace")
