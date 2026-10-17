@@ -589,7 +589,7 @@ function ByMonth({ state, onChanged }: { state: Loaded<DocumentMonthsOut>; onCha
               <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column" }}>
                 {files.map((d, i) => (
                   <DocLine key={d.id} d={d} first={i === 0} place={placeWord(d.attach_to)} onRead={(id) => setReading({ id, page: 1 })} onRemove={remove}
-                    extra={<MonthMove d={d} onMoved={changed} />} />
+                    extra={<MonthMove d={d} onMoved={changed} />} onChanged={() => changed("Kept the total and day read from the receipt.")} />
                 ))}
               </ul>
             </div>

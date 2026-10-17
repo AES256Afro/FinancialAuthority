@@ -273,7 +273,7 @@ Six audits (security twice, the engine, the plumbing, and the screens twice) fou
 - ✅ **M46 Leaving the advance apps.** (built 2026-10-16) The smallest advance per paycheck, stepping down to none, with the fees it saves.
 - ☐ **M47 Tests that guard the money.** Property checks on many made-up households, browser runs of sign-in, a second person, a move and a receipt, and golden answers that must not drift. *Invariant checks done; browser runs remain.*
 - ✅ **M48 Credit health from your own data.** (built 2026-10-16) Each card's share of its limit on its statement day, what to pay before then, and the on-time record; no credit pull.
-- ☐ **M49 Reading photos for free.** Photos of receipts and leases read on the server with a free OCR in the image.
+- ✅ **M49 Reading photos for free.** (built 2026-10-17) Tesseract and poppler in the image read photos and scanned PDFs on the server, each as its own process under time, memory and size limits; a scanned lease offers its terms like a PDF, and a receipt photo offers its total and day to keep with one tap.
 - ✅ **M50 Tax-time pack.** (built 2026-10-17) On Reports › Tax time: the categories a return asks about, the paystubs summed (gross, net and each deduction), the receipts kept by their purchase's category, and each account's statements month by month; one .zip with a summary, a spreadsheet and the files in folders, for the owner only.
 - ✅ **M51 Watching the app itself.** (built 2026-10-17) An hourly sample of every part (disk, restore points, each mailbox and bank link, the jobs, the public address, the phone); thirty days drawn a square per day on Jobs; the phone told once when a part breaks, daily while it stays broken, and once when fixed, never with a job's own error text.
 

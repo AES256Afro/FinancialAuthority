@@ -50,7 +50,18 @@ def _open(stored: bytes) -> bytes:
 
 
 def read_pages(raw: bytes, ext: str) -> list[str]:
-    """The text of each page (a sheet counts as a page). An image has none here: say so on the screen."""
+    """The text of each page (a sheet counts as a page)."""
+    return read_pages_with(raw, ext)[0]
+
+
+def read_pages_with(raw: bytes, ext: str) -> tuple[list[str], str]:
+    """The text of each page, and how it was had: "" from the file's own text, "ocr" read from a photo, or from a
+    scanned PDF whose pages are pictures, by the free reader on this server (app/ocr.py) when it is installed."""
+    from .. import ocr
+
+    if ext in ("png", "jpg", "jpeg"):
+        text = ocr.image_text(raw)
+        return ([text], "ocr") if text else ([], "")
     pages: list[str] = []
     try:
         if ext == "pdf":
@@ -67,7 +78,7 @@ def read_pages(raw: bytes, ext: str) -> list[str]:
             with zipfile.ZipFile(io.BytesIO(raw)) as z:
                 expanded = sum(i.file_size for i in z.infolist())
             if expanded > XLSX_MAX_EXPANDED:
-                return []
+                return [], ""
             wb = load_workbook(io.BytesIO(raw), data_only=True, read_only=True)
             for ws in list(wb.worksheets)[:MAX_PAGES]:
                 lines, size = [ws.title], 0
@@ -85,7 +96,11 @@ def read_pages(raw: bytes, ext: str) -> list[str]:
             pages = [text[i:i + MAX_PAGE_CHARS] for i in range(0, min(len(text), MAX_PAGE_CHARS * MAX_PAGES), MAX_PAGE_CHARS)] or [""]
     except Exception:  # noqa: BLE001 - a file that cannot be read is kept, with no text
         pages = []
-    return pages
+    if ext == "pdf" and not any(p.strip() for p in pages):
+        scanned = ocr.scan_pages(raw)
+        if any(p.strip() for p in scanned):
+            return [p[:MAX_PAGE_CHARS] for p in scanned], "ocr"
+    return pages, ""
 
 
 def save_document(session: Session, raw: bytes, *, filename: str, title: str = "", kind: str = "other", attach_to: str = "", note: str = "", period: str = "", merchant: str = "",
@@ -105,7 +120,7 @@ def save_document(session: Session, raw: bytes, *, filename: str, title: str = "
     path = folder() / f"{digest}.bin"
     if not path.exists():
         path.write_bytes(_seal(raw))
-    pages = read_pages(raw, ext)
+    pages, read_with = read_pages_with(raw, ext)
     if period and not re.fullmatch(r"\d{4}-\d{2}", period):
         raise ValueError("A month is written YYYY-MM")
     if not period and bought_on is not None:
@@ -113,7 +128,7 @@ def save_document(session: Session, raw: bytes, *, filename: str, title: str = "
     doc = Document(title=(title or filename).strip()[:120], kind=kind, attach_to=attach_to, filename=Path(filename).name[:120], content_type=TYPES[ext], size=len(raw), sha256=digest,
                    pages_enc=crypto.encrypt(json.dumps(pages)) if settings.data_key else json.dumps(pages), pages=len(pages), note=note.strip()[:300],
                    period=period, merchant=merchant.strip()[:80], amount=round(float(amount), 2) if amount is not None else None, bought_on=bought_on, return_by=return_by,
-                   warranty_until=warranty_until, source=source[:60])
+                   warranty_until=warranty_until, source=source[:60], read_with=read_with)
     session.add(doc)
     session.commit()
     session.refresh(doc)
@@ -148,8 +163,22 @@ def remove_document(session: Session, doc: Document) -> None:
     restore.release_document_file(sha)
 
 
+def suggested(doc: Document, today: Any = None) -> dict[str, Any] | None:
+    """For a receipt kept without its total or day: what its words seem to say, offered on the screen to keep or
+    not. Never applied on its own."""
+    if doc.kind != "receipt" or (doc.amount is not None and doc.bought_on is not None):
+        return None
+    from datetime import date as _date
+
+    from ..ocr import receipt_reading
+
+    got = receipt_reading("\n".join(pages_of(doc)), today or _date.today())
+    out = {k: v for k, v in (("amount", got.get("total")), ("bought_on", got.get("bought_on"))) if v is not None and getattr(doc, k) is None}
+    return out or None
+
+
 def doc_out(doc: Document) -> dict[str, Any]:
-    return {"id": doc.id, "title": doc.title, "kind": doc.kind, "attach_to": doc.attach_to, "filename": doc.filename, "content_type": doc.content_type, "size": doc.size,
+    return {"read_with": doc.read_with, "suggested": suggested(doc),"id": doc.id, "title": doc.title, "kind": doc.kind, "attach_to": doc.attach_to, "filename": doc.filename, "content_type": doc.content_type, "size": doc.size,
             "pages": doc.pages, "has_text": doc.pages > 0 and any(p.strip() for p in pages_of(doc)), "note": doc.note, "uploaded_at": doc.uploaded_at.isoformat(), "source": f"document:{doc.id}",
             "period": doc.period, "merchant": doc.merchant, "amount": doc.amount, "bought_on": doc.bought_on.isoformat() if doc.bought_on else None,
             "return_by": doc.return_by.isoformat() if doc.return_by else None, "warranty_until": doc.warranty_until.isoformat() if doc.warranty_until else None, "came_from": doc.source}

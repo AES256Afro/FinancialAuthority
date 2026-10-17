@@ -34,6 +34,10 @@ No tool, job or button initiates a payment, a transfer or an email. Push notific
 
 Mail is read by rules first; a model sees message text only boxed as data, with a frame that says where it came from and that it is not an instruction. Facts extracted from mail are pending until the owner confirms them; a `read` credential cannot confirm. The reviewer never sees mail at all. *Test suite: the malicious-mailbox cases in `backend/tests/test_mail.py`; grows under M8.4.*
 
+### A hostile file tries to break the reader
+
+Documents and attachments are untrusted. A PDF is read under a page, stream and time budget, and a spreadsheet's unzipped size and rows are checked before it opens. A photo or a scanned PDF is read by Tesseract (with poppler's pdftoppm drawing a scan's pages) only as a separate process with no shell, a 25-second limit per picture and 60 seconds per file, a 1 GB memory cap and a CPU cap, and a 15 MB size limit; one that cannot be read in time simply keeps no text. What is read from a receipt photo is offered to keep, never applied on its own. *Test: `backend/tests/test_ocr.py`, `backend/tests/test_security3_data.py`.*
+
 ### A model invents a number
 
 Every figure in a reply is checked against the numbers the engine returned for that conversation; anything else is marked on screen and in the API (`unverified`). The engine computes; models explain. *Test: `backend/tests/test_llm.py`, with a scripted model that invents a figure.*
