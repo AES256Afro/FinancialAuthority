@@ -35,3 +35,7 @@ Thumbs.db
 frontend/dist-demo/
 frontend/demo/demo-data.json
 .samples/
+
+# Browser runs (npm run e2e)
+frontend/test-results/
+frontend/playwright-report/

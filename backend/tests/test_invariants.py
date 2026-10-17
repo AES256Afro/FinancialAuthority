@@ -1,7 +1,12 @@
 """M47: what must hold for every household, checked on many made-up ones. Each paycheck's parts add up to what it
 leaves; what one paycheck keeps is what the next carries in; a bill is counted once; a bill already paid is never
-counted again; a bill is counted only between its first and last dates; every figure carries its source."""
+counted again; a bill is counted only between its first and last dates; every figure carries its source. Each
+paycheck picture's parts add up to the check, and the way off advances borrows the least, in round amounts.
 
+Twenty-five households a run; FA_PROPERTY_SEEDS=300 checks three hundred (the weekly run in CI)."""
+
+import math
+import os
 import random
 from datetime import date, timedelta
 
@@ -15,7 +20,7 @@ from app.engine.snapshot import finance_snapshot
 from app.models import Bill, Payment
 
 TODAY = date(2026, 10, 14)
-SEEDS = list(range(1, 26))
+SEEDS = list(range(1, int(os.environ.get("FA_PROPERTY_SEEDS", "25")) + 1))
 
 
 def _fresh(seed_value: int) -> random.Random:
@@ -85,3 +90,32 @@ def test_safe_to_spend_and_every_brief_figure_have_sources(seed_value):
     assert isinstance(snap["safe_to_spend"]["amount"], int | float)
     for line in snap.get("brief") or []:
         assert line.get("text"), "a brief line says something"
+
+
+@pytest.mark.parametrize("seed_value", SEEDS)
+def test_each_paycheck_picture_adds_up_to_its_check(seed_value):
+    from app.engine.paychecks import paycheck_views
+
+    _fresh(seed_value)
+    with Session(engine) as session:
+        views = paycheck_views(session, TODAY)
+    for w in views["windows"]:
+        total = round(sum(p["amount"] for p in w["parts"]), 2)
+        assert all(p["amount"] >= 0 for p in w["parts"]), (w["start"], [p for p in w["parts"] if p["amount"] < 0])
+        assert _close(total, w["inflow"] + (w["short"] or 0)), (w["start"], total, w["inflow"], w["short"])
+
+
+@pytest.mark.parametrize("seed_value", SEEDS)
+def test_the_way_off_advances_borrows_the_least_in_round_amounts(seed_value):
+    from app.engine.advance_exit import exit_plan
+
+    _fresh(seed_value)
+    with Session(engine) as session:
+        plan = exit_plan(session, TODAY)
+    rate = (plan.get("fee_per_100") or 0.0) / 100
+    for step in plan["steps"]:
+        assert step["borrow"] >= 0 and math.isclose(step["borrow"] % 5, 0, abs_tol=1e-6), step
+        assert step["left"] >= -0.01, step  # never short after the advance
+        if step["borrow"] > 0:
+            assert step["left"] - 5 < 0.01, step  # five dollars less would have left it short
+        assert abs(step["fee"] - step["borrow"] * rate) <= 0.01 + step["borrow"] * 0.00005, step  # the rate shown is rounded to the cent per $100
