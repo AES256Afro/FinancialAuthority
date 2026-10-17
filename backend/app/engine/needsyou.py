@@ -38,6 +38,7 @@ COMPLETE = {
 NEVER_IN_BULK = {"export", "document_terms"}  # each needs the owner's eye, one at a time
 # Kinds whose confirmation changes nothing in the plan: the email is kept as read, as a record.
 RECORD_ONLY = {"statement", "advance", "payment_confirmation"}
+AUTOPAY = re.compile(r"\bauto[\s-]?pay\b", re.I)  # a lender's "AutoPay is on" notice changes nothing either
 BILL_NOTICES = ("bill_due", "past_due", "price_change")  # each names a bill; only its newest notice counts
 OLD_NOTICE_DAYS = 60  # older than this, a notice for a bill not on file starts nothing
 
@@ -141,6 +142,8 @@ def plan_many(session: Session, facts: list[ExtractedFact], today: date, *, loos
         step: dict[str, Any] = {"id": f.id, "kind": f.kind}
         if f.status != "pending":
             step.update(do="skip", why="already answered")
+        elif f.kind == "installment" and not fields.get("schedule") and AUTOPAY.search(str(fields.get("subject") or "")):
+            step.update(do="apply", record=True)  # "You've enabled AutoPay": a notice about a plan, not a plan
         elif not complete(f):
             step.update(do="own_card", why="no schedule in it: answer it on its card with the payments left" if f.kind == "installment" else "needs your answer on its own card")
         elif f.kind in RECORD_ONLY:

@@ -159,7 +159,8 @@ def test_lender_emails_make_one_plan_per_loan_and_record_only_ones_change_nothin
     def plan_mail(loan: str, schedule: list) -> ExtractedFact:
         return ExtractedFact(kind="installment", status="pending", fields=json.dumps({"provider": "Example Lender", "loan_id": loan, "schedule": schedule, "total": 50.0}))
     with Session(engine) as session:
-        rows = [plan_mail("L-1", sched), plan_mail("L-1", sched), plan_mail("L-2", sched), plan_mail("", []),
+        autopay = ExtractedFact(kind="installment", status="pending", fields=json.dumps({"amount": 25.0, "subject": "You've enabled AutoPay!"}))
+        rows = [plan_mail("L-1", sched), plan_mail("L-1", sched), plan_mail("L-2", sched), plan_mail("", []), autopay,
                 ExtractedFact(kind="advance", status="pending", fields=json.dumps({"amount": 100.0})),
                 ExtractedFact(kind="statement", status="pending", fields=json.dumps({"amount": 300.0, "due_date": "2026-10-25"}))]
         session.add_all(rows)
@@ -168,9 +169,10 @@ def test_lender_emails_make_one_plan_per_loan_and_record_only_ones_change_nothin
     tri = owner.get("/api/v1/needs-you").json()
     assert not any(g["one_at_a_time"] for g in tri["groups"] if g["kind"] in ("installment", "advance"))
     plan = owner.post("/api/v1/needs-you/facts", json={"ids": ids, "action": "preview"}).json()
-    assert plan["said"] == ("Confirming these 6 sets up or updates 2 pay-later plans with Example Lender, one per loan and marks 2 as read "
+    assert plan["said"] == ("Confirming these 7 sets up or updates 2 pay-later plans with Example Lender, one per loan and marks 3 as read "
                             "(they change nothing in the plan). 1 stays for its own card.")
     owner.post("/api/v1/needs-you/facts", json={"ids": ids, "action": "confirm"})
     with Session(engine) as session:
         assert sorted(p.loan_id for p in session.exec(select(InstallmentPlan)).all()) == ["L-1", "L-2"]
         assert session.get(ExtractedFact, ids[3]).status == "pending"
+        assert session.get(ExtractedFact, ids[4]).status == "confirmed" and session.get(ExtractedFact, ids[4]).applied_to.startswith("read")
