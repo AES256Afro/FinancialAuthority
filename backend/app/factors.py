@@ -220,7 +220,7 @@ class SecondIn(BaseModel):
 @router.post("/login/second")
 def login_second(body: SecondIn, request: Request, response: Response, session: Session = Depends(get_session)) -> dict:
     ip = auth._client_ip(request)
-    if auth._locked(ip) or auth._account_wait() > 0:
+    if auth._locked(ip):
         raise HTTPException(429, "Too many failed sign-ins. Wait a minute, then try again.")
     try:
         data = _tickets().loads(body.ticket, max_age=TICKET_SECONDS)
@@ -235,10 +235,12 @@ def login_second(body: SecondIn, request: Request, response: Response, session: 
             raise HTTPException(401, "Sign in with your password again.")
     elif data.get("u") != settings.username:
         raise HTTPException(401, "Sign in with your password again.")
+    if auth._account_wait(data["u"]) > 0:
+        raise HTTPException(429, "Too many failed sign-ins. Wait a minute, then try again.")
     if not check_code(session, body.code, person.id if person else None):
-        auth._record_failure(ip)
+        auth._record_failure(ip, username=data["u"])
         raise HTTPException(401, "That code does not match. Type the code your app shows now, or a recovery code.")
-    auth.clear_failures(ip)
+    auth.clear_failures(ip, data["u"])
     _set_cookie(response, request, auth.start_session(session, request, person))
     return {"ok": True, "user": person.username if person else settings.username}
 
@@ -365,9 +367,9 @@ def passkey_login(body: PasskeyIn, request: Request, response: Response, session
     from webauthn import verify_authentication_response
     from webauthn.helpers import base64url_to_bytes
 
-    ip = auth._client_ip(request)
+    ip = "passkey:" + auth._client_ip(request)
     if auth._locked(ip):
-        raise HTTPException(429, "Too many failed sign-ins. Wait, then try again.")
+        raise HTTPException(429, "Too many failed passkey sign-ins. Wait, then try again.")
     challenge, rp_id = _recall(body.key, "login")
     _rp_id, origin = _rp(request)
     raw_id = str(body.credential.get("id") or body.credential.get("rawId") or "")
@@ -390,6 +392,6 @@ def passkey_login(body: PasskeyIn, request: Request, response: Response, session
     row.sign_count, row.last_used_at = verified.new_sign_count, utcnow()
     session.add(row)
     session.commit()
-    auth.clear_failures(ip)
+    auth.clear_failures(ip)  # the passkey count for this address; a password count is never cleared by a passkey
     _set_cookie(response, request, auth.start_session(session, request, person))
     return {"ok": True, "user": person.username if person else settings.username, "kind": "person" if person else "owner"}

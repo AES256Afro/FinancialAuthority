@@ -134,13 +134,40 @@ def end_sessions(session: Session, person_id: int) -> int:
     return ended
 
 
+def end_access(session: Session, person_id: int) -> dict:
+    """Everything a person set up that reaches the household from outside the app: their sessions, the API keys they
+    made, their phones and computers for notifications, the calendar feed if they made it. Their pending sends are
+    cancelled, so no draft of theirs can be sent by anyone after them."""
+    from .models import ApiKey, Approval
+    from .store import get_setting, set_setting
+    from .webpush import drop_person
+
+    ended = end_sessions(session, person_id)
+    keys = 0
+    for key in session.exec(select(ApiKey).where(ApiKey.person_id == person_id, ApiKey.revoked_at == None)).all():  # noqa: E711
+        key.revoked_at = utcnow()
+        session.add(key)
+        keys += 1
+    feed = get_setting(session, "calendar.feed", {}) or {}
+    feed_ended = bool(feed.get("hash")) and feed.get("person_id") == person_id
+    if feed_ended:
+        set_setting(session, "calendar.feed", {})
+    cancelled = 0
+    for row in session.exec(select(Approval).where(Approval.for_person_id == person_id, Approval.status == "pending")).all():
+        row.status, row.decided_by, row.decided_at = "denied", "access ended", utcnow()
+        session.add(row)
+        cancelled += 1
+    session.commit()
+    return {"sessions": ended, "keys": keys, "devices": drop_person(session, person_id), "feed": feed_ended, "sends_cancelled": cancelled}
+
+
 def reset_sign_in(session: Session, person: Person) -> str:
     """Everything the person signs in with is cleared, every session ended, and a new invitation made."""
     person.password_hash, person.password_set_at = "", None
     person.totp_enc, person.totp_pending_enc, person.totp_recovery, person.totp_last_step, person.totp_since = "", "", "[]", 0, ""
     for key in session.exec(select(Passkey).where(Passkey.person_id == person.id)).all():
         session.delete(key)
-    end_sessions(session, person.id)
+    end_access(session, person.id)
     return new_invite(session, person)
 
 

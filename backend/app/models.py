@@ -544,6 +544,7 @@ class ApiKey(SQLModel, table=True):
     redaction: str = "full"  # full | merchants | aggregates
     created_at: dt.datetime = Field(default_factory=utcnow)
     last_used_at: dt.datetime | None = None
+    person_id: int | None = Field(default=None, index=True)  # made by a second person: revoked when they are turned off or removed
     revoked_at: dt.datetime | None = None
 
     @property

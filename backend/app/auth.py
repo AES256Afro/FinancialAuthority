@@ -112,22 +112,34 @@ def _locked(ip: str, now: float | None = None) -> bool:
     return len(recent) >= LOCK_AFTER
 
 
-def _record_failure(ip: str, now: float | None = None) -> None:
-    _failures.setdefault(ip, []).append(now or time.time())
-    _failures.setdefault("*", []).append(now or time.time())
+def _bucket(username: str) -> str:
+    """The failures counted against one username, from any address."""
+    return "u:" + (username or "").strip().lower()
 
 
-def clear_failures(ip: str) -> None:
+def _record_failure(ip: str, now: float | None = None, username: str | None = None) -> None:
+    """A wrong try: counted against the address, and against the username it named (none for a link or a passkey)."""
+    t = now or time.time()
+    _failures.setdefault(ip, []).append(t)
+    if username is not None:
+        _failures.setdefault(_bucket(username), []).append(t)
+
+
+def clear_failures(ip: str, username: str | None = None) -> None:
+    """A success clears its own address and its own username's count, never another username's: one person signing
+    in must not reset the wait on guesses at someone else's password."""
     _failures.pop(ip, None)
-    _failures.pop("*", None)
+    if username is not None:
+        _failures.pop(_bucket(username), None)
 
 
-def _account_wait(now: float | None = None) -> float:
-    """Seconds before the next sign-in may be tried, whatever address it comes from: none for the first few
-    failures, then doubling, at most a minute. Guessing stays hopeless; the owner waits a minute at worst."""
+def _account_wait(username: str | None = None, now: float | None = None) -> float:
+    """Seconds before the next sign-in to this username may be tried, whatever address it comes from: none for the
+    first few failures, then doubling, at most a minute. Guessing stays hopeless; the person waits a minute at worst."""
     now = now or time.time()
-    recent = [t for t in _failures.get("*", []) if now - t < LOCK_SECONDS]
-    _failures["*"] = recent
+    key = _bucket(username if username is not None else settings.username)
+    recent = [t for t in _failures.get(key, []) if now - t < LOCK_SECONDS]
+    _failures[key] = recent
     if len(recent) < 5:
         return 0.0
     wait = min(60.0, 2.0 ** (len(recent) - 5))
@@ -145,14 +157,14 @@ def hash_key(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def create_key(session: Session, name: str, scopes: set[str], redaction: str = "full") -> tuple[ApiKey, str]:
+def create_key(session: Session, name: str, scopes: set[str], redaction: str = "full", person_id: int | None = None) -> tuple[ApiKey, str]:
     if "approve" in scopes:
         raise ValueError("no key may hold the approve scope; approvals are the owner's")
     if "admin" in scopes:
         raise ValueError("no key may hold the admin scope; settings are changed by the owner, signed in")
     scopes = {s for s in scopes if s in KEY_SCOPES} or {"read"}
     token = "fa_" + secrets.token_urlsafe(32)
-    key = ApiKey(name=name, prefix=token[:10], key_hash=hash_key(token), scopes=",".join(sorted(scopes)), redaction=redaction)
+    key = ApiKey(name=name, prefix=token[:10], key_hash=hash_key(token), scopes=",".join(sorted(scopes)), redaction=redaction, person_id=person_id)
     session.add(key)
     session.commit()
     session.refresh(key)
@@ -328,7 +340,7 @@ def login(body: LoginIn, request: Request, response: Response, session: Session 
     ip = _client_ip(request)
     if _locked(ip):
         raise HTTPException(429, "Too many failed sign-ins. Try again in fifteen minutes.")
-    wait = _account_wait()
+    wait = _account_wait(body.username)
     if wait > 0:
         raise HTTPException(429, f"Too many failed sign-ins. Try again in {int(wait) + 1} seconds.")
     user_ok = hmac.compare_digest(body.username.encode(), settings.username.encode())
@@ -336,7 +348,11 @@ def login(body: LoginIn, request: Request, response: Response, session: Session 
     from .factors import second_step_on, ticket_for
 
     person = None
-    if not user_ok:
+    if user_ok:
+        from . import people
+
+        people.check_nobody(body.password)  # the same work as a second person's check, so timing does not name the owner
+    else:
         from . import people, services
 
         person = people.by_username(session, body.username)
@@ -348,12 +364,12 @@ def login(body: LoginIn, request: Request, response: Response, session: Session 
         if not pass_ok:
             person = None
     if not ((user_ok or person is not None) and pass_ok):
-        _record_failure(ip)
+        _record_failure(ip, username=body.username)
         raise HTTPException(401, "Wrong username or password")
     if second_step_on(session, person.id if person else None):
         # The password was right; the session waits for the code.
         return {"ok": False, "second_step": "code", "ticket": ticket_for(person)}
-    clear_failures(ip)
+    clear_failures(ip, body.username)
     if person is not None:
         token = start_session(session, request, person)
         response.set_cookie(COOKIE, token, max_age=SESSION_MAX_AGE, httponly=True, samesite="lax", secure=request_is_https(request), path="/")
@@ -492,7 +508,7 @@ def join_check(body: JoinCheckIn, request: Request, session: Session = Depends(g
     person = people.by_invite(session, body.token)
     if person is None:
         _record_failure(ip)
-        raise HTTPException(400, f"This invitation has expired or was used already. Ask {settings.username} for a new one.")
+        raise HTTPException(400, "This invitation has expired or was used already. Ask the person who sent it for a new one.")
     return {"username": person.username, "display_name": person.display_name or person.username, "role": person.role, "role_words": people.ROLES_FOR_THEM.get(person.role, "").format(owner=settings.username),
             "expires_at": person.invite_expires_at.isoformat() if person.invite_expires_at else None, "min_length": people.MIN_PASSWORD}
 
@@ -513,7 +529,7 @@ def join(body: JoinIn, request: Request, response: Response, session: Session = 
     person = people.by_invite(session, body.token)
     if person is None:
         _record_failure(ip)
-        raise HTTPException(400, f"This invitation has expired or was used already. Ask {settings.username} for a new one.")
+        raise HTTPException(400, "This invitation has expired or was used already. Ask the person who sent it for a new one.")
     problem = people.password_problem(person.username, body.password)
     if problem:
         raise HTTPException(400, problem)

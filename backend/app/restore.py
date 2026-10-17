@@ -23,7 +23,7 @@ KEEP = {"import": 15, "daily": 7, "manual": 10, "before-restore": 5}
 NAME = re.compile(r"^\d{8}-\d{6}-\d{6}-[a-z-]+\.db$")
 # Who may get in, what was sent, and what happened stay as they are now: a restore never brings back a revoked
 # key or a closed session, never makes a sent email look unsent, and never erases the activity log.
-CARRIED = ("api_keys", "oauth_clients", "oauth_codes", "oauth_tokens", "web_sessions", "audit_entries", "approvals", "passkeys", "people")
+CARRIED = ("api_keys", "oauth_clients", "oauth_codes", "oauth_tokens", "web_sessions", "audit_entries", "approvals", "passkeys", "people", "mail_accounts")
 CARRIED_SETTINGS = ("calendar.feed", "auth.totp", "auth.totp.last_step", "send.allowances", "webpush.subs", "push")
 
 
@@ -182,6 +182,12 @@ def _carry_forward(current: Path, db: Path) -> None:
         for key in CARRIED_SETTINGS:
             con.execute("DELETE FROM main.settings WHERE key = ?", (key,))
             con.execute("INSERT INTO main.settings (key, value) SELECT key, value FROM now.settings WHERE key = ?", (key,))
+        # Who sees an account is access, not data: each account keeps today's sharing; one not here today is private.
+        cols = {r[1] for r in con.execute("PRAGMA main.table_info(accounts)")}
+        if {"shared", "person_id"} <= cols and {"shared", "person_id"} <= {r[1] for r in con.execute("PRAGMA now.table_info(accounts)")}:
+            con.execute("UPDATE main.accounts SET shared = 0, person_id = NULL")
+            con.execute("UPDATE main.accounts SET shared = (SELECT n.shared FROM now.accounts n WHERE n.id = main.accounts.id), "
+                        "person_id = (SELECT n.person_id FROM now.accounts n WHERE n.id = main.accounts.id) WHERE id IN (SELECT id FROM now.accounts)")
         con.commit()
         con.execute("DETACH DATABASE now")
     finally:

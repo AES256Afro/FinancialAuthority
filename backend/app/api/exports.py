@@ -166,8 +166,8 @@ def feed_status(session: Session = Depends(get_session), _: auth.Principal = Dep
 def feed_create(body: FeedIn, request: Request, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_owner)) -> dict:
     """A new feed address; the old one stops working. The address is shown once."""
     token = secrets.token_urlsafe(32)
-    set_setting(session, FEED_KEY, {"hash": _hash(token), "amounts": body.amounts, "created": datetime.now(timezone.utc).isoformat()})
-    services.audit(session, client=principal.name, client_kind="owner", tool="calendar_feed_create", args={"amounts": body.amounts}, rows=1)
+    set_setting(session, FEED_KEY, {"hash": _hash(token), "amounts": body.amounts, "created": datetime.now(timezone.utc).isoformat(), "person_id": principal.person_id})
+    services.audit(session, client=principal.name, client_kind=principal.kind, tool="calendar_feed_create", args={"amounts": body.amounts}, rows=1)
     base = (settings.public_url or str(request.base_url)).rstrip("/")
     return {"url": f"{base}/api/calendar/{token}.ics", "amounts": body.amounts, "note": "Shown once. Add it in the phone's calendar as a subscription; make a new one and this stops working."}
 
@@ -175,7 +175,7 @@ def feed_create(body: FeedIn, request: Request, session: Session = Depends(get_s
 @router.delete("/api/v1/calendar/feed")
 def feed_revoke(session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_owner)) -> dict:
     set_setting(session, FEED_KEY, {})
-    services.audit(session, client=principal.name, client_kind="owner", tool="calendar_feed_revoke", rows=0)
+    services.audit(session, client=principal.name, client_kind=principal.kind, tool="calendar_feed_revoke", rows=0)
     return {"active": False}
 
 
@@ -185,12 +185,15 @@ FEED_LIMIT = 60  # requests an hour, per address
 
 @router.get("/api/calendar/{token}.ics", include_in_schema=False)
 def feed(token: str, request: Request, session: Session = Depends(get_session)) -> Response:
-    ip = auth._client_ip(request)
+    key = "feed:" + _hash(token)[:16]
     now = time.time()
-    recent = [t for t in _hits.get(ip, []) if now - t < 3600]
+    recent = [t for t in _hits.get(key, []) if now - t < 3600]
     if len(recent) >= FEED_LIMIT:
         raise HTTPException(429, "Too many requests")
-    _hits[ip] = [*recent, now]
+    _hits[key] = [*recent, now]
+    if len(_hits) > 5000:  # strangers' guesses never grow the table without end
+        for k in [k for k, v in _hits.items() if not v or now - v[-1] > 3600]:
+            _hits.pop(k, None)
     feed_cfg = get_setting(session, FEED_KEY, {}) or {}
     if not feed_cfg.get("hash") or len(token) < 30 or not secrets.compare_digest(_hash(token), feed_cfg["hash"]):
         raise HTTPException(404, "Not found")

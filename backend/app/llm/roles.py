@@ -97,15 +97,39 @@ def secrets_state(session: Session) -> dict[str, bool]:
     return {name: bool(stored.get(name)) or env[name] for name in SECRET_NAMES}
 
 
+def _openai_default() -> str:
+    return settings.openai_base_url or "https://api.openai.com/v1"
+
+
+def _openai_urls(session: Session) -> list[str]:
+    """The addresses the OpenAI-compatible roles point at now."""
+    return sorted({_openai_default()} | {r.get("base_url") for r in role_settings(session).values() if r.get("provider") == "openai" and r.get("base_url")})
+
+
 def save_secret(session: Session, name: str, value: str) -> None:
+    """A key, kept with the addresses it is for. An OpenAI-compatible key is bound to the addresses its roles point at
+    when it is saved; it is never sent anywhere else, so moving a role to a new address needs the key again."""
     if name not in SECRET_NAMES:
         raise ValueError("unknown secret")
     stored = get_setting(session, "models.secrets", {}) or {}
     if value.strip():
         stored[name] = crypto.encrypt(value.strip())
+        if name == "openai":
+            stored["openai.for"] = _openai_urls(session)
     else:
         stored.pop(name, None)
+        stored.pop(f"{name}.for", None)
     set_setting(session, "models.secrets", stored)
+
+
+def key_for_url(session: Session, url: str) -> str:
+    """The OpenAI-compatible key, only for an address it was saved for (the environment's key only for the
+    environment's own address)."""
+    stored = get_setting(session, "models.secrets", {}) or {}
+    if stored.get("openai"):
+        allowed = stored.get("openai.for") or [_openai_default()]
+        return secret(session, "openai") if url.rstrip("/") in {u.rstrip("/") for u in allowed} else ""
+    return settings.openai_api_key if settings.openai_api_key and url.rstrip("/") == _openai_default().rstrip("/") else ""
 
 
 def secret(session: Session, name: str) -> str:
@@ -128,7 +152,8 @@ def provider_for(session: Session, role: str) -> Provider | None:
     if kind == "ollama":
         return Ollama(model, conf["base_url"] or settings.ollama_url)
     if kind == "openai":
-        return OpenAICompatible(model, conf["base_url"] or settings.openai_base_url or "https://api.openai.com/v1", secret(session, "openai"))
+        url = conf["base_url"] or _openai_default()
+        return OpenAICompatible(model, url, key_for_url(session, url))
     if kind == "anthropic":
         key = secret(session, "anthropic")
         return Anthropic(model, key) if key else None

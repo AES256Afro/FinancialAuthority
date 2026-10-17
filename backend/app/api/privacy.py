@@ -13,7 +13,7 @@ import hmac
 import logging
 import shutil
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlmodel import Session, select
@@ -106,7 +106,7 @@ class EraseIn(BaseModel):
 
 
 @router.post("/erase")
-def erase(body: EraseIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_owner)) -> dict:
+def erase(body: EraseIn, request: Request, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_owner)) -> dict:
     from ..connectors.plaid import PlaidConnector
     from ..factors import check_code, second_step_on
     from ..models import BankLink
@@ -115,10 +115,17 @@ def erase(body: EraseIn, session: Session = Depends(get_session), principal: aut
         raise HTTPException(403, "Only the owner erases everything.")
     if body.phrase.strip().lower() != PHRASE:
         raise HTTPException(400, f'Type the words "{PHRASE}" to confirm.')
-    if auth.auth_enabled() and not hmac.compare_digest(body.password.encode(), settings.password.encode()):
-        raise HTTPException(401, "That is not the password.")
-    if second_step_on(session) and not check_code(session, body.code):
-        raise HTTPException(401, "Type the code your authenticator app shows now.")
+    # The password and the code are checked under the sign-in lockout, with one answer for either being wrong, so an
+    # open session is not a way to test guesses at the owner's password.
+    ip = auth._client_ip(request)
+    if auth._locked(ip) or auth._account_wait(settings.username) > 0:
+        raise HTTPException(429, "Too many wrong tries. Wait a minute, then try again.")
+    password_ok = not auth.auth_enabled() or hmac.compare_digest(body.password.encode(), settings.password.encode())
+    code_ok = not second_step_on(session) or (password_ok and check_code(session, body.code))
+    if not (password_ok and code_ok):
+        auth._record_failure(ip, username=settings.username)
+        raise HTTPException(401, "The password or the code is not right." if second_step_on(session) else "That is not the password.")
+    auth.clear_failures(ip, settings.username)
     # Each bank is disconnected at its vendor first, while the app still holds the tokens.
     plaid = PlaidConnector()
     api = plaid.api(session)
