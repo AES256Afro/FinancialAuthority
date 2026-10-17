@@ -21,10 +21,17 @@ TODAY = date(2026, 10, 14)
 def test_a_sender_is_judged_by_the_mail_servers_verdict_its_name_and_its_domain():
     passed = "mx.example.test; dkim=pass header.d=affirm.com; spf=pass; dmarc=pass header.from=affirm.com"
     assert judge("notices@affirm.com", "Affirm", passed)[0] == "ok"
-    assert judge("alerts@capital0ne-alerts.test", "Capital One", passed) == ("crit", "It calls itself Capital One, but it comes from capital0ne-alerts.test, not capitalone.com.")
+    assert judge("alerts@capital0ne-alerts.test", "Capital One", passed) == ("crit", "It comes from capital0ne-alerts.test, a look-alike of capitalone.com.")
+    assert judge("alerts@example-mailer.test", "Capital One", passed) == ("crit", "It calls itself Capital One, but it comes from example-mailer.test, not capitalone.com.")
     assert judge("pay@paypa1.com", "Billing", "")[0] == "crit" and lookalike("pay@paypa1.com") == "paypal.com"
     assert judge("bills@example-power.test", "Example Power", "mx.example.test; dmarc=fail")[0] == "crit"
     assert judge("bills@example-power.test", "Example Power", "") == ("", "")  # nothing to judge by
+    # a company that shares a word, the brand's own longer domain, and the brand's own ending are not forgeries
+    assert judge("noreply@xmail.square-enix.com", "Square Enix Store | North America", passed)[0] == "ok"
+    assert judge("donotreply@vanguardretirement.com", "Vanguard", passed)[0] == "ok"
+    assert judge("no-reply@notifications.health.amazon", "Amazon One Medical Notifications", passed)[0] == "ok"
+    assert judge("x@capitalone-alerts.net", "Card team", passed)[0] == "crit"  # the brand with a bait word
+    assert judge("x@example-property.test", "Example Apartments", "mx.example.test; spf=softfail; dkim=none")[0] == "warn"  # weak, not forged
     # learned: earlier verified mail from this name used another domain of its own
     assert judge("x@notify.example-bank.test", "Capital One", passed, learned={"capital one": {"example-bank.test"}})[0] == "ok"
 

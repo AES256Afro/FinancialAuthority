@@ -30,6 +30,9 @@ KNOWN: dict[str, tuple[str, ...]] = {
     "irs": ("irs.gov",), "social security": ("ssa.gov",), "schwab": ("schwab.com",), "vanguard": ("vanguard.com",), "fidelity": ("fidelity.com",),
 }
 LEET = str.maketrans({"0": "o", "1": "l", "3": "e", "4": "a", "5": "s", "7": "t", "$": "s"})
+# Words a forger adds to a brand to make a domain look official ("capitalone-alerts", "paypal-secure").
+BAIT = ("secure", "verify", "verification", "login", "signin", "alert", "alerts", "account", "accounts", "support", "update", "billing", "service", "services",
+        "notice", "confirm", "refund", "claim", "unlock", "help", "wallet", "pay")
 
 
 def org_domain(address_or_domain: str) -> str:
@@ -61,22 +64,32 @@ def _results(auth_results: str) -> dict[str, str]:
     return out
 
 
+def _owns(org: str, own: str) -> bool:
+    """A domain the sender owns besides its main one: the same name with more to it (vanguardretirement.com for
+    vanguard.com) or the brand's own ending (notifications.health.amazon for amazon.com)."""
+    own_label = own.split(".")[0]
+    label, tld = org.split(".")[0], org.rsplit(".", 1)[-1]
+    return org == own or tld == own_label or (len(own_label) >= 4 and label.startswith(own_label) and not any(b in label for b in BAIT))
+
+
 def lookalike(domain: str) -> str | None:
-    """A domain dressed as a known sender's: a digit for a letter, or the brand inside another domain."""
+    """A domain dressed as a known sender's: a digit for a letter (capital0ne.com), or the brand with a bait word
+    (paypal-secure.com, capitalone-alerts.net). A different company that shares a word (square-enix.com) is not."""
     org = org_domain(domain)
     label = org.split(".")[0]
     plain = label.translate(LEET).replace("-", "")
-    for brand, domains in KNOWN.items():
-        if org in domains:
+    for domains in KNOWN.values():
+        if any(_owns(org, own) for own in domains):
             return None
+    for domains in KNOWN.values():
         for own in domains:
             own_label = own.split(".")[0]
             if len(own_label) < 4:
                 continue
             if plain == own_label and label != own_label:
                 return own  # capital0ne.com
-            if own_label in plain and plain != own_label:
-                return own  # paypal-secure.com, affirmpay.net
+            if own_label in plain and any(b in plain.replace(own_label, " ", 1) for b in BAIT):
+                return own  # paypal-secure.com, capitalone-alerts.net
     return None
 
 
@@ -88,15 +101,15 @@ def judge(sender: str, sender_name: str, auth_results: str = "", reply_to: str =
     org = org_domain(sender)
     res = _results(auth_results)
     brand = brand_of(sender_name)
-    if brand:
-        own = set(KNOWN[brand]) | (learned or {}).get(brand, set())
-        if org not in own:
-            return "crit", f"It calls itself {sender_name.strip()}, but it comes from {org}, not {', '.join(sorted(own)[:2])}."
     looks = lookalike(sender)
     if looks:
         return "crit", f"It comes from {org}, a look-alike of {looks}."
-    if res.get("dmarc") == "fail" or (res.get("dkim") in ("fail", "none", None) and res.get("spf") in ("fail", "softfail") and res):
-        return "crit", f"The mail server could not confirm it came from {org} (its domain did not vouch for it)."
+    if res.get("dmarc") == "fail" or (res.get("dkim") == "fail" and res.get("spf") == "fail"):
+        return "crit", f"The mail server could not confirm it came from {org}: its domain did not vouch for it."
+    if brand:
+        own = set(KNOWN[brand]) | (learned or {}).get(brand, set())
+        if not any(_owns(org, d) for d in own):
+            return "crit", f"It calls itself {sender_name.strip()}, but it comes from {org}, not {', '.join(sorted(own)[:2])}."
     if res.get("dmarc") == "pass" or res.get("dkim") == "pass":
         if reply_to and "@" in reply_to and org_domain(reply_to) != org and brand:
             return "warn", f"It is from {org}, but replies would go to {org_domain(reply_to)}."
