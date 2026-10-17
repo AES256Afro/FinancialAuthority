@@ -5,7 +5,7 @@
 // device agrees; the page waits for the server's copy before it lets anything change.
 import { ArrowDown, ArrowUp, CircleCheck, Eye, EyeOff, GripVertical, OctagonAlert, TriangleAlert, X } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import { saveAppearance, useAppearance, useAppearanceLoad, type Arrangement, type AppearanceState, type Section } from "../appearance";
+import { appearance, saveAppearance, useAppearance, useAppearanceLoad, type Arrangement, type AppearanceState, type Section } from "../appearance";
 import { defaultRoleColours, LOOKS, ROLES, VALIDATED_ORDER, type LookId, type Role } from "../looks";
 import { asHex, validatePalette, type Report } from "../looks/validate";
 import { PRESETS, SECTIONS, sectionByKey } from "../sections";
@@ -183,7 +183,8 @@ export function Appearance() {
   const save = async (at: Area, patch: Partial<AppearanceState>, done: string): Promise<boolean> => {
     setNote(null);
     try {
-      await saveAppearance({ ...ap, ...patch });
+      // Built on what is kept now, never on this screen's copy of it, so a change touches only what it names.
+      await saveAppearance({ ...appearance(), ...patch });
       setNote({ at, text: done, tone: "info" });
       return true;
     } catch (e) {

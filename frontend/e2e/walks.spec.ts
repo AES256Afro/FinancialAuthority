@@ -33,7 +33,7 @@ test("Needs you says what waits, picture first", async ({ page }) => {
 test("a second person joins with their own password and sees only what is shared", async ({ page, browser }, info) => {
   await signIn(page);
   await page.goto("/settings/people");
-  const username = `partner-${info.project.name}`;
+  const username = `partner-${info.project.name}-${info.repeatEachIndex}-${info.retry}`; // unique when a run repeats or retries
   await page.getByLabel("Username").first().fill(username);
   await page.getByLabel("Their name").fill(`Example Partner ${info.project.name}`);
   await page.getByRole("button", { name: "Add them and make their link" }).click();
