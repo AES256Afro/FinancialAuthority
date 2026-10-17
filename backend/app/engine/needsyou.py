@@ -32,9 +32,12 @@ GROUP_WORDS = {
 # What a fact needs before it can be confirmed without the owner typing anything
 COMPLETE = {
     "bill_due": ("amount", "due_date"), "past_due": ("amount",), "paystub": ("net", "pay_date"), "receipt": ("total",), "investment_balance": ("balance",),
-    "statement": (), "price_change": ("amount",), "payment_confirmation": (),
+    "statement": (), "price_change": ("amount",), "payment_confirmation": (), "advance": ("amount",),
+    "installment": ("schedule", "loan_id"),  # the lender's own schedule and loan number: one plan per loan, however many emails
 }
-NEVER_IN_BULK = {"export", "document_terms", "installment", "advance"}  # each needs the owner's eye, one at a time
+NEVER_IN_BULK = {"export", "document_terms"}  # each needs the owner's eye, one at a time
+# Kinds whose confirmation changes nothing in the plan: the email is kept as read, as a record.
+RECORD_ONLY = {"statement", "advance", "payment_confirmation"}
 BILL_NOTICES = ("bill_due", "past_due", "price_change")  # each names a bill; only its newest notice counts
 OLD_NOTICE_DAYS = 60  # older than this, a notice for a bill not on file starts nothing
 
@@ -43,7 +46,7 @@ def complete(fact: ExtractedFact) -> bool:
     if fact.kind in NEVER_IN_BULK or fact.kind not in COMPLETE:
         return False
     fields = json.loads(fact.fields or "{}")
-    return all(fields.get(k) not in (None, "") for k in COMPLETE[fact.kind])
+    return all(fields.get(k) not in (None, "", [], {}) for k in COMPLETE[fact.kind])
 
 
 def notice_name(fields: dict[str, Any], ref: MessageRef | None, override: str | None = None) -> str:
@@ -139,7 +142,11 @@ def plan_many(session: Session, facts: list[ExtractedFact], today: date, *, loos
         if f.status != "pending":
             step.update(do="skip", why="already answered")
         elif not complete(f):
-            step.update(do="own_card", why="needs your answer on its own card")
+            step.update(do="own_card", why="no schedule in it: answer it on its card with the payments left" if f.kind == "installment" else "needs your answer on its own card")
+        elif f.kind in RECORD_ONLY:
+            step.update(do="apply", record=True)
+        elif f.kind == "installment":
+            step.update(do="apply", plan=str(fields.get("loan_id")), lender=str(fields.get("provider") or fields.get("sender_name") or "the lender"))
         elif f.kind in BILL_NOTICES:
             name = notice_name(fields, ref_of(f))
             key = merchant_key(name)
@@ -167,8 +174,15 @@ def plan_many(session: Session, facts: list[ExtractedFact], today: date, *, loos
     adds = sorted({s["name"] for s in applying if s.get("new")})
     aside = sum(1 for s in steps if s["do"] == "set_aside")
     own = sum(1 for s in steps if s["do"] == "own_card")
-    others = sum(1 for s in applying if not s.get("name"))
+    records = sum(1 for s in applying if s.get("record"))
+    plans = sorted({s["plan"] for s in applying if s.get("plan")})
+    lenders = sorted({s["lender"] for s in applying if s.get("lender")})
+    others = sum(1 for s in applying if not s.get("name") and not s.get("record") and not s.get("plan"))
     parts = []
+    if plans:
+        parts.append(f"sets up or updates {len(plans)} pay-later plan{'s' if len(plans) != 1 else ''} with {_names(lenders)}, one per loan")
+    if records:
+        parts.append(f"marks {records} as read (they change nothing in the plan)")
     if updates:
         parts.append(f"brings {len(updates)} bill{'s' if len(updates) != 1 else ''} up to date ({_names(updates)})")
     if adds:
