@@ -467,7 +467,7 @@ def _freshness(session: Session, accounts: list) -> dict:
     told = told_balances(session)
     return {
         "balances_as_of": min(stamps).isoformat() if stamps else None,
-        "accounts": [{"id": a.id, "name": a.name, "kind": a.kind, "as_of": a.balance_at.isoformat() if a.balance_at else None, "connector": a.connector,
+        "accounts": [{"id": a.id, "name": a.name, "kind": a.kind, "as_of": a.balance_at.isoformat() if a.balance_at else None, "connector": a.connector, "balance": a.balance,
                       **({"told": told[a.id]} if a.id in told and abs(told[a.id]["amount"] - float(a.balance or 0.0)) < 0.005 else {})} for a in spending],
         "newest_transaction": newest.isoformat() if newest else None,
     }
