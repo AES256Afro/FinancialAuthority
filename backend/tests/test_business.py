@@ -109,3 +109,10 @@ def test_the_tax_center_lays_out_the_year_and_asks_about_the_car(owner: TestClie
     assert out["checks"][0]["state"] == "no"
     assert owner.post("/api/v1/taxes/answers", json={"answers": {"ssn": "x"}}).status_code == 400
     assert "Not tax advice" in t["not_advice"]
+
+
+def test_a_company_that_only_shares_a_word_with_a_provider_is_not_suggested():
+    from app.engine.business import FINDER
+
+    utilities = next(p for k, _, p in FINDER if k == "utilities")
+    assert utilities.search("SPECTRUM INTERNET 123") and utilities.search("Comcast") and not utilities.search("SPECTRUM LABORATORIES")
