@@ -30,7 +30,7 @@ def watchlist(session: Session, today: date) -> dict:
         total = round(sum(a.amount + a.fee for a in advances), 2)
         items.append({
             "kind": "advances", "severity": "critical",
-            "text": f"No new advances: {len(advances)} already repay {total:,.2f} out of the next paycheck." if len(advances) > 1 else f"No new advances: one already repays {total:,.2f} out of the next paycheck.",
+            "text": f"No new advances: {len(advances)} already repay ${total:,.2f} out of the next paycheck." if len(advances) > 1 else f"No new advances: one already repays ${total:,.2f} out of the next paycheck.",
             "amount": total, "sources": [f"advance:{a.id}" for a in advances], "link": "/debts",
         })
 
@@ -47,7 +47,7 @@ def watchlist(session: Session, today: date) -> dict:
         left = round(sum(p.installment * p.remaining for p in plans), 2)
         items.append({
             "kind": "plans", "severity": "warning",
-            "text": f"No new pay-later plans: {len(plans)} are running, {left:,.2f} still to pay.",
+            "text": f"No new pay-later plans: {len(plans)} are running, ${left:,.2f} still to pay.",
             "amount": left, "sources": [f"plan:{p.id}" for p in plans], "link": "/debts",
         })
 
@@ -67,7 +67,7 @@ def watchlist(session: Session, today: date) -> dict:
         if rise >= max(PRICE_RISE_MIN, s.typical_amount * PRICE_RISE_SHARE):
             items.append({
                 "kind": "price", "severity": "warning",
-                "text": f"{s.merchant} went up: {s.latest_amount:,.2f} against the usual {s.typical_amount:,.2f}. Worth a look before it renews.",
+                "text": f"{s.merchant} went up: ${s.latest_amount:,.2f} against the usual ${s.typical_amount:,.2f}. Worth a look before it renews.",
                 "amount": round(rise, 2), "sources": [f"series:{s.id}"], "link": "/bills",
             })
 
@@ -90,7 +90,7 @@ def watchlist(session: Session, today: date) -> dict:
         if d.balance > 0:
             items.append({
                 "kind": "card", "severity": "warning",
-                "text": f"{d.name} is a pay-in-full card carrying {d.balance:,.2f}; nothing new on it until it is clear.",
+                "text": f"{d.name} is a pay-in-full card carrying ${d.balance:,.2f}; nothing new on it until it is clear.",
                 "amount": d.balance, "sources": [f"debt:{d.id}"], "link": "/debts",
             })
 
@@ -99,7 +99,7 @@ def watchlist(session: Session, today: date) -> dict:
         if g["average"] > 0 and g["this_month"] >= g["average"] * OVER_USUAL and g["this_month"] - g["average"] >= OVER_USUAL_MIN:
             items.append({
                 "kind": "category", "severity": "info",
-                "text": f"{g['name']} is {g['this_month'] - g['average']:,.2f} over its usual this month ({g['this_month']:,.2f} against {g['average']:,.2f}).",
+                "text": f"{g['name']} is ${g['this_month'] - g['average']:,.2f} over its usual this month (${g['this_month']:,.2f} against ${g['average']:,.2f}).",
                 "amount": round(g["this_month"] - g["average"], 2), "sources": ["report:spending"], "link": "/reports",
             })
 

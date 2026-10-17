@@ -382,7 +382,7 @@ def import_holdings(session: Session, account: Account, positions: list[dict], *
     session.add(account)
     session.commit()
     record_balance(session, account, total, when)
-    return SyncResult(ok=True, summary=f"{len(positions)} holdings, {total:,.2f} in all, into {account.name}", inserted=len(positions), details={"account_id": account.id, "total": total}, at=utcnow())
+    return SyncResult(ok=True, summary=f"{len(positions)} holdings, ${total:,.2f} in all, into {account.name}", inserted=len(positions), details={"account_id": account.id, "total": total}, at=utcnow())
 
 
 # ---- a bills list ------------------------------------------------------------------------------
