@@ -16,6 +16,7 @@ which says where it is counted."""
 from __future__ import annotations
 
 import json
+import re
 from datetime import date, timedelta
 from typing import Any
 
@@ -62,35 +63,41 @@ def _notice_day(fact: ExtractedFact, fields: dict[str, Any], ref: MessageRef | N
     return fact.created_at.date() if fact.created_at else None
 
 
-def elsewhere_index(session: Session) -> list[tuple[str, str]]:
-    """Who is already counted another way, each with where: (name key, sentence)."""
-    from .recurring import merchant_key
+# Words that do not tell one payee from another: "Voyager at the Space Center" and "Voyager at Space Center Leasing"
+# are the same office.
+FILLER = {"the", "at", "of", "and", "a", "an", "llc", "inc", "co", "corp", "company", "ltd", "lp", "leasing", "apartments", "apts",
+          "homes", "services", "service", "bill", "billing", "payment", "payments", "statement", "online", "team"}
 
-    out: list[tuple[str, str]] = []
+
+def _words(name: str) -> frozenset[str]:
+    return frozenset(w for w in re.findall(r"[a-z0-9]+", (name or "").lower()) if w not in FILLER)
+
+
+def elsewhere_index(session: Session) -> list[tuple[frozenset[str], str]]:
+    """Who is already counted another way, each with where: (the words of the name, sentence)."""
+    out: list[tuple[frozenset[str], str]] = []
     for h in session.exec(select(Home).where(Home.active == True)).all():  # noqa: E712
         for n in (h.name, h.payee):
-            out.append((merchant_key(n or ""), f"the rent for {h.name} is counted from Housing"))
+            out.append((_words(n), f"the rent for {h.name} is counted from Housing"))
     for d in session.exec(select(Debt).where(Debt.active == True)).all():  # noqa: E712
-        out.append((merchant_key(d.name), f"{d.name} is counted on Debts"))
+        out.append((_words(d.name), f"{d.name} is counted on Debts"))
     for a in session.exec(select(Account).where(Account.active == True, Account.kind.in_(("card", "loan", "bnpl", "advance")))).all():  # type: ignore[attr-defined]  # noqa: E712
         for n in (a.name, a.institution):
-            out.append((merchant_key(n or ""), f"{a.name} is counted on Debts"))
+            out.append((_words(n), f"{a.name} is counted on Debts"))
     for p in session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all():  # noqa: E712
-        out.append((merchant_key(p.provider), f"pay-later plans with {p.provider} are counted on Borrowing"))
+        out.append((_words(p.provider), f"pay-later plans with {p.provider} are counted on Borrowing"))
     for v in session.exec(select(Advance)).all():
-        out.append((merchant_key(v.provider), f"advances from {v.provider} are counted on Borrowing"))
-    return [(k, said) for k, said in out if len(k) >= 4]
+        out.append((_words(v.provider), f"advances from {v.provider} are counted on Borrowing"))
+    return [(w, said) for w, said in out if sum(len(x) for x in w) >= 4]
 
 
-def counted_elsewhere(index: list[tuple[str, str]], name: str) -> str | None:
-    """Where a notice's sender is already counted, when it is; the same loose match a bill's name gets."""
-    from .recurring import merchant_key
-
-    key = merchant_key(name)
-    if len(key) < 4:
+def counted_elsewhere(index: list[tuple[frozenset[str], str]], name: str) -> str | None:
+    """Where a notice's sender is already counted, when it is: every telling word of one name is in the other."""
+    words = _words(name)
+    if sum(len(x) for x in words) < 4:
         return None
-    for k, said in index:
-        if k == key or k.startswith(key) or key.startswith(k):
+    for known, said in index:
+        if known <= words or words <= known:
             return said
     return None
 
