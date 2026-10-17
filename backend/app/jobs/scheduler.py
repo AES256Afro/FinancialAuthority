@@ -481,6 +481,7 @@ def data_check() -> str:
             judged = datacheck.recheck_senders(session)
         except Exception as error:  # noqa: BLE001 - the mailbox being away never stops the rest of the check
             log.warning("sender check skipped: %s", error)
+        borrowing.reread_lender_notices(session)  # AutoPay and approval emails that wait from before they were read
         borrowing.sync_borrowing(session, _today())  # a bill a lender's plan already pays steps aside
         last = datacheck.run(session, _today())
     parts = [f"{last['count']} finding{'s' if last['count'] != 1 else ''}"]

@@ -128,14 +128,22 @@ def handle_message(session: Session, account: MailAccount, folder: str, uid: int
         return outcome
     fields = extract(kind, parsed.subject, parsed.text, today)
     if kind == "installment":
-        from ..parsers.affirm import parse_loan_confirmation
+        from ..parsers.affirm import parse_autopay, parse_loan_confirmation, parse_plan_approved
 
-        loan = parse_loan_confirmation(parsed.text, parsed.date.date() if parsed.date else today)
+        sent = parsed.date.date() if parsed.date else today
+        loan = parse_loan_confirmation(parsed.text, sent)
         if loan:
             confidence = max(confidence, loan.pop("confidence"))
             fields.update(loan)
             fields["amount"] = loan["installment"]
             fields["due_date"] = loan["first_date"]
+        else:
+            notice = parse_autopay(parsed.subject, parsed.text, sent) or parse_plan_approved(parsed.subject, parsed.text)
+            if notice:
+                fields.update(notice)
+                if notice.get("installment"):
+                    fields["amount"] = notice["installment"]
+                confidence = max(confidence, 0.9)
     if kind == "paystub":
         from ..parsers.paystub import parse_paystub_text
 

@@ -410,6 +410,14 @@ def apply_fact(session: Session, fact: ExtractedFact, ref: MessageRef | None, bo
         session.flush()
         record_balance(session, account, float(balance), as_of, commit=False)
         return f"account:{account.id}"
+    if fact.kind == "installment" and fields.get("notice") in ("autopay", "approved"):
+        from ..engine.borrowing import apply_lender_notice
+
+        try:
+            plan = apply_lender_notice(session, fields, today())
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
+        return f"plan:{plan.id}"
     if fact.kind == "installment":
         from ..engine.borrowing import plan_from_fields
 

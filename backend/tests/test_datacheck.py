@@ -116,3 +116,34 @@ def test_the_same_email_in_two_mailboxes_waits_once_and_a_doubtful_sender_is_kep
     out = owner.post("/api/v1/data-check/answer", json={"key": sender["key"], "action": "discard"}).json()
     assert out["said"] == "Discarded 1 item read from it. Nothing from it is used."
     assert "Set aside 1 waiting item read twice" in [f["what"] for f in check["fixed"]]
+
+
+def test_affirms_own_emails_set_autopay_and_true_dates_and_an_approval_is_its_plan(owner: TestClient):
+    """M53: "You've enabled AutoPay" sets AutoPay on its plan with the lender's dates; "Your payment plan at a store
+    is approved" is that plan (a new one has estimated dates until the lender sets them); a PayPal billing agreement
+    is not a loan."""
+    from app.mail.classify import classify
+    from app.parsers.affirm import parse_autopay, parse_plan_approved
+
+    text = "Visit the app AutoPay Schedule Oct 16, 2026 $48.30 Nov 16, 2026 $48.30 Dec 16, 2026 $48.00 You can modify your AutoPay settings any time."
+    notice = parse_autopay("You've enabled AutoPay!", text, date(2026, 10, 7))
+    assert notice["autopay"] is True and [e["date"] for e in notice["autopay_schedule"]] == ["2026-10-16", "2026-11-16", "2026-12-16"]
+    assert parse_autopay("AutoPay is off", "You turned off AutoPay for your Example Store loan.")["autopay"] is False
+    approved = parse_plan_approved("Your payment plan at Example Store is approved", "Here's your plan: $83.76 every month for 3 months")
+    assert (approved["merchant"], approved["installment"], approved["count"], approved["cadence_days"]) == ("Example Store", 83.76, 3, 30)
+    assert classify("service@paypal.com", "There's been a change to your Example Co autopay", "")[0] != "installment"
+
+    with Session(engine) as session:
+        session.add(InstallmentPlan(provider="Affirm", merchant="Example Store", total=193.2, installment=48.30, count=4, remaining=3, next_date=date(2026, 10, 30), cadence_days=30, loan_id="L-1"))
+        rows = [ExtractedFact(kind="installment", status="pending", fields=json.dumps({**notice, "subject": "You've enabled AutoPay!"})),
+                ExtractedFact(kind="installment", status="pending", fields=json.dumps({**approved, "message_date": "2026-09-24", "subject": "Your payment plan at Example Store is approved"}))]
+        session.add_all(rows)
+        session.commit()
+        ids = [r.id for r in rows]
+    plan = owner.post("/api/v1/needs-you/facts", json={"ids": ids, "action": "preview"}).json()
+    assert "marks AutoPay on 1 plan with the lender's dates (Example Store $48.30)" in plan["said"]
+    owner.post("/api/v1/needs-you/facts", json={"ids": ids, "action": "confirm"})
+    with Session(engine) as session:
+        plans = {p.installment: p for p in session.exec(select(InstallmentPlan)).all()}
+        assert plans[48.30].autopay is True and plans[48.30].next_date == date(2026, 10, 16)
+        assert plans[83.76].dates_estimated is True and plans[83.76].count == 3 and plans[83.76].next_date == date(2026, 10, 24)

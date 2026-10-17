@@ -47,6 +47,10 @@ def complete(fact: ExtractedFact) -> bool:
     if fact.kind in NEVER_IN_BULK or fact.kind not in COMPLETE:
         return False
     fields = json.loads(fact.fields or "{}")
+    if fact.kind == "installment" and fields.get("notice") == "autopay":
+        return "autopay" in fields
+    if fact.kind == "installment" and fields.get("notice") == "approved":
+        return all(fields.get(k) for k in ("installment", "count", "merchant"))
     return all(fields.get(k) not in (None, "", [], {}) for k in COMPLETE[fact.kind])
 
 
@@ -145,8 +149,16 @@ def plan_many(session: Session, facts: list[ExtractedFact], today: date, *, loos
             step.update(do="skip", why="already answered")
         elif ref is not None and ref.trust == "crit":
             step.update(do="own_card", why=f"check the sender first: {ref.trust_why}")
-        elif f.kind == "installment" and not fields.get("schedule") and AUTOPAY.search(str(fields.get("subject") or "")):
-            step.update(do="apply", record=True)  # "You've enabled AutoPay": a notice about a plan, not a plan
+        elif f.kind == "installment" and fields.get("notice") == "autopay":
+            from .borrowing import plan_for_notice
+
+            match = plan_for_notice(session, fields)
+            if match is None:
+                step.update(do="own_card", why="no plan on file matches this AutoPay notice yet")
+            else:
+                step.update(do="apply", autopay=f"{match.merchant or match.provider} ${match.installment:,.2f}", lender=str(fields.get("provider") or "the lender"))
+        elif f.kind == "installment" and not fields.get("schedule") and not fields.get("notice") and AUTOPAY.search(str(fields.get("subject") or "")):
+            step.update(do="apply", record=True)  # an older AutoPay notice read before the dates were taken from it
         elif not complete(f):
             step.update(do="own_card", why="no schedule in it: answer it on its card with the payments left" if f.kind == "installment" else "needs your answer on its own card")
         elif f.kind in RECORD_ONLY:
@@ -181,12 +193,15 @@ def plan_many(session: Session, facts: list[ExtractedFact], today: date, *, loos
     aside = sum(1 for s in steps if s["do"] == "set_aside")
     own = sum(1 for s in steps if s["do"] == "own_card")
     records = sum(1 for s in applying if s.get("record"))
+    autopays = sorted({s["autopay"] for s in applying if s.get("autopay")})
     plans = sorted({s["plan"] for s in applying if s.get("plan")})
     lenders = sorted({s["lender"] for s in applying if s.get("lender")})
-    others = sum(1 for s in applying if not s.get("name") and not s.get("record") and not s.get("plan"))
+    others = sum(1 for s in applying if not s.get("name") and not s.get("record") and not s.get("plan") and not s.get("autopay"))
     parts = []
     if plans:
         parts.append(f"sets up or updates {len(plans)} pay-later plan{'s' if len(plans) != 1 else ''} with {_names(lenders)}, one per loan")
+    if autopays:
+        parts.append(f"marks AutoPay on {len(autopays)} plan{'s' if len(autopays) != 1 else ''} with the lender's dates ({_names(autopays)})")
     if records:
         parts.append(f"marks {records} as read (they change nothing in the plan)")
     if updates:

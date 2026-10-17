@@ -1,6 +1,10 @@
-"""Affirm's "Your loan confirmation" email: the loan amount, the total of payments, the finance charge, every
-scheduled payment with its date, principal and interest, the merchant and the loan ID. Deterministic over the
-plain text; bounds-checked; the text is data and nothing in it is followed."""
+"""Affirm's own emails, read deterministically from the plain text; bounds-checked; the text is data and nothing in
+it is followed:
+- "Your loan confirmation": the loan amount, the total of payments, the finance charge, every scheduled payment
+  with its date, principal and interest, the merchant and the loan ID;
+- "You've enabled AutoPay": AutoPay is on for a loan, with its schedule of dates and amounts (and the notices that
+  say AutoPay was turned off);
+- "Your payment plan at <store> is approved": the store, the payment, how often and how many."""
 
 from __future__ import annotations
 
@@ -63,3 +67,49 @@ def parse_loan_confirmation(text: str, ref: date | None = None) -> dict | None:
     sane = abs(paid - fields["total"]) <= 1.0 and (fields.get("finance_charge", 0.0) <= fields["total"])
     fields["confidence"] = 0.95 if sane and "loan_id" in fields else 0.8 if sane else 0.5
     return fields
+
+
+AUTOPAY_ENTRY = re.compile(DATE_WORDS.pattern + r"\s*\$\s?([\d,]+\.\d{2})", re.IGNORECASE)
+AUTOPAY_OFF = re.compile(r"(turned|switched) off auto ?pay|auto ?pay (is |has been |was )?(now )?(off|turned off|disabled|canceled|cancelled|stopped)", re.IGNORECASE)
+AUTOPAY_ON = re.compile(r"enabled auto ?pay|auto ?pay (is |has been )?(now )?(on|enabled|set up|turned on)|auto ?pay schedule", re.IGNORECASE)
+APPROVED = re.compile(r"payment plan at (.{1,80}?) is approved", re.IGNORECASE)
+EVERY = re.compile(r"\$\s?([\d,]+\.\d{2})\s+every\s+(month|2 weeks|two weeks|week|other week)\s+for\s+(\d{1,2})\s+(months?|weeks?|payments?)", re.IGNORECASE)
+
+
+def parse_autopay(subject: str, text: str, ref: date | None = None) -> dict | None:
+    """An AutoPay notice: on (with its schedule when the email lists it) or off. None when it is not one."""
+    blob = f"{subject}\n{text or ''}"
+    if AUTOPAY_OFF.search(blob):
+        return {"provider": "Affirm", "notice": "autopay", "autopay": False}
+    if not AUTOPAY_ON.search(blob):
+        return None
+    at = blob.lower().find("autopay schedule")
+    schedule: list[dict] = []
+    for m in AUTOPAY_ENTRY.finditer(blob[at:] if at >= 0 else blob):
+        when = parse_date_text(m.group(1), ref)
+        amount = _money(m.group(2))
+        if when is None or not 0 < amount <= MAX_AMOUNT:
+            continue
+        schedule.append({"date": when.isoformat(), "amount": amount})
+        if len(schedule) >= 72:
+            break
+    out: dict = {"provider": "Affirm", "notice": "autopay", "autopay": True}
+    if schedule:
+        schedule.sort(key=lambda e: e["date"])
+        out.update({"autopay_schedule": schedule, "installment": schedule[0]["amount"], "count_left": len(schedule), "next_date": schedule[0]["date"]})
+    return out
+
+
+def parse_plan_approved(subject: str, text: str) -> dict | None:
+    """"Your payment plan at Amazon is approved ... $83.76 every month for 3 months": the plan, before its dates are set."""
+    store = APPROVED.search(subject or "") or APPROVED.search(text or "")
+    every = EVERY.search(text or "")
+    if not (store and every):
+        return None
+    amount, unit_every, n, unit_for = _money(every.group(1)), every.group(2).lower(), int(every.group(3)), every.group(4).lower()
+    cadence = 30 if unit_every == "month" else 7 if unit_every == "week" else 14
+    count = n if unit_for.startswith(("month", "payment")) or cadence == 7 else max(1, n // 2)
+    if not 0 < amount <= MAX_AMOUNT or not 1 <= count <= 72:
+        return None
+    return {"provider": "Affirm", "notice": "approved", "merchant": store.group(1).strip()[:80], "installment": amount, "count": count, "cadence_days": cadence,
+            "total": round(amount * count, 2)}

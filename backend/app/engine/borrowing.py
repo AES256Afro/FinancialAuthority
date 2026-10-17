@@ -470,6 +470,7 @@ def borrowing_overview(session: Session, today: date) -> dict:
             "balance": p.balance, "balance_at": p.balance_at.isoformat() if p.balance_at else None, "apr": p.apr, "interest_paid": p.interest_paid, "pay_from_account_id": p.pay_from_account_id,
             "count": p.count, "remaining": p.remaining, "next_date": p.next_date.isoformat(), "ends": (upcoming[-1]["date"] if upcoming else (p.next_date + timedelta(days=p.cadence_days * max(0, p.remaining - 1))).isoformat()),
             "left_to_pay": _money(sum(r["amount"] for r in upcoming) if upcoming else p.installment * p.remaining), "interest_left": _money(sum(r.get("interest", 0.0) for r in upcoming)) if upcoming else None, "from_lender": bool(sched),
+            "autopay": p.autopay, "dates_estimated": p.dates_estimated,
         })
     loans.sort(key=lambda l: l["next_date"])
     installment_interest = _money(sum(l["finance_charge"] for l in loans))
@@ -550,6 +551,84 @@ def borrowing_overview(session: Session, today: date) -> dict:
         "installments": installments, "loans": loans, "loans_left_to_pay": left_to_pay, "loans_finance_charge": installment_interest, "statement": affirm_stmt, "becomes": becomes, "steps": steps, "sources": sources,
         "not_advice": NOT_ADVICE + " What an advance costs is its fee over the days it is out; what a plan costs needs the lender's own figures, which only you can enter.",
     }
+
+
+def plan_for_notice(session: Session, fields: dict) -> InstallmentPlan | None:
+    """The plan a lender's notice is about: the same lender, and the payment (within a dollar) or the store, and the
+    payments left closest to what the notice lists."""
+    lender = provider_of(f"{fields.get('provider', '')} {fields.get('sender_name', '')}", INSTALLMENT_PROVIDERS) or str(fields.get("provider") or "")
+    plans = [p for p in session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all() if plan_provider(p).lower() == lender.lower()]  # noqa: E712
+    amount, merchant = fields.get("installment"), str(fields.get("merchant") or "").lower()
+    if amount is not None:
+        plans = [p for p in plans if abs(p.installment - float(amount)) <= 1.0 and (not merchant or merchant in (p.merchant or "").lower())]
+    elif merchant:
+        plans = [p for p in plans if merchant in (p.merchant or "").lower()]
+    else:
+        return None
+    left = fields.get("count_left") or fields.get("count")
+    plans.sort(key=lambda p: (abs(p.remaining - int(left)) if left else 0, p.id or 0))
+    return plans[0] if plans else None
+
+
+def reread_lender_notices(session: Session) -> int:
+    """Lender emails that wait from before their notices were read (AutoPay on or off, a plan approved) are read
+    again from the words the app kept, so they can be answered with the rest."""
+    import json
+
+    from ..models import ExtractedFact
+    from ..parsers.affirm import parse_autopay, parse_plan_approved
+
+    n = 0
+    for f in session.exec(select(ExtractedFact).where(ExtractedFact.kind == "installment", ExtractedFact.status == "pending")).all():
+        fields = json.loads(f.fields or "{}")
+        if fields.get("notice") or fields.get("schedule"):
+            continue
+        sent = date.fromisoformat(fields["message_date"]) if fields.get("message_date") else None
+        notice = parse_autopay(str(fields.get("subject") or ""), f.excerpt or "", sent) or parse_plan_approved(str(fields.get("subject") or ""), f.excerpt or "")
+        if notice:
+            fields.update(notice)
+            f.fields = json.dumps(fields)
+            session.add(f)
+            n += 1
+    if n:
+        session.commit()
+    return n
+
+
+def apply_lender_notice(session: Session, fields: dict, today: date) -> InstallmentPlan:
+    """An AutoPay notice sets its plan's AutoPay (and, when it lists them, the true dates); an approval is its plan, or
+    a new one whose dates are estimated until the lender sets them. Raises ValueError when nothing matches."""
+    import json
+
+    plan = plan_for_notice(session, fields)
+    if fields.get("notice") == "autopay":
+        if plan is None:
+            raise ValueError("No plan on file matches this AutoPay notice yet; it may be for a loan that is not on file")
+        plan.autopay = bool(fields.get("autopay"))
+        dates = [e for e in fields.get("autopay_schedule") or [] if e["date"] >= today.isoformat()]
+        if dates:
+            plan.next_date = date.fromisoformat(dates[0]["date"])
+            schedule = json.loads(plan.schedule or "[]")
+            past = [e for e in schedule if e.get("date", "") < today.isoformat()]
+            plan.schedule = json.dumps(past + [{"date": e["date"], "amount": e["amount"]} for e in dates])
+            plan.remaining = len(dates)
+            plan.dates_estimated = False
+        session.add(plan)
+        session.commit()
+        return plan
+    if fields.get("notice") == "approved":
+        if plan is not None and abs(plan.installment - float(fields["installment"])) <= 0.02:
+            return plan
+        sent = date.fromisoformat(fields["message_date"]) if fields.get("message_date") else today
+        cadence = int(fields.get("cadence_days") or 30)
+        plan = InstallmentPlan(provider=str(fields.get("provider") or "Affirm"), merchant=str(fields.get("merchant") or ""), total=float(fields.get("total") or 0.0),
+                               installment=float(fields["installment"]), count=int(fields["count"]), remaining=int(fields["count"]),
+                               next_date=sent + timedelta(days=cadence), cadence_days=cadence, dates_estimated=True)
+        session.add(plan)
+        session.commit()
+        session.refresh(plan)
+        return plan
+    raise ValueError("Not a lender notice")
 
 
 def plan_from_fields(session: Session, fields: dict, amount: float | None, remaining: int | None, today: date) -> InstallmentPlan | None:
