@@ -2,6 +2,7 @@
 // The strip rides under the header on every screen; the full list sits on Today.
 import { Link, useLocation } from "react-router-dom";
 import { useApi } from "../api";
+import { amountClass } from "../format";
 import { Failed, Loading } from "./State";
 import { SeverityTag } from "./Status";
 
@@ -13,9 +14,10 @@ export interface Step {
   link: string;
 }
 
+// Live: a save on any screen (a bank linked, a paycheck added) asks for the steps again.
 export function useNextSteps() {
   const { pathname } = useLocation();
-  return useApi<{ steps: Step[]; count: number }>(`/api/v1/next_steps?at=${encodeURIComponent(pathname)}`);
+  return useApi<{ steps: Step[]; count: number }>(`/api/v1/next_steps?at=${encodeURIComponent(pathname)}`, { live: true });
 }
 
 export function NextStepsStrip() {
@@ -37,7 +39,7 @@ export function NextStepsStrip() {
         // The whole text shows: on a narrow screen the chip wraps onto a second line instead of cutting it off.
         <Link key={s.id} to={s.link} style={{ display: "inline-flex", alignItems: "center", flexWrap: "wrap", gap: 6, padding: "4px 10px", borderRadius: 14, border: "1px solid var(--hairline)", background: "var(--surface)", color: "var(--ink)", textDecoration: "none", maxWidth: "100%", minHeight: 32, boxSizing: "border-box" }}>
           <SeverityTag severity={s.severity} />
-          <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{s.text}</span>
+          <span className={amountClass(s.text)} style={{ minWidth: 0, overflowWrap: "anywhere" }}>{s.text}</span>
           <strong style={{ whiteSpace: "nowrap" }}>{s.action} →</strong>
         </Link>
       ))}
@@ -58,7 +60,7 @@ export function NextStepsCard() {
       {data.steps.map((s, i) => (
         <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: i === 0 ? 0 : "1px solid var(--surface-2)", flexWrap: "wrap" }}>
           <SeverityTag severity={s.severity} />
-          <div style={{ flex: "1 1 200px", minWidth: 0, fontSize: 13, fontWeight: s.severity === "info" ? 500 : 700 }}>{s.text}</div>
+          <div className={amountClass(s.text)} style={{ flex: "1 1 200px", minWidth: 0, fontSize: 13, fontWeight: s.severity === "info" ? 500 : 700 }}>{s.text}</div>
           <Link to={s.link} className="btn" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", minHeight: 34, padding: "4px 10px", whiteSpace: "nowrap" }}>{s.action} →</Link>
         </div>
       ))}

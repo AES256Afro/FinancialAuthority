@@ -1,6 +1,6 @@
-// The app shell: a rail on wide screens, tabs on a phone, and the header with the payday chip. A second person who
-// sees the shared accounts only gets a shell of their own: Shared money, their sign-in, and Sign out; nothing here
-// asks the server for what that sign-in cannot reach.
+// The app shell: a rail on wide screens, tabs on a phone, and the header with the payday chip and Sign out. A second
+// person who sees the shared accounts only gets a shell of their own: Shared money, their sign-in, and Sign out;
+// nothing here asks the server for what that sign-in cannot reach.
 import { ArrowLeftRight, BarChart3, BellDot, BookOpen, Clock, Download, Eye, EyeOff, FileText, FolderOpen, Gauge, History, Home, KeyRound, Landmark, LayoutGrid, List, LogOut, Mail, MessageSquare, Mountain, PieChart, PiggyBank, Receipt, Repeat, Settings, Telescope, TrendingUp, Truck, UserRound, Wallet, Waves, type LucideIcon } from "lucide-react";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
@@ -21,6 +21,8 @@ export interface NavItem {
   end?: boolean;
   phone?: boolean;
   rail?: boolean;
+  /** In the rail only once someone else signs in too (More lists it always). */
+  people?: boolean;
 }
 
 // Three groups: what is due, what to plan, and the records. Settings is kept apart at the rail's foot. A phone
@@ -49,6 +51,7 @@ export const NAV_ITEMS: NavItem[] = [
   { to: "/mail", label: "Mail", icon: Mail, group: "records", phone: false, hint: "Messages from banks and billers, and what the app took from them." },
   { to: "/reports", label: "Reports", icon: BarChart3, group: "records", phone: false, hint: "Spending by month and by merchant." },
   { to: "/exports", label: "Exports", icon: Download, group: "records", phone: false, hint: "Your data as files, and the calendar feed." },
+  { to: "/shared", label: "Shared money", icon: Wallet, group: "records", phone: false, people: true, hint: "The accounts you share with someone you invited: balances, the bills paid from them, and recent spending." },
   { to: "/more", label: "More", icon: LayoutGrid, group: "foot", rail: false, hint: "Every section." },
   { to: "/settings", label: "Settings", icon: Settings, group: "foot", phone: false, hint: "Setting up, appearance, connections, backups and more." },
 ];
@@ -111,23 +114,29 @@ function DemoBanner() {
   );
 }
 
-/** The page's name in the browser tab and the window list, from the section it belongs to. */
-function usePageTitle(brand: string) {
+// One name per page: the menu label, the browser tab's title and the page's heading say the same words.
+const PAGE_NAMES: Record<string, string> = { "/shared": "Shared money", "/settings/people": "People", "/glossary": "Words", "/checkin": "Weekly check-in", "/welcome": "Setup steps", "/settings/setup": "Setting up", "/settings/appearance": "Appearance", "/settings/connectors": "Connections", "/settings/models": "Models", "/settings/clients": "Apps and keys", "/settings/notifications": "Notifications", "/settings/backups": "Backups", "/settings/jobs": "Jobs", "/settings/audit": "Activity", "/settings/security": "Sign-in and security", "/settings/privacy": "Privacy" };
+
+/** The page's name in the browser tab and the window list, from the section it belongs to. A second person's
+ * sign-in page is "Your sign-in", as their menu and the page say. */
+function usePageTitle(brand: string, person: boolean) {
   const { pathname } = useLocation();
   useEffect(() => {
     const match = [...NAV_ITEMS].filter((n) => (n.end ? pathname === n.to : pathname === n.to || pathname.startsWith(n.to + "/"))).sort((a, b) => b.to.length - a.to.length)[0];
-    const extra: Record<string, string> = { "/shared": "Shared money", "/settings/people": "People", "/glossary": "Words", "/checkin": "Check-in", "/welcome": "Welcome", "/settings/setup": "Setting up", "/settings/appearance": "Appearance", "/settings/connectors": "Connections", "/settings/models": "Models", "/settings/clients": "Apps and keys", "/settings/notifications": "Notifications", "/settings/backups": "Backups", "/settings/jobs": "Jobs", "/settings/audit": "Activity", "/settings/security": "Sign-in and security", "/settings/privacy": "Privacy" };
-    const page = extra[pathname] ?? match?.label;
+    const page = person && pathname === "/settings/security" ? "Your sign-in" : PAGE_NAMES[pathname] ?? match?.label;
     document.title = page ? `${page} · ${brandName()}` : brandName();
-  }, [pathname, brand]);
+  }, [pathname, brand, person]);
 }
 
 export function Shell({ children, snapshot, me = null }: { children: ReactNode; snapshot: Snapshot | null; me?: MePerson | null; title?: string }) {
   const look = useAppearance();
   const role = roleOf(me);
   const limited = role === "shared";
-  const nav = limited ? SHARED_NAV_ITEMS : NAV_ITEMS;
-  usePageTitle(look.brand.name);
+  // Shared money joins the rail once someone else signs in: a person with everything, or an owner who invited one.
+  const people = useApi<{ people: unknown[] }>(role === "owner" && me ? "/api/v1/people" : null);
+  const hasPeople = role === "everything" || (people.data?.people.length ?? 0) > 0;
+  const nav = limited ? SHARED_NAV_ITEMS : NAV_ITEMS.filter((n) => !n.people || hasPeople);
+  usePageTitle(look.brand.name, role !== "owner");
   const [quietNote, setQuietNote] = useState<string | null>(null);
   async function toggleQuiet() {
     try {
@@ -139,7 +148,7 @@ export function Shell({ children, snapshot, me = null }: { children: ReactNode; 
   }
   const today = snapshot?.as_of ?? localToday();
   // The snapshot counts the owner's own sends; a second person counts theirs from the approvals list.
-  const own = useApi<{ pending: number }>(role === "everything" ? "/api/v1/approvals?limit=1" : null);
+  const own = useApi<{ pending: number }>(role === "everything" ? "/api/v1/approvals?limit=1" : null, { live: true });
   const approvalsMine = role === "everything" ? (own.data?.pending ?? 0) : (snapshot?.pending.approvals ?? 0);
   const pending = snapshot ? snapshot.pending.confirmations + approvalsMine : 0;
   const item = ({ to, label, icon: Icon, end }: NavItem, size: number) => {
@@ -155,6 +164,10 @@ export function Shell({ children, snapshot, me = null }: { children: ReactNode; 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--ground)" }}>
     {DEMO && <DemoBanner />}
+    {/* The blur that "Hide amounts" puts on figures drawn inside charts (tokens.css, svg .num). */}
+    <svg width="0" height="0" aria-hidden="true" focusable="false" style={{ position: "absolute" }}>
+      <filter id="fa-quiet-blur"><feGaussianBlur stdDeviation="4" /></filter>
+    </svg>
     <div style={{ flexGrow: 1, display: "flex", flexWrap: "wrap" }}>
       <nav className="rail hidden md:flex" aria-label="Sections" style={{ flex: "0 0 76px", flexDirection: "column", boxSizing: "border-box", borderRight: "1px solid var(--hairline)", position: "sticky", top: DEMO ? 30 : 0, height: `calc(100dvh / var(--zoom) - ${DEMO ? 30 : 0}px)`, alignSelf: "flex-start" }}>
         <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", justifyContent: "center", height: 36, margin: "14px 0 10px" }}>
@@ -190,13 +203,14 @@ export function Shell({ children, snapshot, me = null }: { children: ReactNode; 
               <UserRound size={15} aria-hidden="true" />Signed in as <strong style={{ color: "var(--ink)" }}>{me.name}</strong>
             </span>
           )}
-          {role === "everything" && <SignOut look="header" />}
-          {snapshot && <Link to="/accounts" style={{ fontSize: 12, color: "var(--ink-2)" }}>{snapshot.accounts.length} account{snapshot.accounts.length === 1 ? "" : "s"}</Link>}
-          {!limited && <button type="button" onClick={toggleQuiet} aria-pressed={look.quiet} title={look.quiet ? "Show every amount" : "Hide every amount: each one shows when tapped"} style={{ display: "inline-flex", alignItems: "center", gap: 4, minHeight: 32, padding: "0 6px", background: "none", border: 0, font: "inherit", fontSize: 12, color: "var(--ink-2)", cursor: "pointer" }}>
+          {snapshot && <Link to="/accounts" style={{ display: "inline-flex", alignItems: "center", minHeight: 32, fontSize: 12, color: "var(--ink-2)" }}>{snapshot.accounts.length} account{snapshot.accounts.length === 1 ? "" : "s"}</Link>}
+          {!limited && <button type="button" onClick={toggleQuiet} aria-pressed={look.quiet} title={look.quiet ? "Show the amounts again" : "Blur the amounts on screen; tap one to see it"} style={{ display: "inline-flex", alignItems: "center", gap: 4, minHeight: 32, padding: "0 6px", background: "none", border: 0, font: "inherit", fontSize: 12, color: "var(--ink-2)", cursor: "pointer" }}>
             {look.quiet ? <Eye size={15} aria-hidden="true" /> : <EyeOff size={15} aria-hidden="true" />}{look.quiet ? "Show amounts" : "Hide amounts"}
           </button>}
           {quietNote && <span role="alert" style={{ fontSize: 12, color: "var(--critical-ink)" }}>{quietNote}</span>}
-          {!limited && <Link to="/glossary" title="The words the app uses" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--ink-2)" }}><BookOpen size={15} aria-hidden="true" />Words</Link>}
+          {!limited && <Link to="/glossary" title="The words the app uses" style={{ display: "inline-flex", alignItems: "center", gap: 4, minHeight: 32, fontSize: 12, color: "var(--ink-2)" }}><BookOpen size={15} aria-hidden="true" />Words</Link>}
+          {/* Anyone signed in can end this browser's session here, the owner too (a borrowed or shared computer). */}
+          {!limited && me?.auth_enabled && <SignOut look="header" />}
         </header>
         {!limited && <NextStepsStrip />}
         {children}

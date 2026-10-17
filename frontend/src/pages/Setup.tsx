@@ -1,7 +1,7 @@
 // Settings › Setting up: where each part runs, and the few things only the owner can do, in order. Written for
 // someone who installed the app from GitHub with nobody beside them. Each section has an anchor the next steps
 // and the other screens link to, and says whether it is done, from the same checks as the list at the top.
-import { ExternalLink } from "lucide-react";
+import { ArrowDown, ArrowRight, ExternalLink } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "../api";
@@ -47,23 +47,29 @@ function Out({ href, children }: { href: string; children: ReactNode }) {
 }
 
 // Where each part runs: the devices you hold, the server the app lives on, and what it reaches.
+// The map as three boxes in HTML, so its words keep their size on a phone: side by side on a wide screen, stacked
+// with arrows pointing down on a narrow one.
 function Map() {
-  const box = (x: number, title: string, sub: string, tone: string) => (
-    <g>
-      <rect x={x} y={20} width={210} height={74} rx={10} fill={`var(--${tone}-soft, var(--surface-2))`} stroke="var(--hairline)" />
-      <text x={x + 105} y={50} textAnchor="middle" fontSize={14} fontWeight={800} fill="var(--ink)">{title}</text>
-      <text x={x + 105} y={72} textAnchor="middle" fontSize={12} fill="var(--ink-2)">{sub}</text>
-    </g>
+  const box = (title: string, sub: string, tone: string) => (
+    <div style={{ flex: "1 1 0", minWidth: 0, width: "100%", boxSizing: "border-box", padding: "12px 14px", borderRadius: 10, background: `var(--${tone}-soft, var(--surface-2))`, border: "1px solid var(--hairline)", textAlign: "center" }}>
+      <div style={{ fontSize: 14, fontWeight: 800, color: "var(--ink)" }}>{title}</div>
+      <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{sub}</div>
+    </div>
+  );
+  const arrow = (
+    <span aria-hidden="true" style={{ flexShrink: 0, color: "var(--ink-2)", display: "inline-flex" }}>
+      <ArrowDown size={20} className="sm:hidden" />
+      <ArrowRight size={20} className="hidden sm:block" />
+    </span>
   );
   return (
-    <svg viewBox="0 0 720 112" width="100%" role="img" aria-label="Your phone and computer open the app in a browser; the app and its Proton Mail Bridge run on your server; the server reads your banks and mail." style={{ maxWidth: 820, display: "block" }}>
-      {box(10, "Your phone, your computer", "a browser, Claude", "paycheck")}
-      {box(255, "Your server", "the app and its Bridge", "safe")}
-      {box(500, "Banks and mail", "read-only", "bill")}
-      <line x1={222} x2={253} y1={57} y2={57} stroke="var(--ink-2)" strokeWidth={2} markerEnd="url(#arr)" />
-      <line x1={467} x2={498} y1={57} y2={57} stroke="var(--ink-2)" strokeWidth={2} markerEnd="url(#arr)" />
-      <defs><marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M1 1L9 5L1 9" fill="none" stroke="var(--ink-2)" strokeWidth={1.6} /></marker></defs>
-    </svg>
+    <div role="img" aria-label="Your phone and computer open the app in a browser; the app and its Proton Mail Bridge run on your server; the server reads your banks and mail." className="flex flex-col sm:flex-row items-center" style={{ gap: 8, maxWidth: 820 }}>
+      {box("Your phone, your computer", "a browser, Claude", "paycheck")}
+      {arrow}
+      {box("Your server", "the app and its Bridge", "safe")}
+      {arrow}
+      {box("Banks and mail", "read-only", "bill")}
+    </div>
   );
 }
 
@@ -93,11 +99,11 @@ export function Setup() {
       </Section>
 
       <Section id="mail" title="2. Your mail" checks={checks}>
-        <span>Bills, statements and paystubs read themselves from a mailbox. Proton Mail goes through the Proton Mail Bridge, which is signed in once on the server; Gmail and others use an app password. <Link to="/settings/connectors#mail">Connectors › Mailboxes</Link> walks through each, with the commands for this install.</span>
+        <span>Bills, statements and paystubs read themselves from a mailbox. Proton Mail goes through the Proton Mail Bridge, which is signed in once on the server; Gmail and others use an app password. <Link to="/settings/connectors#mail">Connections › Mailboxes</Link> walks through each, with the commands for this install.</span>
       </Section>
 
       <Section id="banks" title="3. Your bank" checks={checks}>
-        <span>Live transactions come through Plaid or Teller, with free developer keys you make once; the bank's own login opens in their window, and the app never sees your bank password. Or import your bank's CSV or OFX download. <Link to="/settings/connectors#banks">Connectors › Banks</Link> has the links for the keys.</span>
+        <span>Live transactions come through Plaid or Teller, with free developer keys you make once; the bank's own login opens in their window, and the app never sees your bank password. Or import your bank's CSV or OFX download. <Link to="/settings/connectors#banks">Connections › Banks</Link> has the links for the keys.</span>
       </Section>
 
       <Section id="publish" title="4. Reach it from anywhere" checks={checks}>

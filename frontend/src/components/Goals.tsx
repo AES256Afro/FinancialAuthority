@@ -3,7 +3,7 @@
 import { CalendarClock } from "lucide-react";
 import { useState } from "react";
 import { api, useApi } from "../api";
-import { money, parseMoney, shortDate } from "../format";
+import { amountClass, money, parseMoney, shortDate } from "../format";
 import type { SinkingFund, SinkingOut } from "../types";
 import { ConfirmButton } from "./ConfirmButton";
 import { Failed, Loading, Said } from "./State";
@@ -70,7 +70,7 @@ function SinkingFunds({ onGoalMade }: { onGoalMade: () => void }) {
         <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Bills a few times a year</h3>
         {notStarted && <span className="num" style={{ fontSize: 12, color: "var(--ink-2)" }}>{money(data.per_paycheck_total, { cents: true })} from each paycheck covers the ones not started yet</span>}
       </div>
-      <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{data.note}</div>
+      <div className={amountClass(data.note)} style={{ fontSize: 12, color: "var(--ink-2)" }}>{data.note}</div>
       {data.items.map((f) => {
         const note = said[f.bill_id];
         const full = f.goal_id !== null && f.funded >= f.amount;
@@ -176,7 +176,7 @@ export function Goals({ onChanged }: { onChanged?: () => void }) {
     <section id="goals" className="card" style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Goals</h2>
-        {data.items.length > 0 && <span style={{ fontSize: 12, color: "var(--ink-2)" }}>{money(data.per_paycheck)} a paycheck together{data.safe_to_spend.after_goals !== undefined ? ` · leaves ${money(data.safe_to_spend.after_goals)} safe to spend` : ""}</span>}
+        {data.items.length > 0 && <span className="num" style={{ fontSize: 12, color: "var(--ink-2)" }}>{money(data.per_paycheck)} a paycheck together{data.safe_to_spend.after_goals !== undefined ? ` · leaves ${money(data.safe_to_spend.after_goals)} safe to spend` : ""}</span>}
         <div style={{ flexGrow: 1 }} />
         <button className="btn" type="button" aria-expanded={adding} style={{ minHeight: 32, padding: "4px 10px" }} onClick={() => setAdding(!adding)}>{adding ? "Cancel" : "Add a goal"}</button>
       </div>
@@ -206,13 +206,13 @@ export function Goals({ onChanged }: { onChanged?: () => void }) {
           <div key={g.id} style={{ display: "flex", flexDirection: "column", gap: 6, borderTop: "1px solid var(--surface-2)", paddingTop: 8 }}>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 13 }}>
               <strong>{g.name}</strong>
-              <span style={{ color: "var(--ink-2)" }}>{money(g.funded)} of {money(g.target)}{g.target_date ? ` by ${shortDate(g.target_date)}` : ""}</span>
+              <span className="num" style={{ color: "var(--ink-2)" }}>{money(g.funded)} of {money(g.target)}{g.target_date ? ` by ${shortDate(g.target_date)}` : ""}</span>
               {g.remaining <= 0 ? (
                 <StatusPill status="good">Done</StatusPill>
               ) : g.on_track ? (
-                <StatusPill status="good">On track: {money(g.per_paycheck)} a paycheck</StatusPill>
+                <StatusPill status="good">On track: <span className="num">{money(g.per_paycheck)}</span> a paycheck</StatusPill>
               ) : (
-                <StatusPill status="warn">Behind: {money(g.needed_per_paycheck)} a paycheck would reach it</StatusPill>
+                <StatusPill status="warn">Behind: <span className="num">{money(g.needed_per_paycheck)}</span> a paycheck would reach it</StatusPill>
               )}
             </div>
             <div style={{ height: 8, background: "var(--surface-2)", borderRadius: 4, overflow: "hidden" }} role="img" aria-label={`${money(g.funded)} of ${money(g.target)}`}>

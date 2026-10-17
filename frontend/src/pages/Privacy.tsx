@@ -7,6 +7,7 @@ import { ApiError, api, useApi } from "../api";
 import { useAppearance } from "../appearance";
 import { DEMO } from "../demo/shim";
 import type { Me } from "../types";
+import { ownerName, roleOf, type MePerson } from "../types-people";
 import { Failed, Said, Show } from "../components/State";
 import { StatusPill } from "../components/Status";
 
@@ -162,7 +163,7 @@ function Readers({ page }: { page: PrivacyPage }) {
         <Tile value={keys} word={keys === 1 ? "key for a script" : "keys for scripts"} />
       </div>
       <span style={intro}>
-        {apps === 0 && keys === 0 ? "Nothing outside this app can read your plan. " : "Each one reads only; none can approve a send or move money. "}
+        {apps === 0 && keys === 0 ? "Nothing outside this app can read your plan. " : "Each one can read your plan; one you gave the confirm choice can also confirm details on Needs you. None can approve a send or move money. "}
         <Link to="/settings/clients" style={{ fontWeight: 700 }}>See or revoke them on Apps and keys</Link>
       </span>
     </section>
@@ -181,7 +182,7 @@ function Quiet({ page }: { page: PrivacyPage }) {
           {quiet ? <EyeOff size={14} aria-hidden="true" /> : <Eye size={14} aria-hidden="true" />}{quiet ? "On now: amounts are blurred" : "Off now: amounts show"}
         </span>
       </div>
-      <span style={intro}>The Hide amounts button is in the header, at the top of every screen. When it is on, every amount is blurred until you tap it, which helps on a screen other people can see.</span>
+      <span style={intro}>The Hide amounts button is in the header, at the top of every screen. When it is on, the amounts on screen (figures, sentences that hold one, and chart labels) are blurred until you tap one, which helps on a screen other people can see. Look over a screen once before you rely on it: a figure the app has not marked yet can still show.</span>
     </section>
   );
 }
@@ -202,6 +203,17 @@ function OneFile({ page }: { page: PrivacyPage }) {
 }
 
 // ---- deleting everything, set apart --------------------------------------------------------------------------
+
+// Only the owner can erase everything (the server refuses anyone else); a second person is told so instead of
+// being shown a form that fails.
+function OwnerOnly({ owner }: { owner: string }) {
+  return (
+    <section className="card" aria-labelledby="erase-title" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>
+      <h2 id="erase-title" style={{ ...h2, display: "inline-flex", alignItems: "center", gap: 6 }}><Trash2 size={18} aria-hidden="true" />Delete everything</h2>
+      <span style={intro}>Only {owner} can delete everything on this server. Your own sign-in, passkeys and devices are on <Link to="/settings/security">Your sign-in</Link>.</span>
+    </section>
+  );
+}
 
 function DeleteEverything() {
   const factors = useApi<Factors>("/api/auth/factors");
@@ -295,7 +307,7 @@ function DeleteEverything() {
   );
 }
 
-export function Privacy() {
+export function Privacy({ me = null }: { me?: MePerson | null }) {
   const state = useApi<PrivacyPage>("/api/v1/privacy");
   const [latest, setLatest] = useState<PrivacyPage | null>(null);
   return (
@@ -315,7 +327,7 @@ export function Privacy() {
           );
         }}
       </Show>
-      <DeleteEverything />
+      {roleOf(me) === "owner" ? <DeleteEverything /> : <OwnerOnly owner={ownerName(me?.owner)} />}
     </div>
   );
 }

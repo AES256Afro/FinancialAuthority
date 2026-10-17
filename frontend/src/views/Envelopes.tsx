@@ -1,5 +1,6 @@
 // Envelopes: every obligation this paycheck pays as an envelope, with its fill level from the engine.
 import { Empty } from "../components/State";
+import { noPayday } from "../components/SafeExplain";
 import { money, shortDate } from "../format";
 import type { Event } from "../types";
 import type { ViewProps } from "./index";
@@ -36,7 +37,8 @@ function envelope(e: Env) {
 
 export function Envelopes({ snapshot }: ViewProps) {
   const w = snapshot.windows[0];
-  if (!w) return <Empty to="/paystubs#paycheck" action="Add your paycheck">No paycheck is known yet, so there are no envelopes to fill.</Empty>;
+  // With no paycheck on file the engine's window is a frame two weeks out, not a payday: nothing is drawn as one.
+  if (!w || noPayday(snapshot)) return <Empty to="/paystubs#paycheck" action="Add your paycheck">No paycheck is on file yet, so there are no envelopes to fill.</Empty>;
   const envs: Env[] = [];
   const short = w.safe < 0;
   envs.push({ key: "spend", name: short ? "Short" : "Spend", sub: `${shortDate(w.start)} to ${shortDate(w.end)} · yours`, amount: w.safe, target: w.safe, fill: short ? 0 : 1, tone: "safe", tag: short ? "short" : "yours" });
@@ -52,7 +54,8 @@ export function Envelopes({ snapshot }: ViewProps) {
   }
   if (w.bills.small.count) {
     const g = w.bills.small;
-    envs.push({ key: "small", name: "Small stuff", sub: g.names.join(", "), amount: g.total, target: g.total, fill: g.all_funded ? 1 : 0.5, tone: "bill", tag: g.all_funded ? "funded" : "partly" });
+    // The engine says only whether all of them are funded, not how much: "partly" is drawn empty with the word.
+    envs.push({ key: "small", name: "Small stuff", sub: g.names.join(", "), amount: g.total, target: g.total, fill: g.all_funded ? 1 : 0, tone: "bill", tag: g.all_funded ? "funded" : "partly funded" });
   }
   for (const e of [...w.set_aside.items].sort((a, b) => b.amount - a.amount)) {
     const share = e.share ?? 1;
@@ -68,7 +71,7 @@ export function Envelopes({ snapshot }: ViewProps) {
         <div><span style={{ fontSize: 12, color: "var(--ink-2)", fontWeight: 600 }}>Spend envelope</span><div className="num" style={{ fontSize: 32, fontWeight: 800, letterSpacing: "-0.02em" }}>{money(w.safe)}</div></div>
         <div style={{ fontSize: 13, color: "var(--ink-2)", maxWidth: 560 }}>
           {w.bills.items.every((e) => e.funded) ? `Everything due through ${shortDate(w.end)} is funded.` : `${w.bills.items.filter((e) => !e.funded).length} bills this paycheck pays are not yet funded.`}
-          {w.set_aside.items.length ? ` The next paycheck's envelopes already hold ${money(w.set_aside.total)}; the ${shortDate(snapshot.windows[1]?.start ?? w.end)} paycheck fills the rest.` : ""}
+          {w.set_aside.items.length ? <> The next paycheck's envelopes already hold <span className="num">{money(w.set_aside.total)}</span>; the {shortDate(snapshot.windows[1]?.start ?? w.end)} paycheck fills the rest.</> : ""}
         </div>
         <div style={{ flexGrow: 1 }} />
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: 12, color: "var(--ink-2)", fontWeight: 600 }}>

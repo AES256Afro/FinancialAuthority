@@ -11,7 +11,7 @@ import { ConfirmButton } from "../components/ConfirmButton";
 import { Documents } from "../components/Documents";
 import { LedgerRules } from "../components/LedgerRules";
 import { Empty, Failed, Loading, Said } from "../components/State";
-import { money, parseIso, parseMoney, shortDate } from "../format";
+import { flow, money, parseIso, parseMoney, shortDate } from "../format";
 import type { TransactionRow } from "../types";
 
 type Kind = "spending" | "transfer" | "card payment" | "income";
@@ -102,7 +102,7 @@ const TxRow = memo(function TxRow({ t, selected, open, onSelect, onOpen, onRecei
       <td style={{ width: 34, paddingRight: 4 }}>
         <label style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 32, minHeight: 32, cursor: "pointer" }}>
           <input type="checkbox" checked={selected} onChange={() => onSelect(t.id)} style={{ width: 18, height: 18, margin: 0, cursor: "pointer" }} />
-          <span className="sr-only">Select {t.merchant || "this row"}, {shortDate(t.date)}, {money(t.amount, { cents: true })}</span>
+          <span className="sr-only">Select {t.merchant || "this row"}, {shortDate(t.date)}, {flow(t.amount, { cents: true })}</span>
         </label>
       </td>
       <td style={{ whiteSpace: "nowrap" }}>{shortDate(t.date)}</td>
@@ -132,11 +132,11 @@ const TxRow = memo(function TxRow({ t, selected, open, onSelect, onOpen, onRecei
       </td>
       <td style={{ color: "var(--ink-2)" }}>
         {parts.length > 0
-          ? parts.map((p, i) => <div key={i} style={{ whiteSpace: "nowrap" }}>{p.category} <span className="num">{money(p.amount, { cents: true })}</span></div>)
+          ? parts.map((p, i) => <div key={i} style={{ whiteSpace: "nowrap" }}>{p.category} <span className="num">{flow(p.amount, { cents: true })}</span></div>)
           : t.category === "Borrowing" ? <Link to="/borrowing" style={{ fontWeight: 700 }}>Borrowing</Link> : t.category}
       </td>
       <td style={{ color: "var(--ink-2)" }}>{t.account}</td>
-      <td className="num" style={{ textAlign: "right", whiteSpace: "nowrap" }}>{money(t.amount, { cents: true })}</td>
+      <td className="num" style={{ textAlign: "right", whiteSpace: "nowrap" }}>{flow(t.amount, { cents: true })}</td>
     </tr>
   );
 });
@@ -271,7 +271,7 @@ function SplitRow({ row, onSaved }: { row: Row; onSaved: (id: number, text: stri
     <form onSubmit={save} className="card" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
       <h3 style={{ margin: 0, fontSize: 13, fontWeight: 800 }}>Split it across categories</h3>
       <div style={{ fontSize: 12, color: "var(--ink-2)" }}>
-        The parts add up to {money(row.amount, { cents: true })}, to the cent. Type each part as a plain amount{moneyIn ? "; this is money in, so every part is money in too." : "."}
+        The parts add up to <span className="num">{money(row.amount, { cents: true })}</span>, to the cent. Type each part as a plain amount{moneyIn ? "; this is money in, so every part is money in too." : "."}
       </div>
       {parts.map((p, i) => (
         <fieldset key={p.key} style={{ border: 0, padding: 0, margin: 0, display: "flex", flexWrap: "wrap", gap: 6, alignItems: "flex-end" }}>
@@ -313,7 +313,7 @@ function Editor({ row, onSaved, onClose, readReceipt }: { row: Row; onSaved: (id
         <div role="group" aria-label={`Change ${row.merchant || "this row"}`} style={{ position: "sticky", left: 0, width: "min(100%, calc(100vw - 48px))", display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 13 }}>
             <strong>{row.merchant || "(no name)"}</strong>
-            <span style={{ color: "var(--ink-2)" }}>{shortDate(row.date)} · {row.account} · <span className="num">{money(row.amount, { cents: true })}</span></span>
+            <span style={{ color: "var(--ink-2)" }}>{shortDate(row.date)} · {row.account} · <span className="num">{flow(row.amount, { cents: true })}</span></span>
             <div style={{ flexGrow: 1 }} />
             <button type="button" className="btn" onClick={onClose} style={{ ...SMALL, display: "inline-flex", alignItems: "center", gap: 4 }}><X size={13} aria-hidden="true" /> Close</button>
           </div>
@@ -564,8 +564,9 @@ export function Transactions() {
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
               <span>
                 {data.returned} shown{tag ? ` · tagged “${tag}”` : ""}
-                {everything ? " · everything, including transfers, card payments, income and hidden rows" : ` · spending only; transfers, card payments, income and hidden rows are left out · total ${money(data.total_amount)}`}
+                {everything ? " · everything, including transfers, card payments, income and hidden rows" : <> · spending only; transfers, card payments, income and hidden rows are left out · total <span className="num">{money(data.total_amount)}</span></>}
               </span>
+              <span style={{ flexBasis: "100%" }}>Money out is a plain amount; money in says “in”, like +$40.00 in.</span>
               {data.returned >= limit && limit < 500 && <button type="button" className="btn" onClick={() => setLimit(500)} style={SMALL}>Show up to 500</button>}
             </div>
             {(tagsSeen.length > 0 || tag) && (

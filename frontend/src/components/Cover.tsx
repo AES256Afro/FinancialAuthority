@@ -6,7 +6,7 @@ import { OctagonAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import { money, shortDate } from "../format";
+import { amountClass, isoDay, money, shortDate } from "../format";
 import type { Cover, CoverAccount, SheetRow } from "../guide";
 import { palette } from "../looks";
 import { getPrefs } from "../prefs";
@@ -20,10 +20,11 @@ export const COVER_MODES: { id: CoverMode; name: string }[] = [
   { id: "columns", name: "Needs against has" },
 ];
 
+// The day before a date, as a local date (never the UTC day, which is a day off far from UTC).
 function dayBefore(iso: string): string {
   const d = new Date(`${iso}T12:00:00`);
   d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
+  return isoDay(d);
 }
 
 // A mark is a line across the bar; its words sit in a key under the bar, so two close marks never overlap and
@@ -44,7 +45,7 @@ function Meter({ value, max, marks, tone, label }: { value: number; max: number;
         <div aria-hidden="true" style={{ display: "flex", flexWrap: "wrap", gap: "2px 12px", fontSize: 11, fontWeight: 700, color: "var(--ink-2)" }}>
           {marks.map((m, k) => (
             <span key={m.text} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-              <span style={{ display: "inline-block", height: 12, borderLeft: stroke(k) }} />{m.text}
+              <span style={{ display: "inline-block", height: 12, borderLeft: stroke(k) }} /><span className={amountClass(m.text)}>{m.text}</span>
             </span>
           ))}
         </div>
@@ -108,7 +109,7 @@ function SaveGauge({ a }: { a: CoverAccount }) {
   return (
     <>
       <Meter value={a.balance ?? 0} max={r.target} marks={[{ at: r.target, text: `rung ${r.n} · ${money(r.target)}` }]} tone={(a.short ?? 0) > 0 && (a.balance ?? 0) <= 0 ? "short" : "fill"} label={`${money(a.balance ?? 0)} saved of ${money(r.target)}`} />
-      <div style={{ fontSize: 12, color: "var(--ink-2)" }}><Link to="/saving">Open Saving</Link> · {r.eta ? `reached ${shortDate(r.eta)} at the chosen share` : "not reached within six years at this share"}</div>
+      <div style={{ fontSize: 12, color: "var(--ink-2)" }}><Link to="/saving">Open Saving</Link> · <Link to="/glossary#rung">rung</Link> {r.n} {r.eta ? `reached ${shortDate(r.eta)} at the chosen share` : "not reached within six years at this share"}</div>
     </>
   );
 }
@@ -123,7 +124,7 @@ function Gauges({ cover }: { cover: Cover }) {
             <strong>{a.name}{a.deposit ? <span style={{ fontWeight: 500, color: "var(--muted)" }}> · paycheck lands here</span> : null}</strong>
             <StatusPill status={a.status} />
           </div>
-          <div style={{ fontSize: 13 }}>{a.headline}</div>
+          <div className={amountClass(a.headline)} style={{ fontSize: 13 }}>{a.headline}</div>
           {a.role === "spend" && <SpendGauge a={a} paydays={cover.paydays} />}
           {a.role === "card" && <CardGauge a={a} />}
           {a.role === "save" && <SaveGauge a={a} />}
@@ -144,13 +145,15 @@ function Sheet({ rows, onTick }: { rows: SheetRow[]; onTick?: (row: SheetRow, do
     <ul className="flex flex-col md:hidden" style={{ listStyle: "none", margin: 0, padding: 0, gap: 8 }}>
       {rows.map((r) => (
         <li key={r.id} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: 10, borderRadius: 10, background: "var(--surface-2)", opacity: r.done ? 0.55 : 1 }}>
-          <input type="checkbox" checked={r.done} disabled={!onTick} onChange={(e) => onTick?.(r, e.target.checked)} aria-label={`Done: ${r.action}`} style={{ width: 22, height: 22, marginTop: 2, accentColor: "var(--safe)", flexShrink: 0 }} />
+          <label style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 32, minHeight: 32, flexShrink: 0, cursor: onTick ? "pointer" : "default" }}>
+            <input type="checkbox" checked={r.done} disabled={!onTick} onChange={(e) => onTick?.(r, e.target.checked)} aria-label={`Done: ${r.action}`} style={{ width: 22, height: 22, margin: 0, accentColor: "var(--safe)" }} />
+          </label>
           <div style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0, flexGrow: 1 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-              <strong style={{ textDecoration: r.done ? "line-through" : "none", color: r.kind === "short" ? "var(--critical-ink)" : "var(--ink)" }}>{r.kind === "short" && <ShortWord />}{r.action}</strong>
+              <strong className={amountClass(r.action)} style={{ textDecoration: r.done ? "line-through" : "none", color: r.kind === "short" ? "var(--critical-ink)" : "var(--ink)" }}>{r.kind === "short" && <ShortWord />}{r.action}</strong>
               <strong className="num" style={{ whiteSpace: "nowrap" }}>{money(r.amount, { cents: true })}</strong>
             </div>
-            <span style={{ fontSize: 12, color: "var(--ink-2)" }}>{shortDate(r.date)} · so that {r.so_that}</span>
+            <span className={amountClass(r.so_that)} style={{ fontSize: 12, color: "var(--ink-2)" }}>{shortDate(r.date)} · so that {r.so_that}</span>
           </div>
         </li>
       ))}
@@ -161,11 +164,15 @@ function Sheet({ rows, onTick }: { rows: SheetRow[]; onTick?: (row: SheetRow, do
         <tbody>
           {rows.map((r) => (
             <tr key={r.id} style={{ opacity: r.done ? 0.55 : 1 }}>
-              <td><input type="checkbox" checked={r.done} disabled={!onTick} onChange={(e) => onTick?.(r, e.target.checked)} aria-label={`Done: ${r.action}`} style={{ width: 18, height: 18, accentColor: "var(--safe)" }} /></td>
-              <td className="num" style={{ whiteSpace: "nowrap" }}>{shortDate(r.date)}</td>
-              <td style={{ textDecoration: r.done ? "line-through" : "none" }}>{r.kind === "short" ? <strong style={{ color: "var(--critical-ink)" }}><ShortWord />{r.action}</strong> : r.action}</td>
+              <td>
+                <label style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 32, minHeight: 32, cursor: onTick ? "pointer" : "default" }}>
+                  <input type="checkbox" checked={r.done} disabled={!onTick} onChange={(e) => onTick?.(r, e.target.checked)} aria-label={`Done: ${r.action}`} style={{ width: 18, height: 18, margin: 0, accentColor: "var(--safe)" }} />
+                </label>
+              </td>
+              <td style={{ whiteSpace: "nowrap" }}>{shortDate(r.date)}</td>
+              <td className={amountClass(r.action)} style={{ textDecoration: r.done ? "line-through" : "none" }}>{r.kind === "short" ? <strong style={{ color: "var(--critical-ink)" }}><ShortWord />{r.action}</strong> : r.action}</td>
               <td className="num" style={{ textAlign: "right", fontWeight: 800 }}>{money(r.amount, { cents: true })}</td>
-              <td style={{ color: "var(--ink-2)" }}>{r.so_that}</td>
+              <td className={amountClass(r.so_that)} style={{ color: "var(--ink-2)" }}>{r.so_that}</td>
             </tr>
           ))}
         </tbody>
@@ -184,10 +191,12 @@ function Columns({ cover }: { cover: Cover }) {
       if (a.role === "spend") return { name: a.name, w1: a.windows?.[0]?.needs ?? 0, w2: a.windows?.[1]?.needs ?? 0, has: (a.balance ?? 0) };
       return { name: a.name, w1: a.per_window?.[0] ?? 0, w2: a.per_window?.[1] ?? 0, has: null as number | null };
     });
+  // Series colours of the look in their validated order (housing blue, bills orange, card violet); the status
+  // colours are never used as a series.
   const series = [
+    { key: "has" as const, label: "has now", fill: c.housing },
     { key: "w1" as const, label: `needs before ${shortDate(cover.paydays[0])}`, fill: c.bill },
     { key: "w2" as const, label: `needs before ${shortDate(cover.paydays[1])}`, fill: c.debt },
-    { key: "has" as const, label: "has now", fill: c.safe },
   ];
   const max = Math.max(1, ...rows.flatMap((r) => [r.w1, r.w2, r.has ?? 0]));
   const W = 640;
@@ -209,7 +218,7 @@ function Columns({ cover }: { cover: Cover }) {
         <div style={{ overflowX: "auto" }}>
           <table className="ledger">
             <thead><tr><th>Account</th>{series.map((s) => <th key={s.key} style={{ textAlign: "right" }}>{s.label}</th>)}</tr></thead>
-            <tbody>{rows.map((r) => <tr key={r.name}><td>{r.name}</td><td className="num" style={{ textAlign: "right" }}>{money(r.w1)}</td><td className="num" style={{ textAlign: "right" }}>{money(r.w2)}</td><td className="num" style={{ textAlign: "right" }}>{r.has === null ? "—" : money(r.has)}</td></tr>)}</tbody>
+            <tbody>{rows.map((r) => <tr key={r.name}><td>{r.name}</td><td className="num" style={{ textAlign: "right" }}>{r.has === null ? "—" : money(r.has)}</td><td className="num" style={{ textAlign: "right" }}>{money(r.w1)}</td><td className="num" style={{ textAlign: "right" }}>{money(r.w2)}</td></tr>)}</tbody>
           </table>
         </div>
       ) : (
@@ -219,7 +228,7 @@ function Columns({ cover }: { cover: Cover }) {
             {ticks.map((t) => (
               <g key={t}>
                 <line x1={padL} x2={W - 8} y1={y(t)} y2={y(t)} stroke="var(--hairline)" />
-                <text x={padL - 6} y={y(t) + 4} textAnchor="end" fontSize="10.5" fill="var(--muted)">{money(t)}</text>
+                <text className="num" x={padL - 6} y={y(t) + 4} textAnchor="end" fontSize="10.5" fill="var(--muted)">{money(t)}</text>
               </g>
             ))}
             {rows.map((r, i) => {
@@ -233,7 +242,7 @@ function Columns({ cover }: { cover: Cover }) {
                     return (
                       <g key={s.key}>
                         <rect x={x} y={y(v)} width={bw} height={y(0) - y(v)} rx={4} fill={s.fill}><title>{`${r.name}, ${s.label}: ${money(v)}`}</title></rect>
-                        <text x={x + bw / 2} y={y(v) - 4} textAnchor="middle" fontSize="10.5" fontWeight="700" fill="var(--ink)">{money(v)}</text>
+                        <text className="num" x={x + bw / 2} y={y(v) - 4} textAnchor="middle" fontSize="10.5" fontWeight="700" fill="var(--ink)">{money(v)}</text>
                       </g>
                     );
                   })}

@@ -11,6 +11,16 @@ export interface MePerson extends Me {
   owner?: string;
 }
 
+/** The owner as a name in a sentence: the owner's sign-in name, or "the owner" while it is still the default
+ * "owner" (or not sent), so a line never reads "Ask owner for a new link". */
+export function ownerName(owner: string | null | undefined): string {
+  const name = (owner ?? "").trim();
+  return name && name.toLowerCase() !== "owner" ? name : "the owner";
+}
+
+/** An account's kind in words, on the people and shared pages. */
+export const KIND_WORD: Record<string, string> = { checking: "checking", savings: "savings", cash: "cash", investment: "investment", card: "card", loan: "loan", bnpl: "pay-later", advance: "advance app", medical: "medical bill" };
+
 /** Who is signed in: the owner, a person with everything, or a person who sees the shared accounts only. */
 export function roleOf(me: MePerson | null | undefined): Role {
   if (me?.role === "everything" || me?.role === "shared") return me.role;

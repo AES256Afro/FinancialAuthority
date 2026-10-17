@@ -70,8 +70,8 @@ function Rollover({ s }: { s: SavingData }) {
               <text x={0} y={y0 + rowH / 2 + 4} fontSize="12" fontWeight="700" fill="var(--ink)">{it.name.length > 22 ? `${it.name.slice(0, 21)}…` : it.name}</text>
               <rect x={x(start)} y={y0} width={Math.max(2, endX - x(start) - 2)} height={rowH} rx={5} fill={c.later}><title>{`${it.name}: ${money(it.installment, { cents: true })} each until ${shortDate(it.last_payment)}`}</title></rect>
               {s.rollover.enabled && <rect x={endX} y={y0} width={Math.max(2, W - 10 - endX)} height={rowH} rx={5} fill={c.saving}><title>{`From ${shortDate(it.last_payment)}: ${money(it.per_check, { cents: true })} a check into the ladder`}</title></rect>}
-              {endX - x(start) > 90 && <text x={x(start) + 8} y={y0 + rowH / 2 + 4} fontSize="11" fontWeight="800" fill={inkOn(c.later)}>{money(it.installment)} each</text>}
-              {s.rollover.enabled && W - 10 - endX > 120 && <text x={endX + 8} y={y0 + rowH / 2 + 4} fontSize="11" fontWeight="800" fill={inkOn(c.saving)}>+{money(it.per_check)} a check saved</text>}
+              {endX - x(start) > 90 && <text className="num" x={x(start) + 8} y={y0 + rowH / 2 + 4} fontSize="11" fontWeight="800" fill={inkOn(c.later)}>{money(it.installment)} each</text>}
+              {s.rollover.enabled && W - 10 - endX > 120 && <text className="num" x={endX + 8} y={y0 + rowH / 2 + 4} fontSize="11" fontWeight="800" fill={inkOn(c.saving)}>+{money(it.per_check)} a check saved</text>}
             </g>
           );
         })}
@@ -96,8 +96,11 @@ export function Saving() {
   if (loaded.error && !data) return <Failed error={loaded.error} what="the saving ladder" onRetry={loaded.reload} />;
   if (!data) return <Loading what="the saving ladder from your bills" />;
   const s = data;
-  const row = s.by_share.find((b) => b.share === share) ?? s.by_share[0];
-  const nextIdx = (s.next_rung?.n ?? 1) - 1;
+  // The engine works out shares in steps of 5%; a saved share between them (set over the API) has no row, and then
+  // no per-check figure is shown, never another share's. The ladder then shows the engine's dates at that share.
+  const row = s.by_share.find((b) => b.share === share);
+  const etas = row?.etas ?? s.rungs.map((r) => r.eta);
+  const nextIdx = s.next_rung ? s.next_rung.n - 1 : null;
 
   async function save(body: Record<string, unknown>, done: string, where: "share" | "rollover", cover = false) {
     setBusy(true);
@@ -121,9 +124,9 @@ export function Saving() {
           <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Saving</h1>
           <span className="num" style={{ fontSize: 13, color: "var(--ink-2)" }}>{money(s.balance)} saved{s.accounts.length ? ` in ${s.accounts.map((a) => a.name).join(", ")}` : " · no savings account on file yet"}</span>
         </div>
-        <Ladder s={s} etas={row.etas} />
+        <Ladder s={s} etas={etas} />
         <div style={{ fontSize: 12, color: "var(--ink-2)", maxWidth: "75ch" }}>
-          Rung 1 is a first cushion, so a surprise comes out of savings instead of an advance. Rung 2 is {money(s.must_pays)}, the bills, card payments and advances of your heavier next check. A month here is {money(s.month)}: your bills and your usual everyday spending.
+          Each <Link to="/glossary#rung">rung</Link> is one savings goal. Rung 1 is a first cushion, so a surprise comes out of savings instead of an advance. Rung 2 is <span className="num">{money(s.must_pays)}</span>, the bills, card payments and advances of your heavier next check. A month here is <span className="num">{money(s.month)}</span>: your bills and your usual everyday spending.
         </div>
       </section>
 
@@ -139,9 +142,11 @@ export function Saving() {
         </div>
         <label htmlFor="share" style={{ fontSize: 13, color: "var(--ink-2)" }}>Keep <strong className="num" style={{ color: "var(--ink)" }}>{share}%</strong></label>
         <input id="share" type="range" min={0} max={60} step={5} value={share} onChange={(e) => setShare(Number(e.target.value))} style={{ width: "100%", maxWidth: 520, accentColor: "var(--paycheck)" }} />
-        <div className="num" style={{ display: "flex", gap: 18, flexWrap: "wrap", fontSize: 14 }}>
-          <span>About <strong>{money(row.per_check)}</strong> a check</span>
-          <span>Rung {nextIdx + 1} on <strong>{row.etas[nextIdx] ? shortDate(row.etas[nextIdx] as string) : "no date within six years"}</strong></span>
+        <div style={{ display: "flex", gap: 18, flexWrap: "wrap", fontSize: 14 }}>
+          {row ? <span className="num">About <strong>{money(row.per_check)}</strong> a check</span> : <span style={{ color: "var(--ink-2)" }}>The amount a check shows for shares in steps of 5%; move the slider to one.</span>}
+          {nextIdx === null
+            ? <span>Every rung reached</span>
+            : <span>Rung {nextIdx + 1} on <strong>{etas[nextIdx] ? shortDate(etas[nextIdx] as string) : "no date within six years"}</strong></span>}
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <button type="button" className="btn dark" disabled={busy || (s.chosen && s.share === share)} onClick={() => save({ share }, `Saved: keep ${share}% of what each paycheck leaves. The payday list on Cover shows the amount to move.`, "share", true)}>Keep {share}%</button>
@@ -164,9 +169,9 @@ export function Saving() {
           <span style={{ fontSize: 12, color: "var(--muted)" }}>when a plan ends, its payment keeps going, into the ladder</span>
         </div>
         <Rollover s={s} />
-        <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
+        <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, minHeight: 32, cursor: "pointer" }}>
           <input type="checkbox" checked={s.rollover.enabled} disabled={busy} onChange={(e) => save({ rollover: e.target.checked }, e.target.checked ? "Saved. Finished payments now roll into the ladder." : "Saved. Finished payments are free again; the share still applies to them.", "rollover")} style={{ width: 18, height: 18, accentColor: "var(--safe)" }} />
-          Roll finished payments into the ladder{s.rollover.freed_per_check ? ` (${money(s.rollover.freed_per_check)} a paycheck once every plan ends)` : ""}
+          <span>Roll finished payments into the ladder{s.rollover.freed_per_check ? <> (<span className="num">{money(s.rollover.freed_per_check)}</span> a paycheck once every plan ends)</> : ""}</span>
         </label>
         {note?.where === "rollover" && <Said text={note.text} tone={note.tone} />}
         {s.next_rung && s.next_rung.eta !== s.next_rung.eta_without_rollover && (

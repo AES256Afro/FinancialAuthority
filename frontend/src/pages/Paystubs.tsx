@@ -41,21 +41,26 @@ export function Paystubs() {
       </div>
     );
   }
+  const latest = data.last ?? stub; // the newest stub is offered as the paycheck when none is on file
+  const offer = { id: latest.id, pay_date: latest.pay_date, net: latest.net };
   const gross = stub.gross_total;
   const taxes = stub.deductions_grouped.filter((d) => d.group === "tax");
   const benefits = stub.deductions_grouped.filter((d) => d.group === "benefit");
   const segs = [...taxes.map((d) => ({ ...d, fill: c.bill })), ...benefits.map((d) => ({ ...d, fill: c.debt })), { name: "Net", amount: stub.net, fill: c.safe }];
   const strip = [...data.recent].sort((a, b) => a.pay_date.localeCompare(b.pay_date)).slice(-6);
   const maxNet = Math.max(1, ...strip.map((p) => p.net));
-  const pct = stub.net_share !== null ? Math.round(stub.net_share * 1000) / 10 : 0;
+  // The share of gross is the engine's; when it has none, none is shown (never "0% of gross").
+  const pct = stub.net_share !== null ? `${Math.round(stub.net_share * 1000) / 10}% of gross` : null;
+  const from = stub.source.startsWith("mail:") ? "a PDF from your mail" : stub.source === "demo" ? "demo data" : stub.source === "fact" ? "uploaded and confirmed on Needs you" : "kept by the app";
   const isShort = (p: PaystubWithFile) => Boolean(p.verdict?.short);
   const file = stub.document_id ?? null;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, letterSpacing: "-0.01em" }}>Paystubs</h1>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 16 }}>
-        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, letterSpacing: "-0.01em" }}>Paystub · {shortDate(stub.pay_date)}</h1>
+        <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>The {shortDate(stub.pay_date)} stub</h2>
         <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
-          {stub.period_start && stub.period_end ? `Period ${shortDate(stub.period_start)} to ${shortDate(stub.period_end)} · ` : ""}{stub.source.startsWith("mail:") ? "PDF from mail" : stub.source === "demo" ? "demo data" : stub.source}
+          {stub.period_start && stub.period_end ? `Period ${shortDate(stub.period_start)} to ${shortDate(stub.period_end)} · ` : ""}{from}
           {stub.matched ? " · matched to the deposit" : " · no deposit matched yet"}
         </div>
         <div style={{ flexGrow: 1 }} />
@@ -80,8 +85,6 @@ export function Paystubs() {
         </div>
       )}
 
-      <PaycheckSetup />
-
       <section className="card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}><h2 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Gross to net, as one bar</h2><span style={{ fontSize: 12, color: "var(--muted)" }}>every segment is a line on the stub</span></div>
         <div style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-2)" }} className="num">Gross {money(gross, { cents: true })}{stub.hours ? ` · ${stub.hours} h` : ""}</div>
@@ -91,7 +94,7 @@ export function Paystubs() {
             const share = s.amount / Math.max(1, gross);
             return (
               <div key={i} title={`${s.name} ${money(s.amount, { cents: true })}`} style={{ flex: `${Math.max(0.002, share)} 1 0`, minWidth: 2, background: s.fill, color: inkOn(s.fill), borderRadius: i === segs.length - 1 ? "0 6px 6px 0" : 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", padding: share > 0.12 ? "0 10px" : 0 }}>
-                {share > 0.12 ? <span style={{ overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{s.name} {money(s.amount)}{s.name === "Net" ? ` · ${pct}% of gross` : ""}</span> : null}
+                {share > 0.12 ? <span className="num" style={{ overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{s.name} {money(s.amount)}{s.name === "Net" && pct ? ` · ${pct}` : ""}</span> : null}
               </div>
             );
           })}
@@ -99,9 +102,11 @@ export function Paystubs() {
         <div className="num" style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: 12, fontWeight: 700, color: "var(--ink-2)" }}>
           <span><span className="sw" style={{ background: c.bill }} />Taxes {money(stub.taxes_total)}</span>
           <span><span className="sw" style={{ background: c.debt }} />Benefits {money(stub.benefits_total)}</span>
-          <span><span className="sw" style={{ background: c.safe }} />Net {money(stub.net, { cents: true })} · {pct}% of gross</span>
+          <span><span className="sw" style={{ background: c.safe }} />Net {money(stub.net, { cents: true })}{pct ? ` · ${pct}` : ""}</span>
         </div>
       </section>
+
+      <PaycheckSetup stub={offer} />
 
       <section className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_420px]" style={{ gap: 16, alignItems: "start" }}>
         <div className="card" style={{ padding: "16px 20px" }}>
@@ -117,7 +122,7 @@ export function Paystubs() {
                   <title>{`${shortDate(p.pay_date)}: ${money(p.net)}${short ? `, ${money(-(p.difference ?? 0))} under the usual` : ""}`}</title>
                   <rect x={xx} y={140 - h} width={24} height={h} rx={4} fill={short ? c.bill : c.paycheck} stroke={p.id === stub.id ? c.ink : "none"} strokeWidth={2} />
                   <text x={xx + 12} y={158} textAnchor="middle" fontSize={11} fontWeight={700} fill={c.ink2}>{monthDay(p.pay_date)}</text>
-                  {short && <text x={xx + 12} y={140 - h - 8} textAnchor="middle" fontSize={11} fontWeight={800} fill={c.ink}>{money(p.net)} · {money(-(p.difference ?? 0))} short</text>}
+                  {short && <text className="num" x={xx + 12} y={140 - h - 8} textAnchor="middle" fontSize={11} fontWeight={800} fill={c.ink}>{money(p.net)} · {money(-(p.difference ?? 0))} short</text>}
                 </g>
               );
             })}
@@ -132,7 +137,7 @@ export function Paystubs() {
           {data.short.length > 0 && (
             <div style={{ marginTop: 8, padding: "12px 14px", borderRadius: 10, background: "var(--warning-soft)", color: "var(--warning-ink)", fontSize: 13, display: "flex", gap: 8, alignItems: "flex-start" }}>
               <TriangleAlert size={16} aria-hidden="true" style={{ flexShrink: 0, marginTop: 1 }} />
-              <span><strong>{shortDate(data.short[0].pay_date)} was {money(-(data.short[0].difference ?? 0))} under the usual.</strong> {data.short[0].hours ? `Hours were ${data.short[0].hours}.` : ""} Ask payroll before the next payday.</span>
+              <span><strong>{shortDate(data.short[0].pay_date)} was <span className="num">{money(-(data.short[0].difference ?? 0))}</span> under the usual.</strong> {data.short[0].hours ? `Hours were ${data.short[0].hours}.` : ""} Ask payroll before the next payday.</span>
             </div>
           )}
         </div>
@@ -150,7 +155,7 @@ export function Paystubs() {
               </tbody>
             </table>
           </div>
-          <div style={{ marginTop: 10, fontSize: 12, color: "var(--ink-2)" }}>{stub.employer ? `${stub.employer}. ` : ""}{stub.expected_net !== null ? `Usual take-home pay ${money(stub.expected_net)}, from the last stubs.` : ""}</div>
+          <div style={{ marginTop: 10, fontSize: 12, color: "var(--ink-2)" }}>{stub.employer ? `${stub.employer}. ` : ""}{stub.expected_net !== null ? <>Usual take-home pay <span className="num">{money(stub.expected_net)}</span>, from the last stubs.</> : ""}</div>
         </div>
       </section>
     </div>

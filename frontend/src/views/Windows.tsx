@@ -1,5 +1,7 @@
 // Paycheck columns: one column per paycheck, filled from the bottom with what leaves it.
-import { money, shortDate } from "../format";
+import { Empty } from "../components/State";
+import { noPayday } from "../components/SafeExplain";
+import { amountClass, money, shortDate } from "../format";
 import { palette } from "../looks";
 import { inkOn } from "../paychecks";
 import { getPrefs } from "../prefs";
@@ -15,13 +17,13 @@ function Block({ h, bg, border, color, label }: { h: number; bg: string; border?
   const show = label && h >= 15;
   return (
     <div style={{ height: h, background: bg, border: border ? `2px solid ${border}` : undefined, color: color ?? inkOn(bg), borderRadius: 4, display: "flex", alignItems: "center", padding: "0 8px", fontSize: 11, fontWeight: 700, boxSizing: "border-box", whiteSpace: "nowrap", overflow: "hidden" }} title={label}>
-      {show ? label : ""}
+      {show ? <span className={amountClass(label)}>{label}</span> : ""}
     </div>
   );
 }
 
 function Column({ w, index, c }: { w: Window; index: number; c: Palette }) {
-  const entering = Math.max(1, w.inflow);
+  const entering = Math.max(1, w.inflow, w.paycheck); // drawing only: the column's height is the most that comes in
   const px = (v: number) => Math.max(6, (Math.abs(v) / entering) * STACK);
   const bills = [...w.bills.items].sort((a, b) => b.amount - a.amount);
   const short = w.safe < 0;
@@ -31,7 +33,11 @@ function Column({ w, index, c }: { w: Window; index: number; c: Palette }) {
         <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>{shortDate(w.start)} to {shortDate(w.end)}</h3>
         {index === 0 && <span style={{ fontSize: 11, fontWeight: 800, color: "var(--paycheck-ink)", background: "var(--paycheck-soft)", padding: "2px 8px", borderRadius: 999 }}>this paycheck</span>}
       </div>
-      <div className="num" style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.01em" }}>{money(w.paycheck, { sign: true })}{w.carried_in > 0 && <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}> + {money(w.carried_in)} carried in</span>}</div>
+      <div className="num" style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.01em" }}>
+        {money(w.paycheck, { sign: true })}
+        {w.carried_in > 0 && <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}> + {money(w.carried_in)} carried in</span>}
+        {w.carried_in < 0 && <span style={{ fontSize: 12, color: "var(--critical-ink)", fontWeight: 700 }}> − {money(Math.abs(w.carried_in))} already short before payday</span>}
+      </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 2, height: STACK, justifyContent: "flex-end" }}>
         {short ? (
           <Block h={px(w.safe)} bg="var(--critical-soft)" border="var(--critical)" color="var(--critical-ink)" label={`Short by ${money(-w.safe)}`} />
@@ -45,6 +51,7 @@ function Column({ w, index, c }: { w: Window; index: number; c: Palette }) {
           return <Block key={`${e.source}-${i}`} h={px(e.amount)} bg={fill} label={`${e.name} ${money(e.amount)} · ${shortDate(e.date)}`} />;
         })}
         {w.advances.total > 0 && <Block h={px(w.advances.total)} bg={c.debt} label={`Advance apps take back ${money(w.advances.total)}`} />}
+        {w.carried_in < 0 && <Block h={px(w.carried_in)} bg="var(--critical-soft)" border="var(--critical)" color="var(--critical-ink)" label={`Already short before payday ${money(Math.abs(w.carried_in))}`} />}
       </div>
       <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{w.bills.items.length} bills{w.advances.items.length ? ` · ${w.advances.items.length} advances` : ""}{w.set_aside.items.length ? ` · ${w.set_aside.items.length} kept for the next paycheck` : ""}</div>
     </div>
@@ -53,6 +60,8 @@ function Column({ w, index, c }: { w: Window; index: number; c: Palette }) {
 
 export function Windows({ snapshot }: ViewProps) {
   const c = palette(getPrefs().look);
+  // With no paycheck on file the engine's columns are a frame two weeks apart, not paydays: none is drawn as one.
+  if (noPayday(snapshot)) return <Empty to="/paystubs#paycheck" action="Add your paycheck">No paycheck is on file yet, so there is no paycheck to fill. Add it once and each column shows one check.</Empty>;
   const first = snapshot.windows[0];
   const order = first ? [...first.advances.items, ...first.bills.items].sort((a, b) => a.date.localeCompare(b.date)) : [];
   return (

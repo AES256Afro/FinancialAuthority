@@ -3,7 +3,7 @@
 import { CircleCheck, CircleHelp, OctagonAlert, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { api } from "../api";
-import { money, parseMoney, shortDate } from "../format";
+import { amountClass, money, parseMoney, shortDate } from "../format";
 import { Said } from "./State";
 
 interface Check {
@@ -66,24 +66,24 @@ export function PurchaseCheck() {
           <span className="lab">How much it costs</span>
           <input className="input num" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="120" />
         </label>
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, minHeight: 40 }}>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, minHeight: 40, cursor: "pointer" }}>
           <input type="checkbox" checked={split} onChange={(e) => setSplit(e.target.checked)} /> Split into 4 payments (pay later)
         </label>
         <button className="btn dark" type="submit" disabled={busy || amount === ""}>{busy ? "Checking…" : "Check"}</button>
       </form>
       {error && <Said text={error} tone="error" />}
-      {r?.caveats && r.caveats.length > 0 && <div style={{ fontSize: 12, color: "var(--warning-ink)", fontWeight: 600 }}>{r.caveats.join(" ")}</div>}
+      {r?.caveats && r.caveats.length > 0 && <div className={amountClass(r.caveats.join(" "))} style={{ fontSize: 12, color: "var(--warning-ink)", fontWeight: 600 }}>{r.caveats.join(" ")}</div>}
       {r && v && (
         <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
           <div style={{ minWidth: 72, padding: "8px 10px", borderRadius: 12, background: v.bg, color: v.ink, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, fontWeight: 800, fontSize: 18 }}>
             <v.Icon size={18} strokeWidth={2.4} aria-hidden="true" />{v.word}
           </div>
           <div style={{ fontSize: 13, lineHeight: 1.5, display: "flex", flexDirection: "column", gap: 2 }}>
-            <div>
-              <strong>{money(r.amount)}</strong>{r.installments ? ` in ${r.installments} payments` : ""}{r.verdict === "yes" ? ` fits. Your lowest balance would be ${money(r.low_point.at_pace)} on ${shortDate(r.low_point.date)}.` : ""}
+            <div className="num">
+              <strong>{money(r.amount)}</strong>{r.installments ? ` in ${r.installments} payments` : ""}{r.verdict === "yes" ? ` fits. The lowest left to spend would be ${money(r.low_point.at_pace)} on ${shortDate(r.low_point.date)}, after your safety cushion, what is kept for bills and your usual spending.` : ""}
             </div>
             {r.breaks && (
-              <div>
+              <div className="num">
                 {r.breaks.already_short > 0
                   ? `You're already ${money(r.breaks.already_short)} short on ${shortDate(r.breaks.date)}; this would make it ${money(r.breaks.shortfall)}.`
                   : r.breaks.event_date === r.breaks.date
@@ -94,11 +94,11 @@ export function PurchaseCheck() {
             {r.verdict === "wait" && r.first_ok_date && <div>It fits from <strong>{shortDate(r.first_ok_date)}</strong>.</div>}
             {r.verdict === "no" && <div>It doesn't fit on any day in the next 60 days.</div>}
             {r.verdict === "outside" && r.outside && (
-              <div>
+              <div className="num">
                 Up to {shortDate(r.outside.horizon)} it fits, but {r.outside.charges.length === 1 ? "a payment falls" : `${r.outside.charges.length} payments fall`} after that ({r.outside.charges.map((c) => `${money(c.amount)} on ${shortDate(c.date)}`).join(", ")}), past what the plan can see yet. Check again closer to then.
               </div>
             )}
-            <div style={{ color: "var(--muted)", fontSize: 12 }}>Safe to spend today is {money(r.safe_to_spend.amount)} through {shortDate(r.safe_to_spend.through)}. {r.not_advice}</div>
+            <div style={{ color: "var(--muted)", fontSize: 12 }}><span className="num">Safe to spend today is {money(r.safe_to_spend.amount)} through {shortDate(r.safe_to_spend.through)}.</span> {r.not_advice}</div>
           </div>
         </div>
       )}

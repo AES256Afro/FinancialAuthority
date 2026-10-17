@@ -43,8 +43,8 @@ export function Welcome() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 720 }}>
       <div>
-        <h1 style={{ margin: "0 0 4px", fontSize: 22, fontWeight: 800 }}>Five steps to your first plan</h1>
-        <p style={{ margin: 0, color: "var(--ink-2)" }}>{d.done} of {d.total} done. Each step takes a minute or two; skip any and come back from Today.</p>
+        <h1 style={{ margin: "0 0 4px", fontSize: 22, fontWeight: 800 }}>Setup steps</h1>
+        <p style={{ margin: 0, color: "var(--ink-2)" }}>{d.total} steps to your first plan. {d.done} of {d.total} done. Each step takes a minute or two; skip any and come back from Today.</p>
       </div>
       <div role="progressbar" aria-label="Steps done" aria-valuemin={0} aria-valuemax={d.total} aria-valuenow={d.done} style={{ display: "flex", gap: 4 }}>
         {d.steps.map((s) => <div key={s.id} style={{ flex: 1, height: 8, borderRadius: 4, background: s.done ? "var(--safe)" : "var(--surface-2)" }} />)}
