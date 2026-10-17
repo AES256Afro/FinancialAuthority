@@ -31,6 +31,8 @@ def test_a_sender_is_judged_by_the_mail_servers_verdict_its_name_and_its_domain(
     assert judge("donotreply@vanguardretirement.com", "Vanguard", passed)[0] == "ok"
     assert judge("no-reply@notifications.health.amazon", "Amazon One Medical Notifications", passed)[0] == "ok"
     assert judge("x@capitalone-alerts.net", "Card team", passed)[0] == "crit"  # the brand with a bait word
+    assert judge("x@statefarmservice.com", "State Farm", passed, reply_to="agent@statefarm.com")[0] == "ok"  # replies to its own other domain
+    assert judge("x@statefarmservice.com", "State Farm", passed, reply_to="agent@example-other.test")[0] == "warn"
     assert judge("x@example-property.test", "Example Apartments", "mx.example.test; spf=softfail; dkim=none")[0] == "warn"  # weak, not forged
     # learned: earlier verified mail from this name used another domain of its own
     assert judge("x@notify.example-bank.test", "Capital One", passed, learned={"capital one": {"example-bank.test"}})[0] == "ok"

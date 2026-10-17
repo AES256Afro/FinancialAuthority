@@ -111,7 +111,7 @@ def judge(sender: str, sender_name: str, auth_results: str = "", reply_to: str =
         if not any(_owns(org, d) for d in own):
             return "crit", f"It calls itself {sender_name.strip()}, but it comes from {org}, not {', '.join(sorted(own)[:2])}."
     if res.get("dmarc") == "pass" or res.get("dkim") == "pass":
-        if reply_to and "@" in reply_to and org_domain(reply_to) != org and brand:
+        if reply_to and "@" in reply_to and org_domain(reply_to) != org and brand and not any(_owns(org_domain(reply_to), d) for d in set(KNOWN[brand]) | (learned or {}).get(brand, set())):
             return "warn", f"It is from {org}, but replies would go to {org_domain(reply_to)}."
         return "ok", f"Confirmed from {org} by the mail server."
     if res:
