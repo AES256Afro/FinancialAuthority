@@ -133,7 +133,13 @@ def tax_pack(session: Session, today: date, year: int | None = None) -> dict[str
         parts.append(f"{len(statements)} statement{'s' if len(statements) != 1 else ''} across {len(statement_rows)} account{'s' if len(statement_rows) != 1 else ''}")
     said = (f"For {year} the app keeps " + ", ".join(parts) + f". The pack holds the totals and {files} file{'s' if files != 1 else ''}.") if parts else \
         f"For {year} the app keeps no paystubs, receipts or statements yet; the pack holds the category totals only."
-    return {**totals, "paystubs": stubs, "receipts": receipt_groups, "statements": statement_rows, "files": files, "said": said}
+    from ..models import Business
+    from .business import books
+
+    businesses = [books(session, b, year) for b in session.exec(select(Business).where(Business.active == True)).all()]  # noqa: E712
+    if businesses:
+        said += " " + "; ".join(f"{b['business']}: ${b['profit']:,.2f} of profit" for b in businesses) + "."
+    return {**totals, "paystubs": stubs, "receipts": receipt_groups, "statements": statement_rows, "files": files, "businesses": businesses, "said": said}
 
 
 def _safe(name: str, limit: int = 60) -> str:
@@ -190,6 +196,11 @@ def build_pack(session: Session, today: date, year: int | None = None) -> tuple[
         for d in session.exec(select(Document).where(Document.kind == "paystub")).all():
             if (d.period or "").startswith(f"{year}-"):
                 put(f"paystubs/{_safe(d.title or d.period)}{_ext(d)}", d)
+        for b in pack.get("businesses") or []:
+            folder = f"business/{_safe(b['business'])}"
+            z.writestr(f"{folder}/schedule-c-lines.csv", _business_csv(b))
+            z.writestr(f"{folder}/invoices.csv", _invoices_csv(session, b["business"], year))
+            z.writestr(f"{folder}/mileage-log.csv", _trips_csv(session, b["business"], year))
         z.writestr("summary.csv", _csv(pack))
         z.writestr("summary.html", _html(pack))
         z.writestr("README.txt", _readme(pack, missing))
@@ -213,6 +224,12 @@ def _rows(pack: dict[str, Any]) -> list[list[Any]]:
         rows.append(["receipts", r["name"], r["total"], r["count"]])
     for st in pack["statements"]:
         rows.append(["statements", st["account"], "", st["count"]])
+    for b in pack.get("businesses") or []:
+        rows.append(["business", f"{b['business']}: income", b["income"], ""])
+        for line in b["lines"]:
+            rows.append(["business", f"{b['business']}: line {line['line']}, {line['words']}", line["amount"], line["count"]])
+        rows.append(["business", f"{b['business']}: profit", b["profit"], ""])
+        rows.append(["business", f"{b['business']}: self-employment tax (estimate)", b["se_tax"], ""])
     return rows
 
 
@@ -231,7 +248,8 @@ def _html(pack: dict[str, Any]) -> str:
     for section, name, amount, count in _rows(pack)[1:]:
         sections[section].append([name, amount, count])
     titles = {"category": "Spending in the categories a return asks about", "tagged tax": 'Tagged "tax"', "pay": "Pay for the year",
-              "deduction": "Taken from pay (summed from the paystubs)", "receipts": "Receipts kept, by the purchase's category", "statements": "Statements kept"}
+              "deduction": "Taken from pay (summed from the paystubs)", "receipts": "Receipts kept, by the purchase's category", "statements": "Statements kept",
+              "business": "Your business, by the lines of Schedule C"}
     body = [f"<h1>Tax pack, {pack['year']}</h1>", f"<p>{e(pack['said'])}</p>", f"<p>From {e(pack['from'])} to {e(pack['to'])}.</p>"]
     for key, title in titles.items():
         if not sections.get(key):
@@ -246,6 +264,51 @@ def _html(pack: dict[str, Any]) -> str:
     return f"<!doctype html><meta charset=utf-8><title>Tax pack {pack['year']}</title><style>{style}</style>" + "".join(body)
 
 
+def _business_csv(b: dict[str, Any]) -> str:
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["line", "what", "amount", "count"])
+    w.writerow(["1", "Gross receipts (income)", b["income"], ""])
+    for line in b["lines"]:
+        w.writerow([line["line"], line["words"], line["amount"], line["count"]])
+    w.writerow(["31", "Net profit", b["profit"], ""])
+    w.writerow(["", "Self-employment tax (estimate)", b["se_tax"], ""])
+    return buf.getvalue()
+
+
+def _clean(v: Any) -> Any:
+    return f"'{v}" if isinstance(v, str) and v[:1] in ("=", "+", "-", "@") else v
+
+
+def _invoices_csv(session: Session, name: str, year: int) -> str:
+    from ..models import Business, Invoice
+
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["number", "direction", "who", "issued", "due", "amount", "status", "paid on"])
+    biz = session.exec(select(Business).where(Business.name == name)).first()
+    if biz is not None:
+        for i in session.exec(select(Invoice).where(Invoice.business_id == biz.id).order_by(Invoice.issued_on)).all():
+            if i.issued_on.year == year or (i.paid_on and i.paid_on.year == year):
+                w.writerow([_clean(i.number), i.direction, _clean(i.counterparty), i.issued_on.isoformat(), i.due_on.isoformat() if i.due_on else "", i.amount, i.status,
+                            i.paid_on.isoformat() if i.paid_on else ""])
+    return buf.getvalue()
+
+
+def _trips_csv(session: Session, name: str, year: int) -> str:
+    from ..models import Business
+    from .business import trips_year
+
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["day", "miles", "purpose", "from", "to", "cents a mile", "amount"])
+    biz = session.exec(select(Business).where(Business.name == name)).first()
+    if biz is not None:
+        for t in trips_year(session, biz.id, year)["trips"]:
+            w.writerow([t["day"], t["miles"], _clean(t["purpose"]), _clean(t["start"]), _clean(t["end"]), t["cents"], t["amount"]])
+    return buf.getvalue()
+
+
 def _readme(pack: dict[str, Any], missing: list[str]) -> str:
     lines = [
         f"Tax pack for {pack['year']}, made by FinancialAuthority.",
@@ -255,6 +318,7 @@ def _readme(pack: dict[str, Any], missing: list[str]) -> str:
         "receipts/      each receipt kept, in a folder per purchase category",
         "statements/    each statement kept, in a folder per account, named by month",
         "paystubs/      each paystub kept, named by pay date",
+        "business/      each business: its Schedule C lines, invoices and mileage log",
         "",
         pack["said"],
         "",
