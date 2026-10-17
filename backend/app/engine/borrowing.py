@@ -28,6 +28,7 @@ FEE_CEILING = 0.30  # a repayment more than 30% over the advance is not its repa
 MATCH_DAYS = 21  # an advance app takes its money back within a pay period; later repayments belong to later advances
 MIN_ADVANCE = 5.0  # a cent or a dollar in is a verification deposit, not an advance
 TIP_CEILING = 15.0  # a small payment to an advance app with no advance behind it is a tip or a membership fee
+ONE_AT_A_TIME = {"Dave"}  # apps that lend one advance at a time: a newer advance means the one before it was paid back
 WINDOW_DAYS = 90
 
 
@@ -81,26 +82,32 @@ def plan_covers_series(p: InstallmentPlan, series: RecurringSeries) -> bool:
 
 def pair_advances(rows: list[dict], next_payday: date | None = None, today: date | None = None, paydays: list[date] | None = None) -> dict:
     """rows: dicts with id, date, amount (positive = money out), provider. Money in from an advance app is an
-    advance; money out to it is a repayment. Each advance takes the first later repayment that covers it with a
-    fee of up to thirty percent, or a run of partial repayments that adds up within ten days; an advance with
+    advance; money out to it is a repayment. A whole repayment (the advance plus a fee of up to thirty percent)
+    belongs to the nearest advance before it, since an app takes back the advance just before payday: an advance
+    whose repayment the ledger does not show (paid from an account the app cannot see) never takes the next one's.
+    An advance with no whole repayment takes a run of partial repayments that adds up within ten days. One with
     no repayment yet is outstanding and due on the first scheduled payday on or after the day it was taken
-    (`paydays`), which stays its day once that check has landed. Small payments with no advance behind them
+    (`paydays`), which stays its day once that check has landed; for an app that lends one advance at a time,
+    a newer advance means it was paid back where the app cannot see. Small payments with no advance behind them
     are tips and membership fees."""
     ins = sorted((r for r in rows if r["amount"] <= -MIN_ADVANCE), key=lambda r: (r["date"], r["id"]))
     today = today or (max((r["date"] for r in rows), default=date.today()))
     outs = sorted((r for r in rows if r["amount"] > 0), key=lambda r: (r["date"], r["id"]))
     used: set = set()
     pairs: list[dict] = []
+    # Each whole repayment, oldest first, to the nearest advance before it that it covers.
+    claimed: dict = {}
+    for out in outs:
+        near = [a for a in ins if a["id"] not in claimed and a["provider"] == out["provider"] and a["date"] <= out["date"]
+                and (out["date"] - a["date"]).days <= MATCH_DAYS and -a["amount"] * 0.98 <= out["amount"] <= -a["amount"] * (1.0 + FEE_CEILING)]
+        if near:
+            nearest = max(near, key=lambda a: (a["date"], a["id"]))
+            claimed[nearest["id"]] = out
+            used.add(out["id"])
     for adv in ins:
         amount = -adv["amount"]
         taken = adv["date"]
-        whole = None
-        for out in outs:
-            if out["id"] in used or out["provider"] != adv["provider"] or out["date"] < taken or (out["date"] - taken).days > MATCH_DAYS:
-                continue
-            if amount * 0.98 <= out["amount"] <= amount * (1.0 + FEE_CEILING):
-                whole = [out]
-                break
+        whole = [claimed[adv["id"]]] if adv["id"] in claimed else None
         partial = None
         run: list[dict] = []
         total = 0.0
@@ -126,6 +133,11 @@ def pair_advances(rows: list[dict], next_payday: date | None = None, today: date
             days = max(1, (repaid_on - taken).days)
             pairs.append({"provider": adv["provider"], "taken_on": taken, "amount": _money(amount), "fee": _money(repaid - amount), "repaid": True, "repay_date": repaid_on, "days": days,
                           "annual_rate": _money((repaid - amount) / amount * 365.0 / days) if amount else 0.0, "sources": [f"transaction:{adv['id']}", *[f"transaction:{o['id']}" for o in match]]})
+        elif adv["provider"] in ONE_AT_A_TIME and any(a["provider"] == adv["provider"] and (a["date"], a["id"]) > (taken, adv["id"]) for a in ins):
+            later = min(a["date"] for a in ins if a["provider"] == adv["provider"] and (a["date"], a["id"]) > (taken, adv["id"]))
+            pairs.append({"provider": adv["provider"], "taken_on": taken, "amount": _money(amount), "fee": 0.0, "repaid": True, "repay_date": later, "days": max(1, (later - taken).days),
+                          "annual_rate": None, "seen": False, "note": f"{adv['provider']} lends one advance at a time; a newer one was taken on {later:%b} {later.day}, so this one was paid back where the app cannot see.",
+                          "sources": [f"transaction:{adv['id']}"]})
         else:
             stale = (today - taken).days > MATCH_DAYS  # no repayment within a pay period: unresolved history, not money due
             due = next((d for d in sorted(paydays or []) if d >= taken), None)
@@ -708,10 +720,45 @@ def plan_from_fields(session: Session, fields: dict, amount: float | None, remai
     return plan
 
 
+OWNER_PAID = "borrowing.owner_paid"  # {plan id: [{"on": day, "amount": x}]}: payments the owner said were made
+CLAIM_MATCH_DAYS = 10  # a bank row of the same amount this close to the owner's word is that same payment
+
+
+def mark_installment_paid(session: Session, plan: InstallmentPlan, on: date, today: date) -> str:
+    """The owner says the next payment is made (the bank has not shown it yet, or it went by a card the app does not
+    see). It counts at once; when the bank's own row arrives, that row stands in its place, never as a second one."""
+    import json
+
+    from ..store import get_setting, set_setting
+
+    if on > today:
+        raise ValueError("A payment is marked on or after the day it was made")
+    sched = sorted(json.loads(plan.schedule or "[]"), key=lambda e: e["date"])
+    upcoming = sched[len(sched) - plan.remaining:] if sched and plan.remaining else []
+    if not upcoming:
+        raise ValueError("Nothing is left to pay on this plan")
+    claims = {k: list(v) for k, v in (get_setting(session, OWNER_PAID, {}) or {}).items()}
+    claims.setdefault(str(plan.id), []).append({"on": on.isoformat(), "amount": upcoming[0]["amount"]})
+    set_setting(session, OWNER_PAID, claims)
+    refresh_plan_progress(session, today)
+    session.refresh(plan)
+    left = plan.remaining
+    return (f"Counted: ${upcoming[0]['amount']:,.2f} to {plan.merchant or plan.provider}, due {upcoming[0]['date']}. "
+            + (f"Next: {plan.next_date:%a %b} {plan.next_date.day}; {left} payment{'s' if left != 1 else ''} left." if left else "That was the last payment.")
+            + " When your bank shows it, that row takes its place.")
+
+
 def refresh_plan_progress(session: Session, today: date) -> int:
     """A plan with the lender's schedule follows the ledger: each payment to the lender of a scheduled amount
-    on or after the loan's first date ticks one off. Returns how many plans changed."""
+    on or after the loan's first date ticks one off. A plan whose schedule the lender confirmed on a day (the owner's
+    account, a statement) counts any payment of the amount made after that day, up to a month early, since a payment
+    made ahead of its date is still that payment. A payment the owner marked counts too, until the bank's own row of
+    that amount arrives near it and takes its place. Returns how many plans changed."""
     import json
+
+    from ..store import get_setting
+
+    claims = get_setting(session, OWNER_PAID, {}) or {}
 
     changed = 0
     active = session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all()  # noqa: E712
@@ -750,7 +797,15 @@ def refresh_plan_progress(session: Session, today: date) -> int:
         first = date.fromisoformat(schedule[0]["date"])
         amounts = [s["amount"] for s in schedule]
         matched = 0
-        pool = sorted((row for row in paid_to.get(plan_provider(p), []) if row[0] >= first - timedelta(days=5)), key=lambda r: r[0])
+        start = first - timedelta(days=5)
+        if p.schedule_as_of:
+            start = max(first - timedelta(days=30), p.schedule_as_of)
+        real = [row for row in paid_to.get(plan_provider(p), []) if row[0] >= start]
+        for c in claims.get(str(p.id), []):
+            on, amount = date.fromisoformat(c["on"]), float(c["amount"])
+            if not any(abs(a - amount) <= 0.05 and abs((d - on).days) <= CLAIM_MATCH_DAYS for d, a in real):
+                real.append((on, amount))  # the owner's word, until the bank's row arrives
+        pool = sorted(real, key=lambda r: r[0])
         used: set = set()
         for i, target in enumerate(amounts):
             hit = next((j for j, (d, a) in enumerate(pool) if j not in used and abs(a - target) <= 0.05), None)
@@ -763,6 +818,8 @@ def refresh_plan_progress(session: Session, today: date) -> int:
         next_date = date.fromisoformat(upcoming[0]["date"]) if upcoming else date.fromisoformat(schedule[-1]["date"])
         if (p.remaining, p.next_date, p.active) != (remaining, next_date, remaining > 0):
             p.remaining, p.next_date, p.active = remaining, next_date, remaining > 0
+            if p.schedule_as_of:  # owed by the lender's schedule: what is still to pay
+                p.balance = round(sum(s["amount"] for s in upcoming), 2)
             session.add(p)
             changed += 1
     if changed:

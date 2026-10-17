@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session
@@ -65,6 +67,28 @@ def advance_exit(session: Session = Depends(get_session), _: auth.Principal = De
     from ..engine.advance_exit import exit_plan
 
     return exit_plan(session, today())
+
+
+class PaidIn(BaseModel):
+    on: date | None = None
+
+
+@exit_router.post("/plans/{plan_id}/paid")
+def plan_payment_paid(plan_id: int, body: PaidIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
+    """The owner says a plan's next payment is made: it counts now, and the bank's row takes its place when it comes."""
+    from ..engine.borrowing import mark_installment_paid
+    from ..engine.borrowing_plan import borrowing_plan
+    from ..models import InstallmentPlan
+
+    plan = session.get(InstallmentPlan, plan_id)
+    if plan is None or not plan.active:
+        raise HTTPException(404, "No such plan, or it is paid off")
+    try:
+        said = mark_installment_paid(session, plan, body.on or today(), today())
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    services.audit(session, client=principal.name, client_kind=principal.kind, tool="plan_payment_paid", args={"plan": plan_id}, rows=1)
+    return {**borrowing_plan(session, today()), "said": said}
 
 
 @exit_router.get("/plan")

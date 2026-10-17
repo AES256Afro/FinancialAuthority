@@ -37,9 +37,10 @@ def _money(v: float) -> float:
 
 def _upcoming(p: InstallmentPlan, today: date) -> list[dict[str, Any]]:
     """The payments still to come: the lender's schedule where there is one, else the installment on the cadence."""
-    sched = sorted((e for e in json.loads(p.schedule or "[]") if e.get("date", "") >= today.isoformat()), key=lambda e: e["date"])
+    sched = sorted(json.loads(p.schedule or "[]"), key=lambda e: e["date"])
     if sched:
-        return sched[: max(0, p.remaining)] if p.remaining else sched
+        # The last payments of the schedule, as many as are left: one paid early is gone even before its date.
+        return sched[len(sched) - p.remaining:] if p.remaining else []
     out, d = [], p.next_date
     from datetime import timedelta
 

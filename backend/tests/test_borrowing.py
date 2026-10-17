@@ -34,7 +34,9 @@ def test_advances_pair_with_their_repayments_and_fees():
         r["id"] = i + 1
     out = pair_advances(rows, next_payday=date(2026, 10, 30), today=date(2026, 10, 15))
     old_dave = next(p for p in out["pairs"] if p["provider"] == "Dave" and p["taken_on"] == date(2026, 5, 3))
-    assert old_dave["stale"] and not old_dave["repaid"]  # months with no repayment in sight: history, not money due
+    # No repayment in sight, but Dave lends one advance at a time and newer ones followed: paid back where the app
+    # cannot see. Either way it is not money due.
+    assert old_dave["repaid"] and old_dave["seen"] is False
     assert not any(p["amount"] < 5 for p in out["pairs"])  # a cent in is a verification deposit
     july = next(p for p in out["pairs"] if p["provider"] == "Earnin" and p["taken_on"] == date(2026, 7, 9))
     assert july["repaid"] and july["repay_date"] == date(2026, 7, 15)
@@ -155,3 +157,22 @@ def test_card_events_follow_the_payoff_setting():
     assert [(e["date"], e["amount"]) for e in card_events([card], paydays, "mid", TODAY)] == [(date(2026, 11, 13), 1001.0)]
     assert [(e["date"], e["amount"]) for e in card_events([card], paydays, "next", TODAY)] == [(date(2026, 10, 30), 1001.0)]
     assert card_events([Account(name="Paid off", institution="x", kind="card", balance=0.0, connector="demo", external_id="c:0")], paydays, "split", TODAY) == []
+
+
+
+def test_a_repayment_belongs_to_the_nearest_advance_and_one_at_a_time_apps_are_believed():
+    """Dave lends one advance at a time and takes it back on payday. An advance whose repayment the ledger cannot
+    see (paid from another account) must not take the next advance's repayment and leave the newest looking owed."""
+    from app.engine.borrowing import pair_advances
+
+    def row(i, d, amount):
+        return {"id": i, "date": date(2026, 9, d) if d <= 30 else date(2026, 10, d - 30), "amount": amount, "provider": "Dave"}
+
+    rows = [row(1, 9, -600.0), row(2, 16, -600.0), row(3, 17, 629.0), row(4, 30, -600.0), row(5, 32, 629.0)]  # day 32 is Oct 2
+    out = pair_advances(rows, next_payday=date(2026, 10, 16), today=date(2026, 10, 17))
+    by_taken = {p["taken_on"]: p for p in out["pairs"]}
+    assert by_taken[date(2026, 9, 30)]["repaid"] and by_taken[date(2026, 9, 30)]["repay_date"] == date(2026, 10, 2)
+    assert by_taken[date(2026, 9, 16)]["repay_date"] == date(2026, 9, 17) and by_taken[date(2026, 9, 16)]["fee"] == 29.0
+    sep9 = by_taken[date(2026, 9, 9)]
+    assert sep9["repaid"] and sep9["seen"] is False and "one advance at a time" in sep9["note"]
+    assert not any(not p["repaid"] for p in out["pairs"])

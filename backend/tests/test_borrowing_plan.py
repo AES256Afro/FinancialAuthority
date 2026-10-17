@@ -66,3 +66,49 @@ def test_both_orders_are_worked_out_and_a_near_tie_finishes_the_small_ones_first
     rate = simulate(loans, 100.0, "rate_first", date(2026, 10, 17))
     assert finish["interest"] < alone["interest"] and rate["interest"] < alone["interest"]
     assert finish["ended"][1] <= rate["ended"][1]  # the small one ends no later when it is finished first
+
+
+
+def test_a_payment_made_early_counts_and_the_owners_word_never_counts_twice(owner: TestClient):
+    """A plan whose dates the lender confirmed on a day counts a payment of the amount made after that day, even
+    before its due date. The owner can say a payment is made before the bank shows it; when the bank's row arrives,
+    it takes that place and nothing is ticked twice."""
+    from app.engine.borrowing import refresh_plan_progress
+    from app.models import Account, Transaction
+
+    with Session(engine) as session:
+        plan = _plan("Example Desk", 78.70, ["2026-10-28", "2026-11-28", "2026-12-28"], 34.26, False)
+        plan.schedule_as_of = date(2026, 10, 10)
+        session.add(plan)
+        acct = Account(name="Example Checking", kind="checking")
+        session.add(acct)
+        session.commit()
+        pid, aid = plan.id, acct.id
+    out = owner.post(f"/api/v1/borrowing/plans/{pid}/paid", json={"on": "2026-10-12"}).json()
+    assert "Next: Sat Nov 28; 2 payments left" in out["said"]
+    assert next(l for l in out["loans"] if l["id"] == pid)["next_date"] == "2026-11-28"
+    with Session(engine) as session:
+        session.add(Transaction(account_id=aid, date=date(2026, 10, 13), merchant="AFFIRM", amount=78.70, row_hash="paid-1"))
+        session.commit()
+        refresh_plan_progress(session, date(2026, 10, 14))
+        p = session.get(InstallmentPlan, pid)
+        assert (p.remaining, p.next_date) == (2, date(2026, 11, 28))  # the bank's row stood in for the owner's word
+        assert p.balance == round(78.70 * 2, 2)
+    assert owner.post(f"/api/v1/borrowing/plans/{pid}/paid", json={"on": "2027-01-01"}).status_code == 400  # not a day to come
+
+
+def test_an_early_payment_alone_is_recognized_without_being_told():
+    from app.engine.borrowing import refresh_plan_progress
+    from app.models import Account, Transaction
+
+    with Session(engine) as session:
+        plan = _plan("Example Desk", 78.70, ["2026-10-28", "2026-11-28"], 34.26, False)
+        plan.schedule_as_of = date(2026, 10, 10)
+        acct = Account(name="Example Checking", kind="checking")
+        session.add_all([plan, acct])
+        session.flush()
+        session.add(Transaction(account_id=acct.id, date=date(2026, 10, 12), merchant="AFFIRM PAYMENT", amount=78.70, row_hash="early-1"))
+        session.add(Transaction(account_id=acct.id, date=date(2026, 10, 2), merchant="AFFIRM PAYMENT", amount=78.70, row_hash="early-0"))  # before the lender's list: last month's
+        session.commit()
+        refresh_plan_progress(session, date(2026, 10, 14))
+        assert (plan.remaining, plan.next_date) == (1, date(2026, 11, 28))
