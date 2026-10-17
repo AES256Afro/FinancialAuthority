@@ -5,7 +5,7 @@ import { NAV_GROUPS, NAV_ITEMS } from "../components/Shell";
 export function More() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 820 }}>
-      <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Everything else</h1>
+      <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>More</h1>
       {[...NAV_GROUPS, { id: "foot", label: "Settings" }].map((g) => {
         const items = NAV_ITEMS.filter((n) => n.group === g.id && n.to !== "/more");
         if (!items.length) return null;

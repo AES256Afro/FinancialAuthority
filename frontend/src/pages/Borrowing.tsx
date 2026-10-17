@@ -241,7 +241,7 @@ export function Borrowing() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: 12 }}>
-        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, letterSpacing: "-0.01em" }}>Borrowing from pay</h1>
+        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, letterSpacing: "-0.01em" }}>Borrowing</h1>
         <div style={{ fontSize: 13, color: "var(--ink-2)" }}>advances, pay-later plans and the card, read from your transactions · last {d.window_days} days</div>
       </div>
 

@@ -157,7 +157,7 @@ export default function App() {
         <Route path="/settings/connectors" element={<Connectors />} />
         <Route path="/settings/jobs" element={<Jobs />} />
         <Route path="/settings/audit" element={<Audit />} />
-        <Route path="/settings/backups" element={<Backups />} />
+        <Route path="/settings/backups" element={<Backups me={me.data} />} />
         <Route path="/settings/setup" element={<Setup />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
