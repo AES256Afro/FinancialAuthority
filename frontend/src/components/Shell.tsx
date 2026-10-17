@@ -5,7 +5,7 @@ import { ArrowLeftRight, BarChart3, BellDot, BookOpen, Clock, Download, Eye, Eye
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { api, useApi } from "../api";
-import { brandMark, brandName, saveAppearance, useAppearance } from "../appearance";
+import { appearance, brandMark, brandName, saveAppearance, useAppearance } from "../appearance";
 import { DEMO } from "../demo/shim";
 import { NextStepsStrip } from "./NextSteps";
 import { daysWord, localToday, longDate, shortDate } from "../format";
@@ -140,7 +140,8 @@ export function Shell({ children, snapshot, me = null }: { children: ReactNode; 
   const [quietNote, setQuietNote] = useState<string | null>(null);
   async function toggleQuiet() {
     try {
-      await saveAppearance({ ...look, quiet: !look.quiet });
+      const kept = appearance(); // what is kept now, not this render's copy
+      await saveAppearance({ ...kept, quiet: !kept.quiet });
       setQuietNote(null);
     } catch (e) {
       setQuietNote((e as Error).message);

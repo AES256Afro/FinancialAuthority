@@ -139,6 +139,9 @@ export function useAppearance(): AppearanceState {
   const [a, setA] = useState(current);
   useEffect(() => {
     listeners.add(setA);
+    // The server's copy can arrive between this screen's first render and here (a page opened on demand renders,
+    // then waits): catch up, or the screen would show the defaults as if they were kept.
+    setA(current);
     return () => {
       listeners.delete(setA);
     };
