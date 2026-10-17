@@ -11,7 +11,7 @@ from sqlmodel import Session, select
 from app import restore
 from app.db import engine
 from app.engine import documents as docs
-from app.models import Account, Advance, Bill, Debt, Document, ExtractedFact, Home, Payment, Transaction
+from app.models import Account, Advance, Bill, Debt, Document, ExtractedFact, Home, InstallmentPlan, Payment, Transaction
 
 
 def _facts(session: Session) -> list[int]:
@@ -150,3 +150,27 @@ def test_a_notice_from_someone_counted_another_way_never_becomes_a_second_bill(o
     assert owner.post(f"/api/v1/facts/{ids[0]}/confirm", json={"apply": True}).status_code == 400
     with Session(engine) as session:
         assert session.exec(select(Bill).where(Bill.home_id == 1)).one().amount == 1200.0
+
+
+def test_lender_emails_make_one_plan_per_loan_and_record_only_ones_change_nothing(owner: TestClient):
+    """Pay-later emails with the lender's schedule set up one plan per loan however many arrive; one without a
+    schedule waits on its card. Statement and advance emails change nothing in the plan: they are marked read."""
+    sched = [{"date": "2026-11-01", "amount": 25.0}, {"date": "2026-12-01", "amount": 25.0}]
+    def plan_mail(loan: str, schedule: list) -> ExtractedFact:
+        return ExtractedFact(kind="installment", status="pending", fields=json.dumps({"provider": "Example Lender", "loan_id": loan, "schedule": schedule, "total": 50.0}))
+    with Session(engine) as session:
+        rows = [plan_mail("L-1", sched), plan_mail("L-1", sched), plan_mail("L-2", sched), plan_mail("", []),
+                ExtractedFact(kind="advance", status="pending", fields=json.dumps({"amount": 100.0})),
+                ExtractedFact(kind="statement", status="pending", fields=json.dumps({"amount": 300.0, "due_date": "2026-10-25"}))]
+        session.add_all(rows)
+        session.commit()
+        ids = [r.id for r in rows]
+    tri = owner.get("/api/v1/needs-you").json()
+    assert not any(g["one_at_a_time"] for g in tri["groups"] if g["kind"] in ("installment", "advance"))
+    plan = owner.post("/api/v1/needs-you/facts", json={"ids": ids, "action": "preview"}).json()
+    assert plan["said"] == ("Confirming these 6 sets up or updates 2 pay-later plans with Example Lender, one per loan and marks 2 as read "
+                            "(they change nothing in the plan). 1 stays for its own card.")
+    owner.post("/api/v1/needs-you/facts", json={"ids": ids, "action": "confirm"})
+    with Session(engine) as session:
+        assert sorted(p.loan_id for p in session.exec(select(InstallmentPlan)).all()) == ["L-1", "L-2"]
+        assert session.get(ExtractedFact, ids[3]).status == "pending"
