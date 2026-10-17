@@ -165,4 +165,8 @@ def next_steps(session: Session, today: date) -> dict:
         steps.append(_step(f"selfcheck-{i}", "warning", f"Self-check: {problem}", "Jobs", "/settings/jobs", "selfcheck"))
 
     steps.sort(key=lambda s: ORDER[s["severity"]])
-    return {"as_of": today.isoformat(), "steps": steps[:14], "count": len(steps)}
+    # The owner's answers rank and quiet them (engine/learning.py): urgent ones are never quieted.
+    from .learning import rank
+
+    shown, quiet = rank(session, steps, today, order=ORDER)
+    return {"as_of": today.isoformat(), "steps": shown[:14], "count": len(shown), "quieted": [{"id": q["id"], "kind": q["kind"], "text": q["text"]} for q in quiet]}
