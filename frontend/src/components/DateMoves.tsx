@@ -1,4 +1,4 @@
-// Which billing dates should move: the engine's ranked changes, each with the lowest balance before and after,
+// Which billing dates should move: the engine's ranked changes, each with the lowest left to spend before and after,
 // the instruction for the biller, and a draft request to copy. The app drafts; it never sends.
 import { TriangleAlert } from "lucide-react";
 import { useState } from "react";
@@ -76,7 +76,7 @@ export function DateMoves({ refreshKey }: { refreshKey?: number }) {
     <section className="card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0, fontSize: 14, fontWeight: 800 }}>Dates that could move</h2>
-        {data && <span style={{ fontSize: 12, color: "var(--ink-2)" }}>Your lowest balance in the next 60 days: {money(data.baseline.low)} on {shortDate(data.baseline.low_date)}. Each move below is worked out on its own.</span>}
+        {data && <span style={{ fontSize: 12, color: "var(--ink-2)" }}>The lowest left to spend in the next 60 days: {money(data.baseline.low)} on {shortDate(data.baseline.low_date)}. Each move below is worked out on its own.</span>}
       </div>
       {error && !data && <Failed error={error} what="the date moves" onRetry={state.reload} card={false} />}
       {!data && !error && <Loading what="the date moves" card={false} />}
@@ -90,7 +90,7 @@ export function DateMoves({ refreshKey }: { refreshKey?: number }) {
         <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
           {data.movable === 0
             ? <>No bill is marked as one whose date can move yet. In your bills list above, tick <strong>Date can move</strong> on each bill whose biller allows a date change, then Save.</>
-            : "No move lifts your lowest balance by a dollar or more; the dates are already as good as they get."}
+            : "No move lifts the lowest left to spend by a dollar or more; the dates are already as good as they get."}
         </div>
       )}
       {data && data.plan.length > 0 && (
@@ -98,7 +98,7 @@ export function DateMoves({ refreshKey }: { refreshKey?: number }) {
           <span>
             <strong>Together, in this order:</strong>{" "}
             {data.plan.map((p, i) => (
-              <span key={p.bill_id}>{i > 0 ? "; then " : ""}{p.name} to the {ordinal(p.to_day)} (lowest balance {money(p.low_after)})</span>
+              <span key={p.bill_id}>{i > 0 ? "; then " : ""}{p.name} to the {ordinal(p.to_day)} (lowest left to spend {money(p.low_after)})</span>
             ))}
             .
           </span>
@@ -114,7 +114,7 @@ export function DateMoves({ refreshKey }: { refreshKey?: number }) {
           <div key={s.bill_id} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", borderTop: "1px solid var(--surface-2)", paddingTop: 8, fontSize: 13 }}>
             <div style={{ flex: "1 1 240px" }}>
               <strong>{s.name}</strong> <span style={{ color: "var(--ink-2)" }}>{money(s.amount)} · {ordinal(s.from_day)} → {ordinal(s.to_day)}</span>
-              <div style={{ color: "var(--ink-2)" }}>Lowest balance {money(s.low_before)} → <strong style={{ color: s.low_after < 0 ? "var(--warning-ink)" : "var(--safe-ink)" }}>{money(s.low_after)}</strong>, up {money(s.improvement)}.</div>
+              <div style={{ color: "var(--ink-2)" }}>Lowest left to spend {money(s.low_before)} → <strong style={{ color: s.low_after < 0 ? "var(--warning-ink)" : "var(--safe-ink)" }}>{money(s.low_after)}</strong>, up {money(s.improvement)}.</div>
             </div>
             <button className="btn" type="button" onClick={() => copy(s)} style={{ minHeight: 34, padding: "4px 10px" }}>{copied === s.bill_id ? "Copied" : "Copy the request"}</button>
             <button className="btn" type="button" aria-expanded={asking === s.bill_id} onClick={() => setAsking(asking === s.bill_id ? null : s.bill_id)} style={{ minHeight: 34, padding: "4px 10px" }}>Send it, with approval</button>

@@ -11,7 +11,7 @@ export const TERMS: { id: string; word: string; means: string }[] = [
   { id: "buffer", word: "Safety cushion (buffer)", means: "Money kept in checking that the plan never spends, for the surprise you did not see coming. You set its size on Settings." },
   { id: "carried-in", word: "Carried in", means: "What a paycheck's days start with besides the paycheck itself: what the paycheck before kept for them, or today's checking less what is due." },
   { id: "pace", word: "Usual spending", means: "What you spend on everyday things in an ordinary day, from the last eight weeks of your transactions, with bills and borrowing left out." },
-  { id: "honest-line", word: "Your balance day by day", means: "The sixty-day picture of what is free to spend if you keep spending your usual amount each day. The lowest balance is the day it dips lowest." },
+  { id: "honest-line", word: "What is free to spend, day by day", means: "The sixty-day picture of what is free to spend if you keep spending your usual amount each day: the money in checking less the safety cushion, what is kept for bills, and the usual spending. The lowest left to spend is the day it dips lowest. It is not your bank balance, which is higher." },
   { id: "cover", word: "Cover", means: "Whether each account holds enough for what comes out of it before each of the next two paydays. When one is short, the payday sheet lists what to move into it. The app never moves money itself." },
   { id: "sheet", word: "Payday sheet", means: "The moves that would cover every account, in date order, for you to make and tick off. The app never moves money itself." },
   { id: "ladder", word: "Saving ladder", means: "Five savings goals that build on each other: a starter, one paycheck's worth of bills you must pay, then one, three and six months of costs." },
@@ -39,7 +39,7 @@ export function Glossary() {
   }, [hash]);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 760 }}>
-      <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>The words the app uses</h1>
+      <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Words</h1>
       <dl style={{ margin: 0, display: "flex", flexDirection: "column", gap: 8 }}>
         {TERMS.map((t) => (
           <div key={t.id} id={t.id} className="card" style={{ padding: "10px 14px", outline: hash === `#${t.id}` ? "2px solid var(--ink)" : "none" }}>

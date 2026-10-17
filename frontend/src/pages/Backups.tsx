@@ -7,6 +7,7 @@ import { ConfirmButton } from "../components/ConfirmButton";
 import { DrillCard, OffboxCard, RecoveryKit } from "../components/Offbox";
 import { Failed, Loading, Said, useWidth } from "../components/State";
 import { StatusPill } from "../components/Status";
+import { ownerName, roleOf, type MePerson } from "../types-people";
 
 interface Point { name: string; kind: string; reason: string; created_at: string; bytes: number; verified: boolean; transactions: number | null }
 interface Status { count: number; bytes: number; latest_age_hours: number | null; database: { ok: boolean; result: string; bytes: number }; keep: Record<string, number>; last_check: { at: string; by: string; database: string; points_ok: boolean } | null }
@@ -53,7 +54,8 @@ function Line({ points }: { points: Point[] }) {
   );
 }
 
-export function Backups() {
+export function Backups({ me = null }: { me?: MePerson | null }) {
+  const ownerOnly = roleOf(me) !== "owner";
   const points = useApi<{ points: Point[]; status: Status }>("/api/v1/restore-points");
   const imports = useApi<{ imports: Batch[] }>("/api/v1/imports/history");
   const [note, setNote] = useState<{ at: Area; ok: boolean; text: string } | null>(null);
@@ -176,13 +178,13 @@ export function Backups() {
                     <td>{KIND_WORD[p.kind] ?? p.kind}<div style={{ fontSize: 11, color: "var(--muted)" }}>{p.reason}{p.verified ? " · read back" : ""}</div></td>
                     <td className="num" style={{ textAlign: "right" }}>{size(p.bytes)}</td>
                     <td>
-                      <ConfirmButton
+                      {ownerOnly ? <span style={{ fontSize: 12, color: "var(--ink-2)" }}>Only {ownerName(me?.owner)} can put this back</span> : <ConfirmButton
                         label="Put everything back to this"
                         question={`${since ? `${since} import${since === 1 ? "" : "s"} and everything else since go.` : "Everything since goes."} Put everything back to ${when(p.created_at)}?`}
                         yes="Put it back"
                         no="Keep things as they are"
                         onConfirm={() => putBack(p)}
-                      />
+                      />}
                     </td>
                   </tr>
                 );
@@ -193,7 +195,7 @@ export function Backups() {
         </div>
       </section>
       <DrillCard />
-      <OffboxCard />
+      {ownerOnly ? <section className="card" style={{ padding: "14px 16px", fontSize: 14, color: "var(--ink-2)" }}>The copy kept off this server is set up by {ownerName(me?.owner)} only.</section> : <OffboxCard />}
       <RecoveryKit />
     </div>
   );
