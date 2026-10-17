@@ -10,7 +10,7 @@ import { StatusPill } from "./Status";
 interface Freshness {
   sync_every_hours: number;
   choices: number[];
-  links: { id: number; provider: string; institution: string; last_sync_at: string | null; next_sync_at: string | null; newest_transaction: string | null; error: string | null; needs_login: boolean }[];
+  links: { id: number; provider: string; institution: string; last_sync_at: string | null; bank_updated_at?: string | null; next_sync_at: string | null; newest_transaction: string | null; error: string | null; needs_login: boolean }[];
   plaid: { environment: string; items_made: number; items_active: number; trial_limit: number };
   calls: { by_day: { date: string; plaid: number; teller: number }[]; month: string; by_endpoint: Record<string, number> };
   cost: { price_per_item: number | null; monthly: number | null; yearly: number | null; plan_note: string; teller_note: string };
@@ -38,6 +38,7 @@ function callWord(key: string): string {
     : path.includes("link/token") ? "opening a bank sign-in"
     : path.includes("public_token") ? "finishing a bank link"
     : path.includes("item/remove") ? "removing a link"
+    : path.includes("item/get") ? "when the bank last sent data"
     : path.includes("webhook") ? "update alerts"
     : path.includes("accounts") ? "the account list"
     : path.replace(/^\//, "");
@@ -146,7 +147,7 @@ export function Freshness() {
       {data.links.length > 0 && (
         <div style={{ overflowX: "auto" }}>
           <table className="ledger">
-            <thead><tr><th>Bank</th><th>Last read</th><th>Next read</th><th>Newest transaction</th></tr></thead>
+            <thead><tr><th>Bank</th><th>Bank last sent data</th><th>App last read</th><th>Next read</th><th>Newest transaction</th></tr></thead>
             <tbody>
               {data.links.map((l) => (
                 <tr key={l.id}>
@@ -156,6 +157,7 @@ export function Freshness() {
                       ? <div style={{ marginTop: 4 }}><StatusPill status="crit">Needs a new sign-in</StatusPill></div>
                       : l.error ? <div style={{ display: "flex", gap: 4, alignItems: "flex-start", fontSize: 11, color: "var(--warning-ink)", marginTop: 2 }}><TriangleAlert size={12} aria-hidden="true" style={{ flexShrink: 0, marginTop: 1 }} /><span>Last read failed: {l.error.slice(0, 80)}</span></div> : null}
                   </td>
+                  <td title={l.bank_updated_at ? when(l.bank_updated_at) : undefined}>{l.bank_updated_at ? ago(l.bank_updated_at) : l.provider === "teller" ? "live on each read" : "not said"}</td>
                   <td title={l.last_sync_at ? when(l.last_sync_at) : undefined}>{ago(l.last_sync_at)}</td>
                   <td title={l.next_sync_at ? when(l.next_sync_at) : undefined}>{ago(l.next_sync_at)}</td>
                   <td style={{ whiteSpace: "nowrap" }}>{l.newest_transaction ? when(l.newest_transaction) : "none yet"}</td>

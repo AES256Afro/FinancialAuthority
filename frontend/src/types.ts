@@ -195,7 +195,7 @@ export interface Snapshot {
   /** What debts_total counts, in the engine's words. */
   debts_words?: string;
   debts_cards_loans_total?: number;
-  fresh?: { balances_as_of: string | null; accounts: { id: number; name: string; kind: string; as_of: string | null; connector: string }[]; newest_transaction: string | null };
+  fresh?: { balances_as_of: string | null; accounts: { id: number; name: string; kind: string; as_of: string | null; connector: string; told?: { amount: number; at: string } }[]; newest_transaction: string | null };
   in_flight?: { pending: { total: number; items: { id: number; date: string; merchant: string; amount: number; account: string; source: string }[] }; mail: { total: number; counted: boolean; items: { amount: number; merchant: string; last4: string; date: string; source: string }[] } };
   mail: { pending: { id: number; kind: string; sender_name: string; subject: string; date: string | null }[]; alerts: { id: number; kind: string; fields: Record<string, string | number>; sender_name: string; date: string | null }[] };
   projection: { date: string; available: number; at_pace: number; cash: number }[];

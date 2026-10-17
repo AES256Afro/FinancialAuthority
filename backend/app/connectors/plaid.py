@@ -120,6 +120,18 @@ class PlaidClient:
     def accounts(self, access_token: str) -> dict[str, Any]:
         return self.post("/accounts/get", {"access_token": access_token})
 
+    def bank_updated(self, access_token: str) -> datetime | None:
+        """When Plaid last got new data from the bank for this item, on Plaid's own schedule; None when it does not say."""
+        try:
+            status = self.post("/item/get", {"access_token": access_token}).get("status") or {}
+        except (PlaidError, httpx.HTTPError):
+            return None
+        raw = str((status.get("transactions") or {}).get("last_successful_update") or "")
+        try:
+            return datetime.fromisoformat(raw.replace("Z", "+00:00")) if raw else None
+        except ValueError:
+            return None
+
     def sync_page(self, access_token: str, cursor: str) -> dict[str, Any]:
         body: dict[str, Any] = {"access_token": access_token, "count": 500}
         if cursor:
@@ -237,6 +249,7 @@ class PlaidConnector(Connector):
         """Everything is fetched from Plaid first; then it is written in one short transaction, so the database is
         never locked while the app waits on the network."""
         token = link_token(link)
+        bank_as_of = api.bank_updated(token)
         got = api.accounts(token)
         pages: list[dict] = []
         cursor = link.cursor or ""
@@ -270,6 +283,7 @@ class PlaidConnector(Connector):
                 session, provider="plaid", external_id=a["account_id"], name=name, institution=institution,
                 kind=kind, balance=float(balance) if balance is not None else None, last4=str(a.get("mask") or ""),
                 subtype=investment_subtype(a.get("subtype")) if kind == "investment" else "", credit_limit=float(limit) if (limit is not None and kind == "card") else None,
+                as_of=bank_as_of,
             )
             if account.active:
                 accounts[a["account_id"]] = account  # an account the owner removed gets no balance, holdings or rows
@@ -303,6 +317,8 @@ class PlaidConnector(Connector):
                 removed += int(remove_transaction(session, "plaid", tx["transaction_id"]))
         link.cursor = cursor
         link.needs_login = False
+        if bank_as_of is not None:
+            link.bank_updated_at = bank_as_of
         session.commit()
         self.register_webhook(api, link, token)
         return inserted, updated, removed, listed

@@ -200,9 +200,79 @@ def _imported_account(session: Session, *, name: str, institution: str, last4: s
     return next((a for a in named if not (last4 and _last4_of(a))), None) if name else None  # two different numbers are two accounts, whatever their names
 
 
-def upsert_account(session: Session, *, provider: str, external_id: str, name: str, institution: str, kind: str, balance: float | None, last4: str = "", subtype: str = "", credit_limit: float | None = None) -> Account:
+OWNER_BALANCE = "banks.owner_balance"  # {account id: {"amount": x, "at": iso}}: what the owner read off the bank's own screen
+TOLD_HOURS = 24  # the longest a balance the owner typed stands: by then the bank's feed has caught up
+
+
+def _aware(when: datetime) -> datetime:
+    return when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+
+
+def tell_balance(session: Session, account: Account, amount: float) -> None:
+    """The owner reads a balance off the bank's own screen (for checking, the available balance: what can be spent
+    now, holds already out) and types it. A bank's feed can run a day behind and leave holds out; the typed figure
+    stands until the bank sends the app something newer, and never longer than a day."""
+    now = utcnow()
+    told = dict(get_setting(session, OWNER_BALANCE, {}) or {})
+    told[str(account.id)] = {"amount": round(float(amount), 2), "at": now.isoformat()}
+    set_setting(session, OWNER_BALANCE, told)
+    account.balance, account.balance_at = round(float(amount), 2), now
+    session.add(account)
+    record_balance(session, account, float(amount), local_today(), commit=False)
+    if account.kind == "card":
+        sync_card_debt(session, account)
+    session.commit()
+
+
+def told_balances(session: Session) -> dict[int, dict]:
+    """The balances the owner typed that still stand, by account id."""
+    now = utcnow()
+    out = {}
+    for key, v in (get_setting(session, OWNER_BALANCE, {}) or {}).items():
+        try:
+            at = _aware(datetime.fromisoformat(v["at"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        if (now - at).total_seconds() < TOLD_HOURS * 3600:
+            out[int(key)] = {"amount": float(v["amount"]), "at": at.isoformat()}
+    return out
+
+
+def _told_stands(session: Session, account_id: int, bank_as_of: datetime) -> bool:
+    """Whether the balance the owner typed still stands over the one a sync brings: until the bank's data is newer
+    than it. Once it is, or the day is up, the typed figure is dropped and the bank's is the balance again."""
+    told = get_setting(session, OWNER_BALANCE, {}) or {}
+    if str(account_id) not in told:
+        return False
+    mine = told_balances(session).get(account_id)
+    if mine is not None and _aware(bank_as_of) <= datetime.fromisoformat(mine["at"]):
+        return True
+    rest = dict(told)
+    rest.pop(str(account_id), None)
+    set_setting(session, OWNER_BALANCE, rest)
+    return False
+
+
+def only_duplicates(session: Session, link: BankLink) -> bool:
+    """A new link that took no account: every account it lists is read through another link already, the same
+    sign-in linked twice. It brings nothing new. Not while that other link is failing or needs a new sign-in: then
+    the new link is the way past it, and takes the accounts over once the old link is removed."""
+    ids = [i for i in (link.accounts or "").split(",") if i]
+    if not ids:
+        return False
+    inst = (link.institution or "").strip().lower()
+    others = session.exec(select(BankLink).where(BankLink.provider == link.provider, BankLink.active == True, BankLink.id != link.id)).all()  # noqa: E712
+    if any((o.needs_login or o.last_error) and (o.institution or "").strip().lower() == inst for o in others):
+        return False
+    return session.exec(select(Account.id).where(Account.connector == link.provider, Account.external_id.in_(ids))).first() is None  # type: ignore[attr-defined]
+
+
+def upsert_account(session: Session, *, provider: str, external_id: str, name: str, institution: str, kind: str, balance: float | None, last4: str = "", subtype: str = "", credit_limit: float | None = None,
+                   as_of: datetime | None = None) -> Account:
     """The link's account, made or taken over. An account the owner removed stays removed: it comes back inactive
-    with nothing written to it, and the caller reads nothing into it."""
+    with nothing written to it, and the caller reads nothing into it. `as_of` is when the bank itself last sent the
+    vendor its data (Plaid refreshes on its own schedule), so the balance is dated by the bank, not by the read; a
+    balance the owner typed since then stands over it."""
     row = session.exec(select(Account).where(Account.connector == provider, Account.external_id == external_id)).first()
     if row is None and provider in LIVE_PROVIDERS:
         row = _left_by_a_link(session, institution=institution, last4=last4) or _imported_account(session, name=name, institution=institution, last4=last4)
@@ -231,9 +301,12 @@ def upsert_account(session: Session, *, provider: str, external_id: str, name: s
             row.last4_enc = crypto.encrypt(last4)
         except crypto.DataKeyMissing:
             row.last4_enc = ""
+    stamp = min(_aware(as_of), utcnow()) if as_of is not None else utcnow()
+    if balance is not None and row.id is not None and _told_stands(session, row.id, stamp):
+        balance = None  # the owner's figure is newer than anything the bank has sent
     if balance is not None:
         row.balance = round(float(balance), 2)
-        row.balance_at = utcnow()
+        row.balance_at = stamp
     if credit_limit is not None:
         row.credit_limit = round(float(credit_limit), 2)
     row.active = True

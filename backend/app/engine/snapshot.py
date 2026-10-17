@@ -457,12 +457,16 @@ def _freshness(session: Session, accounts: list) -> dict:
     and the newest transaction."""
     from sqlalchemy import func
 
+    from ..connectors.banks import told_balances
+
     spending = [a for a in accounts if a.kind in ("checking", "cash", "savings", "card")]
     stamps = [a.balance_at for a in spending if a.balance_at]
     newest = session.exec(select(func.max(Transaction.date))).one()
+    told = told_balances(session)
     return {
         "balances_as_of": min(stamps).isoformat() if stamps else None,
-        "accounts": [{"id": a.id, "name": a.name, "kind": a.kind, "as_of": a.balance_at.isoformat() if a.balance_at else None, "connector": a.connector} for a in spending],
+        "accounts": [{"id": a.id, "name": a.name, "kind": a.kind, "as_of": a.balance_at.isoformat() if a.balance_at else None, "connector": a.connector,
+                      **({"told": told[a.id]} if a.id in told and abs(told[a.id]["amount"] - float(a.balance or 0.0)) < 0.005 else {})} for a in spending],
         "newest_transaction": newest.isoformat() if newest else None,
     }
 

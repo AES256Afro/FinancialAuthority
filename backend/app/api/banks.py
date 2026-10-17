@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 from .. import auth, crypto
 from ..config import settings
 from ..connectors import CONNECTORS
-from ..connectors.banks import bank_state, save_bank_settings
+from ..connectors.banks import bank_state, only_duplicates, save_bank_settings
 from ..connectors.plaid import PlaidConnector, PlaidError
 from ..connectors.teller import TellerConnector
 from ..db import get_session
@@ -81,6 +81,7 @@ def link_out(session: Session, link: BankLink) -> dict:
     return {
         "id": link.id, "provider": link.provider, "institution": link.institution, "active": link.active, "needs_login": link.needs_login,
         "created_at": link.created_at.isoformat(), "last_sync_at": link.last_sync_at.isoformat() if link.last_sync_at else None, "last_error": link.last_error,
+        "bank_updated_at": link.bank_updated_at.isoformat() if link.bank_updated_at else None,
         "accounts": [{"id": a.id, "name": a.name, "kind": a.kind, "balance": a.balance} for a in accounts],
         "enrollment_id": link.external_id if link.provider == "teller" else None,
     }
@@ -185,9 +186,25 @@ def plaid_exchange(body: ExchangeIn, session: Session = Depends(get_session), _:
     except crypto.DataKeyMissing as error:
         raise HTTPException(409, str(error)) from error
     result = plaid().sync(session, link_id=link.id)
+    session.refresh(link)
+    if result.ok and only_duplicates(session, link):
+        return _undo_duplicate(session, link, result)
     detection = detect_after(session, result)
     session.refresh(link)
     return {"link": link_out(session, link), "sync": {"ok": result.ok, "summary": result.summary, "inserted": result.inserted}, "detection": detection}
+
+
+def _undo_duplicate(session: Session, link: BankLink, result) -> dict:  # noqa: ANN001 - a SyncResult
+    """The same sign-in linked a second time: every account in it is read through the first link already. The new
+    link is undone at the vendor at once, and the owner is told why in words."""
+    if link.provider == "plaid":
+        plaid().disconnect(session, plaid().api(session), link)
+    else:
+        teller().disconnect(session, link)
+    bank = link.institution or "bank"
+    said = (f"This is the same {bank} sign-in you already linked: every account in it already comes in through that link, so nothing new "
+            f"was added and this second link was undone. A debit card belongs to its checking account and comes in with it.")
+    return {"link": link_out(session, link), "sync": {"ok": True, "summary": said, "inserted": 0}, "detection": None, "duplicate": True, "said": said}
 
 
 @router.post("/teller/enroll")
@@ -199,6 +216,9 @@ def teller_enroll(body: EnrollIn, session: Session = Depends(get_session), _: au
     except crypto.DataKeyMissing as error:
         raise HTTPException(409, str(error)) from error
     result = teller().sync(session, link_id=link.id)
+    session.refresh(link)
+    if result.ok and only_duplicates(session, link):
+        return _undo_duplicate(session, link, result)
     detection = detect_after(session, result)
     session.refresh(link)
     return {"link": link_out(session, link), "sync": {"ok": result.ok, "summary": result.summary, "inserted": result.inserted}, "detection": detection}
@@ -275,7 +295,9 @@ def freshness(session: Session = Depends(get_session), _: auth.Principal = Depen
         account_ids = list(session.exec(query.where(Account.external_id.in_(mine)) if mine else query).all())
         newest = session.exec(select(Transaction.date).where(Transaction.account_id.in_(account_ids)).order_by(Transaction.date.desc()).limit(1)).first() if account_ids else None
         last = link.last_sync_at.replace(tzinfo=UTC) if link.last_sync_at and not link.last_sync_at.tzinfo else link.last_sync_at
+        bank_at = link.bank_updated_at.replace(tzinfo=UTC) if link.bank_updated_at and not link.bank_updated_at.tzinfo else link.bank_updated_at
         out_links.append({"id": link.id, "provider": link.provider, "institution": link.institution, "last_sync_at": last.isoformat() if last else None,
+                          "bank_updated_at": bank_at.isoformat() if bank_at else None,
                           "next_sync_at": (last + every).isoformat() if last else datetime.now(UTC).isoformat(), "newest_transaction": newest.isoformat() if newest else None,
                           "error": link.last_error or None, "needs_login": link.needs_login})
     environment = bank_state(session, "plaid")["environment"]
@@ -292,6 +314,30 @@ def freshness(session: Session = Depends(get_session), _: auth.Principal = Depen
                  "teller_note": "Teller's development environment is free for up to a hundred bank logins."},
         "chain": "Your bank posts a purchase, often within minutes as pending. Plaid collects new transactions from the bank on its own schedule, usually a few times a day. The app then reads Plaid at the interval set here, or at once with Sync now. A bank that emails purchase alerts reaches the app sooner: mailboxes are read every fifteen minutes.",
     }
+
+
+class ShowsIn(BaseModel):
+    amount: float
+
+
+@router.post("/accounts/{account_id}/shows")
+def bank_shows(account_id: int, body: ShowsIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
+    """The owner types the balance their bank's own screen shows now (checking: the available balance; a card: what
+    is owed). It stands until the bank sends newer data, at most a day, since a bank's feed can run behind."""
+    from .. import services
+    from ..connectors.banks import TOLD_HOURS, tell_balance
+
+    account = session.get(Account, account_id)
+    if account is None or not account.active:
+        raise HTTPException(404, "No such account")
+    if account.kind not in ("checking", "savings", "cash", "card"):
+        raise HTTPException(400, "A balance off the bank's screen is for checking, savings, cash or a card")
+    if not -10_000_000 <= body.amount <= 10_000_000:
+        raise HTTPException(400, "That amount is out of range")
+    tell_balance(session, account, body.amount)
+    services.audit(session, client=principal.name, client_kind=principal.kind, tool="bank_shows", args={"account": account_id}, rows=1)
+    what = "owed on" if account.kind == "card" else "in"
+    return {"ok": True, "said": f"Counted: ${body.amount:,.2f} {what} {account.name}, as your bank shows it now. It stands until the bank sends newer data, at most {TOLD_HOURS} hours."}
 
 
 class FreshnessIn(BaseModel):

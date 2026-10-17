@@ -20,6 +20,7 @@ import { Watchlist, WorthALook } from "../components/Watchlist";
 import { amountClass, money, shortDate, when } from "../format";
 import type { Snapshot } from "../types";
 import { PlanCaveats, SafeExplain, SafePill, SafeSentence, safeTitle } from "../components/SafeExplain";
+import { BankShows } from "../components/BankShows";
 
 const TITLE = { margin: 0, fontSize: 14, fontWeight: 700 } as const;
 
@@ -109,6 +110,7 @@ export function Today({ snapshot }: { snapshot: Snapshot }) {
           </span>
         </div>
       )}
+      <BankShows s={s} />
       <Why text={s.why?.safe_to_spend} />
       <SafeExplain s={s} />
     </section>
