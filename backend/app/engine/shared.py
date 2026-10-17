@@ -32,16 +32,27 @@ def shared_view(session: Session, today: date, person_id: int | None = None) -> 
     out_accounts = [{"id": a.id, "name": a.name, "institution": a.institution, "kind": a.kind, "balance": a.balance, "balance_at": a.balance_at.isoformat() if a.balance_at else None,
                      "shared": a.shared, "whose": "shared" if a.shared else "theirs", "source": f"account:{a.id}"} for a in accounts]
     cash = _money(sum(a.balance or 0.0 for a in accounts if a.kind in CASH_KINDS))
-    cards = _money(sum(abs(a.balance or 0.0) for a in accounts if a.kind == "card"))
+    cards = _money(sum(max(0.0, a.balance or 0.0) for a in accounts if a.kind == "card"))  # a card in credit owes nothing
 
+    from .cover import _deposit_account
+    from .payments import paid_periods
+    from .projection import is_spendable
+
+    # A bill with no paying account is paid, as the plan pays it, from the account the paycheck lands in.
+    every = {a.id: a for a in session.exec(select(Account).where(Account.active == True)).all()}  # noqa: E712
+    deposit = _deposit_account(session, every, [a for a in every.values() if is_spendable(a) and a.kind != "card"])
+    paid = paid_periods(session, today)  # paid already, early or today: not still coming
     end = today + timedelta(days=31)
     bills = []
     for b in session.exec(select(Bill).where(Bill.active == True)).all():  # noqa: E712
-        if b.pay_from_account_id not in ids:
+        payer = b.pay_from_account_id if b.pay_from_account_id in every else (deposit.id if deposit else None)
+        if payer not in ids:
             continue
         for d in bill_dates(b, today, end):
-            bills.append({"bill_id": b.id, "name": b.name, "amount": _money(b.amount), "date": d.isoformat(), "autopay": b.autopay, "account": names.get(b.pay_from_account_id, ""),
-                          "kind": b.kind, "source": f"bill:{b.id}"})
+            if (b.id, d) in paid:
+                continue
+            bills.append({"bill_id": b.id, "name": b.name, "amount": _money(b.amount), "date": d.isoformat(), "autopay": b.autopay, "account": names.get(payer, ""),
+                          "kind": b.kind, "source": f"bill:{b.id}", "payer_set": b.pay_from_account_id is not None})
     bills.sort(key=lambda x: (x["date"], x["name"]))
 
     since = today - timedelta(days=45)

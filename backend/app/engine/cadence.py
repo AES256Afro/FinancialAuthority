@@ -238,7 +238,7 @@ def pay_schedule(session, incomes: list, today: date, end: date, at_least: int =
     upcoming = sorted(((next_unpaid_payday(session, i, today), i) for i in incomes), key=lambda p: p[0])
     if not upcoming:
         first = today + timedelta(days=14)
-        return {"known": False, "next": first, "income": None, "cadence": "biweekly", "days": {"pay_days": "", "pay_day": 0}, "pay_days": "",
+        return {"known": False, "next": first, "income": None, "cadence": "biweekly", "days": {"pay_days": "", "pay_day": 0}, "pay_days": "", "semimonthly": False,
                 "paydays": paydays_through(first, "biweekly", end, at_least), "amounts": {}, "incomes_on": {}}
     amounts: dict[date, float] = {}
     incomes_on: dict[date, list] = {}
@@ -251,4 +251,32 @@ def pay_schedule(session, incomes: list, today: date, end: date, at_least: int =
     next_payday, income = upcoming[0]
     semi = next((i for _, i in upcoming if (i.cadence or "") == "semimonthly"), income)
     return {"known": True, "next": next_payday, "income": income, "cadence": income.cadence or "biweekly", "days": income_days(income), "pay_days": semi.pay_days or "",
+            "semimonthly": (semi.cadence or "") == "semimonthly",  # whether a mid or end-of-month check exists to pay a bill from
             "paydays": paydays, "amounts": {d: amounts[d] for d in paydays}, "incomes_on": {d: incomes_on[d] for d in paydays}}
+
+
+def paid_from_choices(incomes: list, today: date) -> list[dict]:
+    """Which paycheck a bill can be paid from, as the pay schedule really runs: always the check before it is due;
+    and, only when a paycheck comes twice a month, each of its two checks named by its own day, with its next date.
+    "mid" is the check near the 15th; "end" is the turn-of-the-month check (the last day, or the 1st)."""
+    out: list[dict] = [{"value": "due", "words": "the check before it is due", "next": None}]
+    semi = next((i for i in incomes if (getattr(i, "cadence", "") or "") == "semimonthly"), None)
+    if semi is None:
+        return out
+    days = getattr(semi, "pay_days", "") or ""
+    nexts: dict[str, date] = {}
+    year, month = today.year, today.month
+    for _ in range(3):
+        mid, turn = semimonthly_anchors(year, month, days)
+        for key, d in (("mid", mid), ("end", turn)):
+            if d >= today and (key not in nexts or d < nexts[key]):
+                nexts[key] = d
+        month += 1
+        if month > 12:
+            month, year = 1, year + 1
+    words = {"mid": "the 15th check", "end": "the 1st check" if days == "1,15" else "the end-of-month check"}
+    order = ("end", "mid") if days == "1,15" else ("mid", "end")
+    for key in order:
+        when = nexts.get(key)
+        out.append({"value": key, "words": words[key], "next": when.isoformat() if when else None})
+    return out

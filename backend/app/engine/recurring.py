@@ -28,8 +28,15 @@ def merchant_key(merchant: str) -> str:
 
 
 def bill_keys(bill) -> list[str]:  # noqa: ANN001 - a Bill
-    """The names a bill's payments may carry: its own, and who it is paid to when that differs."""
-    keys = [merchant_key(bill.name), merchant_key(getattr(bill, "pays_to", "") or "")]
+    """The names a bill's payments may carry: its own, who it is paid to when that differs, and every name it carried
+    before Housing renamed it (the bank's own words for a rent or a utility bill)."""
+    import json
+
+    try:
+        before = [str(n) for n in json.loads(getattr(bill, "match_names", "") or "[]") if n]
+    except (ValueError, TypeError):
+        before = []
+    keys = [merchant_key(bill.name), merchant_key(getattr(bill, "pays_to", "") or ""), *(merchant_key(n) for n in before)]
     return [k for i, k in enumerate(keys) if k and k not in keys[:i]]
 
 

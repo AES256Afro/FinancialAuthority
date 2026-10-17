@@ -34,6 +34,21 @@ def _looks_like(bill_key: list[str] | str, series_key: str | None, t_key: str) -
     return any(t_key == k or t_key.startswith(k) or k.startswith(t_key) for k in ([bill_key] if isinstance(bill_key, str) else bill_key))
 
 
+def _match_for(bill: Bill, bill_key: list[str], series_key: str | None, due: date, transactions: list[Transaction], used: set) -> Transaction | None:
+    """The transaction that pays this period: near the due date (six days before to the bill's grace after), under
+    the bill's names within its drift, or at its exact amount. A transaction already used pays nothing else."""
+    # A named match may drift by the detector's own 15% (a price change); an estimate by 40%.
+    tolerance = max(2.0, bill.amount * (0.4 if bill.amount_mode == "estimate" else 0.15))
+    for t in transactions:
+        if t.id in used or not (due - timedelta(days=BEFORE_DAYS) <= t.date <= due + timedelta(days=max(AFTER_DAYS, bill.grace_days))):
+            continue
+        close_amount = abs(t.amount - bill.amount) <= tolerance
+        exact_amount = abs(t.amount - bill.amount) < 0.01
+        if (close_amount and _looks_like(bill_key, series_key, merchant_key(t.merchant))) or (exact_amount and not t.is_transfer):
+            return t
+    return None
+
+
 def match_payments(session: Session, today: date) -> dict:
     start = today - timedelta(days=LOOKBACK_DAYS)
     end = today + timedelta(days=AHEAD_DAYS)
@@ -46,23 +61,13 @@ def match_payments(session: Session, today: date) -> dict:
     for bill in bills:
         bill_key = bill_keys(bill)
         series_key = series_keys.get(bill.series_id) if bill.series_id else None
-        # A named match may drift by the detector's own 15% (a price change); an estimate by 40%.
-        tolerance = max(2.0, bill.amount * (0.4 if bill.amount_mode == "estimate" else 0.15))
         # A bill is looked for from the day it was added, never in the months before it existed.
         for due in _due_dates(bill, max(start, bill.created_on or start), end):
             payment = existing.get((bill.id, due))
             if payment is not None and payment.status == "paid":
                 counts["paid"] += 1
                 continue
-            match = None
-            for t in transactions:
-                if t.id in used or not (due - timedelta(days=BEFORE_DAYS) <= t.date <= due + timedelta(days=max(AFTER_DAYS, bill.grace_days))):
-                    continue
-                close_amount = abs(t.amount - bill.amount) <= tolerance
-                exact_amount = abs(t.amount - bill.amount) < 0.01
-                if (close_amount and _looks_like(bill_key, series_key, merchant_key(t.merchant))) or (exact_amount and not t.is_transfer):
-                    match = t
-                    break
+            match = _match_for(bill, bill_key, series_key, due, transactions, used)
             if match is not None:
                 status, paid_date, tx_id, amount, evidence = "paid", match.date, match.id, match.amount, f"transaction:{match.id}"
                 used.add(match.id)
@@ -88,6 +93,70 @@ def paid_periods(session: Session, today: date) -> set[tuple[int, date]]:
     The plan leaves them out: that money has left the balance, or rides the card that was charged."""
     rows = session.exec(select(Payment.bill_id, Payment.due_date).where(Payment.status == "paid", Payment.due_date >= today)).all()
     return {(bill_id, due) for bill_id, due in rows}
+
+
+def unposted_periods(session: Session, today: date) -> set[tuple[int, date]]:
+    """The (bill, due date) periods whose due date passed in the last few days, while a payment can still post (four
+    days, or the bill's own grace), with no payment in the ledger yet. That money has not left the account: the plan
+    counts it as going out today, so rent due on a Saturday that posts on Monday is never spendable on Sunday.
+    Worked out from the ledger itself, not only from the matching job's last run, so a payment that posted an hour
+    ago is not counted again; a charge the bank holds as pending is already off the balance and counts as paid."""
+    from .billdates import bill_dates
+
+    bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
+    if not bills:
+        return set()
+    reach = max(AFTER_DAYS, max(int(b.grace_days or 0) for b in bills))
+    earliest = today - timedelta(days=reach)
+    series_keys = {s.id: s.merchant_key for s in session.exec(select(RecurringSeries)).all()}
+    transactions = session.exec(select(Transaction).where(Transaction.date >= earliest - timedelta(days=BEFORE_DAYS), Transaction.date <= today, Transaction.amount > 0)).all()
+    rows = session.exec(select(Payment).where(Payment.due_date >= earliest - timedelta(days=LOOKBACK_DAYS))).all()
+    paid = {(p.bill_id, p.due_date) for p in rows if p.status == "paid"}
+    used = {p.transaction_id for p in rows if p.transaction_id}
+    out: set[tuple[int, date]] = set()
+    for bill in bills:
+        start = today - timedelta(days=max(AFTER_DAYS, int(bill.grace_days or 0)))
+        if bill.created_on and bill.created_on > start:
+            start = bill.created_on  # never a period from before the bill was on the list
+        for due in bill_dates(bill, start, today - timedelta(days=1)):
+            if (bill.id, due) in paid:
+                continue
+            match = _match_for(bill, bill_keys(bill), series_keys.get(bill.series_id) if bill.series_id else None, due, transactions, used)
+            if match is not None:
+                used.add(match.id)
+                continue
+            out.add((bill.id, due))
+    return out
+
+
+def anchor_from_ledger(session: Session, bill: Bill, today: date) -> date | None:
+    """The next due date of a bill that comes every few months, from the ledger: its series' next expected date,
+    else its last payment (a transaction under its names, near its amount, in the last fourteen months) plus one
+    cycle, moved on by whole cycles to today or later. None when the ledger does not show one."""
+    from .billdates import MONTH_STEPS, _add_months
+
+    months = MONTH_STEPS.get((bill.cadence or "monthly").lower(), 1)
+    if months <= 1:
+        return None
+    found: date | None = None
+    series = session.get(RecurringSeries, bill.series_id) if bill.series_id else None
+    if series is not None and series.next_expected:
+        found = series.next_expected
+    else:
+        keys = bill_keys(bill)
+        tolerance = max(2.0, float(bill.amount or 0.0) * (0.4 if bill.amount_mode == "estimate" else 0.15))
+        rows = session.exec(select(Transaction).where(Transaction.amount > 0, Transaction.date >= today - timedelta(days=430), Transaction.date <= today).order_by(Transaction.date.desc())).all()
+        last = next((t.date for t in rows if abs(t.amount - float(bill.amount or 0.0)) <= tolerance and _looks_like(keys, None, merchant_key(t.merchant))), None)
+        if last is not None:
+            found = _add_months(last, months, last.day)
+    if found is None:
+        return None
+    day = found.day
+    for _ in range(100):
+        if found >= today:
+            break
+        found = _add_months(found, months, day)
+    return found
 
 
 def payments_overview(session: Session, today: date) -> dict:

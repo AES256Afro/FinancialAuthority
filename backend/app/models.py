@@ -203,6 +203,7 @@ class Bill(SQLModel, table=True):
     home_id: int | None = Field(default=None, index=True)  # made from a home's charges (Housing); edited there
     pays_to: str = ""  # the name the bank shows for its payments when it is not the bill's own (a home's rent, paid to the property)
     utility_id: int | None = Field(default=None, index=True)  # made from a utility; edited there
+    match_names: str = ""  # JSON list: other names its payments carry at the bank (its own names before Housing renamed it), so they keep matching
 
 
 class Home(SQLModel, table=True):

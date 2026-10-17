@@ -57,7 +57,11 @@ def _mail_facts(session: Session, today: date) -> dict:
     """What the mailboxes yielded: facts waiting for the owner, and the last three days of bank alerts."""
     import json
 
+    from sqlalchemy import func
+
     pending_rows = session.exec(select(ExtractedFact).where(ExtractedFact.status == "pending").order_by(ExtractedFact.created_at.desc()).limit(30)).all()
+    # The count is every fact waiting, not the thirty listed for the screen.
+    pending_count = int(session.exec(select(func.count()).select_from(ExtractedFact).where(ExtractedFact.status == "pending")).one())
     since = datetime.combine(today - timedelta(days=3), datetime.min.time(), tzinfo=timezone.utc)
     alert_rows = session.exec(select(ExtractedFact).where(ExtractedFact.kind == "bank_alert", ExtractedFact.created_at >= since).order_by(ExtractedFact.created_at.desc()).limit(20)).all()
     ids = [f.message_ref_id for f in [*pending_rows, *alert_rows] if f.message_ref_id]
@@ -69,7 +73,7 @@ def _mail_facts(session: Session, today: date) -> dict:
         return {"id": f.id, "kind": f.kind, "fields": fields, "confidence": f.confidence, "status": f.status, "sender_name": _from_mail(r.sender_name if r else fields.get("sender_name", ""), 60),
                 "subject": _from_mail(r.subject if r else "", 100), "date": r.date.date().isoformat() if r and r.date else fields.get("message_date"), "source": f"fact:{f.id}", "from_mail": True}
 
-    return {"pending": [out(f) for f in pending_rows], "alerts": [out(f) for f in alert_rows]}
+    return {"pending": [out(f) for f in pending_rows], "pending_count": pending_count, "alerts": [out(f) for f in alert_rows]}
 
 
 _cache: dict[tuple, tuple[float, dict]] = {}
@@ -117,8 +121,9 @@ def _finance_snapshot(session: Session, today: date) -> dict:
 
     expected_net = net_for(next_payday)
 
+    from .billdates import unanchored as _unanchored
     from .borrowing import plan_covers_series
-    from .payments import paid_periods
+    from .payments import paid_periods, unposted_periods
 
     bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
     plans = session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all()  # noqa: E712
@@ -128,8 +133,9 @@ def _finance_snapshot(session: Session, today: date) -> dict:
     unconfirmed = len(unconfirmed_rows)
     streams = [r for r in unconfirmed_rows if r.suggested_kind == "installment"]
     pending_streams = [r for r in streams if not any(plan_covers_series(p, r) for p in plans)]  # a plan's own payments are the plan, counted once
-    caveats = projection_caveats(has_income=next_pay is not None, bills=len(bills), unnamed=unconfirmed - len(streams), pending_installments=len(pending_streams))
+    caveats = projection_caveats(has_income=next_pay is not None, bills=len(bills), unnamed=unconfirmed - len(streams), pending_installments=len(pending_streams), unanchored=sum(1 for b in bills if _unanchored(b)))
     paid = paid_periods(session, today)
+    late = unposted_periods(session, today)  # due in the last few days, not posted yet: still in checking, so counted today
     facts = _mail_facts(session, today)
     approvals_waiting = len(session.exec(select(Approval.id).where(Approval.status == "pending", Approval.for_person_id == None)).all())  # noqa: E711 - the owner's own; a second person's wait for them
     from ..models import TransactionPair
@@ -143,7 +149,8 @@ def _finance_snapshot(session: Session, today: date) -> dict:
     pace = usual_pace(session, today, {b.name for b in bills})
     by_id = {a.id: a for a in accounts}
     assembled = assemble(bills=bills, plans=plans, advances=advances, today=today, accounts=by_id, paydays=paydays, card_mode=card_mode, debts=debts, planned=planned_to_cards(session, today),
-                         extra=pending_installment_events(pending_streams, today, plans=plans) + planned_rows, card_pace_by_account=pace["per_day_by_account"], paid=paid, pay_days=schedule["pay_days"])
+                         extra=pending_installment_events(pending_streams, today, plans=plans) + planned_rows, card_pace_by_account=pace["per_day_by_account"], paid=paid, pay_days=schedule["pay_days"],
+                         late=late, checks_by_day=schedule["semimonthly"])
     events, display_events, card_bills, payoffs = assembled["math"], assembled["display"], assembled["card_bills"], assembled["payoffs"]
     windows_split = split_windows(events, today, next_payday, following_payday, paydays[2])
     shown = split_windows(display_events, today, next_payday, following_payday, paydays[2])
@@ -267,6 +274,10 @@ def _finance_snapshot(session: Session, today: date) -> dict:
     from .borrowing import borrowing_summary
 
     borrowing = borrowing_summary(session, today)
+    from .projection import PATH_WORDS
+    from .reports import owed
+
+    everything_owed = owed(session, today, accounts)  # the Debts page's and Accounts' own list and total
     snap = {
         "version": "snapshot.v0",
         "as_of": today.isoformat(),
@@ -306,11 +317,16 @@ def _finance_snapshot(session: Session, today: date) -> dict:
         "board": _board(display_events, before, windows[0] if windows else None, payments, today),
         "fresh": _freshness(session, accounts),
         "in_flight": _in_flight(session, today),
-        "debts": [{"id": d.id, "name": d.name, "kind": d.kind, "balance": d.balance, "apr": d.apr, "minimum": d.minimum, "due_day": d.due_day} for d in debts],
-        "debts_total": _money(sum((d.balance or 0.0) for d in debts)),
-        "pending": {"total": unconfirmed + len(facts["pending"]) + pairs_waiting + approvals_waiting, "confirmations": unconfirmed + len(facts["pending"]) + pairs_waiting, "series": unconfirmed, "facts": len(facts["pending"]), "pairs": pairs_waiting, "approvals": approvals_waiting, "past_due": len(payments["past_due"])},
+        # Everything owed, as the Debts page ("Owed in all") and Accounts ("You owe") count it: cards and loans, the
+        # pay-later plans and the advances, each once. The cards and loans alone stay apart, named as such.
+        "debts": [{"id": d["id"], "name": d["name"], "kind": d["kind"], "balance": d["balance"], "apr": d.get("apr"), "minimum": d.get("minimum"), "due_day": d.get("due_day"), "source": d["source"]} for d in everything_owed["items"]],
+        "debts_total": everything_owed["total"],
+        "debts_words": everything_owed["words"],
+        "debts_cards_loans_total": _money(sum((d.balance or 0.0) for d in debts)),
+        "pending": {"total": unconfirmed + facts["pending_count"] + pairs_waiting + approvals_waiting, "confirmations": unconfirmed + facts["pending_count"] + pairs_waiting, "series": unconfirmed, "facts": facts["pending_count"], "pairs": pairs_waiting, "approvals": approvals_waiting, "past_due": len(payments["past_due"])},
         "mail": facts,
         "projection": projection,
+        "projection_words": PATH_WORDS,
         "not_advice": "Computed by the engine from the registers above. Not financial advice.",
     }
     snap["brief"] = build_brief(snap)
@@ -340,7 +356,7 @@ def _explain_safe(session: Session, accounts: list, before: list[dict], advances
         if row is None:
             continue
         row["due"] += e["amount"]
-        row["items"].append({"name": e["name"], "amount": _money(e["amount"]), "date": e["date"].isoformat(), "source": e.get("source")})
+        row["items"].append({"name": e["name"], "amount": _money(e["amount"]), "date": e["date"].isoformat(), "source": e.get("source"), **({"note": e["note"], "due": e["due"]} if e.get("late") else {})})
     if deposit_id in rows:
         rows[deposit_id].update(buffer=buffer, advances=advances_before, shortfall=shortfall)
     by_account = []
@@ -419,11 +435,15 @@ def _bill_groups(items: list[dict]) -> dict:
 def _board(display_events: list[dict], before: list[dict], window: dict | None, payments: dict, today: date) -> dict:
     """The bill board's four columns, with their totals: past due or unmatched, due within a week, later this
     paycheck, paid recently."""
-    upcoming = [{**e, "date": e["date"].isoformat() if hasattr(e["date"], "isoformat") else e["date"]} for e in before] + list((window or {}).get("bills", {}).get("items", []))
+    problems = payments["past_due"] + payments["late"]
+    # A bill due a day or two ago that has not posted is counted today; when the late column already shows that
+    # period, it is not listed again as due this week.
+    shown_late = {(p["bill_id"], p["due_date"]) for p in problems}
+    upcoming = [{**e, "date": e["date"].isoformat() if hasattr(e["date"], "isoformat") else e["date"]} for e in before if not (e.get("late") and (e.get("bill_id"), e.get("due")) in shown_late)]
+    upcoming += list((window or {}).get("bills", {}).get("items", []))
     soon = (today + timedelta(days=7)).isoformat()
     due7 = [e for e in upcoming if e["date"] <= soon]
     later = [e for e in upcoming if e["date"] > soon]
-    problems = payments["past_due"] + payments["late"]
     paid = list(reversed(payments["paid"][-10:]))
 
     def col(rows: list[dict]) -> dict:

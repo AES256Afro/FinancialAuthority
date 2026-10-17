@@ -9,7 +9,7 @@ from datetime import date
 from sqlmodel import Session, select
 
 from ..config import settings
-from ..models import Account, Approval, BankLink, ExtractedFact, MailAccount, Paystub, RecurringSeries
+from ..models import Account, Approval, BankLink, ExtractedFact, Income, MailAccount, Paystub, RecurringSeries
 from ..store import get_setting
 
 ORDER = {"critical": 0, "warning": 1, "info": 2}
@@ -94,6 +94,8 @@ def next_steps(session: Session, today: date) -> dict:
     for a in assets_overview(session, today)["items"]:
         if a["needs_update"]:
             steps.append(_step(f"asset-{a['id']}", "info", f"{a['name']}: its value was set on {a['value_on']}. Update it so net worth stays true.", "Update the value", "/accounts#other", a["source"]))
+    if session.exec(select(Income.id).where(Income.active == True)).first() is None:  # noqa: E712
+        steps.append(_step("paycheck-none", "warning", "No paycheck on file: add it. Until then safe to spend counts no pay, and the payday it shows is a placeholder two weeks out.", "Add your paycheck", "/paystubs#paycheck", "incomes"))
     if session.exec(select(Paystub.id)).first() is None:
         steps.append(_step("paystub-none", "info", "No paystub yet: forward a pay statement PDF to the mailbox, or drop it into Imports.", "Paystubs", "/paystubs", "paystubs"))
 
@@ -122,9 +124,13 @@ def next_steps(session: Session, today: date) -> dict:
             steps.append(_step(f"return-{d['document_id']}", "critical" if d["days_left"] <= 2 else "warning", f"{d['word']} ({d['days_left']} day{'s' if d['days_left'] != 1 else ''} left). Keep it, or take it back.", "The receipt", "/documents#receipts", d["source"]))
         elif d["what"] == "warranty":
             steps.append(_step(f"warranty-{d['document_id']}", "info", f"{d['word']}: if anything is wrong with it, claim before then.", "The receipt", "/documents#receipts", d["source"]))
-    if not housing["homes"]:
-        for b in housing["rent_bills_to_adopt"][:1]:
+    # A rent bill not tied to a home: with no home yet, make it one; beside a home, it may be the same rent twice.
+    for b in housing["rent_bills_to_adopt"][:1]:
+        if not housing["homes"]:
             steps.append(_step(f"home-adopt-{b['id']}", "info", f"Make {b['name']} your home on Housing: its fees, due day, lease end and notice then count too.", "Housing", "/housing", f"bill:{b['id']}"))
+        else:
+            said = next((w for w in housing.get("warnings", []) if w.startswith(b["name"])), None)
+            steps.append(_step(f"home-adopt-{b['id']}", "warning", said or f"{b['name']} is on your bills list as rent and is not tied to a home on Housing. If it is a home's rent, make it that home's.", "Housing", "/housing", f"bill:{b['id']}"))
 
     pending_approvals = len(session.exec(select(Approval.id).where(Approval.status == "pending", Approval.for_person_id == None)).all())  # noqa: E711
     if pending_approvals:

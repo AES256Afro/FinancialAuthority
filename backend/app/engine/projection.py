@@ -25,6 +25,16 @@ def cash_of(accounts: list[Account]) -> tuple[float, float]:
     every = sum((a.balance or 0.0) for a in accounts if a.kind in CASH_KINDS)
     return spend, every
 
+# What the daily path's figures are, in plain words, for any screen or model that names them. `at_pace` is not a
+# balance the bank will show: it is what is left to spend after the safety cushion, the money kept for bills and
+# the usual everyday spending.
+PATH_WORDS = {
+    "at_pace": "left to spend: what checking would hold after the safety cushion, the money kept for bills and your usual everyday spending",
+    "at_pace_short": "left to spend",
+    "available": "left after the safety cushion and the money kept for bills, if nothing else is spent",
+    "cash": "in checking",
+}
+
 LARGE_BILL = 500.0  # a bill at or over this is set aside by halves across two paychecks
 WINDOW_DAYS = 14
 HORIZON_DAYS = 75
@@ -63,23 +73,61 @@ def line_of(category: str, kind: str) -> str:
     return "utilities"
 
 
+def _moved_dates(b: Bill, today: date, horizon: date, new_day: int, judge_until: date | None = None) -> list[date]:
+    """A bill's dates with its due day moved the way the request to the biller asks: from the next cycle. Its next
+    charge stays on the old day (this cycle's bill is owed already); each later charge moves to the nearest date on
+    the new day, so the move itself never drops or adds a charge. With `judge_until` (the last payday the plan
+    judges by), a charge that was due before that day and would move past it is kept on the day before it: what
+    lies past the plan's view is not seen, so pushing a charge out of view never counts as saving it."""
+    reach = horizon + timedelta(days=62)
+    old = bill_dates(b, today, reach)
+    if not old:
+        return []
+    new = bill_dates(b, today - timedelta(days=31), reach + timedelta(days=31), due_day=new_day)
+    out = [old[0]]
+    for d in old[1:]:
+        if not new:
+            break
+        moved = min(new, key=lambda c: (abs((c - d).days), -c.toordinal()))  # the nearest; a tie takes the later
+        if judge_until is not None and d < judge_until <= moved:
+            moved = judge_until - timedelta(days=1)
+        out.append(moved)
+    return [d for d in out if today <= d <= horizon]
+
+
 def build_events(bills: list[Bill], plans: list[InstallmentPlan], advances: list[Advance], today: date, *, due_days: dict[int, int] | None = None, accounts: dict[int, Account] | None = None, horizon_days: int = HORIZON_DAYS,
-                 paid: set[tuple[int, date]] | None = None, pay_days: str = "") -> list[dict]:
-    """Every dated obligation for the horizon. `due_days` overrides a bill's due day (the optimiser's what-if).
-    A bill charged to a card (its paying account is a card) is marked so: it does not leave checking on its
-    due date; it rides the card payment it is paid from. A due date whose payment is already matched in the
-    ledger (`paid`, as (bill id, due date)) is left out: that money has left the balance, or the card holds it."""
+                 paid: set[tuple[int, date]] | None = None, pay_days: str = "", late: set[tuple[int, date]] | None = None, judge_until: date | None = None, checks_by_day: bool = True) -> list[dict]:
+    """Every dated obligation for the horizon. `due_days` overrides a bill's due day (the optimiser's what-if),
+    from the bill's next cycle on (see _moved_dates). A bill charged to a card (its paying account is a card) is
+    marked so: it does not leave checking on its due date; it rides the card payment it is paid from. A due date
+    whose payment is already matched in the ledger (`paid`, as (bill id, due date)) is left out: that money has
+    left the balance, or the card holds it. A due date that has passed with no payment posted yet (`late`, from
+    payments.unposted_periods) is still in the account: it is counted today, marked late, with its real due date.
+    `checks_by_day` is false when no paycheck comes twice a month: a bill set to the mid or end-of-month check
+    then belongs to the check before it is due, since no such check exists."""
     events: list[dict] = []
     horizon = today + timedelta(days=horizon_days)
+    late_by_bill: dict[int, list[date]] = {}
+    for bill_id, d in late or ():
+        if d < today:
+            late_by_bill.setdefault(bill_id, []).append(d)
     for b in bills:
         due_day = (due_days or {}).get(b.id, b.due_day)
         paid_from = getattr(b, "paid_from", "due") or "due"
+        if not checks_by_day and paid_from in ("mid", "end"):
+            paid_from = "due"
         payer = (accounts or {}).get(b.pay_from_account_id) if b.pay_from_account_id else None
         from_kind = "card" if payer is not None and payer.kind == "card" else "cash"
-        for d in bill_dates(b, today, horizon, due_day=due_day):
+        base = {"name": b.name, "amount": _money(b.amount), "kind": b.kind, "autopay": b.autopay, "source": f"bill:{b.id}", "line": line_of(b.category, b.kind), "bill_id": b.id, "paid_from": paid_from, "from_kind": from_kind,
+                "from_account_id": b.pay_from_account_id, "category": b.category or "", "movable": bool(b.movable), "due_day": due_day}
+        for d in sorted(late_by_bill.get(b.id, [])):
+            events.append({**base, "date": today, "window_date": today, "due_day": b.due_day, "late": True, "due": d.isoformat(), "note": f"due {d:%a %b} {d.day}, not out of the account yet"})
+        moved = due_days is not None and b.id in due_days and int(due_day) != int(b.due_day)
+        dates = _moved_dates(b, today, horizon, int(due_day), judge_until) if moved else bill_dates(b, today, horizon, due_day=due_day)
+        for d in dates:
             if paid and (b.id, d) in paid:
                 continue
-            events.append({"date": d, "window_date": window_date(d, paid_from, pay_days), "name": b.name, "amount": _money(b.amount), "kind": b.kind, "autopay": b.autopay, "source": f"bill:{b.id}", "line": line_of(b.category, b.kind), "bill_id": b.id, "paid_from": paid_from, "from_kind": from_kind, "from_account_id": b.pay_from_account_id, "category": b.category or "", "movable": bool(b.movable), "due_day": due_day})
+            events.append({**base, "date": d, "window_date": window_date(d, paid_from, pay_days)})
     for p in plans:
         payer = (accounts or {}).get(getattr(p, "pay_from_account_id", None)) if getattr(p, "pay_from_account_id", None) else None
         plan_kind = "card" if payer is not None and payer.kind == "card" else "cash"
@@ -247,13 +295,13 @@ def card_payoffs(cards: list[Account], paydays: list[date], mode: str, today: da
 
 
 def assemble(*, bills: list[Bill], plans: list[InstallmentPlan], advances: list[Advance], today: date, accounts: dict[int, Account], paydays: list[date], card_mode: str, debts: list | None, planned: dict[int, float] | None, extra: list[dict], card_pace_by_account: dict[int, float] | None, due_days: dict[int, int] | None = None, horizon_days: int = HORIZON_DAYS,
-             paid: set[tuple[int, date]] | None = None, pay_days: str = "") -> dict:
+             paid: set[tuple[int, date]] | None = None, pay_days: str = "", late: set[tuple[int, date]] | None = None, judge_until: date | None = None, checks_by_day: bool = True) -> dict:
     """Everything the windows and the daily path count, with the card done right. `math` is what leaves
     checking: cash bills, plans, advances, planned payments and the card payments. `display` adds the bills
     that ride the card, marked via_card, so the picture still names them. A card whose payment is kept as a
-    bill is paid by that bill, once: `paid_by_bill` names those bills by card. `paid` and `pay_days` are as
-    build_events takes them."""
-    events = build_events(bills, plans, advances, today, due_days=due_days, accounts=accounts, horizon_days=horizon_days, paid=paid, pay_days=pay_days) + extra
+    bill is paid by that bill, once: `paid_by_bill` names those bills by card. `paid`, `pay_days`, `late`,
+    `judge_until` and `checks_by_day` are as build_events takes them."""
+    events = build_events(bills, plans, advances, today, due_days=due_days, accounts=accounts, horizon_days=horizon_days, paid=paid, pay_days=pay_days, late=late, judge_until=judge_until, checks_by_day=checks_by_day) + extra
     card_bills = [e for e in events if e.get("from_kind") == "card"]
     cash = [e for e in events if e.get("from_kind") != "card"]
     cards = [a for a in accounts.values() if a.kind == "card" and a.active]
@@ -340,7 +388,7 @@ def low_point(projection: list[dict], key: str = "at_pace") -> dict:
     return {"date": low["date"], "value": low[key]}
 
 
-def projection_caveats(*, has_income: bool, bills: int, unnamed: int, pending_installments: int = 0) -> list[str]:
+def projection_caveats(*, has_income: bool, bills: int, unnamed: int, pending_installments: int = 0, unanchored: int = 0) -> list[str]:
     """What the projection does not know, said next to every figure it still produces. A payday that is not on
     file is never invented: the windows are anchored two weeks out so the arithmetic has a frame, and the
     caveat says so."""
@@ -353,4 +401,6 @@ def projection_caveats(*, has_income: bool, bills: int, unnamed: int, pending_in
         out.append(f"{unnamed} recurring charge{'s' if unnamed != 1 else ''} in the ledger {'are' if unnamed != 1 else 'is'} unnamed and not counted until named.")
     if pending_installments:
         out.append(f"{pending_installments} pay-later stream{'s' if pending_installments != 1 else ''} {'are' if pending_installments != 1 else 'is'} counted at {'their' if pending_installments != 1 else 'its'} last amount until the payments left are set.")
+    if unanchored:
+        out.append(f"{unanchored} bill{'s' if unanchored != 1 else ''} that come{'' if unanchored != 1 else 's'} every few months {'have' if unanchored != 1 else 'has'} no next due date, so {'they are' if unanchored != 1 else 'it is'} not counted on any day yet; add the date on Bills.")
     return out

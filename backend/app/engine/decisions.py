@@ -122,14 +122,20 @@ def purchase_check(session: Session, today: date, amount: float, *, on: date | N
 
 def _low_finder(session: Session, today: date):
     """The registers as they stand, and a function giving the sixty-day low point with some bills' due days
-    changed. Shared by the suggestions and by a single move checked from the paycheck pictures."""
+    changed. Shared by the suggestions and by a single move checked from the paycheck pictures.
+
+    A moved bill keeps this cycle's charge on its old day and moves from the next cycle, as the request to the
+    biller asks. The low point is judged over whole pay periods only, up to the last payday inside the sixty days:
+    a charge pushed past that payday is kept on the day before it (see projection._moved_dates), so a move never
+    looks better by pushing a charge out of view."""
     accounts = session.exec(select(Account).where(Account.active == True)).all()  # noqa: E712
     cash, _all_cash = cash_of(accounts)
     buffer = float(get_setting(session, "buffer", 200.0))
     incomes = session.exec(select(Income).where(Income.active == True)).all()  # noqa: E712
+    from .billdates import unanchored
     from .borrowing import plan_covers_series
     from .cadence import pay_schedule
-    from .payments import paid_periods
+    from .payments import paid_periods, unposted_periods
     from .projection import HORIZON_DAYS
 
     # Every paycheck on one schedule, as the snapshot takes it: each payday of each, and what lands on it.
@@ -151,9 +157,13 @@ def _low_finder(session: Session, today: date):
     unconfirmed_rows = session.exec(select(RecurringSeries).where(RecurringSeries.confirmed == False, RecurringSeries.active == True)).all()  # noqa: E712
     streams = [r for r in unconfirmed_rows if r.suggested_kind == "installment"]
     pending_streams = [r for r in streams if not any(plan_covers_series(p, r) for p in plans)]
-    caveats = projection_caveats(has_income=schedule["known"], bills=len(bills), unnamed=len(unconfirmed_rows) - len(streams), pending_installments=len(pending_streams))
+    caveats = projection_caveats(has_income=schedule["known"], bills=len(bills), unnamed=len(unconfirmed_rows) - len(streams), pending_installments=len(pending_streams), unanchored=sum(1 for b in bills if unanchored(b)))
     pending_rows = pending_installment_events(pending_streams, today, plans=plans)
     paid = paid_periods(session, today)
+    late = unposted_periods(session, today)
+    line_days = 60
+    inside = [d for d in paydays if today < d < today + timedelta(days=line_days)]
+    judge_until = inside[-1] if inside else None  # the last payday inside the line: whole pay periods are judged, no more
 
     from ..models import Debt
 
@@ -167,10 +177,11 @@ def _low_finder(session: Session, today: date):
 
     def low_for(due_days: dict[int, int]) -> dict:
         events = assemble(bills=bills, plans=plans, advances=advances, today=today, accounts=by_id, paydays=paydays, card_mode=card_mode, debts=debts_rows, planned=planned_map, extra=extra, card_pace_by_account=pace["per_day_by_account"], due_days=due_days,
-                          paid=paid, pay_days=schedule["pay_days"])["math"]
+                          paid=paid, pay_days=schedule["pay_days"], late=late, judge_until=judge_until, checks_by_day=schedule["semimonthly"])["math"]
         windows = split_windows(events, today, next_payday, following, paydays[2])
-        path = project(today, cash=cash, buffer=buffer, expected_net=expected_net, pay_dates=pay_dates, set_aside=windows["set_aside"], events=events, per_day=pace["per_day_cash"], pay_amounts=pay_amounts, reserved_for={(e.get("source"), e["date"]) for e in windows["next_window"]})
-        return low_point(path)
+        path = project(today, cash=cash, buffer=buffer, expected_net=expected_net, pay_dates=pay_dates, set_aside=windows["set_aside"], events=events, per_day=pace["per_day_cash"], days=line_days, pay_amounts=pay_amounts, reserved_for={(e.get("source"), e["date"]) for e in windows["next_window"]})
+        judged = [p for p in path if judge_until is None or p["date"] < judge_until.isoformat()] or path
+        return low_point(judged)
 
     return low_for, bills, caveats
 
@@ -292,9 +303,22 @@ def _billing_date_suggestions(session: Session, today: date) -> dict:
         chosen[b.id] = day
         plan.append({"bill_id": b.id, "name": b.name, "from_day": b.due_day, "to_day": day, "low_after": round(value, 2), "low_date": when, "improvement": round(value - current, 2), "source": f"bill:{b.id}"})
         current = value
+    # A change starts with the cycle after each bill's next charge, so the days before that cannot move: when the
+    # lowest point falls there, no move lifts it, and the result says why instead of implying the dates are best.
+    from .billdates import bill_dates
+
+    seconds = [ds[1] for b in bills if _monthly(b) for ds in [bill_dates(b, today, today + timedelta(days=75))] if len(ds) > 1]
+    moves_start = (min(seconds) - timedelta(days=15)) if seconds else None  # a moved charge lands at most about half a month earlier
+    low_on = date.fromisoformat(baseline["date"])
+    note = None
+    if not suggestions and moves_start is not None and low_on < moves_start:
+        note = (f"Your lowest point in the next 60 days, {low_on:%a %b} {low_on.day}, comes before a billing-date change could start: each bill's next charge stays on "
+                f"its date, and a change starts with the cycle after it. So no move lifts that point.")
     return {
         "as_of": today.isoformat(),
         "baseline": {"low": baseline["value"], "low_date": baseline["date"]},
+        "moves_start": moves_start.isoformat() if moves_start else None,
+        "note": note,
         "suggestions": suggestions,
         "plan": plan,
         "plan_low": round(current, 2),

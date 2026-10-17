@@ -65,8 +65,9 @@ def add_home(body: HomeIn, session: Session = Depends(get_session), _: auth.Prin
     _apply_home(home, body)
     session.add(home)
     session.commit()
-    hs.sync_bills(session, home)
-    return hs.overview(session, today())
+    hs.sync_bills(session, home, today())
+    said = hs.start_move(session, home, None, today())
+    return {**hs.overview(session, today()), "said": said}
 
 
 @router.put("/housing/{home_id}")
@@ -74,11 +75,15 @@ def change_home(home_id: int, body: HomeIn, session: Session = Depends(get_sessi
     home = session.get(Home, home_id)
     if home is None or not home.active:
         raise HTTPException(404, "No such home")
+    was_start = home.starts_on
     _apply_home(home, body)
     session.add(home)
     session.commit()
-    hs.sync_bills(session, home)
-    return hs.overview(session, today())
+    hs.sync_bills(session, home, today())
+    # Only a new move-in date moves the end of the home being left; an edit that keeps the date leaves it as it is
+    # (an end the owner cleared on purpose stays cleared).
+    said = hs.start_move(session, home, was_start, today()) if home.starts_on != was_start else []
+    return {**hs.overview(session, today()), "said": said}
 
 
 @router.delete("/housing/{home_id}")
@@ -88,9 +93,14 @@ def remove_home(home_id: int, session: Session = Depends(get_session), _: auth.P
         raise HTTPException(404, "No such home")
     home.active = False
     session.add(home)
+    # Its utilities go with it: off, so no bill of theirs is counted where the page no longer shows it.
+    for u in session.exec(select(Utility).where(Utility.home_id == home.id, Utility.active == True)).all():  # noqa: E712
+        u.active = False
+        session.add(u)
     session.commit()
-    hs.sync_bills(session, home)
-    return hs.overview(session, today())
+    hs.sync_bills(session, home, today())
+    said = hs.call_off_move(session, home, today())
+    return {**hs.overview(session, today()), "said": said}
 
 
 class NoticeIn(BaseModel):
@@ -110,8 +120,9 @@ def notice_given(home_id: int, body: NoticeIn, session: Session = Depends(get_se
 
 class AdoptIn(BaseModel):
     bill_id: int
-    name: str
+    name: str = ""
     kind: str = "rent"
+    home_id: int | None = None  # a home already on Housing whose rent this bill is; without it, the bill becomes a new home
 
 
 @router.post("/housing/adopt")
@@ -119,7 +130,15 @@ def adopt(body: AdoptIn, session: Session = Depends(get_session), _: auth.Princi
     bill = session.get(Bill, body.bill_id)
     if bill is None or not bill.active or bill.home_id:
         raise HTTPException(404, "No such rent bill")
-    hs.adopt_bill(session, bill, name=body.name, kind=body.kind)
+    if body.home_id is not None:
+        home = session.get(Home, body.home_id)
+        if home is None or not home.active:
+            raise HTTPException(404, "No such home")
+        hs.adopt_into(session, bill, home, today())
+        return hs.overview(session, today())
+    if not body.name.strip() and not bill.name:
+        raise HTTPException(400, "Give the home a name")
+    hs.adopt_bill(session, bill, name=body.name, kind=body.kind, today=today())
     return hs.overview(session, today())
 
 
@@ -154,7 +173,7 @@ def add_charge(home_id: int, body: ChargeIn, session: Session = Depends(get_sess
     _apply_charge(c, body)
     session.add(c)
     session.commit()
-    hs.sync_bills(session, home)
+    hs.sync_bills(session, home, today())
     return hs.overview(session, today())
 
 
@@ -166,7 +185,7 @@ def change_charge(charge_id: int, body: ChargeIn, session: Session = Depends(get
     _apply_charge(c, body)
     session.add(c)
     session.commit()
-    hs.sync_bills(session, session.get(Home, c.home_id))
+    hs.sync_bills(session, session.get(Home, c.home_id), today())
     return hs.overview(session, today())
 
 
@@ -182,7 +201,7 @@ def remove_charge(charge_id: int, session: Session = Depends(get_session), _: au
         b.active = False
         session.add(b)
         session.commit()
-    hs.sync_bills(session, session.get(Home, c.home_id))
+    hs.sync_bills(session, session.get(Home, c.home_id), today())
     return hs.overview(session, today())
 
 
@@ -215,7 +234,7 @@ def add_cost(home_id: int, body: CostIn, session: Session = Depends(get_session)
     _apply_cost(c, body)
     session.add(c)
     session.commit()
-    hs.sync_bills(session, home)
+    hs.sync_bills(session, home, today())
     return hs.overview(session, today())
 
 
@@ -227,7 +246,7 @@ def change_cost(cost_id: int, body: CostIn, session: Session = Depends(get_sessi
     _apply_cost(c, body)
     session.add(c)
     session.commit()
-    hs.sync_bills(session, session.get(Home, c.home_id))
+    hs.sync_bills(session, session.get(Home, c.home_id), today())
     return hs.overview(session, today())
 
 
@@ -243,7 +262,7 @@ def remove_cost(cost_id: int, session: Session = Depends(get_session), _: auth.P
         b.active = False
         session.add(b)
         session.commit()
-    hs.sync_bills(session, session.get(Home, c.home_id))
+    hs.sync_bills(session, session.get(Home, c.home_id), today())
     return hs.overview(session, today())
 
 
@@ -291,7 +310,7 @@ def _apply_utility(u: Utility, body: UtilityIn, session: Session) -> None:
         if bill is None or not bill.active or bill.home_id or (bill.utility_id and bill.utility_id != u.id):
             raise HTTPException(400, "That bill is not on the list, or it already belongs to a home or another utility")
         u.bill_id = bill.id
-        bill.pays_to = bill.pays_to or bill.name  # its payments keep matching under the new name
+        bill.pays_to = bill.pays_to or bill.name  # its payments keep matching under the new name (kept in match_names when the utility renames it)
         if u.amount is None:
             u.amount, u.estimate = bill.amount, bill.amount_mode == "estimate"
         u.due_day = u.due_day or bill.due_day
@@ -312,7 +331,7 @@ def add_utility(body: UtilityIn, session: Session = Depends(get_session), _: aut
     _apply_utility(u, body, session)
     session.add(u)
     session.commit()
-    hs.sync_utility(session, u)
+    hs.sync_utility(session, u, today())
     return list_utilities(session)
 
 
@@ -324,7 +343,7 @@ def change_utility(utility_id: int, body: UtilityIn, session: Session = Depends(
     _apply_utility(u, body, session)
     session.add(u)
     session.commit()
-    hs.sync_utility(session, u)
+    hs.sync_utility(session, u, today())
     return list_utilities(session)
 
 
@@ -334,7 +353,7 @@ def remove_utility(utility_id: int, session: Session = Depends(get_session), _: 
     if u is None:
         raise HTTPException(404, "No such utility")
     u.active = False
-    hs.sync_utility(session, u)
+    hs.sync_utility(session, u, today())
     return list_utilities(session)
 
 

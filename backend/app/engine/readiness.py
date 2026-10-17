@@ -1,8 +1,9 @@
 """Readiness for a move, computed: the things that have to be true, each with its current value, its target,
-whether it is met, and where to act. A buffer of one pay period's advances; two pay periods with no advance;
-the card under thirty percent of its line on the statement day; the pay-later plans that end before the date;
-the rent-to-gross ratio a landlord screens on; the mailbox connected; one window reconciled by hand. Figures
-from the ledger, never a recommendation."""
+whether it is met, and where to act. A safety cushion of one pay period's advances; two pay periods with no
+advance; the card under thirty percent of its credit limit on the statement day; the pay-later plans that end
+before the date; the rent-to-gross ratio a landlord screens on; the mailbox connected; one paycheck checked by hand
+against the bank. Figures from the ledger, never a recommendation. Dates are the owner's own day, said in words
+with the weekday, and also given as fields (checked_on, statement_on, last_advance_on) for a screen to format."""
 
 from __future__ import annotations
 
@@ -21,6 +22,27 @@ from .projections import NOT_ADVICE
 
 def _money(v: float) -> float:
     return round(float(v), 2)
+
+
+def _day(d: date) -> str:
+    """A date in words with its weekday: "Wed Oct 14"."""
+    return f"{d:%a %b} {d.day}"
+
+
+def _local_day(stamp: str) -> date | None:
+    """The owner's day of a stored timestamp: saved in UTC, so on a US evening its date is already tomorrow's."""
+    from datetime import UTC, datetime
+
+    from ..clock import zone
+
+    try:
+        when = datetime.fromisoformat(stamp)
+    except (TypeError, ValueError):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    z = zone()
+    return when.astimezone(z).date() if z else when.astimezone().date()
 
 
 def gross_per_month(session: Session) -> tuple[float | None, str]:
@@ -64,7 +86,7 @@ def readiness(session: Session, today: date, *, move_date: date | None = None, n
         typical = float(borrowing_overview(session, today).get("typical_per_period") or 0.0)
     target_buffer = max(500.0, typical)
     buffer_now = float(safe_to_spend if safe_to_spend is not None else 0.0)
-    items.append({"key": "buffer", "label": "A cushion of one pay period's advances", "value": _money(buffer_now), "target": _money(target_buffer), "met": buffer_now >= target_buffer,
+    items.append({"key": "buffer", "label": "A safety cushion of one pay period's advances", "value": _money(buffer_now), "target": _money(target_buffer), "met": buffer_now >= target_buffer,
                   "note": f"safe to spend until payday, against the {('typical ' + f'${typical:,.0f} advanced each period') if typical else 'minimum of $500'}", "link": "/today#goals"})
 
     # 2. two pay periods with no advance
@@ -79,8 +101,9 @@ def readiness(session: Session, today: date, *, move_date: date | None = None, n
     after = [d for d in paydays if d > clean_after]
     clean_by = after[1] if len(after) > 1 else None
     met = since == 0 and (last_taken is None or (today - last_taken).days > 35)
-    items.append({"key": "no_advances", "label": "Two pay periods with no advance", "value": f"{since} taken since payday" + (f"; last on {last_taken.strftime('%b %d')}" if last_taken else ""), "target": "none for two periods", "met": met,
-                  "projected": clean_by.isoformat() if (not met and clean_by) else None, "note": "an advance taken now resets the two periods", "link": "/borrowing"})
+    items.append({"key": "no_advances", "label": "Two pay periods with no advance", "value": f"{since} taken since payday" + (f", the last on {_day(last_taken)}" if last_taken else ""), "target": "none for two pay periods", "met": met,
+                  "projected": clean_by.isoformat() if (not met and clean_by) else None, "last_advance_on": last_taken.isoformat() if last_taken else None,
+                  "note": "an advance taken now starts the two pay periods again", "link": "/borrowing"})
 
     # 3. the card under 30% of its line on the statement day
     from .planned import planned_to_cards
@@ -95,9 +118,10 @@ def readiness(session: Session, today: date, *, move_date: date | None = None, n
             continue
         balance = max(0.0, float(a.balance or 0.0) - planned.get(a.id, 0.0))
         use = balance / limit if limit else None
-        statement = next_due(int(debt.statement_day), today).isoformat() if debt and debt.statement_day else None
-        items.append({"key": f"card:{a.id}", "label": f"{a.name} under 30% of its line on the statement day", "value": f"{use * 100:.0f}% in use" if use is not None else f"${balance:,.0f} owed, line unknown", "target": "under 30%",
-                      "met": use is not None and use < 0.30, "projected": statement, "note": ("paid down by a planned payment already counted" if planned.get(a.id) else "") + (f"; the statement closes {statement}" if statement else "; enter the line and the statement day on Debts"), "link": "/debts"})
+        statement = next_due(int(debt.statement_day), today) if debt and debt.statement_day else None
+        notes = (["paid down by a planned payment already counted"] if planned.get(a.id) else []) + ([f"the statement closes {_day(statement)}"] if statement else ["enter the credit limit and the statement day on Debts"])
+        items.append({"key": f"card:{a.id}", "label": f"{a.name} under 30% of its credit limit on the statement day", "value": f"{use * 100:.0f}% of the limit used" if use is not None else f"${balance:,.0f} owed, credit limit unknown", "target": "under 30%",
+                      "met": use is not None and use < 0.30, "projected": statement.isoformat() if statement else None, "statement_on": statement.isoformat() if statement else None, "note": "; ".join(notes), "link": "/debts"})
 
     # 4. pay-later plans that end before the date
     plans = session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all()  # noqa: E712
@@ -108,7 +132,7 @@ def readiness(session: Session, today: date, *, move_date: date | None = None, n
         (ending if (move_date is None or ends <= move_date) else running).append((p, ends))
     monthly_after = _money(sum(p.installment * (30.0 / max(1, p.cadence_days)) for p, _ in running))
     items.append({"key": "plans", "label": "Pay-later plans ended before the date" if move_date else "Pay-later plans still running", "value": f"{len(ending)} end{' before it' if move_date else ' within view'}, {len(running)} run on at ${monthly_after:,.0f} a month", "target": "none running, or counted in the rent-to-pay figure",
-                  "met": len(running) == 0, "note": ", ".join(f"{(p.merchant or p.provider)} ends {e.strftime('%b %d')}" for p, e in sorted(running, key=lambda x: x[1])[:3]), "link": "/borrowing#loans"})
+                  "met": len(running) == 0, "note": ", ".join(f"{(p.merchant or p.provider)} ends {_day(e)}" for p, e in sorted(running, key=lambda x: x[1])[:3]), "link": "/borrowing#loans"})
 
     # 5. the rent-to-gross ratio a landlord screens on
     gross, basis = gross_per_month(session)
@@ -123,11 +147,13 @@ def readiness(session: Session, today: date, *, move_date: date | None = None, n
 
     # 6. the mailbox connected, so plans and bills fill themselves
     boxes = session.exec(select(MailAccount).where(MailAccount.active == True)).all()  # noqa: E712
-    items.append({"key": "mailbox", "label": "A mailbox connected", "value": f"{len(boxes)} connected" if boxes else "none", "target": "one or both", "met": bool(boxes), "note": "Affirm's confirmations and Rocket Money's bill list fill the registers from it", "link": "/settings/connectors#mail"})
+    items.append({"key": "mailbox", "label": "A mailbox connected", "value": f"{len(boxes)} connected" if boxes else "none", "target": "one or both", "met": bool(boxes), "note": "Affirm's confirmations and Rocket Money's bill list fill your bills list and your pay-later plans from it", "link": "/settings/connectors#mail"})
 
-    # 7. one window reconciled by hand
+    # 7. one paycheck checked by hand against the bank
     checked = get_setting(session, "reconciled", {}) or {}
-    items.append({"key": "reconciled", "label": "One paycheck window checked by hand", "value": f"checked {checked['at'][:10]}" if checked.get("at") else "not yet", "target": "once, against the bank's own statement", "met": bool(checked.get("at")), "note": "tap when a window's lines matched the bank; the verdict is trusted after that", "link": "/today"})
+    checked_on = _local_day(checked["at"]) if checked.get("at") else None
+    items.append({"key": "reconciled", "label": "One paycheck checked by hand", "value": f"checked on {_day(checked_on)}" if checked_on else "not yet", "target": "once, against the bank's own statement", "met": bool(checked_on),
+                  "checked_on": checked_on.isoformat() if checked_on else None, "note": "tap when one paycheck's bills and spending matched the bank's statement; the verdict is trusted after that", "link": "/today"})
 
     met = sum(1 for i in items if i["met"])
     return {"as_of": today.isoformat(), "move_date": move_date.isoformat() if move_date else None, "items": items, "met": met, "of": len(items), "ready": met == len(items), "not_advice": NOT_ADVICE}
