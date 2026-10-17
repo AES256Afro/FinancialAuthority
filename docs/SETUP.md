@@ -153,6 +153,11 @@ the web or the phone, it needs an https address:
 - **Elsewhere:** Tailscale (<https://tailscale.com/download>) gives your devices private https addresses with no
   ports opened; or any reverse proxy with a certificate. Set `FA_PUBLIC_URL` and restart.
 
+Behind a tunnel or a proxy, every request reaches the app from the proxy's address, so the sign-in lockout would
+treat every device as one. Name the proxy in `FA_TRUSTED_PROXIES` (an address or a range, commas between them;
+for Docker, the network's gateway, which `docker network inspect <network>` shows) and the app reads the real
+device from the proxy's `X-Forwarded-For` header. Name only the proxy: a header from anywhere else is ignored.
+
 ## 6. Your phone
 
 Open the app's address in Safari (iPhone, iPad) or Chrome (Android) and add it to the Home Screen. On iPhone:
