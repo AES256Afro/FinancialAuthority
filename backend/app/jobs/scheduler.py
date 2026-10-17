@@ -205,6 +205,7 @@ def self_check() -> str:
         from ..engine import apphealth
 
         checks = apphealth.checks_from_report(report, backup_age, apphealth.job_checks(session, jobs.specs), now)
+        checks.append(apphealth.datacheck_part(get_setting(session, "datacheck.last", None)))
         apphealth.record(session, report, checks, backup_age, utcnow())
         return f"{report['free_gb']} GB free · db {report['db_mb']} MB · last transaction {report['last_transaction']} · {len(problems)} problem(s)" + (": " + "; ".join(problems) if problems else "")
 
@@ -466,6 +467,31 @@ def restore_point_daily() -> str:
 
 
 jobs.register("restore_point_daily", restore_point_daily, 6 * 3600, "Keep a copy of the whole database once a day, the last seven kept")
+
+
+def data_check() -> str:
+    """Look over the registers for what may be counted twice or may not be genuine (engine/datacheck.py): judge the
+    senders of waiting mail not judged yet (headers only, read-only), set aside what is certainly doubled, and keep
+    the rest as findings for the owner."""
+    from ..engine import borrowing, datacheck
+
+    with session_scope() as session:
+        judged = 0
+        try:
+            judged = datacheck.recheck_senders(session)
+        except Exception as error:  # noqa: BLE001 - the mailbox being away never stops the rest of the check
+            log.warning("sender check skipped: %s", error)
+        borrowing.sync_borrowing(session, _today())  # a bill a lender's plan already pays steps aside
+        last = datacheck.run(session, _today())
+    parts = [f"{last['count']} finding{'s' if last['count'] != 1 else ''}"]
+    if last["set_aside"]:
+        parts.append(f"{last['set_aside']} read twice set aside")
+    if judged:
+        parts.append(f"{judged} sender{'s' if judged != 1 else ''} checked")
+    return ("nothing new: " if not last["count"] and not last["set_aside"] and not judged else "") + ", ".join(parts)
+
+
+jobs.register("data_check", data_check, 6 * 3600, "Look for anything counted twice or mail that may not be genuine; set aside what is certainly doubled and ask about the rest")
 
 
 ALERTS = "watch.app.alerts"  # telling the phone about the app's own health: on unless the owner turns it off

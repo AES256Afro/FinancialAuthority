@@ -85,7 +85,7 @@ export interface FactRow {
   produced_by: string;
   applied_to: string;
   created_at: string;
-  message: { id: number; sender: string; sender_name: string; subject: string; date: string | null } | null;
+  message: { id: number; sender: string; sender_name: string; subject: string; date: string | null; trust?: string; trust_why?: string } | null;
   /** A bill notice from someone the app already counts another way: where (Housing, Debts, Borrowing). */
   counted_elsewhere?: string | null;
 }

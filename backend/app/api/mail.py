@@ -289,7 +289,8 @@ def fact_out(f: ExtractedFact, ref: MessageRef | None) -> dict:
     return {
         "id": f.id, "kind": f.kind, "fields": json.loads(f.fields or "{}"), "confidence": f.confidence, "status": f.status, "excerpt": f.excerpt, "produced_by": f.produced_by,
         "applied_to": f.applied_to, "created_at": f.created_at.isoformat(),
-        "message": {"id": ref.id, "sender": ref.sender, "sender_name": ref.sender_name, "subject": ref.subject, "date": ref.date.isoformat() if ref.date else None} if ref else None,
+        "message": {"id": ref.id, "sender": ref.sender, "sender_name": ref.sender_name, "subject": ref.subject, "date": ref.date.isoformat() if ref.date else None,
+                    "trust": ref.trust, "trust_why": ref.trust_why} if ref else None,
     }
 
 

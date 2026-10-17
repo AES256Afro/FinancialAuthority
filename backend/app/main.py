@@ -14,7 +14,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import auth, factors, oauth
 from .security import SecurityMiddleware
-from .api import apphealth, appearance, approvals, banks, borrowing, credit, custom_reports, exports, goals, guide, homeassistant, housing, imports, moving, needsyou, people, moves, investments, ledger_rules, llm, mail, payoff, planned, plaid_webhook, privacy, projections, push, recap, registers, restore, routes, scenarios, sinking, tools, watch
+from .api import apphealth, appearance, datacheck, approvals, banks, borrowing, credit, custom_reports, exports, goals, guide, homeassistant, housing, imports, moving, needsyou, people, moves, investments, ledger_rules, llm, mail, payoff, planned, plaid_webhook, privacy, projections, push, recap, registers, restore, routes, scenarios, sinking, tools, watch
 from .config import settings
 from .db import init_db, session_scope
 from .engine.household import seed
@@ -80,7 +80,7 @@ app.include_router(auth.router)
 app.include_router(factors.router)
 app.include_router(privacy.router)
 app.include_router(plaid_webhook.router)
-for module in (custom_reports, sinking, payoff, recap, watch, homeassistant, housing, people, moving, needsyou, credit, apphealth):
+for module in (custom_reports, sinking, payoff, recap, watch, homeassistant, housing, people, moving, needsyou, credit, apphealth, datacheck):
     app.include_router(module.router)
 app.include_router(moving.exit_router)
 app.include_router(routes.router)

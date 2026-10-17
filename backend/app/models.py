@@ -688,6 +688,8 @@ class MessageRef(SQLModel, table=True):
     snippet: str = ""
     kind: str = ""  # what the classifier called it
     created_at: dt.datetime = Field(default_factory=utcnow)
+    trust: str = ""  # is it from who it says (mail/trust.py): ok | warn | crit | "" (not judged)
+    trust_why: str = ""
 
 
 class Paystub(SQLModel, table=True):
