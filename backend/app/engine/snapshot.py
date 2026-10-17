@@ -341,15 +341,17 @@ def _explain_safe(session: Session, accounts: list, before: list[dict], advances
     """Safe to spend taken apart: each spending account's share, the steps from the bank's balance to the figure,
     and what is left out on purpose (savings, the cards, what the next paycheck repays). The accounts add up to
     the figure. The buffer, the advances and any shortfall belong to the account the paycheck lands in."""
+    from ..connectors.banks import told_balances
     from .cover import _deposit_account, _payer_id
     from .projection import is_spendable
 
     by_id = {a.id: a for a in accounts}
+    told = told_balances(session)
     spendables = [a for a in accounts if is_spendable(a) and a.kind != "card"]
     deposit = _deposit_account(session, by_id, spendables)
     deposit_id = deposit.id if deposit else None
     rows = {a.id: {"id": a.id, "name": a.name, "kind": a.kind, "balance": float(a.balance or 0.0), "as_of": a.balance_at.isoformat() if a.balance_at else None,
-                   "from_bank": a.connector in ("plaid", "teller"), "paycheck_lands": a.id == deposit_id, "due": 0.0, "items": [], "buffer": 0.0, "advances": 0.0, "shortfall": 0.0}
+                   "from_bank": a.connector in ("plaid", "teller"), "told": a.id in told and abs(told[a.id]["amount"] - float(a.balance or 0.0)) < 0.005, "paycheck_lands": a.id == deposit_id, "due": 0.0, "items": [], "buffer": 0.0, "advances": 0.0, "shortfall": 0.0}
             for a in spendables}
     for e in before:
         row = rows.get(_payer_id(e, by_id, deposit_id)) or rows.get(deposit_id)
@@ -367,7 +369,7 @@ def _explain_safe(session: Session, accounts: list, before: list[dict], advances
             r[k] = _money(r[k])
         r["items"] = sorted(r["items"], key=lambda i: i["date"])
         by_account.append(r)
-    steps: list[dict] = [{"label": f"In {r['name']}", "amount": r["balance"], "note": "as your bank reported it" if r["from_bank"] else "as entered", "as_of": r["as_of"]} for r in by_account]
+    steps: list[dict] = [{"label": f"In {r['name']}", "amount": r["balance"], "note": "as you read it off your bank" if r.get("told") else "as your bank reported it" if r["from_bank"] else "as entered", "as_of": r["as_of"]} for r in by_account]
     due_items = sorted((i for r in by_account for i in r["items"]), key=lambda i: i["date"])
     if due_items:
         steps.append({"label": f"Comes out before payday ({next_payday:%b} {next_payday.day})", "amount": -_money(sum(i["amount"] for i in due_items)), "items": due_items})

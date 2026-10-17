@@ -444,6 +444,8 @@ def test_a_balance_read_off_the_bank_stands_until_the_bank_sends_newer(owner: Te
             assert session.get(Account, chk_id).balance == 215.80
         told = next(a for a in owner.get("/api/v1/snapshot").json()["fresh"]["accounts"] if a["id"] == chk_id)
         assert told["told"]["amount"] == 215.80
+        steps = owner.get("/api/v1/snapshot").json()["safe_to_spend"]["steps"]
+        assert any(st.get("note") == "as you read it off your bank" for st in steps)
         fake.bank_updated = datetime.now(UTC).isoformat().replace("+00:00", "Z")
         owner.post(f"/api/v1/banks/{link['id']}/sync")
         with Session(engine) as session:
