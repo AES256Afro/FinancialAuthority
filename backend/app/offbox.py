@@ -290,7 +290,7 @@ def drill(session: Session) -> dict[str, Any]:
     same = expected is None or expected == verdict["transactions"]
     ok = bool(verdict["ok"] and same)
     detail = (f"The copy of {point['created_at'][:16].replace('T', ' ')} opened on its own, passed SQLite's check of every page, and holds "
-              f"{verdict['transactions']} transactions in {accounts} accounts (net {total:,.2f}), as counted when it was made.") if ok else (
+              f"{verdict['transactions']} transactions in {accounts} accounts (net {'-' if total < 0 else ''}${abs(total):,.2f}), as counted when it was made.") if ok else (
               f"The copy {point['name']} did not pass: {verdict['result']}" if not verdict["ok"] else
               f"The copy {point['name']} holds {verdict['transactions']} transactions; {expected} were counted when it was made.")
     result = {"at": datetime.now(UTC).isoformat(), "ok": ok, "point": point["name"], "detail": detail}
