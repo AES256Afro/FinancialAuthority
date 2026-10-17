@@ -1,6 +1,8 @@
 // Needs you: recurring charges the engine found and does not yet know what to call. One tap each. A receipt read
-// from mail is kept with the purchase the owner picks from the app's candidates, or without one.
-import { ArrowRight, ChevronRight, Copy, Receipt } from "lucide-react";
+// from mail is kept with the purchase the owner picks from the app's candidates, or without one. It leads with the
+// app's grouped count (GET /api/v1/needs-you): alike items can be answered together, and each bill the bank shows
+// no payment for is asked plainly: is it paid?
+import { ArrowRight, CircleCheck, ChevronRight, Copy, Receipt } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi, type ApiError, type Loaded } from "../api";
@@ -8,7 +10,8 @@ import { Approvals } from "../components/Approvals";
 import { ConfirmButton } from "../components/ConfirmButton";
 import { PurchaseChoices, dayWord } from "../components/Documents";
 import { Empty, Failed, Loading, Said } from "../components/State";
-import { money, ordinal, parseMoney, shortDate, when } from "../format";
+import { SeverityTag } from "../components/Status";
+import { localToday, money, ordinal, parseMoney, shortDate, when } from "../format";
 import type { DocumentTermsFields, FactRow, PairRow, PairSide, PairsOut, SeriesRow, Snapshot } from "../types";
 import type { FactWithCandidates, ReceiptFields } from "../types-receipts";
 
@@ -34,6 +37,180 @@ function DoneLine({ done }: { done: Done | null }) {
 
 /** The server answers 409 with a sentence when the item was already answered, on another screen or device. */
 const alreadyDone = (e: unknown): Done | null => ((e as ApiError).status === 409 ? { text: (e as Error).message } : null);
+
+// What waits, as the app groups it (M44). Every count here is the app's; the screen only lays them out.
+interface NeedsGroup { kind: string; words: string; count: number; complete: number; one_at_a_time: boolean; items: (FactRow & { complete: boolean })[] }
+interface PaidCandidate { id: number; date: string; merchant: string; amount: number; account: string; source: string }
+interface PastDueRow { payment_id: number; bill_id: number; name: string; amount: number; due_date: string; days_late: number; autopay: boolean; candidates: PaidCandidate[]; source: string }
+interface NeedsYouOut { as_of: string; groups: NeedsGroup[]; past_due: PastDueRow[]; total: number; word: string }
+interface ManyOut { done: { id: number; applied_to: string }[]; failed: { id: number; error: string }[]; said: string }
+type PaidAnswer = { answer: "paid" | "not_yet" | "stopped"; transaction_id?: number; paid_on?: string };
+
+const PAST_DUE_WORDS = "Bills with no payment seen";
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** The picture first: one bar per kind of thing that waits, as long as how many wait, each with its words and its
+ * count, then the app's own sentence. */
+function NeedsPicture({ state }: { state: Loaded<NeedsYouOut> }) {
+  if (state.error && !state.data) return <Failed error={state.error} what="what waits for you" onRetry={state.reload} />;
+  if (!state.data) return <Loading what="what waits for you" />;
+  const { groups, past_due, total, word } = state.data;
+  const bars = [...groups.map((g) => ({ key: g.kind, words: g.words, count: g.count, fill: "var(--paycheck)" })), { key: "past-due", words: PAST_DUE_WORDS, count: past_due.length, fill: "var(--bill)" }];
+  const top = Math.max(1, ...bars.map((b) => b.count));
+  return (
+    <section className="card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+      <h2 className="sr-only">What waits for you</h2>
+      {total > 0 && (
+        <div role="img" aria-label={bars.map((b) => `${b.words}: ${b.count}`).join("; ")} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {bars.map((b) => (
+            <div key={b.key} style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, overflowWrap: "anywhere" }}>{b.words} · {b.count}</span>
+              <div style={{ height: 14, background: "var(--surface-2)", borderRadius: 7, overflow: "hidden" }}>
+                {b.count > 0 && <div style={{ width: `${(b.count / top) * 100}%`, minWidth: 8, height: "100%", background: b.fill, borderRadius: 7 }} />}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 14, fontWeight: 700, color: total === 0 ? "var(--safe-ink)" : "var(--ink)" }}>
+        {total === 0 && <CircleCheck size={16} aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }} />}
+        <span>{word}</span>
+      </div>
+    </section>
+  );
+}
+
+/** Alike items answered together: confirm the ones that have every detail they need (the app says which), or
+ * discard them all. One that cannot be confirmed this way stays waiting, with its own card below. */
+function Together({ state, onAnswered }: { state: Loaded<NeedsYouOut>; onAnswered: () => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [said, setSaid] = useState<{ text: string; tone: "info" | "error" } | null>(null);
+  const groups = (state.data?.groups ?? []).filter((g) => g.count > 1 && !g.one_at_a_time);
+  if (groups.length === 0) return said ? <Said text={said.text} tone={said.tone} /> : null;
+
+  // A reason other than "answer it on its own card" (a bill that could not be added, say) is said as well.
+  async function send(g: NeedsGroup, action: "confirm" | "reject") {
+    const ids = (action === "confirm" ? g.items.filter((i) => i.complete) : g.items).map((i) => i.id);
+    const r = await api<ManyOut>("/api/v1/needs-you/facts", { method: "POST", body: JSON.stringify({ ids, action }) });
+    const why = [...new Set(r.failed.map((f) => f.error).filter((e) => e !== "needs your answer on its own card" && e !== "already answered"))];
+    setSaid({ text: `${g.words}: ${r.said}${why.length ? ` Why: ${why.join("; ")}.` : ""}`, tone: "info" });
+    onAnswered();
+  }
+  async function confirmAll(g: NeedsGroup) {
+    setBusy(g.kind);
+    setSaid(null);
+    try {
+      await send(g, "confirm");
+    } catch (e) {
+      setSaid({ text: `Couldn't confirm them: ${(e as Error).message}`, tone: "error" });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <section className="card" style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+      <div>
+        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Answer alike ones together</h3>
+        <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Confirm takes only the ones that have every detail they need, such as a bill with its amount and due date. The rest stay below, one card each, for you to answer.</div>
+      </div>
+      {groups.map((g, i) => (
+        <div key={g.kind} style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: i === 0 ? 0 : 10, borderTop: i === 0 ? 0 : "1px solid var(--surface-2)" }}>
+          <strong style={{ fontSize: 14, overflowWrap: "anywhere" }}>{g.words} · {g.count}</strong>
+          <span style={{ fontSize: 12, color: "var(--ink-2)" }}>{g.complete} of {g.count} have every detail they need to be confirmed together.</span>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
+            {g.complete > 0
+              ? <button className="btn dark" type="button" disabled={busy !== null} onClick={() => confirmAll(g)}>{busy === g.kind ? "Confirming…" : `Confirm the ${plural(g.complete, "complete one", "complete ones")}`}</button>
+              : <span style={{ fontSize: 13, color: "var(--ink-2)", alignSelf: "center" }}>None has every detail yet: answer each on its card below.</span>}
+            <ConfirmButton label={`Discard all ${g.count}`} question={`Discard all ${g.count} (${g.words})? Nothing read from them is used.`} yes="Yes, discard them" no="Keep them" onConfirm={() => send(g, "reject")} />
+          </div>
+        </div>
+      ))}
+      <Said text={said?.text ?? null} tone={said?.tone} />
+    </section>
+  );
+}
+
+/** One bill the bank shows no payment for: when it was due, how much, how late, the payments that might be it (the
+ * app's, the closest amount and date first), and the four answers. */
+function PaidCard({ p, onDone }: { p: PastDueRow; onDone: (text: string, answer: PaidAnswer["answer"]) => void }) {
+  const [choice, setChoice] = useState<number | null>(p.candidates[0]?.id ?? null);
+  const [paidOn, setPaidOn] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const late = p.days_late <= 0 ? "Due today" : `${plural(p.days_late, "day", "days")} late`;
+
+  async function send(body: PaidAnswer) {
+    const r = await api<{ said: string }>(`/api/v1/needs-you/payments/${p.payment_id}`, { method: "POST", body: JSON.stringify(body) });
+    onDone(r.said, body.answer);
+  }
+  async function answer(body: PaidAnswer) {
+    setBusy(true);
+    setError(null);
+    try {
+      await send(body);
+    } catch (e) {
+      setError(`Couldn't save your answer: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card" style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, overflowWrap: "anywhere" }}>{p.name}</h3>
+          <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 12, color: "var(--ink-2)" }}>
+            <SeverityTag severity="critical" word={late} />
+            <span>Was due {shortDate(p.due_date)}{p.autopay ? " · set to pay automatically (autopay)" : ""}</span>
+          </span>
+        </div>
+        <strong className="num" style={{ fontSize: 18 }}>{money(p.amount, { cents: true })}</strong>
+      </div>
+      {p.candidates.length > 0 ? (
+        <PurchaseChoices name={`payment-${p.payment_id}`} legend="The payment that might be it (the closest amount and date first)" list={p.candidates.map((c) => ({ ...c, named: false, has_receipt: false }))} value={choice} onPick={setChoice} />
+      ) : (
+        <div style={{ fontSize: 13, color: "var(--ink-2)" }}>No payment with a close amount was found in your transactions near the due date.</div>
+      )}
+      <label style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
+        <span className="lab">If you paid another way: the day you paid (empty means today)</span>
+        <input className="input" type="date" value={paidOn} max={localToday()} onChange={(e) => setPaidOn(e.target.value)} />
+      </label>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
+        {p.candidates.length > 0 && <button className="btn dark" type="button" disabled={busy || choice === null} onClick={() => choice !== null && answer({ answer: "paid", transaction_id: choice })}>Paid with this one</button>}
+        <button className="btn" type="button" disabled={busy} onClick={() => answer({ answer: "paid", paid_on: paidOn || undefined })}>Paid another way</button>
+        <button className="btn" type="button" disabled={busy} onClick={() => answer({ answer: "not_yet" })}>Not paid yet</button>
+        <ConfirmButton label="This bill has stopped" question={`${p.name} has stopped? It is no longer counted from ${shortDate(p.due_date)} on.`} yes="Yes, it has stopped" no="Keep counting it" onConfirm={() => send({ answer: "stopped" })} />
+      </div>
+      <Said text={error} tone="error" />
+    </div>
+  );
+}
+
+function PaidQuestions({ state, onAnswered }: { state: Loaded<NeedsYouOut>; onAnswered: () => void }) {
+  const [said, setSaid] = useState<Done | null>(null);
+  const list = state.data?.past_due ?? [];
+  if (list.length === 0 && !said) return null;
+  return (
+    <>
+      <h2 className="lab" style={{ margin: "6px 0 0" }}>{PAST_DUE_WORDS}: is it paid? · {list.length}</h2>
+      <DoneLine done={said} />
+      {list.map((p) => (
+        <PaidCard
+          key={p.payment_id}
+          p={p}
+          onDone={(text, answer) => {
+            // "Not paid yet" keeps the card; its sentence does not name the bill, so the name goes first.
+            setSaid({ text: answer === "not_yet" ? `${p.name}: ${text}` : text, to: "/bills", link: "See it on Bills" });
+            state.reload();
+            onAnswered();
+          }}
+        />
+      ))}
+    </>
+  );
+}
 
 // The terms a lease or a charge sheet states, in the order a person reads a lease, each in plain words.
 type TermKey = keyof DocumentTermsFields["terms"];
@@ -573,6 +750,8 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
   const { data, reload, error } = useApi<{ series: SeriesRow[]; pending: number }>("/api/v1/recurring");
   const facts = useApi<{ facts: FactRow[]; pending: number }>("/api/v1/facts?status=pending");
   const pairs = useApi<PairsOut>("/api/v1/pairs");
+  // The app's grouped count, asked again after any answer anywhere in the app.
+  const needs = useApi<NeedsYouOut>("/api/v1/needs-you", { live: true });
   // The count is the engine's (what the tab badge reads too), asked again after every answer here.
   const snap = useApi<Snapshot>("/api/v1/snapshot", { live: true });
   const [approvalsWaiting, setApprovalsWaiting] = useState<number | null>(null);
@@ -593,6 +772,7 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
       reload();
       facts.reload();
       pairs.reload();
+      needs.reload();
       onChanged();
     } catch (e) {
       setLooked({ tone: "error", text: `Couldn't look again: ${(e as Error).message}` });
@@ -600,6 +780,13 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
       setDetecting(false);
     }
   }
+
+  // An answer about mail, a document or a bill changes the grouped count: it is asked again with the list.
+  const factAnswered = () => {
+    facts.reload();
+    needs.reload();
+    onChanged();
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 760 }}>
@@ -609,12 +796,14 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
         <Said text={looked?.text ?? null} tone={looked?.tone} />
         <button className="btn" type="button" onClick={detect} disabled={detecting}>{detecting ? "Looking…" : "Look again"}</button>
       </div>
-      <p style={{ margin: 0, color: "var(--ink-2)", fontSize: 13 }}>First: emails waiting for your OK. Then: details read from your mail and from documents you added. Then: money that moved between your accounts. Then: repeating charges found in your transactions. Once you answer one, every screen uses it.</p>
+      <NeedsPicture state={needs} />
+      <p style={{ margin: 0, color: "var(--ink-2)", fontSize: 13 }}>First: emails waiting for your OK. Then: details read from your mail and from documents you added. Then: bills with no payment seen. Then: money that moved between your accounts. Then: repeating charges found in your transactions. Once you answer one, every screen uses it.</p>
       <Approvals onChanged={onChanged} onCount={setApprovalsWaiting} />
       {facts.error && !facts.data && <Failed error={facts.error} what="what was read from your mail and documents" onRetry={facts.reload} />}
       {facts.data && facts.data.facts.length > 0 && (
         <>
           <h2 className="lab" style={{ margin: 0 }}>From your mail and documents · {facts.data.pending}</h2>
+          <Together state={needs} onAnswered={factAnswered} />
           {facts.data.facts.map((f) =>
             f.kind === "receipt" ? (
               <ReceiptCard
@@ -622,8 +811,7 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
                 f={f as FactWithCandidates}
                 onDone={(done) => {
                   setFactSaid(done);
-                  facts.reload();
-                  onChanged();
+                  factAnswered();
                 }}
               />
             ) : (
@@ -632,8 +820,7 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
                 f={f}
                 onDone={(done) => {
                   setFactSaid(done);
-                  facts.reload();
-                  onChanged();
+                  factAnswered();
                 }}
               />
             ),
@@ -641,13 +828,14 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
         </>
       )}
       <DoneLine done={factSaid} />
+      <PaidQuestions state={needs} onAnswered={onChanged} />
       <Pairs state={pairs} onChanged={onChanged} />
       {error && !data && <Failed error={error} what="the repeating charges" onRetry={reload} />}
       {!data && !error && <Loading what="what needs you" />}
       {data && data.series.length > 0 && <h2 className="lab" style={{ margin: "6px 0 0" }}>From your transactions · {data.pending}</h2>}
       <DoneLine done={seriesSaid} />
-      {data && data.series.length === 0 && facts.data && facts.data.facts.length === 0 && pairs.data && pairs.data.waiting.length === 0 && approvalsWaiting === 0 && (
-        <Empty to="/today" action="Back to Today">Nothing needs you. No email is waiting for your OK, every repeating charge in your transactions has a name, the mail has nothing new, and no money between your accounts is waiting for a yes or no.</Empty>
+      {data && data.series.length === 0 && facts.data && facts.data.facts.length === 0 && needs.data && needs.data.past_due.length === 0 && pairs.data && pairs.data.waiting.length === 0 && approvalsWaiting === 0 && (
+        <Empty to="/today" action="Back to Today">Nothing needs you. No email is waiting for your OK, every repeating charge in your transactions has a name, the mail has nothing new, every bill has a payment seen or an answer from you, and no money between your accounts is waiting for a yes or no.</Empty>
       )}
       {data?.series.map((s) => (
         <Row
@@ -656,6 +844,7 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
           onDone={(done) => {
             setSeriesSaid(done);
             reload();
+            needs.reload();
             onChanged();
           }}
         />

@@ -24,7 +24,8 @@ interface SampleRow {
 }
 
 interface Preview {
-  kind: "csv" | "ofx" | "bills" | "statement";
+  /** "affirm": a PDF that is Affirm's Loans Statement. That answer carries only the file name, `affirm` and a note. */
+  kind: "csv" | "ofx" | "bills" | "statement" | "affirm";
   filename: string;
   columns?: string[];
   mapping?: Record<string, string | null>;
@@ -39,13 +40,14 @@ interface Preview {
   skipped?: number;
   year?: number;
   note?: string;
-  /** A statement PDF that is Affirm's Loans Statement (left out by an older server). */
+  /** True when the PDF is Affirm's Loans Statement, as the server read it. */
   affirm?: boolean;
 }
 
 const isPdf = (f: File) => f.type === "application/pdf" || /\.pdf$/i.test(f.name);
-/** Affirm's Loans Statement is read on Borrowing, loan by loan, not as bank lines. */
-const looksAffirm = (p: Preview, f: File | null) => p.kind === "statement" && (p.affirm === true || (p.affirm === undefined && Boolean(f && /affirm/i.test(f.name))));
+/** Affirm's Loans Statement is read on Borrowing, loan by loan, not as bank lines. The server says so from the
+ * statement's own words, never from the file's name. */
+const isAffirm = (p: Preview) => p.kind === "affirm" || p.affirm === true;
 const lines = (n: number) => `${n} ${n === 1 ? "line" : "lines"}`;
 
 export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
@@ -60,6 +62,8 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
   const [into, setInto] = useState<string>("new");
   const [last, setLast] = useState<{ id: number; summary: string } | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  // The last thing done was reading an Affirm statement, so its result links to Borrowing.
+  const [doneAffirm, setDoneAffirm] = useState(false);
   const accounts = useApi<{ accounts: { id: number; name: string; kind: string; institution: string; active?: boolean }[] }>("/api/v1/accounts");
 
   // A PDF is read with the kind it is (a card statement reads the other way round), so the kind goes with it.
@@ -74,7 +78,8 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
       body.append("file", f);
       if (isPdf(f)) body.append("kind", as);
       const p = await api<Preview>("/api/v1/imports/preview", { method: "POST", body });
-      setPreview(p);
+      // An Affirm answer has no rows to show: it is offered on Borrowing, and nothing below reads its lines.
+      setPreview(isAffirm(p) ? { ...p, total: 0, ready: false, sample: [] } : p);
       if (p.sign) setSign(p.sign);
       if (p.kind === "ofx") {
         setInstitution(p.vendor ?? "");
@@ -107,6 +112,7 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
       const summary = `${file.name}: ${r.loans} pay-later loans read from the Affirm statement; ${r.created} new, ${r.updated} updated, ${r.retired} closed. Borrowing shows each one.`;
       onDone?.(summary);
       setDone(summary);
+      setDoneAffirm(true);
       setPreview(null);
       setFile(null);
     } catch (e) {
@@ -133,6 +139,7 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
       const summary = `${file.name}: ${r.summary}`;
       onDone?.(summary);
       setDone(summary);
+      setDoneAffirm(false);
       setLast(r.import_id ? { id: r.import_id, summary } : null);
       setPreview(null);
       setFile(null);
@@ -150,11 +157,12 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
     const summary = `Undone: ${r.removed} rows from ${last.summary.split(":")[0]} removed; everything else stays.`;
     onDone?.(summary);
     setDone(summary);
+    setDoneAffirm(false);
     setLast(null);
   }
 
-  const needsName = preview !== null && preview.kind !== "bills" && into === "new" && !account.trim();
-  const affirm = preview !== null && looksAffirm(preview, file);
+  const affirm = preview !== null && isAffirm(preview);
+  const needsName = preview !== null && preview.kind !== "bills" && !affirm && into === "new" && !account.trim();
   // One amount column: its sign says which way the money went, and the choice below can flip it. Separate money-out
   // and money-in columns say it themselves.
   const oneColumn = preview?.kind === "csv" && Boolean(preview.mapping?.amount) && !(preview.mapping?.debit && preview.mapping?.credit);
@@ -163,7 +171,7 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
   const flip = oneColumn && preview?.sign !== undefined && sign !== preview.sign ? -1 : 1;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {done && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}><Said text={done} />{/Affirm statement/.test(done) && <Link to="/borrowing#loans" style={{ fontSize: 12, fontWeight: 700 }}>Open Borrowing</Link>}</div>}
+      {done && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}><Said text={done} />{doneAffirm && <Link to="/borrowing#loans" style={{ fontSize: 12, fontWeight: 700 }}>Open Borrowing</Link>}</div>}
       {last && (
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 13 }}>
           <span>Not what you meant?</span>
@@ -181,12 +189,12 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
       {preview && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8, borderTop: "1px solid var(--surface-2)", paddingTop: 8 }}>
           <div style={{ fontSize: 13 }}>
-            <strong>{preview.filename}</strong> · {preview.kind === "statement" ? `a statement PDF · Read ${lines(preview.total)} from the statement (${preview.skipped ?? 0} skipped)` : `${preview.kind === "ofx" ? `a statement from ${preview.vendor || "a vendor"}` : preview.kind === "bills" ? "a bills list" : "a CSV"} · ${preview.total} rows`}
+            <strong>{preview.filename}</strong> · {affirm ? "an Affirm Loans Statement PDF" : preview.kind === "statement" ? `a statement PDF · Read ${lines(preview.total)} from the statement (${preview.skipped ?? 0} skipped)` : `${preview.kind === "ofx" ? `a statement from ${preview.vendor || "a vendor"}` : preview.kind === "bills" ? "a bills list" : "a CSV"} · ${preview.total} rows`}
             {preview.kind === "csv" && preview.mapping && (
               <span style={{ color: "var(--ink-2)" }}> · date in <code>{preview.mapping.date ?? "?"}</code>, amount in <code>{preview.mapping.amount ?? `${preview.mapping.debit ?? "?"} / ${preview.mapping.credit ?? "?"}`}</code>, description in <code>{preview.mapping.description ?? "?"}</code></span>
             )}
           </div>
-          {!preview.ready && (
+          {!preview.ready && !affirm && (
             <div role="alert" style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 13, color: "var(--critical-ink)", fontWeight: 700 }}>
               <OctagonAlert size={14} aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }} />
               <span>{preview.kind === "statement" ? "No line with a date, words and an amount was found in this statement; it cannot be imported as it is. A CSV of the same months from the bank's website will work." : "No date and amount columns were found; this file cannot be imported as it is."}</span>
@@ -255,7 +263,7 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
               </span>
             </div>
           )}
-          {preview.kind !== "bills" && preview.kind !== "statement" && preview.sample.length > 0 && (
+          {preview.kind !== "bills" && preview.kind !== "statement" && !affirm && preview.sample.length > 0 && (
             <div style={{ overflowX: "auto" }}>
               <table className="ledger" style={{ fontSize: 12 }}>
                 <thead><tr><th>Date</th><th>Description</th><th style={{ textAlign: "right" }}>Money out</th><th style={{ textAlign: "right" }}>Money in</th></tr></thead>
@@ -277,7 +285,7 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
             </div>
           )}
           {oneColumn && preview.sample.length > 0 && <span style={{ fontSize: 12, color: "var(--ink-2)" }}>Check a paycheck and a purchase above: a paycheck belongs under Money in. If they are the wrong way round, change "Signs in the file" below; the rows above follow.</span>}
-          {preview.kind !== "bills" && (
+          {preview.kind !== "bills" && !affirm && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px, 100%), 1fr))", gap: 8 }}>
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Into</span>
               <select className="input" value={into} onChange={(e) => setInto(e.target.value)}>
@@ -293,12 +301,13 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
             )}
           </div>
           )}
+          {!affirm && (
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            {!affirm && <button className="btn dark" type="button" disabled={busy || !preview.ready || needsName} onClick={run}>{busy ? "Importing…" : preview.kind === "bills" ? "Put these bills on your bills list" : "Import these rows"}</button>}
-            {affirm && <button className="btn" type="button" disabled={busy || !preview.ready || needsName} onClick={run}>Import its lines as transactions anyway</button>}
+            <button className="btn dark" type="button" disabled={busy || !preview.ready || needsName} onClick={run}>{busy ? "Importing…" : preview.kind === "bills" ? "Put these bills on your bills list" : "Import these rows"}</button>
             {needsName && <span style={{ fontSize: 13, fontWeight: 700, color: "var(--ink)" }}>Name the account first.</span>}
             <span style={{ fontSize: 12, color: "var(--ink-2)", flex: "1 1 260px" }}>{preview.kind === "bills" ? "A bill with the same name is updated, not doubled; a row without a due day is skipped. A copy of everything is kept first, and the import can be undone." : "A row the account already holds, from an earlier file, a bank link or an export, is not added again. A copy of everything is kept first, and the import can be undone."}</span>
           </div>
+          )}
         </div>
       )}
     </div>

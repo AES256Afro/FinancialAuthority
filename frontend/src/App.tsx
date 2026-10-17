@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useRef } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useApi } from "./api";
 import { loadAppearance } from "./appearance";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Shell } from "./components/Shell";
 import { Failed, Loading as Wait } from "./components/State";
 import { Home } from "./pages/Home";
@@ -96,6 +97,7 @@ export default function App() {
   if (role === "shared") {
     return (
       <Shell snapshot={null} me={me.data}>
+        <ErrorBoundary resetKey={pathname}>
         <Suspense fallback={<Loading text="Opening…" />}>
         <Routes>
           <Route path="/shared" element={<Shared me={me.data} />} />
@@ -103,6 +105,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/shared" replace />} />
         </Routes>
         </Suspense>
+        </ErrorBoundary>
       </Shell>
     );
   }
@@ -114,8 +117,10 @@ export default function App() {
     return content(snap);
   };
 
+  // A page that breaks shows a card with Try again in its place; the header and the menu stay.
   return (
     <Shell snapshot={snap} me={me.data}>
+      <ErrorBoundary resetKey={pathname}>
       <Suspense fallback={<Loading text="Opening…" />}>
       <Routes>
         <Route path="/" element={body((s) => <Home snapshot={s} />)} />
@@ -162,6 +167,7 @@ export default function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       </Suspense>
+      </ErrorBoundary>
     </Shell>
   );
 }

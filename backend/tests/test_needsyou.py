@@ -39,7 +39,7 @@ def test_alike_items_are_grouped_and_only_complete_ones_confirm_together(owner: 
     with Session(engine) as session:
         assert {b.name for b in session.exec(select(Bill)).all()} >= {"Example Water", "Example Internet"}
     out = owner.post("/api/v1/needs-you/facts", json={"ids": [ids[2], ids[3]], "action": "reject"}).json()
-    assert len(out["done"]) == 2 and out["triage"]["total"] == 0 and out["triage"]["word"] == "Nothing waits for you."
+    assert len(out["done"]) == 2 and out["triage"]["total"] == 0 and out["triage"]["word"] == "Nothing from your mail, documents or bills waits."
 
 
 def test_a_bill_with_no_payment_seen_is_asked_is_it_paid(owner: TestClient):
@@ -57,6 +57,7 @@ def test_a_bill_with_no_payment_seen_is_asked_is_it_paid(owner: TestClient):
         session.commit()
         late_id, older_id, bill_id = late.id, older.id, bill.id
     tri = owner.get("/api/v1/needs-you").json()
+    assert tri["word"] == "2 things wait here: 2 bills with no payment seen."
     item = next(p for p in tri["past_due"] if p["payment_id"] == late_id)
     assert item["candidates"][0]["merchant"] == "EXAMPLE PWR AUTOPAY"
     out = owner.post(f"/api/v1/needs-you/payments/{late_id}", json={"answer": "paid", "transaction_id": item["candidates"][0]["id"]}).json()
@@ -66,6 +67,7 @@ def test_a_bill_with_no_payment_seen_is_asked_is_it_paid(owner: TestClient):
     with Session(engine) as session:
         assert session.get(Payment, late_id).status == "paid" and session.get(Bill, bill_id).ends_on == date(2026, 9, 2)
     assert owner.post(f"/api/v1/needs-you/payments/{late_id}", json={"answer": "maybe"}).status_code == 400
+    assert owner.post(f"/api/v1/needs-you/payments/{older_id}", json={"answer": "paid", "paid_on": "2099-01-01"}).status_code == 400
 
 
 def test_a_removed_documents_file_stays_while_a_restore_point_names_it(owner: TestClient):
