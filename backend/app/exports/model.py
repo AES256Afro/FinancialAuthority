@@ -9,9 +9,9 @@ from typing import Any
 
 from sqlmodel import Session, select
 
-from ..models import (Account, AccountMove, Advance, BalanceSnapshot, BankLink, Bill, CategoryBudget, Debt, Document, Goal, Holding, HomeCharge, HomeCost, Home, ImportBatch,
-                      Income, InstallmentPlan, MoveItem, OtherAsset, Payment, Paystub, PlannedPayment, RecurringSeries, ReviewRun, Rule, Scenario, Transaction, TransactionPair,
-                      TransactionSplit, Utility)
+from ..models import (Account, AccountMove, Advance, BalanceSnapshot, BankLink, Bill, Business, CategoryBudget, Debt, Document, Goal, Holding, HomeCharge, HomeCost, Home,
+                      ImportBatch, Income, InstallmentPlan, Invoice, MoveItem, OtherAsset, Payment, Paystub, PlannedPayment, RecurringSeries, ReviewRun, Rule, Scenario,
+                      Transaction, TransactionPair, TransactionSplit, Trip, Utility)
 from ..store import get_setting
 
 NOT_ADVICE = "Computed by the engine from your registers and the ledger. Not financial advice."
@@ -145,7 +145,7 @@ def _all_but(model, *left_out: str) -> list[str]:  # noqa: ANN001 - a table mode
 REGISTERS: list[tuple[str, type, list[str]]] = [
     ("accounts", Account, ["id", "name", "institution", "kind", "subtype", "balance", "balance_at", "credit_limit", "spendable", "connector", "active", "shared", "person_id", "created_at"]),
     ("transactions", Transaction, ["id", "date", "posted_date", "account_id", "merchant", "raw_name", "description", "amount", "category", "note", "tags", "pending", "is_transfer",
-                                   "is_card_payment", "is_income", "is_ignored", "source", "import_id", "created_at"]),
+                                   "is_card_payment", "is_income", "is_ignored", "source", "import_id", "business_id", "business_share", "tax_line", "created_at"]),
     ("splits", TransactionSplit, ["id", "transaction_id", "category", "amount", "note"]),
     ("pairs", TransactionPair, _all_but(TransactionPair, "before")),
     ("bills", Bill, _all_but(Bill)),
@@ -174,6 +174,9 @@ REGISTERS: list[tuple[str, type, list[str]]] = [
     ("imports", ImportBatch, _all_but(ImportBatch, "restore_point")),
     ("bank_links", BankLink, ["id", "provider", "institution", "environment", "active", "needs_login", "created_at", "last_sync_at", "last_error"]),
     ("reviews", ReviewRun, ["id", "created_at", "trigger", "provider", "model", "ok", "notes", "cost"]),
+    ("businesses", Business, _all_but(Business)),
+    ("invoices", Invoice, _all_but(Invoice)),
+    ("trips", Trip, _all_but(Trip)),
 ]
 NOT_EXPORTED = {
     "api_keys": "keys: who may get in, and secret", "oauth_clients": "connected apps: who may get in", "oauth_codes": "sign-in codes: secret",
