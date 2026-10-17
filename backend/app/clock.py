@@ -12,7 +12,7 @@ from .config import settings
 def zone():  # noqa: ANN201
     try:
         return ZoneInfo(settings.tz) if settings.tz else None
-    except ZoneInfoNotFoundError:
+    except (ZoneInfoNotFoundError, ValueError):  # a path such as /etc/localtime is not a zone name
         return None
 
 

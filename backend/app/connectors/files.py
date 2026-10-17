@@ -457,6 +457,7 @@ def _import_bills(session: Session, rows: list[dict], *, source_file: str, today
     batch = importlog.begin(session, "bills", source_file)
     bills = list(session.exec(select(Bill).where(Bill.active == True)).all())  # noqa: E712
     created = updated = skipped = 0
+    undated: list[str] = []
     ids: list[int] = []
     changes: list[dict] = []
     for r in rows:
@@ -471,6 +472,13 @@ def _import_bills(session: Session, rows: list[dict], *, source_file: str, today
                         created_on=today)
             session.add(bill)
             session.flush()
+            if bill.cadence not in ("weekly", "biweekly", "monthly") and bill.anchor_date is None:
+                from ..engine.payments import anchor_from_ledger
+
+                bill.anchor_date = anchor_from_ledger(session, bill, today)
+                if bill.anchor_date is None:
+                    undated.append(bill.name)
+                session.add(bill)
             bills.append(bill)
             created += 1
             changes.append({"op": "bill_created", "id": bill.id})
@@ -485,7 +493,8 @@ def _import_bills(session: Session, rows: list[dict], *, source_file: str, today
             session.add(bill)
             updated += 1
         ids.append(int(bill.id or 0))
-    summary = f"{created} bill{'s' if created != 1 else ''} added, {updated} updated" + (f", {skipped} without a due day skipped" if skipped else "")
+    summary = f"{created} bill{'s' if created != 1 else ''} added, {updated} updated" + (f", {skipped} without a due day skipped" if skipped else "") + (
+        f". Needs its next due date on Bills: {', '.join(undated[:5])}" if undated else "")
     importlog.finish(session, batch, changes=changes, summary=summary)  # the restore point is taken here, before anything is committed
     session.commit()
     if created or updated:

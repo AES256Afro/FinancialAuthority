@@ -138,11 +138,14 @@ def file_of(doc: Document) -> bytes:
 
 
 def remove_document(session: Session, doc: Document) -> None:
-    others = session.exec(select(Document).where(Document.sha256 == doc.sha256, Document.id != doc.id)).first()
+    """The row goes now; the file goes only when no other row and no restore point names it, so a restore can
+    bring the document back."""
+    from .. import restore
+
+    sha = doc.sha256
     session.delete(doc)
     session.commit()
-    if others is None:
-        (folder() / f"{doc.sha256}.bin").unlink(missing_ok=True)
+    restore.release_document_file(sha)
 
 
 def doc_out(doc: Document) -> dict[str, Any]:
