@@ -83,3 +83,14 @@ def test_the_notice_letter_leaves_only_as_an_email_you_approve(owner: TestClient
 def test_no_move_planned_says_how_to_start(owner: TestClient):
     plan = owner.get("/api/v1/move/plan").json()
     assert plan["move"] is None and plan["steps"] == [] and "Add your next home on Housing" in plan["note"]
+
+
+def test_steps_due_this_week_are_on_needs_you(owner: TestClient):
+    from app.engine.next_steps import next_steps
+
+    _move(owner)
+    with Session(engine) as session:
+        later = next_steps(session, date(2026, 11, 25))["steps"]
+    ids = {s["id"] for s in later}
+    assert any(i.startswith("move-cost-") for i in ids) and "move-move-day" in ids  # the check on the 28th, the move on the 30th
+    assert not any(i == "move-notice" for i in ids)
