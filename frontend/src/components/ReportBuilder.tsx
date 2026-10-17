@@ -1,13 +1,14 @@
 // Reports you build (M32): pick what the rows are, the period and the picture, and the app sums it; a report saved
 // by name comes back with one tap. Also groups of categories, the year in review, and the totals a tax return asks
 // about. Every figure is the engine's (GET /api/v1/reports/custom…); these pictures draw them and add nothing.
-import { ChartColumn, ChartLine, Table2 } from "lucide-react";
+import { ChartColumn, ChartLine, CircleCheck, CircleDashed, Download, Table2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi, type Loaded } from "../api";
 import { localToday, money, shortDate } from "../format";
 import { ROLES, VALIDATED_ORDER } from "../looks";
 import { ConfirmButton } from "./ConfirmButton";
+import { DEMO } from "../demo/shim";
 import { Empty, Failed, Loading, Said } from "./State";
 
 type Rows = "category" | "group" | "merchant" | "account" | "tag";
@@ -77,6 +78,82 @@ interface TaxTotals {
   tagged_tax: Item | null;
   note: string;
   not_advice: string;
+  // The pack (M50): the paystubs summed, the receipts kept by category, the statements kept month by month.
+  paystubs?: { count: number; gross: number | null; gross_missing: number; net: number; deductions: Item[]; employers: string[] };
+  receipts?: (Item & { tax: boolean })[];
+  statements?: { account: string; months: boolean[]; count: number }[];
+  files?: number;
+  said?: string;
+}
+
+const MONTH_LETTERS = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
+
+/** What the pack holds for the year, picture first: pay as tiles and its deductions as bars, receipts by category,
+ * and a row of twelve months per account, filled where a statement is kept. Then the one download. */
+function TaxPackParts({ data }: { data: TaxTotals }) {
+  const pay = data.paystubs;
+  const sub = { margin: 0, fontSize: 14, fontWeight: 800 } as const;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14, borderTop: "1px solid var(--surface-2)", paddingTop: 12 }}>
+      {data.said && <span style={{ fontSize: 14, fontWeight: 700 }}>{data.said}</span>}
+      {pay && pay.count > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <h3 style={sub}>Pay for the year, from {many(pay.count, "paystub", "paystubs")}</h3>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            {pay.gross !== null && (
+              <div style={{ padding: "8px 12px", borderRadius: 10, background: "var(--surface-2)", minWidth: 130 }}>
+                <div className="lab">Gross pay</div>
+                <strong className="num" style={{ fontSize: 20 }}>{money(pay.gross)}</strong>
+                {pay.gross_missing > 0 && <div style={{ fontSize: 11, color: "var(--muted)" }}>{many(pay.gross_missing, "stub", "stubs")} without a gross figure</div>}
+              </div>
+            )}
+            <div style={{ padding: "8px 12px", borderRadius: 10, background: "var(--surface-2)", minWidth: 130 }}>
+              <div className="lab">Net pay</div>
+              <strong className="num" style={{ fontSize: 20 }}>{money(pay.net)}</strong>
+            </div>
+          </div>
+          {pay.deductions.length > 0 && (
+            <>
+              <span style={{ fontSize: 13, color: "var(--ink-2)" }}>Taken from pay, summed from the paystubs:</span>
+              <Bars items={pay.deductions} share={false} noun={["paystub", "paystubs"]} />
+            </>
+          )}
+        </div>
+      )}
+      {data.receipts && data.receipts.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <h3 style={sub}>Receipts kept, by the purchase's category</h3>
+          <Bars items={data.receipts.map((r) => ({ ...r, name: r.tax ? `${r.name} · tax category` : r.name }))} share={false} noun={["receipt", "receipts"]} />
+        </div>
+      )}
+      {data.statements && data.statements.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <h3 style={sub}>Statements kept, month by month</h3>
+          {data.statements.map((st) => (
+            <div key={st.account} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 10px" }}>
+              <span style={{ flex: "0 1 160px", minWidth: 0, fontSize: 13, fontWeight: 700, overflowWrap: "anywhere" }}>{st.account}</span>
+              <div role="img" aria-label={`${st.account}: ${st.count} of 12 months kept`} style={{ display: "grid", gridTemplateColumns: "repeat(12, 22px)", gap: 3 }}>
+                {st.months.map((kept, i) => (
+                  <span key={i} title={`${MONTH_LETTERS[i]}: ${kept ? "kept" : "not kept"}`} style={{ height: 22, borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 800, background: kept ? "var(--ink-2)" : "transparent", color: kept ? "var(--inverse)" : "var(--muted)", border: kept ? 0 : "1px dashed var(--hairline)", boxSizing: "border-box" }}>{MONTH_LETTERS[i]}</span>
+                ))}
+              </div>
+            </div>
+          ))}
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12, color: "var(--ink-2)" }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><CircleCheck size={13} aria-hidden="true" style={{ display: "inline-block" }} /> Filled: a statement is kept</span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><CircleDashed size={13} aria-hidden="true" style={{ display: "inline-block" }} /> Dashed: none for that month</span>
+          </div>
+        </div>
+      )}
+      <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
+        <a className="btn dark" href={DEMO ? undefined : `/api/v1/reports/custom/tax/pack?year=${data.year}`} download={`tax-pack-${data.year}.zip`} aria-disabled={DEMO}
+          style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6, opacity: DEMO ? 0.5 : 1 }}>
+          <Download size={16} aria-hidden="true" /> Download the {data.year} tax pack (.zip)
+        </a>
+        <span style={{ fontSize: 12, color: "var(--muted)" }}>A summary to read, the same as a spreadsheet, and {many(data.files ?? 0, "kept file", "kept files")} in folders: receipts by category, statements by account, paystubs by date.{DEMO ? " Not in the demo." : ""}</span>
+      </div>
+    </div>
+  );
 }
 
 const ROW_WORD: Record<Rows, string> = { category: "Category", group: "Your groups", merchant: "Merchant", account: "Account", tag: "Tag" };
@@ -170,7 +247,7 @@ function YearPick({ value, onChange }: { value: number; onChange: (year: number)
 
 /** One bar per row, biggest first (the engine sorts them). Money that came in is drawn in the paycheck colour and
  * says "came in" in words. */
-function Bars({ items, share, limit = 12 }: { items: Item[]; share: boolean; limit?: number }) {
+function Bars({ items, share, limit = 12, noun = ["transaction", "transactions"] }: { items: Item[]; share: boolean; limit?: number; noun?: [string, string] }) {
   const [all, setAll] = useState(false);
   const shown = all ? items : items.slice(0, limit);
   const max = Math.max(1, ...items.map((i) => Math.abs(i.total)));
@@ -182,7 +259,7 @@ function Bars({ items, share, limit = 12 }: { items: Item[]; share: boolean; lim
           <div key={i.name} style={{ display: "grid", gridTemplateColumns: "minmax(0, 11rem) minmax(40px, 1fr) minmax(5.5rem, auto)", gap: 10, alignItems: "center", fontSize: 13 }}>
             <span style={{ minWidth: 0, display: "flex", flexDirection: "column" }}>
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={i.name}>{i.name}</span>
-              <span style={{ fontSize: 11, color: "var(--muted)" }}>{many(i.count, "transaction", "transactions")}</span>
+              <span style={{ fontSize: 11, color: "var(--muted)" }}>{many(i.count, noun[0], noun[1])}</span>
             </span>
             <div aria-hidden="true" style={{ height: 14, background: "var(--surface-2)", borderRadius: 4 }}>
               <div style={{ width: `${(Math.abs(i.total) / max) * 100}%`, height: "100%", background: came ? "var(--paycheck)" : "var(--bill)", borderRadius: 4 }} />
@@ -772,6 +849,7 @@ export function TaxTime() {
             </>
           )}
           <span style={{ fontSize: 13 }}>{data.note} <Link to="/transactions" style={{ fontWeight: 700 }}>Open Transactions</Link></span>
+          <TaxPackParts data={data} />
           <div style={{ fontSize: 12, color: "var(--muted)" }}>{data.not_advice}</div>
         </div>
       )}
