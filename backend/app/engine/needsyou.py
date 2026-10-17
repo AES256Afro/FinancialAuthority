@@ -8,7 +8,10 @@ not yet, or the bill has stopped.
 
 Answering many together follows one plan (plan_many), shown before it is done: a bill's notices count only by the
 newest (an older one is set aside, so an old amount never replaces a newer one, in whatever order they are sent),
-and a notice more than sixty days old never starts a new bill (it is most likely a service that has stopped)."""
+and a notice more than sixty days old never starts a new bill (it is most likely a service that has stopped). A notice
+from someone already counted another way (the landlord on Housing, a card or loan on Debts, an advance or a pay-later
+lender on Borrowing) never becomes a bill of its own in bulk, since it would be counted twice; it waits on its card,
+which says where it is counted."""
 
 from __future__ import annotations
 
@@ -18,7 +21,7 @@ from typing import Any
 
 from sqlmodel import Session, select
 
-from ..models import Account, Bill, ExtractedFact, MessageRef, Payment, Transaction
+from ..models import Account, Advance, Bill, Debt, ExtractedFact, Home, InstallmentPlan, MessageRef, Payment, Transaction
 
 GROUP_WORDS = {
     "bill_due": "Bills from your mail", "past_due": "Past-due notices", "paystub": "Paystubs", "statement": "Statements", "installment": "Pay-later plans",
@@ -59,6 +62,39 @@ def _notice_day(fact: ExtractedFact, fields: dict[str, Any], ref: MessageRef | N
     return fact.created_at.date() if fact.created_at else None
 
 
+def elsewhere_index(session: Session) -> list[tuple[str, str]]:
+    """Who is already counted another way, each with where: (name key, sentence)."""
+    from .recurring import merchant_key
+
+    out: list[tuple[str, str]] = []
+    for h in session.exec(select(Home).where(Home.active == True)).all():  # noqa: E712
+        for n in (h.name, h.payee):
+            out.append((merchant_key(n or ""), f"the rent for {h.name} is counted from Housing"))
+    for d in session.exec(select(Debt).where(Debt.active == True)).all():  # noqa: E712
+        out.append((merchant_key(d.name), f"{d.name} is counted on Debts"))
+    for a in session.exec(select(Account).where(Account.active == True, Account.kind.in_(("card", "loan", "bnpl", "advance")))).all():  # type: ignore[attr-defined]  # noqa: E712
+        for n in (a.name, a.institution):
+            out.append((merchant_key(n or ""), f"{a.name} is counted on Debts"))
+    for p in session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all():  # noqa: E712
+        out.append((merchant_key(p.provider), f"pay-later plans with {p.provider} are counted on Borrowing"))
+    for v in session.exec(select(Advance)).all():
+        out.append((merchant_key(v.provider), f"advances from {v.provider} are counted on Borrowing"))
+    return [(k, said) for k, said in out if len(k) >= 4]
+
+
+def counted_elsewhere(index: list[tuple[str, str]], name: str) -> str | None:
+    """Where a notice's sender is already counted, when it is; the same loose match a bill's name gets."""
+    from .recurring import merchant_key
+
+    key = merchant_key(name)
+    if len(key) < 4:
+        return None
+    for k, said in index:
+        if k == key or k.startswith(key) or key.startswith(k):
+            return said
+    return None
+
+
 def _names(xs: list[str]) -> str:
     return ", ".join(xs[:4]) + (f" and {len(xs) - 4} more" if len(xs) > 4 else "")
 
@@ -70,6 +106,7 @@ def plan_many(session: Session, facts: list[ExtractedFact], today: date, *, loos
     from .recurring import bill_named, merchant_key
 
     bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
+    elsewhere = elsewhere_index(session)
     refs: dict[int, MessageRef | None] = {}
 
     def ref_of(f: ExtractedFact) -> MessageRef | None:
@@ -108,6 +145,10 @@ def plan_many(session: Session, facts: list[ExtractedFact], today: date, *, loos
                 step.update(do="set_aside", why=f"over {OLD_NOTICE_DAYS} days old, and no bill named {name} is on file: most likely a service that has stopped", name=name)
             elif bill is None and f.kind != "bill_due":
                 step.update(do="own_card", why=f"no bill named {name} is on file to change", name=name)
+            elif bill is not None and bill.home_id:
+                step.update(do="own_card", why=f"{bill.name} is made from Housing; change the rent there", name=name)
+            elif bill is None and (where := counted_elsewhere(elsewhere, name)):
+                step.update(do="own_card", why=f"{where}; as a bill it would count twice", name=name)
             else:
                 step.update(do="apply", name=bill.name if bill else name, bill_id=bill.id if bill else None, new=bill is None)
         else:

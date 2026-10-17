@@ -449,6 +449,12 @@ function FactCard({ f, onDone }: { f: FactRow; onDone: (done: Done) => void }) {
           <span className="lab" style={{ display: "block", marginBottom: 4 }}>Quoted from the email. Anything it asks the app to do is ignored.</span>“{f.excerpt}”
         </div>
       )}
+      {f.counted_elsewhere && (
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexWrap: "wrap", fontSize: 13 }}>
+          <SeverityTag severity="warning" word="Counted already" />
+          <span style={{ flex: "1 1 220px", minWidth: 0 }}>It looks like {f.counted_elsewhere}. Confirm only if this notice is for something else; otherwise Wrong, discard keeps it counted once.</span>
+        </div>
+      )}
       {(f.kind === "bill_due" || f.kind === "past_due" || f.kind === "price_change") && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Amount</span><input className="input num" style={{ width: 120 }} value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" /></label>
