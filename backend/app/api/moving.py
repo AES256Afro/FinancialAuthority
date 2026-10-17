@@ -54,3 +54,14 @@ def send_letter(body: LetterIn, session: Session = Depends(get_session), princip
     services.audit(session, client=principal.name, client_kind=principal.kind, tool="move_notice_queued", rows=1)
     return {"approval": approvals.out(row), "plan": moving_plan(session, today()),
             "said": "Queued on Needs you. It is sent only when you approve it there." if row.status == "pending" else f"The send is {row.status}."}
+
+
+# Leaving the advance apps (M46) sits beside the move: both are dated plans built from the same paychecks.
+exit_router = APIRouter(prefix="/api/v1/borrowing", tags=["borrowing"])
+
+
+@exit_router.get("/exit")
+def advance_exit(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+    from ..engine.advance_exit import exit_plan
+
+    return exit_plan(session, today())
