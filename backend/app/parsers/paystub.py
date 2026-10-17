@@ -38,18 +38,56 @@ DEDUCTION_LABELS = [
 
 MAX_PDF_PAGES = 40
 MAX_PDF_TEXT = 2_000_000
+PDF_STREAM_LIMIT = 3 * 1024 * 1024  # what one content stream may inflate to (a real page is far less)
+PDF_SECONDS = 6.0  # what reading one file may take
 
 
-def pdf_text(data: bytes) -> str:
-    """Text from a PDF, page by page. A scanned stub gives nothing here; OCR is a later milestone."""
+def _bound_pypdf() -> None:
+    """pypdf's own limits on what a stream may inflate to, made small: a crafted file is bounded by what it expands
+    to, not only by what it prints."""
+    import pypdf.filters as f
+
+    for name in ("ZLIB_MAX_OUTPUT_LENGTH", "LZW_MAX_OUTPUT_LENGTH", "RUN_LENGTH_MAX_OUTPUT_LENGTH", "MAX_DECLARED_STREAM_LENGTH", "MAX_ARRAY_BASED_STREAM_OUTPUT_LENGTH", "JBIG2_MAX_OUTPUT_LENGTH"):
+        if hasattr(f, name) and getattr(f, name) > PDF_STREAM_LIMIT:
+            setattr(f, name, PDF_STREAM_LIMIT)
+
+
+def pdf_pages(data: bytes, max_pages: int = MAX_PDF_PAGES, seconds: float = PDF_SECONDS, page_chars: int = MAX_PDF_TEXT) -> list[str]:
+    """Each page's text, read under a budget: at most `max_pages` pages, each content stream at most
+    PDF_STREAM_LIMIT once inflated, a stream that several pages share read once, and no more than `seconds` in
+    all (the pages read by then are kept). A bad or hostile file is still just data."""
+    import time
+
+    pages: list[str] = []
     try:
         from pypdf import PdfReader
 
+        _bound_pypdf()
         reader = PdfReader(io.BytesIO(data))
-        # A stub or a statement is a few pages; a document from the mail is read no further than forty.
-        return "\n".join((page.extract_text() or "") for page in list(reader.pages)[:MAX_PDF_PAGES])[:MAX_PDF_TEXT]
+        started, seen = time.monotonic(), set()
+        for page in list(reader.pages)[:max_pages]:
+            if time.monotonic() - started > seconds:
+                break
+            raw = page.raw_get("/Contents") if "/Contents" in page else None
+            refs = raw if isinstance(raw, list) else [raw]
+            key = tuple((getattr(r, "idnum", None), getattr(r, "generation", None)) for r in refs if r is not None)
+            if key and all(k[0] is not None for k in key) and key in seen:
+                pages.append("")  # the same content as a page already read: never inflated twice
+                continue
+            seen.add(key)
+            try:
+                pages.append((page.extract_text() or "")[:page_chars])
+            except Exception:  # noqa: BLE001 - one page that will not read leaves the others
+                pages.append("")
     except Exception:  # noqa: BLE001  (a bad file is still just data)
-        return ""
+        return pages
+    return pages
+
+
+def pdf_text(data: bytes) -> str:
+    """Text from a PDF, page by page, under the same budget. A scanned stub gives nothing here; OCR is a later
+    milestone."""
+    return "\n".join(pdf_pages(data))[:MAX_PDF_TEXT]
 
 
 def looks_like_paystub(text: str) -> bool:

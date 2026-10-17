@@ -25,6 +25,9 @@ from ..models import Document, ExtractedFact
 MAX_BYTES = 25 * 1024 * 1024
 MAX_PAGES = 60
 MAX_PAGE_CHARS = 20_000
+XLSX_MAX_EXPANDED = 16 * 1024 * 1024  # what a spreadsheet's parts may add up to, unzipped
+XLSX_MAX_ROWS = 5_000
+XLSX_MAX_COLS = 60
 KINDS = ("lease", "addendum", "charges", "welcome", "utility_terms", "card_agreement", "receipt", "statement", "paystub", "other")
 TYPES = {"pdf": "application/pdf", "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "txt": "text/plain", "csv": "text/csv", "md": "text/plain",
          "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
@@ -51,22 +54,31 @@ def read_pages(raw: bytes, ext: str) -> list[str]:
     pages: list[str] = []
     try:
         if ext == "pdf":
-            from pypdf import PdfReader
+            from ..parsers.paystub import pdf_pages
 
-            reader = PdfReader(io.BytesIO(raw))
-            pages = [(p.extract_text() or "")[:MAX_PAGE_CHARS] for p in list(reader.pages)[:MAX_PAGES]]
+            pages = pdf_pages(raw, max_pages=MAX_PAGES, seconds=10.0, page_chars=MAX_PAGE_CHARS)
         elif ext == "xlsx":
+            import zipfile
+
             from openpyxl import load_workbook
 
+            # A spreadsheet is a zip: what it expands to is checked before it is opened, and rows are counted
+            # whether or not they hold anything, so a tiny file can neither fill the memory nor loop.
+            with zipfile.ZipFile(io.BytesIO(raw)) as z:
+                expanded = sum(i.file_size for i in z.infolist())
+            if expanded > XLSX_MAX_EXPANDED:
+                return []
             wb = load_workbook(io.BytesIO(raw), data_only=True, read_only=True)
             for ws in list(wb.worksheets)[:MAX_PAGES]:
-                lines = [ws.title]
-                for row in ws.iter_rows(values_only=True):
-                    cells = [str(v) for v in row if v not in (None, "")]
-                    if cells:
-                        lines.append("  ".join(cells))
-                    if sum(len(x) for x in lines) > MAX_PAGE_CHARS:
+                lines, size = [ws.title], 0
+                for n, row in enumerate(ws.iter_rows(values_only=True)):
+                    if n >= XLSX_MAX_ROWS or size > MAX_PAGE_CHARS:
                         break
+                    cells = [str(v) for v in row[:XLSX_MAX_COLS] if v not in (None, "")]
+                    if cells:
+                        line = "  ".join(cells)
+                        lines.append(line)
+                        size += len(line)
                 pages.append("\n".join(lines)[:MAX_PAGE_CHARS])
         elif ext in ("txt", "csv", "md"):
             text = raw.decode("utf-8-sig", errors="replace")
@@ -197,17 +209,20 @@ def search(session: Session, query: str, limit: int = 10) -> list[dict[str, Any]
     return hits[:limit]
 
 
-MONEY = r"\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)"
+MONEY = r"\$ ?(\d{1,3}(?:,\d{3})+(?:\.\d{2})?|\d+(?:\.\d{2})?)(?![\d,])"
 TERMS = {
-    "rent": re.compile(r"(?:monthly\s+)?rent(?:\s+amount)?\s*(?:of|is|:)?\s*" + MONEY, re.IGNORECASE),
+    "rent": re.compile(r"(?<!pet )(?<!pet\t)\b(?:monthly[ \t]{1,3})?rent(?:[ \t]{1,3}amount)?[ \t]{0,3}(?:of|is|:)?[ \t]{0,3}" + MONEY, re.IGNORECASE),
     "pet_rent": re.compile(r"pet\s+rent[^\n$]{0,30}" + MONEY, re.IGNORECASE),
     "deposit": re.compile(r"security\s+deposit[^\n$]{0,40}" + MONEY, re.IGNORECASE),
     "late_fee": re.compile(r"late\s+(?:fee|charge)[^\n$]{0,60}" + MONEY, re.IGNORECASE),
-    "notice_days": re.compile(r"(\d{2,3})\s*(?:-|\s)?\s*days?['’]?\s+(?:written\s+)?notice", re.IGNORECASE),
-    "due_day": re.compile(r"(?:rent\s+is\s+)?due\s+on\s+(?:or\s+before\s+)?the\s+(\d{1,2})(?:st|nd|rd|th)", re.IGNORECASE),
-    "grace_days": re.compile(r"(?:grace\s+period\s+of\s+|after\s+the\s+)(\d{1,2})(?:\s+days|(?:st|nd|rd|th))", re.IGNORECASE),
-    "ends_on": re.compile(r"(?:lease\s+(?:term\s+)?(?:ends?|expires?|ending|expiration)(?:\s+on)?|end\s+date)[:\s]+([A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4}|\d{1,2}/\d{1,2}/\d{4})", re.IGNORECASE),
+    "notice_days": re.compile(r"(\d{2,3})[ \t-]{0,3}days?['’]?[ \t]{1,3}(?:written[ \t]{1,3})?notice", re.IGNORECASE),
+    "due_day": re.compile(r"(?:rent[ \t]{1,3}is[ \t]{1,3})?due[ \t]{1,3}on[ \t]{1,3}(?:or[ \t]{1,3}before[ \t]{1,3})?the[ \t]{1,3}(\d{1,2})(?:st|nd|rd|th)", re.IGNORECASE),
+    "grace_days": re.compile(r"(?:grace[ \t]{1,3}period[ \t]{1,3}of[ \t]{1,3}|after[ \t]{1,3}the[ \t]{1,3})(\d{1,2})(?:[ \t]{1,3}days|(?:st|nd|rd|th))", re.IGNORECASE),
+    "ends_on": re.compile(r"(?:lease[ \t]{1,3}(?:term[ \t]{1,3})?(?:ends?|expires?|ending|expiration)(?:[ \t]{1,3}on)?|end[ \t]{1,3}date)[: \t]{1,4}([A-Za-z]{3,9}\.? \d{1,2},? \d{4}|\d{1,2}/\d{1,2}/\d{4})", re.IGNORECASE),
 }
+
+
+TERMS_SCAN_CHARS = 200_000  # a lease states its terms in its first pages; the rest is not scanned
 
 
 def terms_of(pages: list[str]) -> dict[str, Any]:
@@ -215,11 +230,16 @@ def terms_of(pages: list[str]) -> dict[str, Any]:
     from ..mail.classify import parse_date_text
 
     found: dict[str, Any] = {}
+    budget = TERMS_SCAN_CHARS
     for n, page in enumerate(pages, start=1):
+        if budget <= 0:
+            break
+        text = page[:min(MAX_PAGE_CHARS, budget)]
+        budget -= len(text)
         for key, pattern in TERMS.items():
             if key in found:
                 continue
-            m = pattern.search(page[:MAX_PAGE_CHARS])
+            m = pattern.search(text)
             if not m:
                 continue
             raw = m.group(1)
@@ -253,8 +273,9 @@ def offer_terms(session: Session, doc: Document, pages: list[str]) -> ExtractedF
     return fact
 
 
-def apply_terms(session: Session, fields: dict[str, Any]) -> str:
-    """Confirmed terms onto the home they belong to. Returns what changed, for the record."""
+def apply_terms(session: Session, fields: dict[str, Any], choose: dict[str, Any] | None = None) -> str:
+    """Confirmed terms onto the home they belong to. `choose` (from the owner) leaves a term out (None) or gives it a
+    corrected value; terms it does not name apply as read. Returns what changed, for the record."""
     from datetime import date as _date
 
     from ..models import Home, HomeCharge
@@ -266,7 +287,14 @@ def apply_terms(session: Session, fields: dict[str, Any]) -> str:
     home = session.get(Home, int(attach.split(":")[1]))
     if home is None:
         return ""
-    terms = fields.get("terms") or {}
+    terms = dict(fields.get("terms") or {})
+    for key, value in (choose or {}).items():
+        if key not in TERMS:
+            continue
+        if value is None:
+            terms.pop(key, None)
+        else:
+            terms[key] = {**(terms.get(key) or {}), "value": value}
     changed = []
     for key in ("due_day", "grace_days", "notice_days"):
         if key in terms:

@@ -7,6 +7,7 @@ sign in by itself. Every call is audited. Tool names use underscores; the docs w
 from __future__ import annotations
 
 import logging
+import re
 from contextvars import ContextVar
 from typing import Any
 from datetime import date
@@ -90,8 +91,9 @@ def _read_message_plain(session, message_id: int) -> dict:  # noqa: ANN001
 # What each redaction level holds back, applied to every tool's answer. "merchants": the names of payees stay,
 # the words around them (descriptions, notes, subjects, excerpts) go. "aggregates": every name goes too; only
 # amounts, dates, kinds and categories are left.
-LOOSE_KEYS = {"description", "note", "raw_name", "subject", "sender_name", "excerpt", "body", "draft", "tags", "memo"}
-NAME_KEYS = LOOSE_KEYS | {"merchant", "name", "payee", "account", "institution", "to", "from", "title", "headline", "text", "label", "instruction", "reason", "what", "names", "merchants", "provider", "employer", "summary"}
+LOOSE_KEYS = {"description", "note", "raw_name", "subject", "sender_name", "excerpt", "body", "draft", "tags", "memo", "sender", "url", "host", "link", "snippet", "boxed", "quote"}
+NAME_KEYS = LOOSE_KEYS | {"merchant", "name", "payee", "account", "institution", "to", "from", "title", "headline", "text", "label", "instruction", "reason", "what", "names", "merchants", "provider", "employer", "summary",
+                          "word", "billing_company", "missing", "costs_missing", "costs_undated", "undated", "filename", "order_no", "person"}
 
 
 def redact(value: Any, level: str, key: str = "") -> Any:
@@ -490,13 +492,9 @@ def build_server() -> MCPServer:
 
     @_tool(server, name="purchase_check", annotations=READ_ONLY)
     def purchase_check_tool(amount: float, on: str | None = None, installments: int | None = None) -> dict:
-        if installments is not None and not 1 <= installments <= 24:
-            return {"error": "installments is between 1 and 24"}
-        if not (0 <= amount <= 1_000_000):
-            return {"error": "the amount is between 0 and a million"}
-        """Should the owner buy this? Yes, wait or no: whether the purchase keeps the honest line above zero
-        through the horizon, the first thing it would break, and the first date it would pass; "outside" when a
-        charge falls past the end of the line, which the plan cannot check. Explain the verdict with the figures
+        """Should the owner buy this? Yes, wait or no: whether the purchase keeps the balance, at the usual
+        spending, above zero through the horizon, the first thing it would break, and the first date it would pass;
+        "outside" when a charge falls past the end of what the plan can see. Explain the verdict with the figures
         returned; do not compute your own.
 
         Args:
@@ -504,6 +502,10 @@ def build_server() -> MCPServer:
             on: The day of the purchase, YYYY-MM-DD; today if omitted.
             installments: For a pay-in-four plan, the number of installments (every fourteen days).
         """
+        if installments is not None and not 1 <= installments <= 24:
+            return {"error": "installments is between 1 and 24"}
+        if not (0 <= amount <= 1_000_000):
+            return {"error": "the amount is between 0 and a million"}
         from datetime import date as _date
 
         from .engine.decisions import purchase_check
@@ -787,6 +789,9 @@ def build_server() -> MCPServer:
                 for r in rows:
                     r["excerpt"] = ""
                     r["message"] = None
+                    # Only amounts and dates leave a fact for a redacted caller: never a link, a sender or a name.
+                    r["fields"] = {k: v for k, v in (r.get("fields") or {}).items() if isinstance(v, int | float) and not isinstance(v, bool) or (isinstance(v, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", v))}
+                    r.pop("candidates", None)
             services.audit(session, client=client, client_kind="key", tool="facts_pending", rows=len(rows), redaction=redaction)
             return {"facts": rows, "pending": len(rows)}
 
@@ -803,6 +808,8 @@ def build_server() -> MCPServer:
             due_date: Override the due date, YYYY-MM-DD.
         """
         from datetime import date as _date
+
+        from fastapi import HTTPException
 
         from .api.mail import ConfirmIn, apply_fact
         from .models import ExtractedFact, MessageRef, utcnow
@@ -821,6 +828,8 @@ def build_server() -> MCPServer:
             try:
                 applied = apply_fact(session, fact, ref, body, owner=False) if apply else ""
             except HTTPException as error:
+                session.rollback()
+                services.audit(session, client=client, client_kind="key", tool="facts_confirm_refused", args={"fact_id": fact_id}, rows=0, redaction=redaction)
                 return {"error": str(error.detail)}
             fact.status, fact.applied_to, fact.resolved_at = ("applied" if applied else "confirmed"), applied, utcnow()
             session.add(fact)

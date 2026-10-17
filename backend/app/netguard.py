@@ -37,6 +37,18 @@ def check_url(url: str) -> str:
     return host
 
 
+def _check_peer(response: httpx.Response, host: str) -> None:
+    """The address the connection really reached, checked like the name was: a name that answers differently the
+    second time (DNS rebinding) is refused before anything is read."""
+    stream = response.extensions.get("network_stream")
+    peer = stream.get_extra_info("server_addr") if stream is not None and hasattr(stream, "get_extra_info") else None
+    if not peer:
+        return  # a test transport, or a transport that does not say
+    address = ipaddress.ip_address(peer[0])
+    if not address.is_global or address.is_multicast:
+        raise Refused(f"{host} led to an address inside a private network")
+
+
 def safe_get(url: str, *, max_bytes: int = 50 * 1024 * 1024, timeout: float = 60.0, client: httpx.Client | None = None) -> tuple[bytes, list[str]]:
     """The body at `url`, and every host visited on the way."""
     hosts: list[str] = []
@@ -46,6 +58,7 @@ def safe_get(url: str, *, max_bytes: int = 50 * 1024 * 1024, timeout: float = 60
         for _ in range(MAX_HOPS + 1):
             hosts.append(check_url(url))
             with http.stream("GET", url) as response:
+                _check_peer(response, hosts[-1])
                 if response.is_redirect:
                     location = response.headers.get("location")
                     if not location:

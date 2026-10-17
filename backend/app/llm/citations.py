@@ -12,7 +12,7 @@ import re
 from typing import Any
 
 # $1,234.56 · $1,234 · 1,234.56 · 1234.56 · 12.5% · plain integers of three digits or more
-AMOUNT = re.compile(r"(?<![\w.])(?:\$\s?)?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?%?(?![\w.])")
+AMOUNT = re.compile(r"(?<![\w.])(?:\$\s?)?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?%?(?!\w|\.\d)")  # a period that ends a sentence ends the figure
 DATE_LIKE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b")
 
 
