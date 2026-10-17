@@ -315,6 +315,76 @@ def build_server() -> MCPServer:
             services.audit(session, client=client, client_kind="key", tool="borrowing", rows=len(out["advances"]) + len(out["installments"]), redaction=redaction)
             return out
 
+    @_tool(server, name="borrowing_plan", annotations=READ_ONLY)
+    def borrowing_plan_tool() -> dict:
+        """The pay-later loans as one plan the engine worked out: what they take each month (the stairs), the finish
+        line, the interest still ahead on each, whether there is room beyond the schedule, and the order for any extra
+        with the reason it was chosen. Explain with these figures and steps; never compute your own, never call it
+        advice."""
+        from .engine.borrowing_plan import borrowing_plan
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            out = borrowing_plan(session, _today())
+            services.audit(session, client=client, client_kind="key", tool="borrowing_plan", rows=len(out["loans"]), redaction=redaction)
+            return out
+
+    @_tool(server, name="data_check", annotations=READ_ONLY)
+    def data_check_tool() -> dict:
+        """What may be counted twice or may not be genuine (the same bill in two registers, bills that look alike, the
+        same purchase from two sources, mail whose sender could not be confirmed), and what the app set right on its
+        own. Describe the findings; only the owner answers them, in the app."""
+        from .engine.datacheck import overview
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            out = overview(session, _today())
+            services.audit(session, client=client, client_kind="key", tool="data_check", rows=len(out["findings"]), redaction=redaction)
+            return out
+
+    @_tool(server, name="business_books", annotations=READ_ONLY)
+    def business_books_tool(year: int | None = None) -> dict:
+        """Each business's year by the lines of Schedule C: income, costs by line, profit, self-employment tax, miles,
+        and who should send a 1099-NEC; plus the setup steps and whether each is done. General rules with their
+        sources, never tax advice; a preparer decides."""
+        from sqlmodel import select as _select
+
+        from .engine.business import books, guide
+        from .models import Business
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            rows = session.exec(_select(Business).where(Business.active == True)).all()  # noqa: E712
+            out = {"businesses": [books(session, b, year or _today().year) for b in rows], "guide": guide(session, rows[0] if rows else None)}
+            services.audit(session, client=client, client_kind="key", tool="business_books", rows=len(rows), redaction=redaction)
+            return out
+
+    @_tool(server, name="write_off_finder", annotations=READ_ONLY)
+    def write_off_finder_tool(years: int = 3) -> dict:
+        """Purchases that could be business costs if they were for a business, by kind, each with its rule and source,
+        whether a receipt is kept, equipment already owned, start-up costs, and what never counts. They are
+        possibilities for the owner to answer, not claims; say so."""
+        from .engine.business import finder
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            out = finder(session, _today(), max(1, min(10, int(years))))
+            services.audit(session, client=client, client_kind="key", tool="write_off_finder", rows=sum(g["count"] for g in out["groups"]), redaction=redaction)
+            return out
+
+    @_tool(server, name="tax_year", annotations=READ_ONLY)
+    def tax_year_tool(year: int | None = None) -> dict:
+        """The tax year as it goes: its dates, the businesses' profit and self-employment tax, the standard deduction
+        beside what could be itemized, personal deductions to check with their questions (car loan interest), what never
+        counts, and how far back an amended return reaches. General rules with sources; never tax advice."""
+        from .engine.taxcenter import tax_year
+
+        client, redaction = _caller()
+        with session_scope() as session:
+            out = tax_year(session, _today(), year)
+            services.audit(session, client=client, client_kind="key", tool="tax_year", rows=len(out["dates"]), redaction=redaction)
+            return out
+
     @_tool(server, name="scenario_run", annotations=READ_ONLY)
     def scenario_run_tool(move_date: str, new_rent: float | None = None, overlap_months: int = 0, one_offs: list[dict] | None = None, recurring: list[dict] | None = None, stop_bills: list[int] | None = None, name: str = "Scenario") -> dict:
         """A what-if over the owner's real registers, nothing changed: a move or any dated change. Returns the

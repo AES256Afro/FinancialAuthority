@@ -62,3 +62,14 @@ def test_the_pack_holds_a_summary_and_the_files_and_only_the_owner_gets_it(owner
     anon = TestClient(client.app)
     assert anon.get("/api/v1/reports/custom/tax/pack?year=2026", headers={"Authorization": f"Bearer {reader}"}).status_code == 403
     assert anon.get("/api/v1/reports/custom/tax?year=2026", headers={"Authorization": f"Bearer {reader}"}).status_code == 200
+
+
+
+def test_the_pack_carries_each_business_by_its_schedule_c_lines(owner: TestClient):
+    bid = owner.post("/api/v1/business", json={"name": "Example Studio"}).json()["businesses"][0]["id"]
+    owner.post(f"/api/v1/business/{bid}/trips", json={"day": "2026-03-02", "miles": 10, "purpose": "Client meeting"})
+    got = owner.get("/api/v1/reports/custom/tax/pack?year=2026")
+    z = zipfile.ZipFile(io.BytesIO(got.content))
+    lines = z.read("business/Example Studio/schedule-c-lines.csv").decode()
+    assert "9,Car and truck,7.25,1" in lines and "31,Net profit,-7.25" in lines
+    assert "Client meeting" in z.read("business/Example Studio/mileage-log.csv").decode()
