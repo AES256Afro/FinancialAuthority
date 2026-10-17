@@ -6,11 +6,11 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from .. import auth, services
 from ..db import get_session
-from ..engine.needsyou import answer_payment, complete, triage
+from ..engine.needsyou import answer_payment, plan_many, triage
 from ..models import ExtractedFact, MessageRef, Payment, utcnow
 from .routes import today
 
@@ -24,18 +24,25 @@ def get_triage(session: Session = Depends(get_session), _: auth.Principal = Depe
 
 class ManyIn(BaseModel):
     ids: list[int]
-    action: str  # confirm | reject
+    action: str  # preview | confirm | reject
 
 
 @router.post("/facts")
 def answer_many(body: ManyIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_scope("confirm"))) -> dict:
-    """Confirm (only the complete ones) or discard several at once; each is answered on its own, so one that cannot
-    be confirmed stays waiting and says why."""
+    """Preview, confirm or discard several at once. Confirm follows the plan the preview shows (plan_many): only a
+    bill's newest notice counts, an older one is set aside, and one that cannot be confirmed together stays waiting
+    and says why. Each is answered on its own, so a failure leaves the rest done."""
     from .mail import ConfirmIn, apply_fact
 
-    if body.action not in ("confirm", "reject") or not body.ids or len(body.ids) > 200:
-        raise HTTPException(400, "Choose confirm or reject, for between 1 and 200 items")
-    done, failed = [], []
+    if body.action not in ("preview", "confirm", "reject") or not body.ids or len(body.ids) > 200:
+        raise HTTPException(400, "Choose preview, confirm or reject, for between 1 and 200 items")
+    found = {f.id: f for f in session.exec(select(ExtractedFact).where(ExtractedFact.id.in_(body.ids))).all()}  # type: ignore[union-attr]
+    chosen = [found[i] for i in dict.fromkeys(body.ids) if i in found]
+    if body.action == "preview":
+        plan = plan_many(session, chosen, today(), loose=principal.full)
+        return {k: v for k, v in plan.items() if k != "steps"}
+    steps = {s["id"]: s for s in plan_many(session, chosen, today(), loose=principal.full)["steps"]} if body.action == "confirm" else {}
+    done, failed, aside = [], [], 0
     for fid in body.ids:
         fact = session.get(ExtractedFact, fid)
         if fact is None or fact.status != "pending":
@@ -47,8 +54,16 @@ def answer_many(body: ManyIn, session: Session = Depends(get_session), principal
             session.commit()
             done.append({"id": fid, "applied_to": ""})
             continue
-        if not complete(fact):
-            failed.append({"id": fid, "error": "needs your answer on its own card"})
+        step = steps.get(fid, {"do": "own_card", "why": "needs your answer on its own card"})
+        if step["do"] == "set_aside":
+            fact.status, fact.applied_to, fact.resolved_at = "rejected", f"set aside: {step['why']}"[:200], utcnow()
+            session.add(fact)
+            session.commit()
+            aside += 1
+            done.append({"id": fid, "applied_to": ""})
+            continue
+        if step["do"] != "apply":
+            failed.append({"id": fid, "error": step["why"]})
             continue
         ref = session.get(MessageRef, fact.message_ref_id) if fact.message_ref_id else None
         try:
@@ -66,7 +81,9 @@ def answer_many(body: ManyIn, session: Session = Depends(get_session), principal
         from ..llm.reviewer import mark_pending
 
         mark_pending(session, f"{len(done)} answered on Needs you")
-    word = (f"{'Confirmed' if body.action == 'confirm' else 'Discarded'} {len(done)}." + (f" {len(failed)} still wait: they need your answer one at a time." if failed else ""))
+    kept = len(done) - aside
+    head = (f"Confirmed {kept}" + (f" and set aside {aside} older notice{'s' if aside != 1 else ''}" if aside else "") + ".") if body.action == "confirm" else f"Discarded {len(done)}."
+    word = head + (f" {len(failed)} still wait: they need your answer one at a time." if failed else "")
     return {"done": done, "failed": failed, "said": word, "triage": triage(session, today())}
 
 

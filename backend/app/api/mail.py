@@ -412,7 +412,9 @@ def apply_fact(session: Session, fact: ExtractedFact, ref: MessageRef | None, bo
             raise HTTPException(400, result.get("note") or "The export could not be imported")
         return f"import:{result.get('note', '')}"[:120]
     if fact.kind in ("bill_due", "past_due", "price_change"):
-        name = (body.name or fields.get("name") or fields.get("sender_name") or (ref.sender_name if ref else "") or "Bill").strip()
+        from ..engine.needsyou import notice_name
+
+        name = notice_name(fields, ref, body.name)
         amount = body.amount if body.amount is not None else fields.get("amount")
         due = body.due_date or (date.fromisoformat(fields["due_date"]) if fields.get("due_date") else None)
         key = merchant_key(name)
