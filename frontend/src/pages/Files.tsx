@@ -12,6 +12,7 @@ import { Empty, Failed, Loading, Said } from "../components/State";
 import { StatusPill } from "../components/Status";
 import { money, parseMoney, shortDate } from "../format";
 import type { Status } from "../guide";
+import type { HousingOut } from "../types";
 import type { CandidatesOut, DocumentMonth, DocumentMonthsOut, KeptDocument, KeptDocumentsOut, ReceiptCandidate, ReceiptDeadline, ReceiptRow, ReceiptsOut } from "../types-receipts";
 
 const SMALL: CSSProperties = { minHeight: 32, padding: "4px 10px", fontSize: 12 };
@@ -525,6 +526,9 @@ function MonthMove({ d, onMoved }: { d: KeptDocument; onMoved: (text: string) =>
 }
 
 function ByMonth({ state, onChanged }: { state: Loaded<DocumentMonthsOut>; onChanged: () => void }) {
+  // A lease or a charge sheet kept with a home has its terms read, so the add form offers the homes.
+  const housing = useApi<HousingOut>("/api/v1/housing");
+  const places = (housing.data?.homes ?? []).map((h) => ({ value: `home:${h.id}`, label: h.state === "ended" ? `${h.name} (an earlier home)` : h.name }));
   const [pick, setPick] = useState<string | null>(null);
   const [reading, setReading] = useState<{ id: number; page: number } | null>(null);
   const [said, setSaid] = useState<string | null>(null);
@@ -593,7 +597,7 @@ function ByMonth({ state, onChanged }: { state: Loaded<DocumentMonthsOut>; onCha
         </>
       )}
       <Said text={said} />
-      <Documents hideList startClosed onChanged={onChanged} />
+      <Documents hideList startClosed places={places.length ? places : undefined} onChanged={onChanged} />
     </section>
   );
 }

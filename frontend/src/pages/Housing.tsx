@@ -285,7 +285,7 @@ function MoveTimeline({ data, move }: { data: HousingOut; move: HousingMove }) {
   const lanes = placed.some((p) => p.lane === 2) ? 3 : placed.some((p) => p.lane === 1) ? 2 : 1;
   return (
     <Card level={2} title={`Your move: ${move.from} to ${move.to}`}
-      sub={<>Each month changes by <strong className="num" style={{ color: "var(--ink)" }}>{money(move.monthly_change, { sign: true, cents: true })}</strong>. Cost to get in: <strong className="num" style={{ color: "var(--ink)" }}>{money(move.costs_total, { cents: true })}</strong>{move.costs_missing.length ? ` and ${move.costs_missing.join(", ")} (not known yet)` : ""}. The costs are on <Link to="/move">Moving home</Link>.</>}>
+      sub={<>Each month changes by <strong className="num" style={{ color: "var(--ink)" }}>{money(move.monthly_change, { sign: true, cents: true })}</strong>. Still to pay to get in: <strong className="num" style={{ color: "var(--ink)" }}>{money(move.costs_total, { cents: true })}</strong>{move.costs_missing.length ? ` and ${move.costs_missing.join(", ")} (not known yet)` : ""}. The costs are on <Link to="/move">Moving home</Link>.</>}>
       <div role="img" aria-label={`The move in dates: ${points.map((p) => `${p.label}, ${shortDate(p.date)}`).join("; ")}`} style={{ position: "relative", height: lanes === 1 ? 28 : lanes === 2 ? 52 : 76, margin: "0 14px" }}>
         <div style={{ position: "absolute", left: 0, right: 0, top: lanes === 1 ? 13 : 37, height: 2, background: "var(--hairline)" }} />
         {placed.map((p, i) => (
@@ -976,7 +976,7 @@ function CostsCard({ h }: { h: HomeRow }) {
       ) : (
         <>
           <div style={{ display: "flex", gap: "4px 16px", flexWrap: "wrap", fontSize: 13 }}>
-            <span>Cost to get in: <strong className="num">{money(h.costs_total, { cents: true })}</strong></span>
+            <span>Still to pay: <strong className="num">{money(h.costs_total, { cents: true })}</strong></span>
             <span>Counted in your plan: <strong className="num">{money(h.costs_counted, { cents: true })}</strong></span>
             {h.costs_paid_before > 0 && <span>Already paid: <strong className="num">{money(h.costs_paid_before, { cents: true })}</strong></span>}
           </div>
@@ -1088,16 +1088,35 @@ function HomeSection({ h, ctx }: { h: HomeRow; ctx: Ctx }) {
 
 // ---- no home yet, adding one -----------------------------------------------------------------------------------
 
-function AdoptCard({ bill, ctx }: { bill: HousingOut["rent_bills_to_adopt"][number]; ctx: Ctx }) {
+// A rent or mortgage bill on the bills list that no home here holds. With no home yet, it can become the home. Once
+// homes exist, it may be the same rent counted twice (as this bill and as a home's rent), so the card says so and
+// offers both ways out: take the bill off the list, or make it a home of its own if it is another place.
+function AdoptCard({ bill, ctx, onDone }: { bill: HousingOut["rent_bills_to_adopt"][number]; ctx: Ctx; onDone?: (text: string) => void }) {
   const [name, setName] = useState("");
   const [kind, setKind] = useState("rent");
   const act = useAction();
+  const homes = ctx.data.homes.filter((h) => h.state !== "ended").map((h) => h.name);
   async function adopt(e: FormEvent) {
     e.preventDefault();
-    await act.run(async () => ctx.apply(await api<HousingOut>("/api/v1/housing/adopt", { method: "POST", body: JSON.stringify({ bill_id: bill.id, name: name.trim() || bill.name, kind }) })), "Done: it is your home now.");
+    const ok = await act.run(async () => ctx.apply(await api<HousingOut>("/api/v1/housing/adopt", { method: "POST", body: JSON.stringify({ bill_id: bill.id, name: name.trim() || bill.name, kind }) })), "Done: it is your home now.");
+    if (ok) onDone?.(`${name.trim() || bill.name} is a home now, with ${bill.name} as its rent.`);
   }
+  async function takeOff() {
+    await api(`/api/v1/bills/${bill.id}`, { method: "PUT", body: JSON.stringify({ active: false }) });
+    onDone?.(`${bill.name} is off your bills list. The home's rent is the one that counts.`);
+    ctx.reload();
+  }
+  const sub = homes.length
+    ? <>{money(bill.amount, { cents: true })} due on the {ordinal(bill.due_day)}, on your bills list but not held by any home here. If it is the rent of {homes.join(" or ")}, it is counted twice now: once as this bill and once as the home's rent. Take it off your bills list. If it is another place, make it a home of its own below.</>
+    : <>{money(bill.amount, { cents: true })} due on the {ordinal(bill.due_day)}, already on your bills list. Its amount becomes this home's rent, and it stays the one bill that counts.</>;
   return (
-    <Card level={2} title={`Make ${bill.name} your home`} sub={<>{money(bill.amount, { cents: true })} due on the {ordinal(bill.due_day)}, already on your bills list. Its amount becomes this home's rent, and it stays the one bill that counts.</>}>
+    <Card level={2} title={homes.length ? `${bill.name} on your bills list is not held by a home` : `Make ${bill.name} your home`} sub={sub}>
+      {homes.length > 0 && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <StatusPill status="warn">May be counted twice</StatusPill>
+          <ConfirmButton label="Take it off your bills list" question={`Take ${bill.name} off your bills list? The home's rent keeps counting.`} yes="Yes, take it off" no="Keep it" onConfirm={takeOff} style={SMALL} />
+        </div>
+      )}
       <form onSubmit={adopt} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
         <Field label={`What to call the home (blank: ${bill.name})`} grow><input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder="the street, or the building" /></Field>
         <Field label="Kind">
@@ -1105,7 +1124,7 @@ function AdoptCard({ bill, ctx }: { bill: HousingOut["rent_bills_to_adopt"][numb
             <option value="rent">Rent</option><option value="mortgage">Mortgage</option><option value="other">Other housing</option>
           </select>
         </Field>
-        <button className="btn dark" type="submit" disabled={act.busy} style={ROW}><House size={14} aria-hidden="true" />{act.busy ? "Saving…" : "Make it my home"}</button>
+        <button className={homes.length ? "btn" : "btn dark"} type="submit" disabled={act.busy} style={ROW}><House size={14} aria-hidden="true" />{act.busy ? "Saving…" : homes.length ? "Make it a home of its own" : "Make it my home"}</button>
       </form>
       <Said text={act.note?.text ?? null} tone={act.note?.tone} />
     </Card>
@@ -1136,16 +1155,27 @@ function AddHomeForm({ ctx, onDone }: { ctx: Ctx; onDone: (text: string) => void
     if (startsOn && endsOn && endsOn < startsOn) return act.fail("The lease ends after it starts.");
     const body: HomeBody = { name: name.trim(), kind, payee: payee.trim(), starts_on: startsOn || null, ends_on: null, lease_ends_on: endsOn || null, first_due: firstDue || null, due_day: day, grace_days: 0, late_fee: 0, autopay: false, notice_days: days, notice_given_on: null, deposit: 0, deposit_back_on: null, pay_from_account_id: null, note: "" };
     const before = new Set(ctx.data.homes.map((h) => h.id));
+    // The home is made first, then its rent. If the rent fails after the home exists, the home is kept and shown, the
+    // form closes, and the rent is left to add by hand, so trying again never makes a second home.
+    const made: { out?: HousingOut } = {};
     const ok = await act.run(async () => {
-      let next = await api<HousingOut>("/api/v1/housing", { method: "POST", body: JSON.stringify(body) });
-      const made = next.homes.find((h) => !before.has(h.id));
-      if (made && amount !== null) {
-        const charge: ChargeBody = { name: kind === "mortgage" ? "Mortgage payment" : "Rent", kind: kind === "mortgage" ? "principal_interest" : "rent", amount, estimate: false, pays_to: "home", payee: "", due_day: null, starts_on: null, ends_on: null, note: "" };
-        next = await api<HousingOut>(`/api/v1/housing/${made.id}/charges`, { method: "POST", body: JSON.stringify(charge) });
-      }
-      ctx.apply(next);
+      made.out = await api<HousingOut>("/api/v1/housing", { method: "POST", body: JSON.stringify(body) });
     }, "Added.", "Couldn't add it");
-    if (ok) onDone(`Added ${body.name}.${amount === null ? " Add its rent under “Paid with the rent each month”." : ""}`);
+    if (!ok || !made.out) return;
+    let next: HousingOut = made.out;
+    const home = next.homes.find((h) => !before.has(h.id));
+    if (home && amount !== null) {
+      const charge: ChargeBody = { name: kind === "mortgage" ? "Mortgage payment" : "Rent", kind: kind === "mortgage" ? "principal_interest" : "rent", amount, estimate: false, pays_to: "home", payee: "", due_day: null, starts_on: null, ends_on: null, note: "" };
+      try {
+        next = await api<HousingOut>(`/api/v1/housing/${home.id}/charges`, { method: "POST", body: JSON.stringify(charge) });
+      } catch (err) {
+        ctx.apply(next);
+        onDone(`Added ${body.name}, but couldn't add its ${kind === "mortgage" ? "payment" : "rent"}: ${(err as Error).message} Add it under “Paid with the rent each month”.`);
+        return;
+      }
+    }
+    ctx.apply(next);
+    onDone(`Added ${body.name}.${amount === null ? " Add its rent under “Paid with the rent each month”." : ""}`);
   }
 
   return (
@@ -1171,6 +1201,12 @@ function AddHomeForm({ ctx, onDone }: { ctx: Ctx; onDone: (text: string) => void
         <Field label="The lease term ends (blank: no end date)"><input className="input" type="date" value={endsOn} onChange={(e) => setEndsOn(e.target.value)} /></Field>
         <Field label="Days of notice to move out (optional)"><input className="input num" value={notice} onChange={(e) => setNotice(e.target.value)} inputMode="numeric" style={{ width: "min(100%, 100px)" }} /></Field>
       </Row>
+      {ctx.data.rent_bills_to_adopt.length > 0 && rent.trim() !== "" && (
+        <div style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, color: "var(--warning-ink)", fontWeight: 600 }}>
+          <TriangleAlert size={14} aria-hidden="true" style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>Your bills list already has {ctx.data.rent_bills_to_adopt.map((b) => `${b.name} (${money(b.amount, { cents: true })} on the ${ordinal(b.due_day)})`).join(" and ")}. If this is the same place, make that bill your home instead, so the rent is not counted twice.</span>
+        </div>
+      )}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <button className="btn dark" type="submit" disabled={act.busy} style={ROW}><House size={14} aria-hidden="true" />{act.busy ? "Adding…" : "Add the home"}</button>
         <Said text={act.note?.tone === "error" ? act.note.text : null} tone="error" />
@@ -1200,6 +1236,19 @@ function NoHome({ ctx }: { ctx: Ctx }) {
       </Empty>
       {bills.map((b) => <AdoptCard key={b.id} bill={b} ctx={ctx} />)}
       <AddHomeCard ctx={ctx} startOpen={bills.length === 0} />
+    </>
+  );
+}
+
+/** Once homes exist, a rent or mortgage bill no home holds: maybe the same rent counted twice. */
+function RentBillsNotHeld({ ctx }: { ctx: Ctx }) {
+  const [said, setSaid] = useState<string | null>(null);
+  const bills = ctx.data.rent_bills_to_adopt;
+  if (bills.length === 0 && !said) return null;
+  return (
+    <>
+      {bills.map((b) => <AdoptCard key={b.id} bill={b} ctx={ctx} onDone={setSaid} />)}
+      <Said text={said} />
     </>
   );
 }
@@ -1310,6 +1359,7 @@ export function Housing({ onChanged }: { onChanged?: () => void }) {
         <>
           {data.move && <MoveTimeline data={data} move={data.move} />}
           {data.homes.length === 0 && <NoHome ctx={ctx} />}
+          {data.homes.length > 0 && <RentBillsNotHeld ctx={ctx} />}
           {live.map((h) => <HomeSection key={h.id} h={h} ctx={ctx} />)}
           {ended.length > 0 && <EarlierHomes homes={ended} ctx={ctx} />}
           {data.utilities_unassigned.length > 0 && <LooseUtilities ctx={ctx} />}

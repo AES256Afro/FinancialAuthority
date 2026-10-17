@@ -1,10 +1,10 @@
 // How fresh the bank data is and what reading it costs: the chain from the bank to this screen, how often the app
 // reads, every call it made in the last thirty days, the free plan's logins used, and a forecast at any price.
 import { TriangleAlert } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { api, useApi } from "../api";
 import { monthDay, money, parseMoney, shortDate, when } from "../format";
-import { Failed, Loading, Said } from "./State";
+import { Failed, Loading, Said, useWidth } from "./State";
 import { StatusPill } from "./Status";
 
 interface Freshness {
@@ -61,14 +61,17 @@ function Chain({ hours }: { hours: number }) {
   );
 }
 
+// One drawing unit is one pixel, so the dates under the bars stay readable on a phone.
 function Calls({ days }: { days: Freshness["calls"]["by_day"] }) {
-  const W = 600;
+  const box = useRef<HTMLDivElement>(null);
+  const W = Math.max(240, Math.min(640, useWidth(box, 600)));
   const H = 70;
   const max = Math.max(1, ...days.map((d) => d.plaid + d.teller));
   const bw = W / days.length;
   const total = days.reduce((t, d) => t + d.plaid + d.teller, 0);
   return (
-    <svg viewBox={`0 0 ${W} ${H + 16}`} width="100%" role="img" aria-label={`${total} calls to the bank services in the last ${days.length} days`} style={{ maxWidth: 640, display: "block" }}>
+    <div ref={box} style={{ width: "100%", maxWidth: 640 }}>
+    <svg viewBox={`0 0 ${W} ${H + 16}`} width={W} height={H + 16} role="img" aria-label={`${total} calls to the bank services in the last ${days.length} days`} style={{ maxWidth: "100%", display: "block" }}>
       {days.map((d, i) => {
         const h = ((d.plaid + d.teller) / max) * H;
         return (
@@ -79,9 +82,10 @@ function Calls({ days }: { days: Freshness["calls"]["by_day"] }) {
         );
       })}
       <line x1={0} x2={W} y1={H} y2={H} stroke="var(--hairline)" />
-      <text x={0} y={H + 13} fontSize={10} fill="var(--muted)">{days[0] ? monthDay(days[0].date) : ""}</text>
-      <text x={W} y={H + 13} fontSize={10} fill="var(--muted)" textAnchor="end">today</text>
+      <text x={0} y={H + 13} fontSize={11} fill="var(--muted)">{days[0] ? monthDay(days[0].date) : ""}</text>
+      <text x={W} y={H + 13} fontSize={11} fill="var(--muted)" textAnchor="end">today</text>
     </svg>
+    </div>
   );
 }
 

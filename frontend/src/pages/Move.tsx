@@ -8,7 +8,8 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Keyb
 import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { ConfirmButton } from "../components/ConfirmButton";
-import { Empty, Failed, Loading, Said } from "../components/State";
+import { MovePlan } from "../components/MovePlan";
+import { Empty, Failed, Loading, Said, useWidth } from "../components/State";
 import { StatusPill } from "../components/Status";
 import { localToday, money, monthDay, parseIso, parseMoney, shortDate } from "../format";
 import { palette } from "../looks";
@@ -82,6 +83,11 @@ function toward(hex: string, base: string, t: number): string {
 /** The engine's sentence with its dates in words. */
 function withDates(text: string): string {
   return text.replace(/\b(\d{4}-\d{2}-\d{2})\b/g, (_, iso: string) => shortDate(iso));
+}
+
+/** A readiness line as shown: any date the engine wrote as YYYY-MM-DD in words, and no stray "; " in front. */
+function plainReadiness(text: string): string {
+  return withDates(text).replace(/^\s*;\s*/, "");
 }
 
 // ---- the costs to get in ---------------------------------------------------------------------------------------
@@ -510,9 +516,13 @@ function daysFromToday(days: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+// One drawing unit is one pixel, so the axis words and the lowest-balance label stay readable on a phone; the key
+// sits under the chart in words. The line is your balance in its usual colour; the verdict is said above in words.
 function Chart({ r }: { r: Result }) {
   const c = palette(getPrefs().look);
-  const w = 760;
+  const box = useRef<HTMLDivElement>(null);
+  const w = Math.max(300, Math.min(900, useWidth(box, 760)));
+  const narrow = w < 520;
   const h = 220;
   const left = 46;
   const right = 12;
@@ -527,15 +537,17 @@ function Chart({ r }: { r: Result }) {
   const line = (path: PathPoint[]) => path.map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p.at_pace).toFixed(1)}`).join(" ");
   const moveIdx = r.scenario.path.findIndex((p) => p.date >= r.move_date);
   const lowIdx = r.scenario.path.findIndex((p) => p.date === r.scenario.low.date);
-  const ticks = [0, Math.floor(n / 4), Math.floor(n / 2), Math.floor((3 * n) / 4), n - 1];
+  const ticks = narrow ? [0, Math.floor(n / 2), n - 1] : [0, Math.floor(n / 4), Math.floor(n / 2), Math.floor((3 * n) / 4), n - 1];
+  const lowText = `lowest ${money(r.scenario.low.value)} · ${shortDate(r.scenario.low.date)}`;
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} width="100%" role="img" aria-label={`Your balance day by day at your usual spending, with and without the move, over ${n} days`} style={{ display: "block", maxWidth: 900 }}>
+    <div ref={box} style={{ width: "100%", maxWidth: 900, display: "flex", flexDirection: "column", gap: 4 }}>
+    <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h} role="img" aria-label={`Your balance day by day at your usual spending, with and without the move, over ${n} days; ${lowText} with the move`} style={{ display: "block", maxWidth: "100%" }}>
       <line x1={left} x2={w - right} y1={y(0)} y2={y(0)} stroke={c.ink} strokeWidth={1.2} />
-      <text x={left - 6} y={y(0) + 4} textAnchor="end" fontSize={10} fill={c.ink2}>0</text>
-      <text x={left - 6} y={y(hi) + 4} textAnchor="end" fontSize={10} fill={c.ink2}>{money(hi)}</text>
-      {lo < 0 && <text x={left - 6} y={y(lo) + 4} textAnchor="end" fontSize={10} fill={c.ink2}>{money(lo)}</text>}
+      <text x={left - 6} y={y(0) + 4} textAnchor="end" fontSize={11} fill={c.ink2}>0</text>
+      <text x={left - 6} y={y(hi) + 4} textAnchor="end" fontSize={11} fill={c.ink2}>{money(hi)}</text>
+      {lo < 0 && <text x={left - 6} y={y(lo) + 4} textAnchor="end" fontSize={11} fill={c.ink2}>{money(lo)}</text>}
       <path d={line(r.baseline.path)} fill="none" stroke={c.buffer} strokeWidth={2} strokeDasharray="5 4" />
-      <path d={line(r.scenario.path)} fill="none" stroke={r.verdict === "passes" ? c.safe : c.bill} strokeWidth={2.4} />
+      <path d={line(r.scenario.path)} fill="none" stroke={c.safe} strokeWidth={2.4} />
       {moveIdx >= 0 && (
         <g>
           <line x1={x(moveIdx)} x2={x(moveIdx)} y1={top} y2={base} stroke={c.paycheck} strokeWidth={1.5} strokeDasharray="3 3" />
@@ -544,16 +556,17 @@ function Chart({ r }: { r: Result }) {
       )}
       {lowIdx >= 0 && (
         <g>
-          <circle cx={x(lowIdx)} cy={y(r.scenario.low.value)} r={5} fill={r.verdict === "passes" ? c.safe : c.bill} stroke={c.surface} strokeWidth={2} />
-          <text x={Math.min(x(lowIdx) + 8, w - 150)} y={y(r.scenario.low.value) - 8} fontSize={11} fontWeight={800} fill={c.ink}>lowest {money(r.scenario.low.value)} · {shortDate(r.scenario.low.date)}</text>
+          <circle cx={x(lowIdx)} cy={y(r.scenario.low.value)} r={5} fill={c.surface} stroke={c.ink} strokeWidth={2} />
+          <text x={x(lowIdx) > w / 2 ? x(lowIdx) - 8 : x(lowIdx) + 8} textAnchor={x(lowIdx) > w / 2 ? "end" : "start"} y={y(r.scenario.low.value) - 8 > top + 12 ? y(r.scenario.low.value) - 8 : y(r.scenario.low.value) + 18} fontSize={11} fontWeight={800} fill={c.ink}>{lowText}</text>
         </g>
       )}
-      {ticks.map((i) => <text key={i} x={x(i)} y={h - 8} textAnchor={i === 0 ? "start" : i === n - 1 ? "end" : "middle"} fontSize={10} fill={c.ink2}>{shortDate(r.scenario.path[i]?.date ?? r.move_date)}</text>)}
-      <g fontSize={11} fontWeight={700} fill={c.ink2}>
-        <line x1={w - 250} x2={w - 226} y1={top + 4} y2={top + 4} stroke={c.buffer} strokeWidth={2} strokeDasharray="5 4" /><text x={w - 220} y={top + 8}>as things are</text>
-        <line x1={w - 130} x2={w - 106} y1={top + 4} y2={top + 4} stroke={r.verdict === "passes" ? c.safe : c.bill} strokeWidth={2.4} /><text x={w - 100} y={top + 8}>with the move</text>
-      </g>
+      {ticks.map((i) => <text key={i} x={x(i)} y={h - 8} textAnchor={i === 0 ? "start" : i === n - 1 ? "end" : "middle"} fontSize={11} fill={c.ink2}>{shortDate(r.scenario.path[i]?.date ?? r.move_date)}</text>)}
     </svg>
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12, color: "var(--ink-2)", fontWeight: 700 }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><svg width={24} height={6} aria-hidden="true"><line x1={0} x2={24} y1={3} y2={3} stroke={c.buffer} strokeWidth={2} strokeDasharray="5 4" /></svg>as things are</span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><svg width={24} height={6} aria-hidden="true"><line x1={0} x2={24} y1={3} y2={3} stroke={c.safe} strokeWidth={2.4} /></svg>with the move</span>
+      </div>
+    </div>
   );
 }
 
@@ -573,11 +586,16 @@ function WhatIf() {
   const [savedNote, setSavedNote] = useState<{ text: string; tone: "info" | "error" } | null>(null);
   const [checkedNote, setCheckedNote] = useState<string | null>(null);
 
-  /** The scenario as the engine reads it, or null (with the reason said) when an amount cannot be read. */
+  /** The scenario as the engine reads it, or null (with the reason said) when an amount or a day cannot be read. */
   function spec() {
     const typed = [newRent, ...oneOffs.map((o) => o.amount), ...recurring.map((r) => r.amount)].filter((t) => t.trim());
     if (typed.some((t) => parseMoney(t) === null)) {
       setError("Type an amount like 120 or 1200.50");
+      return null;
+    }
+    const badDay = recurring.find((r) => r.amount.trim() && r.due_day.trim() && !(/^\d{1,2}$/.test(r.due_day.trim()) && Number(r.due_day) >= 1 && Number(r.due_day) <= 31));
+    if (badDay) {
+      setError(`${badDay.name || "A bill"}: type a due day from 1 to 31, or leave it blank.`);
       return null;
     }
     return {
@@ -635,7 +653,16 @@ function WhatIf() {
       setCheckedNote(`Couldn't save that: ${(e as Error).message}`);
     }
   }
+  async function removeSaved(s: Saved) {
+    await api(`/api/v1/scenarios/${s.id}`, { method: "DELETE" });
+    setSavedNote({ tone: "info", text: `Removed the saved scenario "${s.name}".` });
+    reloadSaved();
+  }
+  // A loaded scenario has not been run yet, so the verdict of the one before it leaves the screen.
   function load(s: Saved) {
+    setResult(null);
+    setError(null);
+    setSavedNote({ tone: "info", text: `Loaded "${s.name}". Press Run it against my checks to see if it fits.` });
     setName(s.name);
     setMoveDate(s.spec.move_date);
     setNewRent(s.spec.new_rent !== null && s.spec.new_rent !== undefined ? String(s.spec.new_rent) : "");
@@ -652,7 +679,10 @@ function WhatIf() {
       {result && (
         <section className="card" style={{ padding: "18px 22px", borderTop: `5px solid ${result.verdict === "passes" ? "var(--safe)" : "var(--critical)"}`, display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 14, flexWrap: "wrap" }}>
-            <div style={{ fontSize: 26, fontWeight: 800 }}>{result.verdict === "passes" ? "Fits" : "Short"} · {result.name} on {shortDate(result.move_date)}</div>
+            <div style={{ fontSize: 26, fontWeight: 800, display: "inline-flex", alignItems: "center", gap: 8 }}>
+              {result.verdict === "passes" ? <CircleCheck size={24} aria-hidden="true" style={{ color: "var(--safe-ink)", flexShrink: 0 }} /> : <TriangleAlert size={24} aria-hidden="true" style={{ color: "var(--critical-ink)", flexShrink: 0 }} />}
+              {result.verdict === "passes" ? "Fits" : "Short"} · {result.name} on {shortDate(result.move_date)}
+            </div>
             {result.verdict === "short" && result.first_passes && <div style={{ fontSize: 14, fontWeight: 700, color: "var(--safe-ink)" }}>first date that fits: {shortDate(result.first_passes)}</div>}
           </div>
           <div style={{ fontSize: 14 }}>{result.summary}</div>
@@ -706,12 +736,18 @@ function WhatIf() {
           <button className="btn dark" type="button" disabled={busy} onClick={run}>{busy ? "Running…" : "Run it against my checks"}</button>
           <button className="btn" type="button" disabled={busy} onClick={save}>Save this scenario</button>
           {savedNote && <Said text={savedNote.text} tone={savedNote.tone} />}
-          {saved && saved.items.length > 0 && (
-            <span style={{ fontSize: 12, color: "var(--ink-2)", display: "inline-flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-              Saved: {saved.items.map((s) => <button key={s.id} className="btn" type="button" onClick={() => load(s)} style={{ padding: "4px 10px", minHeight: 32 }}>{s.name} · {shortDate(s.spec.move_date)}</button>)}
-            </span>
-          )}
         </div>
+        {saved && saved.items.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "var(--ink-2)" }}>
+            <span className="lab">Saved scenarios: tap one to load it</span>
+            {saved.items.map((s) => (
+              <span key={s.id} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                <button className="btn" type="button" onClick={() => load(s)} style={{ padding: "4px 10px", minHeight: 32 }}>{s.name} · {shortDate(s.spec.move_date)}</button>
+                <ConfirmButton label="Remove" question={`Remove the saved scenario "${s.name}"?`} yes="Yes, remove it" no="Keep it" onConfirm={() => removeSaved(s)} style={{ padding: "4px 10px", minHeight: 32, fontSize: 12 }} />
+              </span>
+            ))}
+          </div>
+        )}
         <Said text={error} tone="error" />
       </section>
 
@@ -748,8 +784,8 @@ function WhatIf() {
             <div key={i.key} style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto", gap: 10, alignItems: "start", fontSize: 13, borderTop: "1px solid var(--surface-2)", paddingTop: 6 }}>
               <StatusPill status={i.met ? "good" : "warn"}>{i.met ? "Met" : "Not yet"}</StatusPill>
               <div style={{ minWidth: 0 }}>
-                <div><strong>{i.label}</strong> <span style={{ color: "var(--ink-2)" }}>· {typeof i.value === "number" ? money(i.value) : i.value} · target {typeof i.target === "number" ? money(i.target) : i.target}{i.projected && !i.met ? ` · on track for ${shortDate(i.projected)}` : ""}</span></div>
-                {i.note && <div style={{ fontSize: 12, color: "var(--muted)" }}>{i.note}</div>}
+                <div><strong>{plainReadiness(i.label)}</strong> <span style={{ color: "var(--ink-2)" }}>· {typeof i.value === "number" ? money(i.value) : plainReadiness(i.value)} · target {typeof i.target === "number" ? money(i.target) : plainReadiness(i.target)}{i.projected && !i.met ? ` · on track for ${shortDate(i.projected)}` : ""}</span></div>
+                {plainReadiness(i.note) && <div style={{ fontSize: 12, color: "var(--muted)" }}>{plainReadiness(i.note)}</div>}
               </div>
               {i.key === "reconciled" && !i.met ? <span /> : <Link to={i.link} aria-label={`Go to: ${i.label}`} className="btn" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", minHeight: 32, padding: "2px 10px", fontSize: 12, whiteSpace: "nowrap" }}>Go →</Link>}
             </div>
@@ -798,6 +834,7 @@ export function Move({ onChanged }: { onChanged?: () => void }) {
         <>
           <CostPicture h={up} on={data.move?.on ?? up.starts_on} apply={apply} />
           <MoveCheck homeId={up.id} version={version} />
+          <MovePlan key={version} onChanged={onChanged} />
           <AddCost h={up} apply={apply} />
           <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
             {up.first_due ? <>The rent and fees from {shortDate(up.first_due)} are on <Link to="/housing">Housing</Link>.</> : <>The rent and fees are on <Link to="/housing">Housing</Link>.</>}

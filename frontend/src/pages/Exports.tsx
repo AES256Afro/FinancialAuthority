@@ -61,7 +61,8 @@ export function Exports() {
   const [preview, setPreview] = useState<string>("");
   const [note, setNote] = useState<{ at: Area; text: string; tone: "info" | "error" } | null>(null);
   const [feedUrl, setFeedUrl] = useState<string | null>(null);
-  const [amounts, setAmounts] = useState(false);
+  // Null until the owner ticks or unticks it: the box starts from the feed's own setting.
+  const [amountsPicked, setAmounts] = useState<boolean | null>(null);
   const [advanced, setAdvanced] = useState(false);
   const say = (at: Area, text: string, tone: "info" | "error" = "info") => setNote({ at, text, tone });
   const said = (at: Area) => (note?.at === at ? <Said text={note.text} tone={note.tone} /> : null);
@@ -84,6 +85,7 @@ export function Exports() {
   if (cat.error && !cat.data) return <Failed error={cat.error} what="the export formats" onRetry={cat.reload} />;
   if (!cat.data) return <Loading what="the export formats" />;
   const c = cat.data;
+  const amounts = amountsPicked ?? c.feed.amounts;
   const data = c.formats.filter((f) => f.kind === "data");
   const reports = c.formats.filter((f) => f.kind === "report");
   const move = (i: number, d: number) => {
@@ -122,6 +124,16 @@ export function Exports() {
     setFeedUrl(null);
     say("feed", "The feed is off. Calendars subscribed to it stop updating.");
     cat.reload();
+  }
+  async function copyFeed(url: string) {
+    try {
+      // Over plain http (a tailnet address) the browser has no clipboard to write to.
+      if (!navigator.clipboard) throw new Error("no clipboard");
+      await navigator.clipboard.writeText(url);
+      say("copy", "Copied the feed address.");
+    } catch {
+      say("copy", "This browser would not copy; select the address and copy it by hand.", "error");
+    }
   }
   async function removeTemplate(x: Template) {
     await api(`/api/v1/exports/templates/${x.id}`, { method: "DELETE" });
@@ -254,7 +266,7 @@ export function Exports() {
         <span style={{ fontSize: 13, color: "var(--ink-2)", maxWidth: "75ch" }}>A private address your calendar app subscribes to; it refreshes on its own. Anyone with the address can read it, so amounts stay off unless you turn them on. Making a new address stops the old one.</span>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <span style={{ fontSize: 13 }}>{c.feed.active ? `A feed is active${c.feed.amounts ? ", with amounts" : ", names and dates only"}.` : "No feed yet."}</span>
-          <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13, minHeight: 32 }}><input type="checkbox" checked={amounts} onChange={(e) => setAmounts(e.target.checked)} style={{ width: 18, height: 18 }} />Include amounts</label>
+          <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13, minHeight: 32 }}><input type="checkbox" checked={amounts} onChange={(e) => setAmounts(e.target.checked)} style={{ width: 18, height: 18 }} />{c.feed.active ? "Include amounts in the next address" : "Include amounts"}</label>
           {c.feed.active
             ? <ConfirmButton label="Make a new address" question="Make a new address? The old one stops working, so every calendar using it must subscribe again." yes="Yes, make a new one" no="Keep the old one" onConfirm={makeFeed} className="btn dark" />
             : <button type="button" className="btn dark" onClick={firstFeed} disabled={DEMO}>Make the address</button>}
@@ -270,7 +282,7 @@ export function Exports() {
               <input className="input num" readOnly value={feedUrl} onFocus={(e) => e.target.select()} style={{ fontSize: 12 }} />
             </label>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <button type="button" className="btn" onClick={() => navigator.clipboard?.writeText(feedUrl).then(() => say("copy", "Copied the feed address."), () => say("copy", "This browser would not copy; select the address and copy it by hand.", "error"))}>Copy</button>
+              <button type="button" className="btn" onClick={() => copyFeed(feedUrl)}>Copy</button>
               {said("copy")}
             </div>
           </div>

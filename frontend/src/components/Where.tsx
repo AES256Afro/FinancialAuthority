@@ -22,7 +22,7 @@ export function Where({ id, fill }: { id: WhereId; fill?: Record<string, string>
       </div>
       {entry.steps && entry.steps.length > 0 && (
         <details style={{ marginLeft: 20 }}>
-          <summary style={{ cursor: "pointer", fontWeight: 700 }}>Show the steps</summary>
+          <summary style={{ cursor: "pointer", fontWeight: 700, minHeight: 32, display: "inline-flex", alignItems: "center" }}>Show the steps</summary>
           <ol style={{ margin: "6px 0 0", paddingLeft: 18, display: "flex", flexDirection: "column", gap: 3 }}>
             {entry.steps.map((s) => <li key={s}>{put(s)}</li>)}
           </ol>

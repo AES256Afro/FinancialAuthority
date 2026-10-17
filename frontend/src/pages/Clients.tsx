@@ -199,7 +199,7 @@ function HomeAssistant() {
         A key that sees <strong>"{SEES.aggregates}"</strong> keeps names off the dashboard: the next bill shows as "A bill" and the one-line sentence is left out. Choose it if other people see the dashboard.
       </p>
       <details style={{ fontSize: 13 }}>
-        <summary style={{ cursor: "pointer", fontWeight: 700, padding: "6px 0" }}>Show the steps</summary>
+        <summary style={{ cursor: "pointer", fontWeight: 700, minHeight: 32, display: "inline-flex", alignItems: "center" }}>Show the steps</summary>
         <ol style={{ margin: "6px 0 0", paddingLeft: 20, display: "flex", flexDirection: "column", gap: 8 }}>
           <li><strong>Make a key, here.</strong> Under API keys on this page, name it "Home Assistant", choose what it can see, and press Make a key. Copy the key it shows; it is shown once and starts with <code>fa_</code>.</li>
           <li><strong>On the machine that runs Home Assistant,</strong> open <code>secrets.yaml</code> (in the config folder, beside <code>configuration.yaml</code>) and add the first block below, with your key pasted in after <code>Bearer </code>.</li>

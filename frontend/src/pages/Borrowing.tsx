@@ -1,9 +1,10 @@
 // Borrowing: what advances and installments cost, the cycle they run in, what stands outstanding, what the
 // same money would become, and the steps that end it. The engine computed every figure; this page draws it.
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
-import { Failed, Loading, Said } from "../components/State";
+import { AdvanceExit } from "../components/AdvanceExit";
+import { Failed, Loading, Said, useWidth } from "../components/State";
 import { StatusPill } from "../components/Status";
 import { money, monthDay, shortDate } from "../format";
 import { palette } from "../looks";
@@ -72,36 +73,45 @@ interface Borrowing {
 
 const CADENCE: Record<number, string> = { 7: "weekly", 14: "every two weeks", 30: "monthly" };
 
+// One drawing unit is one pixel, so the dates and fee labels stay readable on a phone; a fee label that would not fit
+// its payday's slot is left to the bar's tooltip and the table.
 function CycleChart({ cycle }: { cycle: Cycle[] }) {
   const c = palette(getPrefs().look);
-  const w = 720;
-  const h = 170;
+  const box = useRef<HTMLDivElement>(null);
+  const w = Math.max(280, Math.min(820, useWidth(box, 720)));
+  const narrow = w < 460;
+  const h = narrow ? 186 : 170;
   const base = h - 30;
   const max = Math.max(1, ...cycle.map((x) => Math.max(x.advanced, x.repaid_on_payday)));
   const slot = cycle.length ? (w - 40) / cycle.length : w;
+  const top = narrow ? 120 : 100;
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} width="100%" role="img" aria-label="Advances taken before each payday and repaid on it, with the fee" style={{ display: "block", maxWidth: 820 }}>
+    <div ref={box} style={{ width: "100%", maxWidth: 820 }}>
+    <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h} role="img" aria-label="Advances taken before each payday and repaid on it, with the fee" style={{ display: "block", maxWidth: "100%" }}>
       {cycle.map((x, i) => {
         const left = 20 + i * slot;
-        const bw = Math.max(8, Math.min(28, slot / 3));
-        const ha = (x.advanced / max) * 100;
-        const hr = (x.repaid_on_payday / max) * 100;
+        const bw = Math.max(6, Math.min(28, slot / 3));
+        const ha = (x.advanced / max) * (top - 16);
+        const hr = (x.repaid_on_payday / max) * (top - 16);
+        const feeFits = slot >= 64;
+        const dateFits = slot >= 44 || i % Math.ceil(44 / Math.max(1, slot)) === 0;
         return (
           <g key={x.payday}>
             <title>{`${shortDate(x.payday)}: ${x.advances} advance${x.advances !== 1 ? "s" : ""} taken before it (${money(x.advanced)}), ${money(x.repaid_on_payday)} repaid on it, ${money(x.fees)} of that fees`}</title>
             <rect x={left} y={base - ha} width={bw} height={ha} rx={4} fill={c.debt} />
             <rect x={left + bw + 2} y={base - hr} width={bw} height={hr} rx={4} fill={c.bill} />
-            {x.fees > 0 && <text x={left + bw + 1} y={base - Math.max(ha, hr) - 6} textAnchor="middle" fontSize={10} fontWeight={800} fill={c.ink}>{money(x.fees)} fees</text>}
-            <text x={left + bw + 1} y={h - 10} textAnchor="middle" fontSize={11} fontWeight={700} fill={c.ink2}>{monthDay(x.payday)}</text>
+            {x.fees > 0 && feeFits && <text x={left + bw + 1} y={base - Math.max(ha, hr) - 6} textAnchor="middle" fontSize={11} fontWeight={800} fill={c.ink}>{money(x.fees)} fees</text>}
+            {dateFits && <text x={left + bw + 1} y={h - 10} textAnchor="middle" fontSize={11} fontWeight={700} fill={c.ink2}>{monthDay(x.payday)}</text>}
           </g>
         );
       })}
       <line x1={10} x2={w - 10} y1={base} y2={base} stroke={c.buffer} strokeWidth={1.5} />
       <g fontSize={11} fontWeight={700} fill={c.ink2}>
         <rect x={20} y={6} width={10} height={10} rx={3} fill={c.debt} /><text x={36} y={15}>advanced before the payday</text>
-        <rect x={220} y={6} width={10} height={10} rx={3} fill={c.bill} /><text x={236} y={15}>repaid on it, fee included</text>
+        <rect x={narrow ? 20 : 220} y={narrow ? 24 : 6} width={10} height={10} rx={3} fill={c.bill} /><text x={narrow ? 36 : 236} y={narrow ? 33 : 15}>repaid on it, fee included</text>
       </g>
     </svg>
+    </div>
   );
 }
 
@@ -235,35 +245,6 @@ export function Borrowing() {
         <div style={{ fontSize: 13, color: "var(--ink-2)" }}>advances, pay-later plans and the card, read from your transactions · last {d.window_days} days</div>
       </div>
 
-      <section className="grid grid-cols-2 xl:grid-cols-4" style={{ gap: 12 }}>
-        <div className="card" style={{ padding: 14, borderTop: "4px solid var(--critical)" }}>
-          <div className="lab">Lost to borrowing, a month</div>
-          <div className="num" style={{ fontSize: 28, fontWeight: 800 }}>{money(d.cost.fees_month)}</div>
-          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{money(d.cost.fees_year)} a year at this pace · advance fees {money(d.cost.fees_90d)} in {d.window_days} days over {d.cost.advances_90d} advances{d.cost.affirm_interest_month ? ` · Affirm interest ${money(d.cost.affirm_interest_month)} last statement, ${money(d.cost.affirm_interest_ytd ?? 0)} this year` : ""}</div>
-        </div>
-        <div className="card" style={{ padding: 14, borderTop: "4px solid var(--warning)" }}>
-          <div className="lab">Owed back from your next paycheck</div>
-          <div className="num" style={{ fontSize: 28, fontWeight: 800 }}>{money(d.outstanding_total)}</div>
-          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{d.outstanding.length === 0 ? "nothing outstanding right now" : d.outstanding.map((o) => `${o.provider} ${money(o.amount)} due ${shortDate(o.repay_date)}`).join(" · ")}</div>
-        </div>
-        <div className="card" style={{ padding: 14, borderTop: "4px solid var(--bill)" }}>
-          <div className="lab">Installments a month</div>
-          <div className="num" style={{ fontSize: 28, fontWeight: 800 }}>{money(d.cost.installments_month)}</div>
-          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{active.length} plan{active.length !== 1 ? "s" : ""} running{unknown ? `, ${unknown} without an end date yet` : ""}</div>
-        </div>
-        <div className="card" style={{ padding: 14, borderTop: "4px solid var(--safe)" }}>
-          <div className="lab">The fees, saved instead</div>
-          {d.becomes ? (
-            <>
-              <div className="num" style={{ fontSize: 28, fontWeight: 800 }}>{money(d.becomes.after_tax)}</div>
-              <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{money(d.becomes.per_paycheck)} a paycheck for {d.becomes.years} years in {d.becomes.name.toLowerCase()}{d.becomes.guaranteed ? ", guaranteed" : ""} · <Link to="/outlook">compare</Link></div>
-            </>
-          ) : (
-            <div style={{ fontSize: 12, color: "var(--ink-2)" }}>no fees in the last {d.window_days} days</div>
-          )}
-        </div>
-      </section>
-
       {d.cycle.length > 0 && (
         <section className="card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
@@ -275,6 +256,35 @@ export function Borrowing() {
           {d.typical_per_period > 0 && <div style={{ fontSize: 13 }}>About <strong>{money(d.typical_per_period)}</strong> is advanced each pay period. Keeping that much of one check unspent is what ends the cycle; the next period is paid from it instead of from an advance.</div>}
         </section>
       )}
+
+      <section className="grid grid-cols-2 xl:grid-cols-4" style={{ gap: 12 }}>
+        <div className="card" style={{ padding: 14, borderTop: "4px solid var(--debt)" }}>
+          <div className="lab">Lost to borrowing, a month</div>
+          <div className="num" style={{ fontSize: 28, fontWeight: 800 }}>{money(d.cost.fees_month)}</div>
+          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{money(d.cost.fees_year)} a year at this pace · advance fees {money(d.cost.fees_90d)} in {d.window_days} days over {d.cost.advances_90d} advances{d.cost.affirm_interest_month ? ` · Affirm interest ${money(d.cost.affirm_interest_month)} last statement, ${money(d.cost.affirm_interest_ytd ?? 0)} this year` : ""}</div>
+        </div>
+        <div className="card" style={{ padding: 14, borderTop: "4px solid var(--later)" }}>
+          <div className="lab">Owed back from your next paycheck</div>
+          <div className="num" style={{ fontSize: 28, fontWeight: 800 }}>{money(d.outstanding_total)}</div>
+          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{d.outstanding.length === 0 ? "nothing outstanding right now" : d.outstanding.map((o) => `${o.provider} ${money(o.amount)} due ${shortDate(o.repay_date)}`).join(" · ")}</div>
+        </div>
+        <div className="card" style={{ padding: 14, borderTop: "4px solid var(--bill)" }}>
+          <div className="lab">Installments a month</div>
+          <div className="num" style={{ fontSize: 28, fontWeight: 800 }}>{money(d.cost.installments_month)}</div>
+          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{active.length} plan{active.length !== 1 ? "s" : ""} running{unknown ? `, ${unknown} without an end date yet` : ""}</div>
+        </div>
+        <div className="card" style={{ padding: 14, borderTop: "4px solid var(--saving)" }}>
+          <div className="lab">The fees, saved instead</div>
+          {d.becomes ? (
+            <>
+              <div className="num" style={{ fontSize: 28, fontWeight: 800 }}>{money(d.becomes.after_tax)}</div>
+              <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{money(d.becomes.per_paycheck)} a paycheck for {d.becomes.years} years in {d.becomes.name.toLowerCase()}{d.becomes.guaranteed ? ", guaranteed" : ""} · <Link to="/outlook">compare</Link></div>
+            </>
+          ) : (
+            <div style={{ fontSize: 12, color: "var(--ink-2)" }}>no fees in the last {d.window_days} days</div>
+          )}
+        </div>
+      </section>
 
       <section className="grid grid-cols-1 xl:grid-cols-2" style={{ gap: 16, alignItems: "start" }}>
         <div className="card" style={{ padding: "16px 20px" }}>
@@ -305,11 +315,17 @@ export function Borrowing() {
             <thead><tr><th>Plan</th><th style={{ textAlign: "right" }}>Each</th><th>Next</th><th>Payments left</th></tr></thead>
             <tbody>
               {active.map((s) => <StreamRow key={`${s.provider}-${s.amount}-${s.status}`} s={s} onDone={reload} />)}
-              {active.length === 0 && <tr><td colSpan={4} style={{ color: "var(--muted)" }}>No pay-later lender in your transactions from the last {d.window_days} days.</td></tr>}
+              {active.length === 0 && <tr><td colSpan={4} style={{ color: "var(--muted)" }}>No pay-later lender in your transactions from the last {d.window_days} days. An Affirm statement uploaded below adds every loan it lists.</td></tr>}
             </tbody>
           </table>
           </div>
           <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 6 }}>The lender's app shows how many payments are left on each plan; with that, the plan knows when it ends and the freed money moves on. Interest on a plan is the lender's own figure and is not guessed here.</div>
+          {(!d.loans || d.loans.length === 0) && (
+            <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+              <StatementUpload onDone={reload} />
+              <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Affirm's monthly Loans Statement PDF, from Manage on affirm.com, is the lender's own record: upload it and every loan lands with its balance, rate and interest.</div>
+            </div>
+          )}
         </div>
       </section>
 
@@ -365,9 +381,11 @@ export function Borrowing() {
               )}
             </div>
           ))}
-          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>The black mark is 30% of the credit limit. Credit scores weigh the share of the limit used on the day the statement closes, and whether every payment is on time; a balance paid before the statement closes reports as a low share. Advances and pay-later plans do not report; a missed payment on them can.</div>
+          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>The thin upright line in each bar marks 30% of the credit limit. Credit scores weigh the share of the limit used on the day the statement closes, and whether every payment is on time; a balance paid before the statement closes reports as a low share. Advances and pay-later plans do not report; a missed payment on them can.</div>
         </section>
       )}
+
+      <AdvanceExit />
 
       <section className="card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}><h2 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>The way out, in order</h2><span style={{ fontSize: 12, color: "var(--muted)" }}>each step is a figure from your transactions and the place to act on it</span></div>

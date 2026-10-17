@@ -3,49 +3,98 @@
 import { ArrowRight, ChevronRight, Copy, Receipt } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { api, useApi, type Loaded } from "../api";
+import { api, useApi, type ApiError, type Loaded } from "../api";
 import { Approvals } from "../components/Approvals";
 import { ConfirmButton } from "../components/ConfirmButton";
 import { PurchaseChoices, dayWord } from "../components/Documents";
 import { Empty, Failed, Loading, Said } from "../components/State";
 import { money, ordinal, parseMoney, shortDate, when } from "../format";
-import type { DocumentTermsFields, FactRow, PairRow, PairSide, PairsOut, SeriesRow } from "../types";
+import type { DocumentTermsFields, FactRow, PairRow, PairSide, PairsOut, SeriesRow, Snapshot } from "../types";
 import type { FactWithCandidates, ReceiptFields } from "../types-receipts";
 
-const FACT_LABEL: Record<string, string> = { export: "Rocket Money export, ready to import", bill_due: "Bill due", statement: "Statement", paystub: "Paystub", installment: "Installment plan", advance: "Advance", price_change: "Price change", past_due: "Past-due notice", document_terms: "Terms from a document", receipt: "A receipt" };
+const FACT_LABEL: Record<string, string> = { export: "Rocket Money export, ready to import", bill_due: "Bill due", statement: "Statement", paystub: "Paystub", installment: "Pay-later plan", advance: "Advance", price_change: "Price change", past_due: "Past-due notice", document_terms: "Terms from a document", receipt: "A receipt", investment_balance: "Investment balance" };
+
+/** What an answer did, said where its card was, with a link to where it landed. */
+interface Done {
+  text: string;
+  tone?: "info" | "error";
+  to?: string;
+  link?: string;
+}
+
+function DoneLine({ done }: { done: Done | null }) {
+  if (!done) return null;
+  return (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
+      <Said text={done.text} tone={done.tone} />
+      {done.to && done.link && <Link to={done.to} style={{ fontSize: 12, fontWeight: 700 }}>{done.link}</Link>}
+    </div>
+  );
+}
+
+/** The server answers 409 with a sentence when the item was already answered, on another screen or device. */
+const alreadyDone = (e: unknown): Done | null => ((e as ApiError).status === 409 ? { text: (e as Error).message } : null);
 
 // The terms a lease or a charge sheet states, in the order a person reads a lease, each in plain words.
 type TermKey = keyof DocumentTermsFields["terms"];
-const TERM_ROWS: { key: TermKey; what: string; show: (v: number | string) => string }[] = [
-  { key: "rent", what: "Monthly rent", show: (v) => money(Number(v), { cents: true }) },
-  { key: "pet_rent", what: "Pet rent", show: (v) => money(Number(v), { cents: true }) },
-  { key: "deposit", what: "Security deposit", show: (v) => money(Number(v), { cents: true }) },
-  { key: "late_fee", what: "Late fee", show: (v) => money(Number(v), { cents: true }) },
-  { key: "notice_days", what: "Notice to move out", show: (v) => `${v} days` },
-  { key: "due_day", what: "Rent due on the", show: (v) => ordinal(Number(v)) },
-  { key: "grace_days", what: "Days of grace", show: (v) => `${v} day${Number(v) === 1 ? "" : "s"}` },
-  { key: "ends_on", what: "Lease ends", show: (v) => `${shortDate(String(v))}, ${String(v).slice(0, 4)}` },
+type TermKind = "money" | "days" | "day" | "date";
+const TERM_ROWS: { key: TermKey; what: string; kind: TermKind; show: (v: number | string) => string }[] = [
+  { key: "rent", what: "Monthly rent", kind: "money", show: (v) => money(Number(v), { cents: true }) },
+  { key: "pet_rent", what: "Pet rent", kind: "money", show: (v) => money(Number(v), { cents: true }) },
+  { key: "deposit", what: "Security deposit", kind: "money", show: (v) => money(Number(v), { cents: true }) },
+  { key: "late_fee", what: "Late fee", kind: "money", show: (v) => money(Number(v), { cents: true }) },
+  { key: "notice_days", what: "Notice to move out", kind: "days", show: (v) => `${v} days` },
+  { key: "due_day", what: "Rent due on the", kind: "day", show: (v) => ordinal(Number(v)) },
+  { key: "grace_days", what: "Days of grace", kind: "days", show: (v) => `${v} day${Number(v) === 1 ? "" : "s"}` },
+  { key: "ends_on", what: "Lease ends", kind: "date", show: (v) => `${shortDate(String(v))}, ${String(v).slice(0, 4)}` },
 ];
+const TERM_HINT: Record<TermKind, string> = { money: "an amount like 120 or 1200.50", days: "a whole number of days, like 30", day: "a day of the month from 1 to 31", date: "a date" };
 
-/** What a document states, one row per term: what, the value, the page, and the words it was read from. */
-function TermsTable({ fields }: { fields: DocumentTermsFields }) {
+/** One term as the owner left it: left out, or with its value as typed (the value read, until changed). */
+type TermEdit = { out: boolean; text: string };
+type TermEdits = Partial<Record<TermKey, TermEdit>>;
+
+/** A typed term as the server takes it, or null when it cannot be read. */
+function termValue(kind: TermKind, text: string): number | string | null {
+  const clean = text.trim();
+  if (kind === "money") return parseMoney(clean);
+  if (kind === "date") return /^\d{4}-\d{2}-\d{2}$/.test(clean) ? clean : null;
+  if (!/^\d{1,3}$/.test(clean)) return null;
+  const n = Number(clean);
+  return kind === "day" && (n < 1 || n > 31) ? null : n;
+}
+
+/** What a document states, one row per term: what, the value (which the owner can correct), the page, the words it
+ * was read from, and a switch to leave it out. */
+function TermsTable({ fields, edits, onEdit }: { fields: DocumentTermsFields; edits: TermEdits; onEdit: (key: TermKey, next: TermEdit) => void }) {
   const rows = TERM_ROWS.filter((r) => fields.terms?.[r.key]);
   if (rows.length === 0) return <div style={{ fontSize: 13, color: "var(--ink-2)" }}>No terms were read from it.</div>;
   return (
     <div style={{ overflowX: "auto" }}>
       <table className="ledger" style={{ fontSize: 13 }}>
-        <thead><tr><th>What</th><th>It says</th><th>Where</th></tr></thead>
+        <thead><tr><th>What</th><th>It says</th><th>Apply it as</th><th>Where</th><th><span className="sr-only">Leave it out</span></th></tr></thead>
         <tbody>
           {rows.map((r) => {
             const t = fields.terms[r.key]!;
+            const e = edits[r.key] ?? { out: false, text: String(t.value) };
             return (
-              <tr key={r.key}>
+              <tr key={r.key} style={{ opacity: e.out ? 0.55 : 1 }}>
                 <td>
                   <strong>{r.what}</strong>
                   <div style={{ fontSize: 11, color: "var(--muted)", overflowWrap: "anywhere" }}>“{t.quote}”</div>
                 </td>
                 <td className="num" style={{ fontWeight: 800, whiteSpace: "nowrap" }}>{r.show(t.value)}</td>
+                <td>
+                  <input className="input num" type={r.kind === "date" ? "date" : "text"} inputMode={r.kind === "money" ? "decimal" : r.kind === "date" ? undefined : "numeric"} value={e.text} disabled={e.out}
+                    onChange={(x) => onEdit(r.key, { ...e, text: x.target.value })} aria-label={`${r.what}: the value to apply`} style={{ width: r.kind === "date" ? 150 : 100, minHeight: 32 }} />
+                </td>
                 <td style={{ whiteSpace: "nowrap", color: "var(--ink-2)" }}>page {t.page}</td>
+                <td>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, minHeight: 32, whiteSpace: "nowrap" }}>
+                    <input type="checkbox" checked={e.out} onChange={(x) => onEdit(r.key, { ...e, out: x.target.checked })} style={{ width: 18, height: 18 }} />
+                    Leave out
+                  </label>
+                </td>
               </tr>
             );
           })}
@@ -55,15 +104,49 @@ function TermsTable({ fields }: { fields: DocumentTermsFields }) {
   );
 }
 
-function FactCard({ f, onDone }: { f: FactRow; onDone: () => void }) {
+/** What a confirmed detail changed, in words, with the place it landed. */
+function factDone(f: FactRow, kept: FactRow, who: string, typed: number | null, due: string): Done {
+  const [what] = kept.applied_to.split(":");
+  if (f.kind === "export") {
+    const said = kept.applied_to.replace(/^import:\s*/, "").replace(/^export imported:\s*/, "");
+    return { text: `Imported the Rocket Money export${said ? `: ${said}` : ""}. Rows already here were not added twice.`, to: "/settings/backups", link: "Undo it on Backups" };
+  }
+  if (what === "bill") return { text: `${who || "The bill"} is on your bills list${typed !== null ? ` at ${money(typed, { cents: true })}` : ""}${due ? `, due ${shortDate(due)}` : ""}.`, to: "/bills", link: "See it on Bills" };
+  if (what === "paystub") return { text: "Kept the paystub. Every figure counts it now.", to: "/paystubs", link: "See it on Paystubs" };
+  if (what === "plan") return { text: `Kept the pay-later plan${who ? ` from ${who}` : ""}. Its payments are counted until it ends.`, to: "/borrowing#installments", link: "See it on Borrowing" };
+  if (what === "account") return { text: "Kept the balance.", to: "/investments", link: "See it on Investments" };
+  return { text: kept.applied_to ? "Confirmed and used." : "Confirmed." };
+}
+
+function FactCard({ f, onDone }: { f: FactRow; onDone: (done: Done) => void }) {
   const [busy, setBusy] = useState(false);
   const [amount, setAmount] = useState(f.fields.amount !== undefined ? String(f.fields.amount) : "");
   const [due, setDue] = useState(f.fields.due_date ? String(f.fields.due_date) : "");
+  const [edits, setEdits] = useState<TermEdits>({});
   const [error, setError] = useState<string | null>(null);
   const terms = f.kind === "document_terms" ? (f.fields as unknown as DocumentTermsFields) : null;
   const sender = f.message?.sender_name || String(f.fields.sender_name || "");
   const who = String(f.fields.name || "") || sender;
   const via = f.fields.name && sender && String(f.fields.name) !== sender ? sender : "";
+
+  /** Only what the owner changed: null for a term left out, the corrected value for one typed over. */
+  function changedTerms(): Record<string, number | string | null> | string {
+    const out: Record<string, number | string | null> = {};
+    for (const r of TERM_ROWS) {
+      const t = terms?.terms?.[r.key];
+      const e = edits[r.key];
+      if (!t || !e) continue;
+      if (e.out) {
+        out[r.key] = null;
+        continue;
+      }
+      if (e.text.trim() === String(t.value)) continue;
+      const value = termValue(r.kind, e.text);
+      if (value === null) return `${r.what}: type ${TERM_HINT[r.kind]}, or tick Leave out.`;
+      if (value !== t.value) out[r.key] = value;
+    }
+    return out;
+  }
 
   async function confirm() {
     const typed = amount.trim() ? parseMoney(amount) : null;
@@ -71,19 +154,38 @@ function FactCard({ f, onDone }: { f: FactRow; onDone: () => void }) {
       setError("Type an amount like 120 or 1200.50");
       return;
     }
+    const changed = terms ? changedTerms() : {};
+    if (typeof changed === "string") {
+      setError(changed);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      await api(`/api/v1/facts/${f.id}/confirm`, { method: "POST", body: JSON.stringify({ apply: true, amount: typed ?? undefined, due_date: due || undefined }) });
-      onDone();
+      const body = { apply: true, amount: typed ?? undefined, due_date: due || undefined, ...(terms && Object.keys(changed).length ? { terms: changed } : {}) };
+      const kept = await api<FactRow>(`/api/v1/facts/${f.id}/confirm`, { method: "POST", body: JSON.stringify(body) });
+      if (terms) {
+        const applied = TERM_ROWS.filter((r) => terms.terms?.[r.key] && !edits[r.key]?.out).length;
+        onDone({ text: `Applied ${applied} term${applied === 1 ? "" : "s"} to the home${terms.title ? ` from ${terms.title}` : ""}.`, to: "/housing", link: "See it on Housing" });
+      } else {
+        onDone(factDone(f, kept, who, typed, due));
+      }
     } catch (e) {
+      const done = alreadyDone(e);
+      if (done) return onDone(done);
       setError((e as Error).message);
       setBusy(false);
     }
   }
   async function discard() {
-    await api(`/api/v1/facts/${f.id}/reject`, { method: "POST" });
-    onDone();
+    try {
+      await api(`/api/v1/facts/${f.id}/reject`, { method: "POST" });
+    } catch (e) {
+      const done = alreadyDone(e);
+      if (done) return onDone(done);
+      throw e;
+    }
+    onDone({ text: terms ? "Discarded the terms read from this document. The document stays on Housing." : "Discarded what was read from this email. Nothing was changed." });
   }
 
   if (terms) {
@@ -93,8 +195,8 @@ function FactCard({ f, onDone }: { f: FactRow; onDone: () => void }) {
           <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, overflowWrap: "anywhere" }}>{terms.title ? `Terms from ${terms.title}` : FACT_LABEL.document_terms}</h3>
           <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Read from a document you added · {when(f.created_at)} · {Math.round(f.confidence * 100)}% sure. Check each against its page.</div>
         </div>
-        <TermsTable fields={terms} />
-        <div style={{ fontSize: 12, color: "var(--muted)" }}>Quoted from the document. Anything it asks the app to do is ignored. Applying sets these on the home it is kept with, on <Link to="/housing">Housing</Link>.</div>
+        <TermsTable fields={terms} edits={edits} onEdit={(key, next) => setEdits((all) => ({ ...all, [key]: next }))} />
+        <div style={{ fontSize: 12, color: "var(--muted)" }}>Quoted from the document. Anything it asks the app to do is ignored. Correct a value that was read wrong, or tick Leave out to skip it; the rest apply as read. Applying sets them on the home it is kept with, on <Link to="/housing">Housing</Link>.</div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <button className="btn dark" type="button" disabled={busy} onClick={confirm}>{busy ? "Applying…" : "Apply to the home"}</button>
           <ConfirmButton label="Wrong, discard" question="Discard the terms read from this document? The document stays on Housing." yes="Yes, discard them" no="Keep them" onConfirm={discard} />
@@ -140,10 +242,11 @@ function FactCard({ f, onDone }: { f: FactRow; onDone: () => void }) {
 
 /** A receipt read from mail: what it says, the purchases it may belong to (the app's best first), and its dates to
  * change before it is kept. Without a purchase, it is kept and matched later on Documents. */
-function ReceiptCard({ f, onDone }: { f: FactWithCandidates; onDone: (text?: string) => void }) {
+function ReceiptCard({ f, onDone }: { f: FactWithCandidates; onDone: (done: Done) => void }) {
   const r = f.fields as unknown as ReceiptFields;
   const candidates = f.candidates ?? [];
-  const [choice, setChoice] = useState<number | null>(candidates[0]?.id ?? null);
+  // The same first choice as Documents: the best purchase without a receipt yet, else the best one.
+  const [choice, setChoice] = useState<number | null>(candidates.find((c) => !c.has_receipt)?.id ?? candidates[0]?.id ?? null);
   const [returnBy, setReturnBy] = useState(r.return_by ?? "");
   const [warranty, setWarranty] = useState(r.warranty_until ?? "");
   const [busy, setBusy] = useState(false);
@@ -157,6 +260,8 @@ function ReceiptCard({ f, onDone }: { f: FactWithCandidates; onDone: (text?: str
     try {
       kept = await api<FactRow>(`/api/v1/facts/${f.id}/confirm`, { method: "POST", body: JSON.stringify({ apply: true, transaction_id: choice ?? undefined, no_transaction: choice === null, return_by: returnBy || undefined, warranty_until: warranty || undefined }) });
     } catch (e) {
+      const done = alreadyDone(e);
+      if (done) return onDone(done);
       setError(`Couldn't keep it: ${(e as Error).message}`);
       setBusy(false);
       return;
@@ -172,15 +277,21 @@ function ReceiptCard({ f, onDone }: { f: FactWithCandidates; onDone: (text?: str
       try {
         await api(`/api/v1/documents/${doc}`, { method: "PUT", body: JSON.stringify(change) });
       } catch (e) {
-        onDone(`Kept the receipt from ${store}, but couldn't finish the change: ${(e as Error).message}. Change it on Documents.`);
+        onDone({ text: `Kept the receipt from ${store}, but couldn't finish the change: ${(e as Error).message}. Change it on Documents.`, tone: "error", to: "/documents#receipts", link: "Open Documents" });
         return;
       }
     }
-    onDone(said);
+    onDone({ text: said, to: "/documents#receipts", link: "See your receipts on Documents" });
   }
   async function discard() {
-    await api(`/api/v1/facts/${f.id}/reject`, { method: "POST" });
-    onDone();
+    try {
+      await api(`/api/v1/facts/${f.id}/reject`, { method: "POST" });
+    } catch (e) {
+      const done = alreadyDone(e);
+      if (done) return onDone(done);
+      throw e;
+    }
+    onDone({ text: `Discarded the receipt read from this email. Nothing was kept.` });
   }
 
   const facts: { label: string; value: string }[] = [
@@ -365,9 +476,27 @@ function Pairs({ state, onChanged }: { state: Loaded<PairsOut>; onChanged: () =>
   );
 }
 
-const CADENCE: Record<string, string> = { weekly: "every week", biweekly: "every two weeks", semimonthly: "twice a month", monthly: "monthly", quarterly: "quarterly", yearly: "yearly" };
+const CADENCE: Record<string, string> = { weekly: "every week", biweekly: "every two weeks", semimonthly: "twice a month", monthly: "monthly", quarterly: "every three months", semiannual: "every six months", yearly: "yearly" };
+const LEFT_HINT = "Type how many payments are left, like 4. The lender's app shows it.";
 
-function Row({ s, onDone }: { s: SeriesRow; onDone: () => void }) {
+/** What naming a charge made, from the server's answer, with the place it landed. */
+interface Classified {
+  bill?: { name: string; amount: number; cadence: string };
+  income?: { name: string; cadence: string; expected_net: number; next_date: string };
+  installment_plan?: { merchant: string; installment: number; remaining: number; next_date: string };
+}
+
+function classifyDone(s: SeriesRow, kind: string, r: Classified): Done {
+  if (r.bill) return { text: `Added ${r.bill.name}, ${money(r.bill.amount, { cents: true })} ${CADENCE[r.bill.cadence] ?? r.bill.cadence}, to your bills list as a ${kind === "subscription" ? "subscription" : "bill"}.`, to: "/bills", link: "See it on Bills" };
+  if (r.income) return { text: `Added ${r.income.name} as a paycheck: ${money(r.income.expected_net)} ${CADENCE[r.income.cadence] ?? r.income.cadence}, the next on ${shortDate(r.income.next_date)}.`, to: "/paystubs#paycheck", link: "See your paychecks" };
+  if (r.installment_plan) {
+    const p = r.installment_plan;
+    return { text: `Added the pay-later plan ${p.merchant}: ${money(p.installment, { cents: true })} each, ${p.remaining} payment${p.remaining === 1 ? "" : "s"} left, the next on ${shortDate(p.next_date)}.`, to: "/borrowing#installments", link: "See it on Borrowing" };
+  }
+  return { text: s.kind === "income" ? `${s.merchant} is marked as not income. It will not be asked about again.` : `${s.merchant} is marked as regular spending, not a bill. It will not be asked about again.` };
+}
+
+function Row({ s, onDone }: { s: SeriesRow; onDone: (done: Done) => void }) {
   const [busy, setBusy] = useState(false);
   const [autopay, setAutopay] = useState(false);
   const [remaining, setRemaining] = useState("");
@@ -379,11 +508,17 @@ function Row({ s, onDone }: { s: SeriesRow; onDone: () => void }) {
   const mark = (kind: string) => (hint === kind ? " (suggested)" : "");
 
   async function classify(kind: string) {
+    // A pay-later plan needs how many payments are left; without it the plan would end after one more payment.
+    const left = Number(remaining.trim());
+    if (kind === "installment" && !(/^\d+$/.test(remaining.trim()) && left >= 1)) {
+      setError(LEFT_HINT);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      await api(`/api/v1/recurring/${s.id}/classify`, { method: "POST", body: JSON.stringify({ kind, autopay, remaining: kind === "installment" ? Math.max(1, Number(remaining) || 1) : undefined }) });
-      onDone();
+      const r = await api<Classified>(`/api/v1/recurring/${s.id}/classify`, { method: "POST", body: JSON.stringify({ kind, autopay, remaining: kind === "installment" ? left : undefined }) });
+      onDone(classifyDone(s, kind, r));
     } catch (e) {
       setError((e as Error).message);
       setBusy(false);
@@ -414,9 +549,9 @@ function Row({ s, onDone }: { s: SeriesRow; onDone: () => void }) {
             <button className={hint === "subscription" || hint === "ignored" || hint === "installment" ? "btn" : "btn dark"} type="button" disabled={busy} onClick={() => classify("bill")}>Bill{mark("bill")}</button>
             <button className={hint === "subscription" ? "btn dark" : "btn"} type="button" disabled={busy} onClick={() => classify("subscription")}>Subscription{mark("subscription")}</button>
             <span style={{ display: "inline-flex", gap: 6, alignItems: "flex-end" }}>
-              <button className={hint === "installment" ? "btn dark" : "btn"} type="button" disabled={busy} onClick={() => classify("installment")}>Installment plan{mark("installment")}</button>
+              <button className={hint === "installment" ? "btn dark" : "btn"} type="button" disabled={busy} onClick={() => classify("installment")}>Pay-later plan{mark("installment")}</button>
               <label style={{ display: "inline-flex", flexDirection: "column", gap: 2 }} title="How many payments are left; the lender's app shows it">
-                <span className="lab">Payments left</span>
+                <span className="lab">Payments left (for a plan)</span>
                 <input className="input num" style={{ width: 70 }} value={remaining} onChange={(e) => setRemaining(e.target.value)} inputMode="numeric" />
               </label>
             </span>
@@ -437,11 +572,15 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
   const { data, reload, error } = useApi<{ series: SeriesRow[]; pending: number }>("/api/v1/recurring");
   const facts = useApi<{ facts: FactRow[]; pending: number }>("/api/v1/facts?status=pending");
   const pairs = useApi<PairsOut>("/api/v1/pairs");
+  // The count is the engine's (what the tab badge reads too), asked again after every answer here.
+  const snap = useApi<Snapshot>("/api/v1/snapshot", { live: true });
+  const [approvalsWaiting, setApprovalsWaiting] = useState<number | null>(null);
   const [detecting, setDetecting] = useState(false);
   const [looked, setLooked] = useState<{ text: string; tone: "info" | "error" } | null>(null);
-  const [factSaid, setFactSaid] = useState<string | null>(null);
-  const total = (data?.pending ?? 0) + (facts.data?.pending ?? 0) + (pairs.data?.counts.waiting ?? 0);
-  const counted = Boolean(data && facts.data && (pairs.data || pairs.error));
+  const [factSaid, setFactSaid] = useState<Done | null>(null);
+  const [seriesSaid, setSeriesSaid] = useState<Done | null>(null);
+  // Your own emails waiting are counted from the list below, as the tab badge does; the rest is the engine's count.
+  const total = snap.data && approvalsWaiting !== null ? snap.data.pending.confirmations + approvalsWaiting : null;
 
   async function detect() {
     setDetecting(true);
@@ -464,13 +603,13 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 760 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-        <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Needs you{counted ? ` · ${total}` : ""}</h1>
+        <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Needs you{total !== null ? ` · ${total}` : ""}</h1>
         <div style={{ flexGrow: 1 }} />
         <Said text={looked?.text ?? null} tone={looked?.tone} />
         <button className="btn" type="button" onClick={detect} disabled={detecting}>{detecting ? "Looking…" : "Look again"}</button>
       </div>
       <p style={{ margin: 0, color: "var(--ink-2)", fontSize: 13 }}>First: emails waiting for your OK. Then: details read from your mail and from documents you added. Then: money that moved between your accounts. Then: repeating charges found in your transactions. Once you answer one, every screen uses it.</p>
-      <Approvals onChanged={onChanged} />
+      <Approvals onChanged={onChanged} onCount={setApprovalsWaiting} />
       {facts.error && !facts.data && <Failed error={facts.error} what="what was read from your mail and documents" onRetry={facts.reload} />}
       {facts.data && facts.data.facts.length > 0 && (
         <>
@@ -480,8 +619,8 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
               <ReceiptCard
                 key={f.id}
                 f={f as FactWithCandidates}
-                onDone={(text) => {
-                  setFactSaid(text ?? null);
+                onDone={(done) => {
+                  setFactSaid(done);
                   facts.reload();
                   onChanged();
                 }}
@@ -490,8 +629,8 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
               <FactCard
                 key={f.id}
                 f={f}
-                onDone={() => {
-                  setFactSaid(null);
+                onDone={(done) => {
+                  setFactSaid(done);
                   facts.reload();
                   onChanged();
                 }}
@@ -500,24 +639,21 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
           )}
         </>
       )}
-      {factSaid && (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
-          <Said text={factSaid} />
-          <Link to="/documents#receipts" style={{ fontSize: 12, fontWeight: 700 }}>See your receipts on Documents</Link>
-        </div>
-      )}
+      <DoneLine done={factSaid} />
       <Pairs state={pairs} onChanged={onChanged} />
       {error && !data && <Failed error={error} what="the repeating charges" onRetry={reload} />}
       {!data && !error && <Loading what="what needs you" />}
-      {data && data.series.length === 0 && facts.data && facts.data.facts.length === 0 && pairs.data && pairs.data.waiting.length === 0 && (
-        <Empty to="/today" action="Back to Today">Nothing needs you. Every repeating charge in your transactions has a name, the mail has nothing new, and no money between your accounts is waiting for a yes or no.</Empty>
-      )}
       {data && data.series.length > 0 && <h2 className="lab" style={{ margin: "6px 0 0" }}>From your transactions · {data.pending}</h2>}
+      <DoneLine done={seriesSaid} />
+      {data && data.series.length === 0 && facts.data && facts.data.facts.length === 0 && pairs.data && pairs.data.waiting.length === 0 && approvalsWaiting === 0 && (
+        <Empty to="/today" action="Back to Today">Nothing needs you. No email is waiting for your OK, every repeating charge in your transactions has a name, the mail has nothing new, and no money between your accounts is waiting for a yes or no.</Empty>
+      )}
       {data?.series.map((s) => (
         <Row
           key={s.id}
           s={s}
-          onDone={() => {
+          onDone={(done) => {
+            setSeriesSaid(done);
             reload();
             onChanged();
           }}

@@ -1,6 +1,7 @@
 // Appearance at run time: loaded from the server once signed in, applied everywhere (the look, the owner's part
 // colours, the name and mark, the type size, the density, quiet numbers), and saved back when it changes, so the
-// phone and the desktop agree. Before it loads, this browser's last choice of look is used.
+// phone and the desktop agree. Before it loads, this browser's last choice of look is used. Nothing is saved until the
+// server's copy has loaded: a save sends the whole appearance, so saving the defaults would wipe the owner's own.
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import { DEMO } from "./demo/shim";
@@ -41,6 +42,18 @@ let current: AppearanceState = {
 };
 const listeners = new Set<(a: AppearanceState) => void>();
 
+/** Whether the server's copy has loaded: until it has, the page waits and nothing is saved. */
+export interface AppearanceLoad {
+  status: "loading" | "ready" | "failed";
+  error: string | null;
+}
+let load: AppearanceLoad = { status: "loading", error: null };
+const loadListeners = new Set<(l: AppearanceLoad) => void>();
+function setLoad(next: AppearanceLoad): void {
+  load = next;
+  loadListeners.forEach((l) => l(next));
+}
+
 export function appearance(): AppearanceState {
   return current;
 }
@@ -74,21 +87,45 @@ export function setAppearance(a: AppearanceState): void {
 }
 
 export async function saveAppearance(next: AppearanceState): Promise<AppearanceState> {
+  if (!DEMO && load.status !== "ready") throw new Error("Your appearance has not loaded from the app yet, so nothing was changed. Try again once it has.");
+  const before = current;
   setAppearance({ ...next, saved: true });
   if (DEMO) return current;
   const { saved: _saved, ...body } = next;
-  const out = await api<AppearanceState>("/api/v1/appearance", { method: "PUT", body: JSON.stringify(body) });
-  setAppearance(out);
-  return out;
+  try {
+    const out = await api<AppearanceState>("/api/v1/appearance", { method: "PUT", body: JSON.stringify(body) });
+    setAppearance(out);
+    return out;
+  } catch (e) {
+    setAppearance(before); // the change was not kept, so the screen goes back to what is kept
+    throw e;
+  }
 }
 
 export async function loadAppearance(): Promise<void> {
+  setLoad({ status: "loading", error: null });
   try {
     const a = await api<AppearanceState>("/api/v1/appearance");
     setAppearance({ ...current, ...a, look: a.saved ? a.look : current.look, active: a.saved ? a.active : current.active });
-  } catch {
+    setLoad({ status: "ready", error: null });
+  } catch (e) {
     apply(current);
+    // The demo keeps its appearance in this browser only, so it carries on with the defaults.
+    setLoad(DEMO ? { status: "ready", error: null } : { status: "failed", error: (e as Error).message });
   }
+}
+
+/** The load's state, followed as it changes, with the way to ask again. */
+export function useAppearanceLoad(): AppearanceLoad & { retry: () => void } {
+  const [l, setL] = useState(load);
+  useEffect(() => {
+    loadListeners.add(setL);
+    setL(load);
+    return () => {
+      loadListeners.delete(setL);
+    };
+  }, []);
+  return { ...l, retry: () => void loadAppearance() };
 }
 
 export function useAppearance(): AppearanceState {
@@ -102,11 +139,13 @@ export function useAppearance(): AppearanceState {
   return a;
 }
 
-// A picture chosen on a section is kept with the appearance, a moment after the last change.
+// A picture chosen on a section is kept with the appearance, a moment after the last change; not before the server's
+// copy has loaded, so the defaults never replace it.
 let timer: number | undefined;
 onShowAsChange((map) => {
   window.clearTimeout(timer);
   timer = window.setTimeout(() => {
+    if (!DEMO && load.status !== "ready") return;
     saveAppearance({ ...current, show_as: map }).catch(() => undefined);
   }, 600);
 });

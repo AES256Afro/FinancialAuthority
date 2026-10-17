@@ -20,6 +20,8 @@ interface LinkRow {
   last_sync_at: string | null;
   last_error: string;
   accounts: { id: number; name: string; kind: string; balance: number | null }[];
+  /** Teller's enrollment, so a sign-in that lapsed can be repaired in place (left out by an older server). */
+  enrollment_id?: string | null;
 }
 
 interface BanksOut {
@@ -32,7 +34,7 @@ interface BanksOut {
   public_url: string;
 }
 
-type TellerGlobal = { setup: (opts: { applicationId: string; environment: string; products: string[]; onSuccess: (enrollment: { accessToken: string; enrollment: { id: string; institution: { name: string } } }) => void; onExit?: () => void }) => { open: () => void } };
+type TellerGlobal = { setup: (opts: { applicationId: string; environment: string; products: string[]; enrollmentId?: string; onSuccess: (enrollment: { accessToken: string; enrollment: { id: string; institution: { name: string } } }) => void; onExit?: () => void }) => { open: () => void } };
 
 // Where a result is said: under the Plaid box, the Teller box, or beside one bank link's buttons.
 type Note = { at: string; text: string; tone: "info" | "error" } | null;
@@ -121,8 +123,10 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
     }
   }
 
-  async function connectTeller() {
+  // With a link's enrollment, Teller Connect opens that bank's sign-in again and the same link is repaired.
+  async function connectTeller(link?: LinkRow) {
     if (!data) return;
+    const at = link ? `link-${link.id}` : "teller";
     setBusy("teller-connect");
     setNote(null);
     try {
@@ -133,21 +137,22 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
         applicationId: data.providers.teller.application_id,
         environment: data.providers.teller.environment,
         products: ["transactions", "balance"],
+        ...(link?.enrollment_id ? { enrollmentId: link.enrollment_id } : {}),
         onSuccess: async (enrollment) => {
           try {
-            const r = await api<{ link: LinkRow; sync: { summary: string } }>("/api/v1/banks/teller/enroll", { method: "POST", body: JSON.stringify({ access_token: enrollment.accessToken, enrollment_id: enrollment.enrollment.id, institution: enrollment.enrollment.institution?.name ?? "" }) });
-            say("teller", `${r.link.institution || "The bank"} is linked. ${r.sync.summary}`);
+            const r = await api<{ link: LinkRow; sync: { summary: string } }>("/api/v1/banks/teller/enroll", { method: "POST", body: JSON.stringify({ access_token: enrollment.accessToken, enrollment_id: enrollment.enrollment.id, institution: enrollment.enrollment.institution?.name ?? link?.institution ?? "" }) });
+            say(at, `${r.link.institution || "The bank"} is ${link ? "signed in again" : "linked"}. ${r.sync.summary}`);
             reload();
             onChanged?.();
           } catch (e) {
-            say("teller", (e as Error).message, "error");
+            say(at, (e as Error).message, "error");
           }
         },
         onExit: () => setBusy(null),
       });
       connect.open();
     } catch (e) {
-      say("teller", (e as Error).message, "error");
+      say(at, (e as Error).message, "error");
     } finally {
       setBusy(null);
     }
@@ -202,6 +207,9 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
                   <td style={{ textAlign: "right" }}>
                     <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "flex-start" }}>
                       {l.needs_login && l.provider === "plaid" && <button className="btn dark" type="button" style={highlight(wanted.signin === String(l.id))} onClick={() => connectPlaid(l.id)}>Sign in again at {l.institution || "the bank"}</button>}
+                      {l.needs_login && l.provider === "teller" && (l.enrollment_id
+                        ? <button className="btn dark" type="button" disabled={!t?.configured || busy !== null} style={highlight(wanted.signin === String(l.id))} onClick={() => connectTeller(l)}>{busy === "teller-connect" ? "Opening…" : `Sign in again at ${l.institution || "the bank"}`}</button>
+                        : <span style={{ ...highlight(wanted.signin === String(l.id)), fontSize: 12, color: "var(--ink-2)", maxWidth: 260, textAlign: "left", alignSelf: "center" }}>To sign in again: Remove this link, then press Connect a bank through Teller below and sign in to {l.institution || "the bank"}.</span>)}
                       <button className="btn" type="button" disabled={syncing !== null} onClick={() => sync(l.id)}>{syncing === l.id ? "Reading…" : "Sync now"}</button>
                       <ConfirmButton
                         label="Remove"
@@ -272,7 +280,7 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
           </Field>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button className="btn dark" type="button" disabled={busy !== null} onClick={saveTeller}>{busy === "teller-save" ? "Saving…" : "Save"}</button>
-            <button className="btn" type="button" disabled={!t?.configured || busy !== null} style={highlight(wanted.connect === "teller")} onClick={connectTeller}>{busy === "teller-connect" ? "Opening…" : "Connect a bank through Teller"}</button>
+            <button className="btn" type="button" disabled={!t?.configured || busy !== null} style={highlight(wanted.connect === "teller")} onClick={() => connectTeller()}>{busy === "teller-connect" ? "Opening…" : "Connect a bank through Teller"}</button>
           </div>
           {said("teller")}
         </div>
