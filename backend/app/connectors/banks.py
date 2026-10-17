@@ -214,7 +214,12 @@ def tell_balance(session: Session, account: Account, amount: float) -> None:
     stands until the bank sends the app something newer, and never longer than a day."""
     now = utcnow()
     told = dict(get_setting(session, OWNER_BALANCE, {}) or {})
-    told[str(account.id)] = {"amount": round(float(amount), 2), "at": now.isoformat()}
+    prev = told.get(str(account.id)) or {}
+    # The bank's own last figure is kept beside the typed one, so a slip can be cleared back to it.
+    # An earlier typed figure without the bank's beside it leaves the bank's unknown: the balance is a typed one.
+    bank = prev["bank"] if "bank" in prev else (None if prev else account.balance)
+    bank_at = prev.get("bank_at") if prev else (account.balance_at.isoformat() if account.balance_at else None)
+    told[str(account.id)] = {"amount": round(float(amount), 2), "at": now.isoformat(), "bank": bank, "bank_at": bank_at}
     set_setting(session, OWNER_BALANCE, told)
     account.balance, account.balance_at = round(float(amount), 2), now
     session.add(account)
@@ -224,8 +229,29 @@ def tell_balance(session: Session, account: Account, amount: float) -> None:
     session.commit()
 
 
+def forget_told(session: Session, account: Account) -> str:
+    """The owner takes a typed balance back (a slip of the keys): the bank's own last figure is the balance again."""
+    told = dict(get_setting(session, OWNER_BALANCE, {}) or {})
+    mine = told.pop(str(account.id), None)
+    if mine is None:
+        raise ValueError("There is no balance you typed for this account")
+    set_setting(session, OWNER_BALANCE, told)
+    bank = mine.get("bank")
+    if bank is not None:
+        account.balance = float(bank)
+        account.balance_at = _aware(datetime.fromisoformat(mine["bank_at"])) if mine.get("bank_at") else account.balance_at
+        session.add(account)
+        record_balance(session, account, float(bank), local_today(), commit=False)
+        if account.kind == "card":
+            sync_card_debt(session, account)
+    session.commit()
+    if bank is None:
+        return f"Cleared. {account.name} takes the bank's balance at its next read."
+    return f"Cleared. {account.name} is back to what the bank last sent: ${float(bank):,.2f}."
+
+
 def told_balances(session: Session) -> dict[int, dict]:
-    """The balances the owner typed that still stand, by account id."""
+    """The balances the owner typed that still stand, by account id, with the bank's own last figure beside each."""
     now = utcnow()
     out = {}
     for key, v in (get_setting(session, OWNER_BALANCE, {}) or {}).items():
@@ -234,7 +260,7 @@ def told_balances(session: Session) -> dict[int, dict]:
         except (KeyError, TypeError, ValueError):
             continue
         if (now - at).total_seconds() < TOLD_HOURS * 3600:
-            out[int(key)] = {"amount": float(v["amount"]), "at": at.isoformat()}
+            out[int(key)] = {"amount": float(v["amount"]), "at": at.isoformat(), "bank": v.get("bank")}
     return out
 
 

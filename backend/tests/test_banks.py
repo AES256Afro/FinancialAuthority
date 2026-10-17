@@ -452,5 +452,15 @@ def test_a_balance_read_off_the_bank_stands_until_the_bank_sends_newer(owner: Te
             assert session.get(Account, chk_id).balance == 300.0  # the bank's newer balance takes over
         assert "told" not in next(a for a in owner.get("/api/v1/snapshot").json()["fresh"]["accounts"] if a["id"] == chk_id)
         assert owner.post("/api/v1/banks/accounts/999999/shows", json={"amount": 1}).status_code == 404
+        # a slip of the keys is taken back: the bank's own figure returns, however many times it was typed over
+        owner.post(f"/api/v1/banks/accounts/{chk_id}/shows", json={"amount": 21580})
+        owner.post(f"/api/v1/banks/accounts/{chk_id}/shows", json={"amount": 2158})
+        mine = next(a for a in owner.get("/api/v1/snapshot").json()["fresh"]["accounts"] if a["id"] == chk_id)
+        assert mine["balance"] == 2158 and mine["told"]["bank"] == 300.0
+        out = owner.delete(f"/api/v1/banks/accounts/{chk_id}/shows").json()
+        assert "back to what the bank last sent: $300.00" in out["said"]
+        with Session(engine) as session:
+            assert session.get(Account, chk_id).balance == 300.0
+        assert owner.delete(f"/api/v1/banks/accounts/{chk_id}/shows").status_code == 404
     finally:
         CONNECTORS["plaid"].client_factory = None

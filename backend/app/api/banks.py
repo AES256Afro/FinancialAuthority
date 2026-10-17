@@ -340,6 +340,23 @@ def bank_shows(account_id: int, body: ShowsIn, session: Session = Depends(get_se
     return {"ok": True, "said": f"Counted: ${body.amount:,.2f} {what} {account.name}, as your bank shows it now. It stands until the bank sends newer data, at most {TOLD_HOURS} hours."}
 
 
+@router.delete("/accounts/{account_id}/shows")
+def bank_shows_clear(account_id: int, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
+    """Take a typed balance back: the bank's own last figure is the balance again."""
+    from .. import services
+    from ..connectors.banks import forget_told
+
+    account = session.get(Account, account_id)
+    if account is None:
+        raise HTTPException(404, "No such account")
+    try:
+        said = forget_told(session, account)
+    except ValueError as error:
+        raise HTTPException(404, str(error)) from error
+    services.audit(session, client=principal.name, client_kind=principal.kind, tool="bank_shows_clear", args={"account": account_id}, rows=1)
+    return {"ok": True, "said": said}
+
+
 class FreshnessIn(BaseModel):
     sync_every_hours: int | None = None
     price_per_item: float | None = None
