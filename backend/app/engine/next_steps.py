@@ -117,6 +117,15 @@ def next_steps(session: Session, today: date) -> dict:
         if h["state"] == "upcoming" and h["costs_undated"]:
             what = ", ".join(h["costs_undated"][:3])
             steps.append(_step(f"home-undated-{h['id']}", "info", f"{h['name']}: {what} has no date, so the plan does not count it. Give it the day you pay, or mark it paid if it is.", "Moving home", "/move", h["source"]))
+    if housing.get("upcoming_id"):
+        # The moving day plan's steps due within the week (the notice has its own step above)
+        from .moving import moving_plan
+
+        for st in moving_plan(session, today)["steps"]:
+            if st["done"] or st["id"] == "notice" or st["date"] is None or st["state"] not in ("late", "soon"):
+                continue
+            steps.append(_step(f"move-{st['id']}", "warning" if st["state"] == "late" else "info",
+                               f"{st['title']}, {'was due' if st['state'] == 'late' else 'by'} {date.fromisoformat(st['date']):%a %b} {date.fromisoformat(st['date']).day}.", "Moving day plan", "/move", st["source"] or "move"))
     from .receipts import deadlines
 
     for d in deadlines(session, today, within_days=30):
