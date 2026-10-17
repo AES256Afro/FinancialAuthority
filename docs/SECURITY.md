@@ -38,6 +38,14 @@ Mail is read by rules first; a model sees message text only boxed as data, with 
 
 Documents and attachments are untrusted. A PDF is read under a page, stream and time budget, and a spreadsheet's unzipped size and rows are checked before it opens. A photo or a scanned PDF is read by Tesseract (with poppler's pdftoppm drawing a scan's pages) only as a separate process with no shell, a 25-second limit per picture and 60 seconds per file, a 1 GB memory cap and a CPU cap, and a 15 MB size limit; one that cannot be read in time simply keeps no text. What is read from a receipt photo is offered to keep, never applied on its own. *Test: `backend/tests/test_ocr.py`, `backend/tests/test_security3_data.py`.*
 
+### A forged email tries to slip a bill or a loan into the plan
+
+Every message is judged as it arrives from what it already carries: the receiving server's DMARC, DKIM and SPF verdict, whether a sender calling itself a known company comes from that company's own domains (a table of common senders plus the domains the owner's own verified mail used), and look-alike domains (a swapped character, a bait word such as "-alerts"). A message judged forged keeps its items out of "answer together", its cards say why, and the data check asks the owner to discard it or mark it genuine. Mail already waiting is judged from its headers, fetched read-only. Bulk confirming follows one plan shown before it runs: only a bill's newest notice counts, an old notice never starts a bill, and a notice from someone counted another way (Housing, Debts, Borrowing) never becomes a second bill. *Test: `backend/tests/test_datacheck.py`, `backend/tests/test_needsyou.py`.*
+
+### Business records hold identifiers
+
+A business is kept without its EIN: only whether one is on file. Invoices print from escaped values under a page policy that runs nothing. Tax rules are shown with their official sources, as general rules, never advice. *Test: `backend/tests/test_business.py`.*
+
 ### A model invents a number
 
 Every figure in a reply is checked against the numbers the engine returned for that conversation; anything else is marked on screen and in the API (`unverified`). The engine computes; models explain. *Test: `backend/tests/test_llm.py`, with a scripted model that invents a figure.*
