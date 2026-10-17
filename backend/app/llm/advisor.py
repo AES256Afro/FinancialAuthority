@@ -21,6 +21,8 @@ from ..store import get_setting
 from .citations import engine_numbers, unverified
 from .providers import Event, Provider, ToolSpec
 
+# Tools that return third-party words (mail, documents, what was read from them): their figures never verify a reply.
+UNTRUSTED_TOOLS = {"mail_search", "mail_read", "mail_attachment", "facts_pending", "documents_search", "document_read"}
 CHAT_TOOLS = ["finance_snapshot", "accounts_list", "transactions_search", "spending_summary", "debts_list", "borrowing", "scenario_run", "readiness", "accounts_cover", "saving_plan", "today_one_thing", "weekly_checkin", "paycheck_views", "billing_date_check", "glance", "account_move", "investments_list", "outlook", "where_to_put", "purchase_check", "billing_dates_suggest", "watchlist", "recurring_list", "bills_list", "payments_list", "paystubs_list", "brief_today", "next_steps", "mail_search", "mail_read", "mail_attachment", "facts_pending", "jobs_status", "housing_overview", "documents_search", "document_read", "receipts_list"]
 MAX_ROUNDS = 6
 MAX_TOOL_CHARS = 14000
@@ -178,7 +180,8 @@ async def advise(
                     payload = slim(call.name, await run_tool(call.name, call.arguments))
                 except Exception as error:  # noqa: BLE001 - the model gets the failure as data
                     payload = {"error": f"{type(error).__name__}: {error}"}
-            allowed |= engine_numbers(payload)
+            if call.name not in UNTRUSTED_TOOLS:
+                allowed |= engine_numbers(payload)  # a figure in third-party text (mail, a document) is not the engine's
             rows = len(payload) if isinstance(payload, list) else next((len(v) for v in payload.values() if isinstance(v, list)), 1) if isinstance(payload, dict) else 1
             used.append({"name": call.name, "arguments": call.arguments, "rows": rows})
             yield {"type": "tool", "name": call.name, "arguments": call.arguments, "rows": rows}

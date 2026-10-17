@@ -325,6 +325,7 @@ class ConfirmIn(BaseModel):
     remaining: int | None = None
     transaction_id: int | None = None  # a receipt: the purchase it belongs to (none: the best match, or kept unmatched)
     no_transaction: bool = False  # a receipt kept without a purchase, whatever matches
+    terms: dict | None = None  # a document's terms: {key: corrected value, or null to leave it out}
     return_by: date | None = None
     warranty_until: date | None = None
 
@@ -352,7 +353,7 @@ def apply_fact(session: Session, fact: ExtractedFact, ref: MessageRef | None, bo
 
         if not owner:
             raise HTTPException(403, "Only the owner, signed in, applies the terms a document states")
-        applied = apply_terms(session, fields)
+        applied = apply_terms(session, fields, body.terms)
         if not applied:
             raise HTTPException(400, "The home this document belongs to is gone")
         return applied
@@ -505,6 +506,8 @@ def confirm_fact(fact_id: int, body: ConfirmIn, session: Session = Depends(get_s
     fact = session.get(ExtractedFact, fact_id)
     if fact is None:
         raise HTTPException(404, "No such fact")
+    if fact.status != "pending":
+        raise HTTPException(409, f"This one was {fact.status} already; nothing changed.")
     ref = session.get(MessageRef, fact.message_ref_id) if fact.message_ref_id else None
     applied = apply_fact(session, fact, ref, body, owner=principal.full) if body.apply else ""
     fact.status = "applied" if applied else "confirmed"
@@ -525,6 +528,8 @@ def reject_fact(fact_id: int, session: Session = Depends(get_session), _: auth.P
     fact = session.get(ExtractedFact, fact_id)
     if fact is None:
         raise HTTPException(404, "No such fact")
+    if fact.status != "pending":
+        raise HTTPException(409, f"This one was {fact.status} already; nothing changed.")
     fact.status = "rejected"
     fact.resolved_at = utcnow()
     session.add(fact)
