@@ -3,11 +3,11 @@
 // steps in the order a person would take them, each with its reason; then each loan with what it still costs in
 // interest and what $100 early would save. Every figure is the engine's.
 import { useState } from "react";
-import { useApi } from "../api";
+import { api, useApi } from "../api";
 import { money, shortDate } from "../format";
 import { palette } from "../looks";
 import { getPrefs } from "../prefs";
-import { Show } from "./State";
+import { Said, Show } from "./State";
 import { SeverityTag } from "./Status";
 
 interface Loan { id: number; name: string; label?: string; next_date: string; next_amount: number; payments_left: number; ends: string; left_to_pay: number; payoff_estimate: number; interest_ahead: number; apr: number | null; autopay: boolean | null; source: string }
@@ -26,6 +26,18 @@ const STEP_WORD: Record<string, string> = { keep: "First", finish: "Soon", extra
 export function BorrowingPlan() {
   const state = useApi<PlanOut>("/api/v1/borrowing/plan", { live: true });
   const [picked, setPicked] = useState<string | null>(null);
+  const [said, setSaid] = useState<{ text: string; tone: "info" | "error" } | null>(null);
+  // The owner says the next payment is made: it counts now, and the bank's own row takes its place when it comes.
+  async function paid(id: number) {
+    setSaid(null);
+    try {
+      const r = await api<{ said: string }>(`/api/v1/borrowing/plans/${id}/paid`, { method: "POST", body: JSON.stringify({}) });
+      setSaid({ text: r.said, tone: "info" });
+      state.reload();
+    } catch (e) {
+      setSaid({ text: (e as Error).message, tone: "error" });
+    }
+  }
   return (
     <Show state={state} what="your borrowing plan">
       {(p) => {
@@ -90,7 +102,8 @@ export function BorrowingPlan() {
                   {p.loans.map((l) => (
                     <tr key={l.id}>
                       <td><span aria-hidden="true" style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: colour.get(l.id), marginRight: 6 }} />{l.label ?? l.name}<div style={{ fontSize: 11, color: "var(--muted)" }}>{l.apr ? `${l.apr}% a year` : "0%"} · ends {shortDate(l.ends)}</div></td>
-                      <td className="num">{shortDate(l.next_date)}<div style={{ fontSize: 11, color: "var(--muted)" }}>{money(l.next_amount, { cents: true })}</div></td>
+                      <td className="num">{shortDate(l.next_date)}<div style={{ fontSize: 11, color: "var(--muted)" }}>{money(l.next_amount, { cents: true })}</div>
+                        <button type="button" className="btn" onClick={() => paid(l.id)} style={{ minHeight: 28, padding: "2px 8px", fontSize: 11, marginTop: 4, whiteSpace: "nowrap" }}>I paid it</button></td>
                       <td className="num" style={{ textAlign: "right" }}>{money(l.left_to_pay, { cents: true })}<div style={{ fontSize: 11, color: "var(--muted)" }}>{l.payments_left} payment{l.payments_left === 1 ? "" : "s"}</div></td>
                       <td className="num" style={{ textAlign: "right", color: l.interest_ahead > 0 ? "var(--critical-ink)" : "var(--ink-2)" }}>{l.interest_ahead > 0 ? money(l.interest_ahead, { cents: true }) : "none"}</td>
                       <td className="num" style={{ textAlign: "right" }}>{money(l.payoff_estimate, { cents: true })}<div style={{ fontSize: 11, color: "var(--muted)" }}>about</div></td>
@@ -100,6 +113,8 @@ export function BorrowingPlan() {
                 </tbody>
               </table>
             </div>
+            <Said text={said?.text ?? null} tone={said?.tone} />
+            <div style={{ fontSize: 12, color: "var(--muted)" }}>Paid one before your bank shows it, or with a card the app does not see? “I paid it” counts it now; the bank's own record takes its place when it arrives, never counted twice.</div>
             <div style={{ fontSize: 12, color: "var(--muted)" }}>{p.not_advice}</div>
           </section>
         );
