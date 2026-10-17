@@ -191,3 +191,23 @@ def test_lender_mail_older_than_the_lenders_own_list_is_history(owner: TestClien
     owner.post("/api/v1/needs-you/facts", json={"ids": [fid], "action": "confirm"})
     with Session(engine) as session:
         assert session.exec(select(InstallmentPlan)).all() == []
+
+
+
+def test_suggestions_learn_from_answers_and_urgent_ones_are_never_quieted(owner: TestClient):
+    """M55: Done, Not useful and Wrong move a kind's weight; an answered suggestion stays away a while; a kind turned
+    down again and again is quieted, one tap from coming back; an urgent one always shows."""
+    from app.engine.learning import kind_of, rank, weight
+
+    assert kind_of("selfcheck-2") == "selfcheck" and kind_of("move-notice") == "move" and weight({"wrong": 1}) == 0.4
+    out = owner.post("/api/v1/suggestions/answer", json={"key": "watch-1", "answer": "not_useful"}).json()
+    assert "stays away for 60 days" in out["said"]
+    out = owner.post("/api/v1/suggestions/answer", json={"key": "watch-2", "answer": "wrong"}).json()
+    assert out["kinds"][0]["kind"] == "watch" and out["kinds"][0]["quiet"] is True
+    with Session(engine) as session:
+        shown, quiet = rank(session, [{"id": "watch-3", "severity": "info", "text": "a"}, {"id": "watch-4", "severity": "critical", "text": "b"},
+                                      {"id": "watch-1", "severity": "info", "text": "c"}, {"id": "bill-1", "severity": "info", "text": "d"}], TODAY)
+        assert [s["id"] for s in shown] == ["watch-4", "bill-1"] and [q["id"] for q in quiet] == ["watch-3"]
+    out = owner.post("/api/v1/suggestions/bring-back", json={"kind": "watch"}).json()
+    assert out["kinds"] == [] and "back" in out["said"]
+    assert owner.post("/api/v1/suggestions/answer", json={"key": "x-1", "answer": "maybe"}).status_code == 400

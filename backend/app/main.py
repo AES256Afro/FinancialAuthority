@@ -84,6 +84,7 @@ for module in (custom_reports, sinking, payoff, recap, watch, homeassistant, hou
     app.include_router(module.router)
 app.include_router(moving.exit_router)
 app.include_router(business.tax_router)
+app.include_router(datacheck.learn_router)
 app.include_router(routes.router)
 app.include_router(registers.router)
 app.include_router(mail.router)

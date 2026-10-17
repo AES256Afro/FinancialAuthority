@@ -1,9 +1,13 @@
 // Next steps: everything the app needs from you, each a tap away from the place to do it.
-// The strip rides under the header on every screen; the full list sits on Today.
+// The strip rides under the header on every screen; the full list sits on Today. Each step on Today can be answered
+// (Done, Not useful, Wrong): the app learns which kinds help (engine/learning.py) and quiets the ones that do not,
+// one tap from coming back. Urgent ones are never quieted.
+import { Check, ThumbsDown, X } from "lucide-react";
+import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { useApi } from "../api";
+import { api, useApi } from "../api";
 import { amountClass } from "../format";
-import { Failed, Loading } from "./State";
+import { Failed, Loading, Said } from "./State";
 import { SeverityTag } from "./Status";
 
 export interface Step {
@@ -12,12 +16,14 @@ export interface Step {
   text: string;
   action: string;
   link: string;
+  kind?: string;
+  weight?: number;
 }
 
 // Live: a save on any screen (a bank linked, a paycheck added) asks for the steps again.
 export function useNextSteps() {
   const { pathname } = useLocation();
-  return useApi<{ steps: Step[]; count: number }>(`/api/v1/next_steps?at=${encodeURIComponent(pathname)}`, { live: true });
+  return useApi<{ steps: Step[]; count: number; quieted?: { id: string; kind: string; text: string }[] }>(`/api/v1/next_steps?at=${encodeURIComponent(pathname)}`, { live: true });
 }
 
 export function NextStepsStrip() {
@@ -48,8 +54,33 @@ export function NextStepsStrip() {
   );
 }
 
+const ANSWER: { id: "done" | "not_useful" | "wrong"; word: string; Icon: typeof Check }[] = [
+  { id: "done", word: "Done", Icon: Check },
+  { id: "not_useful", word: "Not useful", Icon: ThumbsDown },
+  { id: "wrong", word: "Wrong", Icon: X },
+];
+
 export function NextStepsCard() {
   const steps = useNextSteps();
+  const [said, setSaid] = useState<{ text: string; tone: "info" | "error" } | null>(null);
+  async function answer(s: Step, reply: string) {
+    try {
+      const r = await api<{ said: string }>("/api/v1/suggestions/answer", { method: "POST", body: JSON.stringify({ key: s.id, answer: reply, kind: s.kind }) });
+      setSaid({ text: r.said, tone: "info" });
+      steps.reload();
+    } catch (e) {
+      setSaid({ text: (e as Error).message, tone: "error" });
+    }
+  }
+  async function bringBack(kind: string) {
+    try {
+      const r = await api<{ said: string }>("/api/v1/suggestions/bring-back", { method: "POST", body: JSON.stringify({ kind }) });
+      setSaid({ text: r.said, tone: "info" });
+      steps.reload();
+    } catch (e) {
+      setSaid({ text: (e as Error).message, tone: "error" });
+    }
+  }
   if (steps.error && !steps.data) return <Failed error={steps.error} what="the next steps" onRetry={steps.reload} />;
   if (!steps.data) return <Loading what="the next steps" />;
   const data = steps.data;
@@ -62,8 +93,25 @@ export function NextStepsCard() {
           <SeverityTag severity={s.severity} />
           <div className={amountClass(s.text)} style={{ flex: "1 1 200px", minWidth: 0, fontSize: 13, fontWeight: s.severity === "info" ? 500 : 700 }}>{s.text}</div>
           <Link to={s.link} className="btn" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", minHeight: 34, padding: "4px 10px", whiteSpace: "nowrap" }}>{s.action} →</Link>
+          <div role="group" aria-label={`Answer: ${s.text}`} style={{ display: "flex", gap: 4, flexBasis: "100%", justifyContent: "flex-end" }}>
+            {ANSWER.map((a) => (
+              <button key={a.id} type="button" className="btn" onClick={() => answer(s, a.id)} title={a.word}
+                style={{ minHeight: 28, padding: "2px 8px", fontSize: 11, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4, color: "var(--ink-2)" }}>
+                <a.Icon size={12} aria-hidden="true" style={{ display: "inline-block" }} />{a.word}
+              </button>
+            ))}
+          </div>
         </div>
       ))}
+      {(data.quieted?.length ?? 0) > 0 && (
+        <div style={{ fontSize: 12, color: "var(--muted)", display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", paddingTop: 6 }}>
+          <span>{data.quieted!.length} quieted, from kinds you marked not useful or wrong:</span>
+          {[...new Set(data.quieted!.map((q) => q.kind))].map((k) => (
+            <button key={k} type="button" className="btn" style={{ minHeight: 28, padding: "2px 8px", fontSize: 11 }} onClick={() => bringBack(k)}>Bring back “{k}”</button>
+          ))}
+        </div>
+      )}
+      <Said text={said?.text ?? null} tone={said?.tone} />
     </section>
   );
 }
