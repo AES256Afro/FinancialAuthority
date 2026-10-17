@@ -246,6 +246,8 @@ export function Borrowing() {
         <div style={{ fontSize: 13, color: "var(--ink-2)" }}>advances, pay-later plans and the card, read from your transactions · last {d.window_days} days</div>
       </div>
 
+      <BorrowingPlan />
+
       {d.cycle.length > 0 && (
         <section className="card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
@@ -387,7 +389,6 @@ export function Borrowing() {
         </section>
       )}
 
-      <BorrowingPlan />
       <AdvanceExit />
 
       <section className="card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 8 }}>
