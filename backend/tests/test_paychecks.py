@@ -93,6 +93,18 @@ def test_appearance_is_kept_on_the_server_and_checked(owner: TestClient):
     assert refused({"brand": {"name": "x", "mark": plain_svg}}) == 200
 
 
+def test_calm_the_readable_face_and_the_clear_look_are_kept(owner: TestClient):
+    first = owner.get("/api/v1/appearance").json()
+    assert first["calm"] is False and first["font"] == "regular"
+    body = {**first, "look": "contrast", "calm": True, "font": "readable"}
+    body.pop("saved", None)
+    saved = owner.put("/api/v1/appearance", json=body).json()
+    assert saved["look"] == "contrast" and saved["calm"] is True and saved["font"] == "readable"
+    again = owner.get("/api/v1/appearance").json()
+    assert again["calm"] is True and again["font"] == "readable"
+    assert owner.put("/api/v1/appearance", json={**body, "font": "comic"}).status_code == 400
+
+
 def test_on_a_payday_each_stretch_of_beads_starts_once():
     payday = date(2026, 10, 16)
     with Session(engine) as session:

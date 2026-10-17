@@ -31,6 +31,10 @@ export interface AppearanceState {
   type_size: "regular" | "larger" | "largest";
   density: "comfortable" | "compact";
   quiet: boolean;
+  /** Calm: one card at a time on Today, no motion, more room between lines. */
+  calm?: boolean;
+  /** A reading-friendly face (wider letters, more space) instead of the brand's own. */
+  font?: "regular" | "readable";
   saved?: boolean;
 }
 
@@ -74,6 +78,9 @@ function apply(a: AppearanceState): void {
   root.dataset.density = a.density;
   if (a.quiet) root.dataset.quiet = "1";
   else delete root.dataset.quiet;
+  if (a.calm) root.dataset.calm = "1";
+  else delete root.dataset.calm;
+  root.dataset.font = a.font ?? "regular";
   setServerShowAs(a.saved ? a.show_as : null);
   const icon = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
   if (icon) icon.href = a.brand.mark || DEFAULT_ICON;
