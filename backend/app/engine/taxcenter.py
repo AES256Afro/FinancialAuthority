@@ -5,6 +5,7 @@ an amended return reaches. From the owner's records and the rules in taxrules.py
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from typing import Any
 
@@ -17,6 +18,8 @@ from .business import books
 from .custom_reports import tax_totals
 
 ANSWERS = "taxes.answers"
+ITEMIZABLE = ("Charitable Donations", "Charity", "Taxes", "Medical", "Health & Wellness")  # what Schedule A can take (medical only past 7.5% of income)
+CAR_LOAN = re.compile(r"\b(car|auto|vehicle|truck)\b.*\b(loan|finance|financing|payment)\b|\b(loan|finance)\b.*\b(car|auto|vehicle|truck)\b", re.I)
 CAR_QUESTIONS = [
     ("car_new", "Was the car new when you bought it (not used, not leased)?"),
     ("car_after_2024", "Did you take out the loan after December 31, 2024?"),
@@ -55,11 +58,12 @@ def tax_year(session: Session, today: date, year: int | None = None) -> dict[str
 
     standard = (R.STANDARD_DEDUCTION.get(year) or R.STANDARD_DEDUCTION[max(R.STANDARD_DEDUCTION)]).get(status)
     totals = tax_totals(session, today, year)
-    itemizable = round(sum(c["total"] for c in totals["categories"] if c["name"] in ("Charitable Donations", "Charity", "Taxes", "Medical", "Health & Wellness")), 2)
+    itemizable = round(sum(c["total"] for c in totals["categories"] if c["name"] in ITEMIZABLE), 2)
+    categories = [{**c, "itemizable": c["name"] in ITEMIZABLE} for c in totals["categories"]]
 
     car_answers = {k: answers.get(k) for k, _ in CAR_QUESTIONS}
-    car_loans = [b.name for b in session.exec(select(Bill).where(Bill.active == True)).all() if any(w in b.name.lower() for w in ("car", "auto", "vehicle"))]  # noqa: E712
-    car_loans += [d.name for d in session.exec(select(Debt).where(Debt.active == True)).all() if d.kind == "loan" and any(w in d.name.lower() for w in ("car", "auto", "vehicle"))]  # noqa: E712
+    car_loans = [b.name for b in session.exec(select(Bill).where(Bill.active == True)).all() if CAR_LOAN.search(b.name)]  # noqa: E712
+    car_loans += [d.name for d in session.exec(select(Debt).where(Debt.active == True)).all() if d.kind == "loan" and re.search(r"\b(car|auto|vehicle|truck)\b", d.name, re.I)]  # noqa: E712
     if all(car_answers.values()):
         car_state, car_word = "likely", f"It looks like it qualifies: interest paid on the loan, up to $10,000 a year (2025 to 2028), without itemizing. Your lender reports the interest; the deduction shrinks at higher incomes."
     elif any(v is False for v in car_answers.values()):
@@ -71,12 +75,13 @@ def tax_year(session: Session, today: date, year: int | None = None) -> dict[str
 
     said = []
     if businesses:
-        said.append(f"Your {'business' if len(businesses) == 1 else 'businesses'} show ${profit:,.2f} of profit in {year} so far" + (f", with about ${se:,.2f} of self-employment tax." if se else "."))
+        said.append(f"Your {'business shows' if len(businesses) == 1 else 'businesses show'} ${profit:,.2f} of profit in {year} so far" + (f", with about ${se:,.2f} of self-employment tax." if se else "."))
     said.append(f"The {year} standard deduction for your filing status is ${standard:,.2f}; the costs that could be itemized come to ${itemizable:,.2f}, so the standard deduction is {'larger' if standard >= itemizable else 'smaller'}." if standard else "")
     if upcoming:
-        said.append(f"Next date: {upcoming[0]['what'].lower()}, {upcoming[0]['due']}.")
+        d = date.fromisoformat(upcoming[0]["due"])
+        said.append(f"Next: {d:%A, %B} {d.day}, {d.year}. {upcoming[0]['what']}.")
     return {"year": year, "filing_status": status, "dates": dates, "upcoming": upcoming[:4], "businesses": biz, "profit": round(profit, 2), "se_tax": round(se, 2),
-            "standard_deduction": standard, "itemizable": itemizable, "itemizable_categories": totals["categories"], "checks": checks,
+            "standard_deduction": standard, "itemizable": itemizable, "itemizable_categories": categories, "checks": checks,
             "never": [{**n, "source": R.source(n["source"])} for n in R.NEVER],
             "amend": {"years": [year - 3, year - 2, year - 1], "words": "A return can generally be amended within three years of filing it (or two years of paying the tax), with Form 1040-X. Business costs count only for years the business existed.",
                       "source": R.source("irs_1040x")},

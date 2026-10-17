@@ -44,10 +44,10 @@ def guide_steps(business: Business | None, ticks: dict[str, str]) -> list[dict[s
     texas = (business.state if business else "TX").upper() == "TX"
     llc = bool(business and business.kind == "llc")
     steps: list[dict[str, Any]] = [
-        {"id": "record", "title": "Name the business and what it does", "for": "both",
+        {"id": "record", "title": "Name the business and what it does", "for": "both", "set_by": "details",
          "how": "Add it here: a name, what you do, the day it began. Costs before that day count only as start-up costs.",
          "done": business is not None, "source": R.source("irs_sole_prop")},
-        {"id": "ein", "title": "Get an EIN from the IRS (free, about ten minutes)", "for": "both",
+        {"id": "ein", "title": "Get an EIN from the IRS (free, about ten minutes)", "for": "both", "set_by": "details",
          "how": "Apply on irs.gov. You get the number at once and give it instead of your Social Security number. Never pay a website for one: the IRS gives it free. The app only notes that you have one, never the number.",
          "done": bool(business and business.ein_on_file), "source": R.source("irs_ein")},
     ]
@@ -91,7 +91,12 @@ def guide(session: Session, business: Business | None) -> dict[str, Any]:
             "not_advice": R.NOT_ADVICE}
 
 
+SET_BY_DETAILS = {"record", "ein"}  # done by the business's own details, never by a tick
+
+
 def tick(session: Session, step: str, done: bool, today: date) -> dict[str, str]:
+    if step in SET_BY_DETAILS:
+        raise ValueError("That step is done by the business's own details (its record, and the box for an EIN on file)")
     ticks = dict(get_setting(session, TICKS, {}) or {})
     if done:
         ticks[step] = today.isoformat()
@@ -121,7 +126,8 @@ def books(session: Session, business: Business, year: int) -> dict[str, Any]:
 
     def add(key: str, amount: float, source: str) -> None:
         meta = R.TAX_LINES.get(key) or {"line": "27a", "words": "Other expenses"}
-        row = lines.setdefault(key or "other", {"key": key or "other", "line": meta["line"], "words": meta["words"], "amount": 0.0, "count": 0, "sources": []})
+        row = lines.setdefault(key or "other", {"key": key or "other", "line": meta["line"], "words": meta["words"], "amount": 0.0, "count": 0, "sources": [],
+                                               "rule": R.source(meta.get("source", "irs_sch_c"))})
         row["amount"] += amount
         row["count"] += 1
         row["sources"].append(source)

@@ -92,7 +92,10 @@ class TickIn(BaseModel):
 def tick_step(step: str, body: TickIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     if step not in {s["id"] for s in biz.guide_steps(None, {}) + biz.guide_steps(Business(name="x", kind="llc"), {})}:
         raise HTTPException(404, "No such step")
-    biz.tick(session, step, body.done, today())
+    try:
+        biz.tick(session, step, body.done, today())
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
     return overview(session, principal)
 
 
