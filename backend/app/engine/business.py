@@ -185,7 +185,7 @@ def mark(session: Session, ids: list[int], business_id: int | None, share: float
 FINDER: list[tuple[str, str, re.Pattern]] = [
     ("software", "Software and online services", re.compile(r"\b(anthropic|claude|openai|chatgpt|github|cloudflare|digitalocean|google ?\*?cloud|firebase|aws|amazon web services|microsoft ?365|office ?365|adobe|jetbrains|figma|notion|canva|dropbox|zoom\.us|zoom|slack|godaddy|namecheap|squarespace|wix|vercel|netlify|heroku|linode|vultr|hetzner|backblaze|1password|bitwarden|tailscale|cursor|midjourney|elevenlabs|replit)\b", re.I)),
     ("depreciation", "Computers and equipment", re.compile(r"\b(micro ?center|best ?buy|newegg|b ?& ?h photo|bhphoto|apple\.com|apple store|dell|lenovo|logitech|corsair|evga|nvidia|asus|msi|samsung|elgato|rode|shure|wacom|keychron)\b", re.I)),
-    ("utilities", "Phone and internet (the business share)", re.compile(r"\b(verizon|at&t|att\b|t-mobile|xfinity|comcast|spectrum|cox comm|google fi|mint mobile|starlink|visible)\b", re.I)),
+    ("utilities", "Phone and internet (the business share)", re.compile(r"\b(verizon|at&t|att\b|t-mobile|xfinity|comcast|spectrum (?:internet|mobile|charter)|charter comm\w*|cox comm\w*|google fi|mint mobile|starlink|visible)\b", re.I)),
     ("education", "Courses and books for the work", re.compile(r"\b(udemy|coursera|pluralsight|linkedin learning|o'?reilly|edx|skillshare|frontend masters|egghead)\b", re.I)),
     ("office", "Office supplies and shipping", re.compile(r"\b(staples|office ?depot|officemax|usps|ups store|fedex office)\b", re.I)),
     ("advertising", "Advertising", re.compile(r"\b(facebook ads|meta ads|google ads|linkedin ads|vistaprint)\b", re.I)),
