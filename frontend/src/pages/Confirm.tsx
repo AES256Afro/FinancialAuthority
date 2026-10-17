@@ -3,7 +3,7 @@
 // app's grouped count (GET /api/v1/needs-you): alike items can be answered together, and each bill the bank shows
 // no payment for is asked plainly: is it paid?
 import { ArrowRight, CircleCheck, ChevronRight, Copy, Receipt } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi, type ApiError, type Loaded } from "../api";
 import { Approvals } from "../components/Approvals";
@@ -44,6 +44,10 @@ interface PaidCandidate { id: number; date: string; merchant: string; amount: nu
 interface PastDueRow { payment_id: number; bill_id: number; name: string; amount: number; due_date: string; days_late: number; autopay: boolean; candidates: PaidCandidate[]; source: string }
 interface NeedsYouOut { as_of: string; groups: NeedsGroup[]; past_due: PastDueRow[]; total: number; word: string }
 interface ManyOut { done: { id: number; applied_to: string }[]; failed: { id: number; error: string }[]; said: string }
+interface ManyPlan { apply: number; set_aside: number; own_card: number; updates: string[]; adds: string[]; said: string }
+// A long list goes in parts, so one answer never waits on a hundred mail fetches; the server judges each part
+// against every notice it holds, so the parts add up to the same result.
+const PART = 25;
 type PaidAnswer = { answer: "paid" | "not_yet" | "stopped"; transaction_id?: number; paid_on?: string };
 
 const PAST_DUE_WORDS = "Bills with no payment seen";
@@ -80,21 +84,64 @@ function NeedsPicture({ state }: { state: Loaded<NeedsYouOut> }) {
   );
 }
 
-/** Alike items answered together: confirm the ones that have every detail they need (the app says which), or
- * discard them all. One that cannot be confirmed this way stays waiting, with its own card below. */
-function Together({ state, onAnswered }: { state: Loaded<NeedsYouOut>; onAnswered: () => void }) {
+/** What confirming a group would do, in the app's words, asked before the button is offered: which bills it
+ * brings up to date, which it adds, and how many older notices it sets aside. */
+function usePlan(g: NeedsGroup): string | null {
+  const ids = g.items.filter((i) => i.complete).map((i) => i.id).slice(0, 200);
+  const key = ids.join(",");
+  const [plan, setPlan] = useState<string | null>(null);
+  useEffect(() => {
+    let on = true;
+    setPlan(null);
+    if (ids.length === 0) return;
+    api<ManyPlan>("/api/v1/needs-you/facts", { method: "POST", body: JSON.stringify({ ids, action: "preview" }) })
+      .then((p) => on && setPlan(p.said))
+      .catch(() => on && setPlan(null));
+    return () => {
+      on = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return plan;
+}
+
+function GroupPlan({ g }: { g: NeedsGroup }) {
+  const plan = usePlan(g);
+  return <span style={{ fontSize: 13, color: "var(--ink)" }}>{plan ?? `${g.complete} of ${g.count} have every detail they need to be confirmed together.`}</span>;
+}
+
+/** Alike items answered together: confirm the ones that have every detail they need (the app says what that will
+ * do first), or discard them all. One that cannot be confirmed this way stays waiting, with its own card below. */
+// What it did is said on the page's own line (onSaid), which stays when the last of a group is answered.
+function Together({ state, onAnswered, onSaid }: { state: Loaded<NeedsYouOut>; onAnswered: () => void; onSaid: (text: string) => void }) {
   const [busy, setBusy] = useState<string | null>(null);
+  const [progress, setProgress] = useState<string | null>(null);
   const [said, setSaid] = useState<{ text: string; tone: "info" | "error" } | null>(null);
   const groups = (state.data?.groups ?? []).filter((g) => g.count > 1 && !g.one_at_a_time);
   if (groups.length === 0) return said ? <Said text={said.text} tone={said.tone} /> : null;
 
-  // A reason other than "answer it on its own card" (a bill that could not be added, say) is said as well.
+  // Sent in parts; the sentences of the parts are added up as counts, then said once. A reason other than "answer
+  // it on its own card" (a bill that could not be added, say) is said as well.
   async function send(g: NeedsGroup, action: "confirm" | "reject") {
     const ids = (action === "confirm" ? g.items.filter((i) => i.complete) : g.items).map((i) => i.id);
-    const r = await api<ManyOut>("/api/v1/needs-you/facts", { method: "POST", body: JSON.stringify({ ids, action }) });
-    const why = [...new Set(r.failed.map((f) => f.error).filter((e) => e !== "needs your answer on its own card" && e !== "already answered"))];
-    setSaid({ text: `${g.words}: ${r.said}${why.length ? ` Why: ${why.join("; ")}.` : ""}`, tone: "info" });
-    onAnswered();
+    let done = 0;
+    const failed: ManyOut["failed"] = [];
+    const sentences: string[] = [];
+    try {
+      for (let at = 0; at < ids.length; at += PART) {
+        setProgress(`${action === "confirm" ? "Confirming" : "Discarding"} ${Math.min(at + PART, ids.length)} of ${ids.length}…`);
+        const r = await api<ManyOut>("/api/v1/needs-you/facts", { method: "POST", body: JSON.stringify({ ids: ids.slice(at, at + PART), action }) });
+        done += r.done.length;
+        failed.push(...r.failed);
+        sentences.push(r.said);
+      }
+    } finally {
+      setProgress(null);
+      onAnswered();
+    }
+    const why = [...new Set(failed.map((f) => f.error).filter((e) => e !== "needs your answer on its own card" && e !== "already answered"))];
+    const text = sentences.length === 1 ? sentences[0] : `${action === "confirm" ? "Answered" : "Discarded"} ${done} of ${ids.length}.${failed.length ? ` ${failed.length} still wait: they need your answer one at a time.` : ""}`;
+    onSaid(`${g.words}: ${text}${why.length ? ` Why: ${why.slice(0, 3).join("; ")}${why.length > 3 ? `; and ${why.length - 3} more reasons` : ""}.` : ""}`);
   }
   async function confirmAll(g: NeedsGroup) {
     setBusy(g.kind);
@@ -117,10 +164,10 @@ function Together({ state, onAnswered }: { state: Loaded<NeedsYouOut>; onAnswere
       {groups.map((g, i) => (
         <div key={g.kind} style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: i === 0 ? 0 : 10, borderTop: i === 0 ? 0 : "1px solid var(--surface-2)" }}>
           <strong style={{ fontSize: 14, overflowWrap: "anywhere" }}>{g.words} · {g.count}</strong>
-          <span style={{ fontSize: 12, color: "var(--ink-2)" }}>{g.complete} of {g.count} have every detail they need to be confirmed together.</span>
+          <GroupPlan g={g} />
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
             {g.complete > 0
-              ? <button className="btn dark" type="button" disabled={busy !== null} onClick={() => confirmAll(g)}>{busy === g.kind ? "Confirming…" : `Confirm the ${plural(g.complete, "complete one", "complete ones")}`}</button>
+              ? <button className="btn dark" type="button" disabled={busy !== null} onClick={() => confirmAll(g)}>{busy === g.kind ? (progress ?? "Confirming…") : `Confirm the ${plural(g.complete, "complete one", "complete ones")}`}</button>
               : <span style={{ fontSize: 13, color: "var(--ink-2)", alignSelf: "center" }}>None has every detail yet: answer each on its card below.</span>}
             <ConfirmButton label={`Discard all ${g.count}`} question={`Discard all ${g.count} (${g.words})? Nothing read from them is used.`} yes="Yes, discard them" no="Keep them" onConfirm={() => send(g, "reject")} />
           </div>
@@ -803,7 +850,7 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
       {facts.data && facts.data.facts.length > 0 && (
         <>
           <h2 className="lab" style={{ margin: 0 }}>From your mail and documents · {facts.data.pending}</h2>
-          <Together state={needs} onAnswered={factAnswered} />
+          <Together state={needs} onAnswered={factAnswered} onSaid={(text) => setFactSaid({ text })} />
           {facts.data.facts.map((f) =>
             f.kind === "receipt" ? (
               <ReceiptCard

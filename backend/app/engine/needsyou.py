@@ -4,7 +4,11 @@ bill the bank shows no payment for asked plainly: is it paid?
 Facts from mail and documents are grouped by kind, each group with how many are complete enough to confirm in one
 tap. A bill marked past due comes with the payments that might be it: a transaction near its due date with an
 amount close to it, not already matched to another bill. The owner answers: paid (this one, or paid another way),
-not yet, or the bill has stopped."""
+not yet, or the bill has stopped.
+
+Answering many together follows one plan (plan_many), shown before it is done: a bill's notices count only by the
+newest (an older one is set aside, so an old amount never replaces a newer one, in whatever order they are sent),
+and a notice more than sixty days old never starts a new bill (it is most likely a service that has stopped)."""
 
 from __future__ import annotations
 
@@ -14,7 +18,7 @@ from typing import Any
 
 from sqlmodel import Session, select
 
-from ..models import Account, Bill, ExtractedFact, Payment, Transaction
+from ..models import Account, Bill, ExtractedFact, MessageRef, Payment, Transaction
 
 GROUP_WORDS = {
     "bill_due": "Bills from your mail", "past_due": "Past-due notices", "paystub": "Paystubs", "statement": "Statements", "installment": "Pay-later plans",
@@ -27,6 +31,8 @@ COMPLETE = {
     "statement": (), "price_change": ("amount",), "payment_confirmation": (),
 }
 NEVER_IN_BULK = {"export", "document_terms", "installment", "advance"}  # each needs the owner's eye, one at a time
+BILL_NOTICES = ("bill_due", "past_due", "price_change")  # each names a bill; only its newest notice counts
+OLD_NOTICE_DAYS = 60  # older than this, a notice for a bill not on file starts nothing
 
 
 def complete(fact: ExtractedFact) -> bool:
@@ -34,6 +40,102 @@ def complete(fact: ExtractedFact) -> bool:
         return False
     fields = json.loads(fact.fields or "{}")
     return all(fields.get(k) not in (None, "") for k in COMPLETE[fact.kind])
+
+
+def notice_name(fields: dict[str, Any], ref: MessageRef | None, override: str | None = None) -> str:
+    """The bill a notice is about, as confirming it would name it."""
+    return (override or fields.get("name") or fields.get("sender_name") or (ref.sender_name if ref else "") or "Bill").strip()
+
+
+def _notice_day(fact: ExtractedFact, fields: dict[str, Any], ref: MessageRef | None) -> date | None:
+    """When a notice is for: its due date, else the day the message came."""
+    try:
+        if fields.get("due_date"):
+            return date.fromisoformat(str(fields["due_date"])[:10])
+    except ValueError:
+        pass
+    if ref is not None and ref.date is not None:
+        return ref.date.date()
+    return fact.created_at.date() if fact.created_at else None
+
+
+def _names(xs: list[str]) -> str:
+    return ", ".join(xs[:4]) + (f" and {len(xs) - 4} more" if len(xs) > 4 else "")
+
+
+def plan_many(session: Session, facts: list[ExtractedFact], today: date, *, loose: bool = True) -> dict[str, Any]:
+    """What confirming these together would do, each one: apply it, set it aside (with why), or leave it for its own
+    card. Newest is judged against every notice for the same bill, waiting or already answered, so sending them in
+    parts gives the same result as sending them at once."""
+    from .recurring import bill_named, merchant_key
+
+    bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
+    refs: dict[int, MessageRef | None] = {}
+
+    def ref_of(f: ExtractedFact) -> MessageRef | None:
+        if f.message_ref_id is None:
+            return None
+        if f.message_ref_id not in refs:
+            refs[f.message_ref_id] = session.get(MessageRef, f.message_ref_id)
+        return refs[f.message_ref_id]
+
+    # The newest day seen for each bill, across every notice the app holds (rejected ones aside).
+    newest: dict[str, tuple[date, int]] = {}
+    for other in session.exec(select(ExtractedFact).where(ExtractedFact.kind.in_(BILL_NOTICES), ExtractedFact.status != "rejected")).all():  # type: ignore[attr-defined]
+        fields = json.loads(other.fields or "{}")
+        day = _notice_day(other, fields, ref_of(other))
+        key = merchant_key(notice_name(fields, ref_of(other)))
+        if day is not None and (key not in newest or (day, other.id or 0) > newest[key]):
+            newest[key] = (day, other.id or 0)
+
+    steps: list[dict[str, Any]] = []
+    for f in facts:
+        fields = json.loads(f.fields or "{}")
+        step: dict[str, Any] = {"id": f.id, "kind": f.kind}
+        if f.status != "pending":
+            step.update(do="skip", why="already answered")
+        elif not complete(f):
+            step.update(do="own_card", why="needs your answer on its own card")
+        elif f.kind in BILL_NOTICES:
+            name = notice_name(fields, ref_of(f))
+            key = merchant_key(name)
+            day = _notice_day(f, fields, ref_of(f))
+            bill = bill_named(bills, key, loose=loose)
+            top = newest.get(key)
+            if top is not None and day is not None and (day, f.id or 0) < top:
+                step.update(do="set_aside", why=f"an older notice for {name}; the newest one counts", name=name)
+            elif bill is None and (day is None or day < today - timedelta(days=OLD_NOTICE_DAYS)):
+                step.update(do="set_aside", why=f"over {OLD_NOTICE_DAYS} days old, and no bill named {name} is on file: most likely a service that has stopped", name=name)
+            elif bill is None and f.kind != "bill_due":
+                step.update(do="own_card", why=f"no bill named {name} is on file to change", name=name)
+            else:
+                step.update(do="apply", name=bill.name if bill else name, bill_id=bill.id if bill else None, new=bill is None)
+        else:
+            step.update(do="apply")
+        steps.append(step)
+
+    applying = [s for s in steps if s["do"] == "apply"]
+    updates = sorted({s["name"] for s in applying if s.get("name") and not s.get("new")})
+    adds = sorted({s["name"] for s in applying if s.get("new")})
+    aside = sum(1 for s in steps if s["do"] == "set_aside")
+    own = sum(1 for s in steps if s["do"] == "own_card")
+    others = sum(1 for s in applying if not s.get("name"))
+    parts = []
+    if updates:
+        parts.append(f"brings {len(updates)} bill{'s' if len(updates) != 1 else ''} up to date ({_names(updates)})")
+    if adds:
+        parts.append(f"adds {len(adds)} new bill{'s' if len(adds) != 1 else ''} ({_names(adds)})")
+    if others:
+        parts.append(f"keeps {others}")
+    if aside:
+        parts.append(f"sets aside {aside} older notice{'s' if aside != 1 else ''}")
+    if parts:
+        said = f"Confirming {'these ' + str(len(steps)) if len(steps) != 1 else 'this one'} " + (", ".join(parts[:-1]) + " and " if len(parts) > 1 else "") + parts[-1] + "."
+    else:
+        said = "Nothing here can be confirmed together."
+    if own:
+        said += f" {own} {'stays' if own == 1 else 'stay'} for {'its' if own == 1 else 'their'} own card."
+    return {"steps": steps, "apply": len(applying), "set_aside": aside, "own_card": own, "updates": updates, "adds": adds, "said": said}
 
 
 def payment_candidates(session: Session, payment: Payment, bill: Bill, limit: int = 3) -> list[dict[str, Any]]:
@@ -56,7 +158,7 @@ def payment_candidates(session: Session, payment: Payment, bill: Bill, limit: in
 def triage(session: Session, today: date) -> dict[str, Any]:
     from ..api.mail import list_facts_rows
 
-    pending = list_facts_rows(session, "pending", 500)
+    pending = list_facts_rows(session, "pending", 1000)
     by_id = {f.id: f for f in session.exec(select(ExtractedFact).where(ExtractedFact.status == "pending")).all()}
     groups: dict[str, dict[str, Any]] = {}
     for row in pending:

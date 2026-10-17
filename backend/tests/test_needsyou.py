@@ -93,3 +93,33 @@ def test_a_cards_terms_can_be_cleared_and_money_between_people_removed(owner: Te
     owner.post("/api/v1/debts/payoff/people", json={"person": "Example Friend", "direction": "lent", "amount": 50})
     assert owner.delete("/api/v1/debts/payoff/people/0").json()["people"] == []
     assert owner.delete("/api/v1/debts/payoff/people/0").status_code == 404
+
+
+def test_many_notices_for_one_bill_count_only_by_the_newest_in_any_order(owner: TestClient):
+    """A mailbox read back over months holds many notices per bill. Confirming them together, in parts and in any
+    order, leaves each bill with its newest notice's figures; an old notice for a bill not on file starts nothing."""
+    with Session(engine) as session:
+        session.add(Bill(name="Example Water", amount=40.0, due_day=25))
+        notices = [
+            ("Example Water", 44.0, "2026-10-25"), ("Example Water", 38.0, "2026-08-25"), ("Example Water", 41.0, "2026-09-25"),
+            ("Example Internet", 60.0, "2026-10-28"), ("Example Old Gym", 30.0, "2026-06-01"),
+        ]
+        rows = [ExtractedFact(kind="bill_due", fields=json.dumps({"name": n, "amount": a, "due_date": d}), status="pending") for n, a, d in notices]
+        session.add_all(rows)
+        session.commit()
+        newest, older_a, older_b, internet, gym = [r.id for r in rows]
+    ids = [older_a, older_b, internet, gym, newest]
+    preview = owner.post("/api/v1/needs-you/facts", json={"ids": ids, "action": "preview"}).json()
+    assert preview["updates"] == ["Example Water"] and preview["adds"] == ["Example Internet"] and preview["set_aside"] == 3
+    assert preview["said"] == "Confirming these 5 brings 1 bill up to date (Example Water), adds 1 new bill (Example Internet) and sets aside 3 older notices."
+    with Session(engine) as session:
+        assert session.get(ExtractedFact, newest).status == "pending"  # a preview changes nothing
+    # The older notices go first, alone: still set aside, since the newest is judged against every notice held.
+    first = owner.post("/api/v1/needs-you/facts", json={"ids": [older_a, older_b, gym], "action": "confirm"}).json()
+    assert first["said"] == "Confirmed 0 and set aside 3 older notices."
+    owner.post("/api/v1/needs-you/facts", json={"ids": [newest, internet], "action": "confirm"})
+    with Session(engine) as session:
+        bills = {b.name: b for b in session.exec(select(Bill)).all()}
+        assert bills["Example Water"].amount == 44.0 and "Example Internet" in bills and "Example Old Gym" not in bills
+        gone = session.get(ExtractedFact, gym)
+        assert gone.status == "rejected" and gone.applied_to.startswith("set aside: over 60 days old")
