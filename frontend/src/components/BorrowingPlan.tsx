@@ -10,7 +10,7 @@ import { getPrefs } from "../prefs";
 import { Show } from "./State";
 import { SeverityTag } from "./Status";
 
-interface Loan { id: number; name: string; next_date: string; next_amount: number; payments_left: number; ends: string; left_to_pay: number; payoff_estimate: number; interest_ahead: number; apr: number | null; autopay: boolean | null; source: string }
+interface Loan { id: number; name: string; label?: string; next_date: string; next_amount: number; payments_left: number; ends: string; left_to_pay: number; payoff_estimate: number; interest_ahead: number; apr: number | null; autopay: boolean | null; source: string }
 interface PlanOut {
   loans: Loan[];
   stairs: { month: string; total: number; parts: { id: number; name: string; amount: number }[] }[];
@@ -63,7 +63,7 @@ export function BorrowingPlan() {
               <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px", fontSize: 12, color: "var(--ink-2)" }}>
                 {p.loans.map((l) => (
                   <span key={l.id} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-                    <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 3, background: colour.get(l.id) }} />{l.name}
+                    <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 3, background: colour.get(l.id) }} />{l.label ?? l.name}
                   </span>
                 ))}
               </div>
@@ -89,7 +89,7 @@ export function BorrowingPlan() {
                 <tbody>
                   {p.loans.map((l) => (
                     <tr key={l.id}>
-                      <td><span aria-hidden="true" style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: colour.get(l.id), marginRight: 6 }} />{l.name}<div style={{ fontSize: 11, color: "var(--muted)" }}>{l.apr ? `${l.apr}% a year` : "0%"} · ends {shortDate(l.ends)}</div></td>
+                      <td><span aria-hidden="true" style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: colour.get(l.id), marginRight: 6 }} />{l.label ?? l.name}<div style={{ fontSize: 11, color: "var(--muted)" }}>{l.apr ? `${l.apr}% a year` : "0%"} · ends {shortDate(l.ends)}</div></td>
                       <td className="num">{shortDate(l.next_date)}<div style={{ fontSize: 11, color: "var(--muted)" }}>{money(l.next_amount, { cents: true })}</div></td>
                       <td className="num" style={{ textAlign: "right" }}>{money(l.left_to_pay, { cents: true })}<div style={{ fontSize: 11, color: "var(--muted)" }}>{l.payments_left} payment{l.payments_left === 1 ? "" : "s"}</div></td>
                       <td className="num" style={{ textAlign: "right", color: l.interest_ahead > 0 ? "var(--critical-ink)" : "var(--ink-2)" }}>{l.interest_ahead > 0 ? money(l.interest_ahead, { cents: true }) : "none"}</td>
