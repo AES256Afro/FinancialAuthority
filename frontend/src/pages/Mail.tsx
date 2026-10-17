@@ -9,8 +9,8 @@ import { money, when } from "../format";
 import type { FactRow, MessageRow } from "../types";
 
 const KIND_LABEL: Record<string, string> = {
-  bill_due: "bill", statement: "statement", paystub: "paystub", installment: "installment", advance: "advance", price_change: "price change", payday: "payday",
-  payment_confirmation: "payment", past_due: "past due", bank_alert: "bank alert", export: "export", upcoming_bills: "upcoming", none: "",
+  bill_due: "bill", statement: "statement", paystub: "paystub", installment: "pay-later plan", advance: "advance", price_change: "price change", payday: "payday",
+  payment_confirmation: "payment", past_due: "past due", bank_alert: "bank alert", export: "export", upcoming_bills: "upcoming bills", receipt: "receipt", none: "",
 };
 
 // Each field the app reads, in plain words; any other key is shown with its underscores turned to spaces.
@@ -123,7 +123,10 @@ export function Mail() {
               <div style={{ fontWeight: 700, fontSize: 13 }}>{m.subject || "(no subject)"}</div>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 11 }}>
                 <span style={{ fontWeight: 800, padding: "1px 6px", borderRadius: 999, background: "var(--surface-2)", color: "var(--ink-2)" }}>{m.account}</span>
-                {KIND_LABEL[m.kind] && <span style={{ fontWeight: 800, color: m.kind === "past_due" || m.kind === "bank_alert" ? "var(--critical-ink)" : "var(--safe-ink)" }}>{KIND_LABEL[m.kind]}</span>}
+                {/* What kind of message it is, as a plain tag; only a past-due notice carries a status, with its icon and word. */}
+                {m.kind === "past_due"
+                  ? <SeverityTag severity="critical" word="Urgent: past due" />
+                  : KIND_LABEL[m.kind] && <span style={{ fontWeight: 700, padding: "1px 6px", borderRadius: 999, border: "1px solid var(--hairline)", color: "var(--ink-2)" }}>{KIND_LABEL[m.kind]}</span>}
               </div>
             </button>
           ))}

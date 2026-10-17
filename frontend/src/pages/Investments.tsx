@@ -8,7 +8,7 @@ import { api, useApi } from "../api";
 import { ConfirmButton } from "../components/ConfirmButton";
 import { Failed, Loading, Said } from "../components/State";
 import { StatusPill } from "../components/Status";
-import { money, parseMoney, shortDate } from "../format";
+import { money, parseMoney, shortDate, when } from "../format";
 import { openPlaidLink } from "../plaid";
 
 interface HoldingRow {
@@ -55,8 +55,14 @@ interface Overview {
 }
 
 const SUBTYPE_WORD: Record<string, string> = { "401k": "401(k)", "403b": "403(b)", "457b": "457(b)", ira: "IRA", roth_ira: "Roth IRA", sep_ira: "SEP IRA", simple_ira: "SIMPLE IRA", tsp: "TSP", pension: "pension", brokerage: "brokerage", hsa: "HSA", "529": "529 plan", crypto: "crypto", stock_plan: "stock plan", other: "other" };
-// Series colours from the validated palette; the warning colour is kept for status and never used here.
-const KIND_TONE: Record<string, string> = { equity: "var(--paycheck)", etf: "var(--paycheck-ink)", "mutual fund": "var(--debt)", "fixed income": "var(--safe)", cash: "var(--safe-ink)", cryptocurrency: "var(--bill)", derivative: "var(--later)", other: "var(--muted)" };
+// Series colours from the validated palette; green, amber and red are kept for status and never used here.
+const KIND_TONE: Record<string, string> = { equity: "var(--paycheck)", etf: "var(--paycheck-ink)", "mutual fund": "var(--debt)", "fixed income": "var(--saving)", cash: "var(--buffer)", cryptocurrency: "var(--bill)", derivative: "var(--later)", other: "var(--muted)" };
+
+/** When a balance is from. A statement's balance is kept at midnight UTC of its day, so it is shown as that day;
+ * a balance read from a bank link is a real moment, shown in local time. */
+function balanceWhen(at: string): string {
+  return /T00:00:00(\.0+)?(Z|\+00:00)?$/.test(at) ? shortDate(at.slice(0, 10)) : when(at);
+}
 
 type Note = { text: string; tone: "info" | "error" } | null;
 
@@ -158,13 +164,21 @@ function Line({ points }: { points: { date: string; balance: number }[] }) {
   const y = (v: number) => (max === min ? h / 2 : h - 4 - ((v - min) / (max - min)) * (h - 8));
   const d = points.map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p.balance).toFixed(1)}`).join(" ");
   const last = points[points.length - 1];
+  const said = `Balance over time: ${shortDate(points[0].date)} ${money(points[0].balance)}, ${shortDate(last.date)} ${money(last.balance)}`;
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} role="img" aria-label="Balance over time" style={{ maxWidth: 360, display: "block" }}>
-      <title>{`${shortDate(points[0].date)} ${money(points[0].balance)} to ${shortDate(last.date)} ${money(last.balance)}`}</title>
-      <path d={`${d} L${x(points.length - 1).toFixed(1)},${h} L2,${h} Z`} fill="var(--paycheck-soft)" />
-      <path d={d} fill="none" stroke="var(--paycheck)" strokeWidth={2} />
-      <circle cx={x(points.length - 1)} cy={y(last.balance)} r={3.5} fill="var(--paycheck)" stroke="var(--surface)" strokeWidth={2} />
-    </svg>
+    <div style={{ maxWidth: 360, display: "flex", flexDirection: "column", gap: 2 }}>
+      <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} role="img" aria-label={said} style={{ display: "block" }}>
+        <title>{said}</title>
+        <path d={`${d} L${x(points.length - 1).toFixed(1)},${h} L2,${h} Z`} fill="var(--paycheck-soft)" />
+        <path d={d} fill="none" stroke="var(--paycheck)" strokeWidth={2} />
+        <circle cx={2} cy={y(points[0].balance)} r={3} fill="var(--paycheck)" />
+        <circle cx={x(points.length - 1)} cy={y(last.balance)} r={3.5} fill="var(--paycheck)" stroke="var(--surface)" strokeWidth={2} />
+      </svg>
+      <div aria-hidden="true" style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 11, color: "var(--ink-2)" }}>
+        <span>{shortDate(points[0].date)} <strong className="num">{money(points[0].balance)}</strong></span>
+        <span>{shortDate(last.date)} <strong className="num">{money(last.balance)}</strong></span>
+      </div>
+    </div>
   );
 }
 
@@ -320,8 +334,8 @@ export function Investments() {
                 <div style={{ flexGrow: 1 }} />
                 <span className="num" style={{ fontSize: 20, fontWeight: 800 }}>{a.balance === null ? "—" : money(a.balance)}</span>
                 {a.balance_at && a.stale_days !== null && a.stale_days > 35
-                  ? <StatusPill status="warn">as of {shortDate(a.balance_at.slice(0, 10))}, over a month old</StatusPill>
-                  : <span style={{ fontSize: 12, color: "var(--muted)" }}>{a.balance_at ? `as of ${shortDate(a.balance_at.slice(0, 10))}` : "no balance yet"}</span>}
+                  ? <StatusPill status="warn">as of {balanceWhen(a.balance_at)}, over a month old</StatusPill>
+                  : <span style={{ fontSize: 12, color: "var(--muted)" }}>{a.balance_at ? `as of ${balanceWhen(a.balance_at)}` : "no balance yet"}</span>}
               </div>
               <GainLine r={gainOf.get(a.id)} loading={!gains.data && !gains.error} />
               {a.history.length > 1 && <Line points={a.history} />}

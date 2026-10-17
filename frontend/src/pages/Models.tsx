@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { money } from "../format";
+import { ConfirmButton } from "../components/ConfirmButton";
 import { Failed, Loading, Said } from "../components/State";
 import { Where } from "../components/Where";
 
@@ -193,16 +194,24 @@ function RoleCard({ role, conf, providers, defaults, onSaved }: { role: string; 
 function Secrets({ state, canStore, onSaved }: { state: Record<string, boolean>; canStore: boolean; onSaved: () => void }) {
   const [values, setValues] = useState<Record<string, string>>({ anthropic: "", openai: "" });
   const [note, setNote] = useState<{ name: string; text: string; tone: "info" | "error" } | null>(null);
+  // Saving needs a key in the box; removing a kept key is its own button, asked first.
   async function store(name: string) {
+    if (!values[name].trim()) return;
     setNote(null);
     try {
       await api("/api/v1/models/secrets", { method: "PUT", body: JSON.stringify({ name, value: values[name] }) });
       setValues({ ...values, [name]: "" });
-      setNote({ name, text: values[name] ? `The ${name} key is stored, encrypted.` : `The ${name} key is removed.`, tone: "info" });
+      setNote({ name, text: `The ${name} key is stored, encrypted.`, tone: "info" });
       onSaved();
     } catch (e) {
       setNote({ name, text: (e as Error).message, tone: "error" });
     }
+  }
+  async function removeKey(name: string) {
+    setNote(null);
+    await api("/api/v1/models/secrets", { method: "PUT", body: JSON.stringify({ name, value: "" }) });
+    setNote({ name, text: `The ${name} key is removed.`, tone: "info" });
+    onSaved();
   }
   const rows = [
     { name: "anthropic", title: "Anthropic API key", where: "anthropic_key" as const },
@@ -231,10 +240,13 @@ function Secrets({ state, canStore, onSaved }: { state: Record<string, boolean>;
         >
           <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "1 1 260px" }}>
             <span className="lab">{r.title} · {state[r.name] ? "set" : "not set"}</span>
-            <input className="input" type="password" autoComplete="off" value={values[r.name]} onChange={(e) => setValues({ ...values, [r.name]: e.target.value })} placeholder={state[r.name] ? "Paste a new key to replace it, or save empty to remove it" : "Paste the key"} disabled={!canStore} />
+            <input className="input" type="password" autoComplete="off" value={values[r.name]} onChange={(e) => setValues({ ...values, [r.name]: e.target.value })} placeholder={state[r.name] ? "Paste a new key to replace it" : "Paste the key"} disabled={!canStore} />
             <Where id={r.where} />
           </label>
-          <button className="btn dark" type="submit" disabled={!canStore}>Save</button>
+          <button className="btn dark" type="submit" disabled={!canStore || !values[r.name].trim()}>Save</button>
+          {state[r.name] && !values[r.name].trim() && (
+            <ConfirmButton label="Remove the key" question={`Remove the ${r.title}? Any model set to use it stops working until a new key is pasted.`} yes="Yes, remove it" no="Keep it" onConfirm={() => removeKey(r.name)} />
+          )}
           {note?.name === r.name && <Said text={note.text} tone={note.tone} />}
         </form>
       ))}
@@ -242,24 +254,30 @@ function Secrets({ state, canStore, onSaved }: { state: Record<string, boolean>;
   );
 }
 
+// Save replaces what both models read, so the boxes stay closed until what is kept has loaded, and a load that
+// arrives after the owner started typing does not overwrite the typing.
 function Rules() {
-  const { data, reload } = useApi<{ rules: string; goals: string; buffer: number }>("/api/v1/rules");
+  const state = useApi<{ rules: string; goals: string; buffer: number }>("/api/v1/rules");
+  const { data, reload, error } = state;
   const [rules, setRules] = useState("");
   const [goals, setGoals] = useState("");
+  const [typed, setTyped] = useState(false);
   const [note, setNote] = useState<Note>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    if (data) {
+    if (data && !typed) {
       setRules(data.rules);
       setGoals(data.goals);
     }
-  }, [data]);
+  }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
   async function save() {
+    if (!data) return;
     setBusy(true);
     setNote(null);
     try {
       await api("/api/v1/rules", { method: "PUT", body: JSON.stringify({ rules, goals }) });
       setNote({ text: "Saved. A review is due.", tone: "info" });
+      setTyped(false);
       reload();
     } catch (e) {
       setNote({ text: (e as Error).message, tone: "error" });
@@ -273,16 +291,22 @@ function Rules() {
         <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>Your rules and goals</h2>
         <div style={{ fontSize: 13, color: "var(--ink-2)", marginTop: 2 }}>Both models read these. The reviewer proposes rules you can add with one tap; you can write your own here. Plain sentences, one per line.</div>
       </div>
+      {error && !data && <Failed error={error} what="your rules and goals" onRetry={reload} card={false} />}
+      {!data && !error && <Loading what="your rules and goals" card={false} />}
+      {data && (
+        <>
       <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         <span className="lab">Standing rules</span>
-        <textarea className="input" rows={5} value={rules} onChange={(e) => setRules(e.target.value)} placeholder={"- Never let checking go under $100.\n- Pay the advances first, always."} style={{ resize: "vertical" }} />
+        <textarea className="input" rows={5} value={rules} onChange={(e) => { setTyped(true); setRules(e.target.value); }} placeholder={"- Never let checking go under $100.\n- Pay the advances first, always."} style={{ resize: "vertical" }} />
       </label>
       <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         <span className="lab">Goals</span>
-        <textarea className="input" rows={3} value={goals} onChange={(e) => setGoals(e.target.value)} placeholder="Clear the advance apps by spring. Then a $1,000 safety cushion." style={{ resize: "vertical" }} />
+        <textarea className="input" rows={3} value={goals} onChange={(e) => { setTyped(true); setGoals(e.target.value); }} placeholder="Clear the advance apps by spring. Then a $1,000 safety cushion." style={{ resize: "vertical" }} />
       </label>
+        </>
+      )}
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <button className="btn dark" type="button" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save"}</button>
+        <button className="btn dark" type="button" disabled={busy || !data} onClick={save}>{busy ? "Saving…" : "Save"}</button>
         {note && <Said text={note.text} tone={note.tone} />}
         {data && <span style={{ fontSize: 12, color: "var(--ink-2)" }}>Your <Link to="/glossary#buffer">safety cushion (buffer)</Link> is {money(data.buffer)}. Change it on <Link to="/settings">Settings</Link>; the reviewer can also propose another, and you apply it with one tap.</span>}
       </div>

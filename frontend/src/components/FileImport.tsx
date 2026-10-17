@@ -39,9 +39,13 @@ interface Preview {
   skipped?: number;
   year?: number;
   note?: string;
+  /** A statement PDF that is Affirm's Loans Statement (left out by an older server). */
+  affirm?: boolean;
 }
 
 const isPdf = (f: File) => f.type === "application/pdf" || /\.pdf$/i.test(f.name);
+/** Affirm's Loans Statement is read on Borrowing, loan by loan, not as bank lines. */
+const looksAffirm = (p: Preview, f: File | null) => p.kind === "statement" && (p.affirm === true || (p.affirm === undefined && Boolean(f && /affirm/i.test(f.name))));
 const lines = (n: number) => `${n} ${n === 1 ? "line" : "lines"}`;
 
 export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
@@ -90,6 +94,28 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
     if (turned && file && preview?.kind === "statement") look(file, next);
   }
 
+  // An Affirm Loans Statement goes where it is read loan by loan, with the lender's balances and rates.
+  async function readAffirm() {
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    setDone(null);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const r = await api<{ loans: number; created: number; updated: number; retired: number }>("/api/v1/borrowing/statement", { method: "POST", body });
+      const summary = `${file.name}: ${r.loans} pay-later loans read from the Affirm statement; ${r.created} new, ${r.updated} updated, ${r.retired} closed. Borrowing shows each one.`;
+      onDone?.(summary);
+      setDone(summary);
+      setPreview(null);
+      setFile(null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function run() {
     if (!file) return;
     setBusy(true);
@@ -128,9 +154,16 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
   }
 
   const needsName = preview !== null && preview.kind !== "bills" && into === "new" && !account.trim();
+  const affirm = preview !== null && looksAffirm(preview, file);
+  // One amount column: its sign says which way the money went, and the choice below can flip it. Separate money-out
+  // and money-in columns say it themselves.
+  const oneColumn = preview?.kind === "csv" && Boolean(preview.mapping?.amount) && !(preview.mapping?.debit && preview.mapping?.credit);
+  // The sample comes back read with the sign the file seemed to use (positive is money out); a different choice
+  // shows it the other way round, for the preview only. The import reads the file again with the choice.
+  const flip = oneColumn && preview?.sign !== undefined && sign !== preview.sign ? -1 : 1;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {done && <Said text={done} />}
+      {done && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}><Said text={done} />{/Affirm statement/.test(done) && <Link to="/borrowing#loans" style={{ fontSize: 12, fontWeight: 700 }}>Open Borrowing</Link>}</div>}
       {last && (
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 13 }}>
           <span>Not what you meant?</span>
@@ -213,14 +246,37 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
               {preview.note && <span>{preview.note}</span>}
             </div>
           )}
+          {affirm && (
+            <div role="status" style={{ display: "flex", flexDirection: "column", gap: 6, padding: "8px 10px", borderRadius: 10, background: "var(--surface-2)", fontSize: 13 }}>
+              <span><strong>This is an Affirm Loans Statement.</strong> It is read loan by loan, with the lender's balances and rates, the way <Link to="/borrowing#loans">Borrowing</Link> reads it; its lines are not bank transactions, so they are not imported here.</span>
+              <span style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <button className="btn dark" type="button" disabled={busy} onClick={readAffirm}>{busy ? "Reading…" : "Read it as an Affirm statement"}</button>
+                <span style={{ fontSize: 12, color: "var(--ink-2)" }}>Every loan it lists lands on Borrowing and Debts.</span>
+              </span>
+            </div>
+          )}
           {preview.kind !== "bills" && preview.kind !== "statement" && preview.sample.length > 0 && (
             <div style={{ overflowX: "auto" }}>
               <table className="ledger" style={{ fontSize: 12 }}>
-                <thead><tr><th>Date</th><th>Description</th><th style={{ textAlign: "right" }}>Amount</th></tr></thead>
-                <tbody>{preview.sample.map((r, i) => <tr key={i}><td style={{ whiteSpace: "nowrap" }}>{r.date ? shortDate(r.date) : "no date"}</td><td>{r.description}</td><td className="num" style={{ textAlign: "right" }}>{money(r.amount ?? 0, { cents: true })}</td></tr>)}</tbody>
+                <thead><tr><th>Date</th><th>Description</th><th style={{ textAlign: "right" }}>Money out</th><th style={{ textAlign: "right" }}>Money in</th></tr></thead>
+                <tbody>
+                  {preview.sample.map((r, i) => {
+                    const shown = (r.amount ?? 0) * flip;
+                    const into = shown < 0;
+                    return (
+                      <tr key={i}>
+                        <td style={{ whiteSpace: "nowrap" }}>{r.date ? shortDate(r.date) : "no date"}</td>
+                        <td>{r.description}</td>
+                        <td className="num" style={{ textAlign: "right" }}>{into ? "" : money(shown, { cents: true })}</td>
+                        <td className="num" style={{ textAlign: "right", color: "var(--safe-ink)", fontWeight: 700 }}>{into ? money(Math.abs(shown), { cents: true, sign: true }) : ""}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
               </table>
             </div>
           )}
+          {oneColumn && preview.sample.length > 0 && <span style={{ fontSize: 12, color: "var(--ink-2)" }}>Check a paycheck and a purchase above: a paycheck belongs under Money in. If they are the wrong way round, change "Signs in the file" below; the rows above follow.</span>}
           {preview.kind !== "bills" && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px, 100%), 1fr))", gap: 8 }}>
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Into</span>
@@ -232,13 +288,14 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
             {into === "new" && <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Account name</span><input className="input" value={account} onChange={(e) => setAccount(e.target.value)} placeholder="Everyday Checking" /></label>}
             {into === "new" && <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">At</span><input className="input" value={institution} onChange={(e) => setInstitution(e.target.value)} placeholder="Example Bank" /></label>}
             {into === "new" && <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Kind</span><select className="input" value={kind} onChange={(e) => pickKind(e.target.value)}><option value="checking">checking</option><option value="savings">savings</option><option value="card">card</option><option value="loan">loan</option></select></label>}
-            {preview.kind === "csv" && (
+            {oneColumn && (
               <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Signs in the file</span><select className="input" value={sign} onChange={(e) => setSign(e.target.value as "bank" | "ledger")}><option value="bank">money in is positive (most banks)</option><option value="ledger">money out is positive</option></select></label>
             )}
           </div>
           )}
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <button className="btn dark" type="button" disabled={busy || !preview.ready || needsName} onClick={run}>{busy ? "Importing…" : preview.kind === "bills" ? "Put these bills on your bills list" : "Import these rows"}</button>
+            {!affirm && <button className="btn dark" type="button" disabled={busy || !preview.ready || needsName} onClick={run}>{busy ? "Importing…" : preview.kind === "bills" ? "Put these bills on your bills list" : "Import these rows"}</button>}
+            {affirm && <button className="btn" type="button" disabled={busy || !preview.ready || needsName} onClick={run}>Import its lines as transactions anyway</button>}
             {needsName && <span style={{ fontSize: 13, fontWeight: 700, color: "var(--ink)" }}>Name the account first.</span>}
             <span style={{ fontSize: 12, color: "var(--ink-2)", flex: "1 1 260px" }}>{preview.kind === "bills" ? "A bill with the same name is updated, not doubled; a row without a due day is skipped. A copy of everything is kept first, and the import can be undone." : "A row the account already holds, from an earlier file, a bank link or an export, is not added again. A copy of everything is kept first, and the import can be undone."}</span>
           </div>

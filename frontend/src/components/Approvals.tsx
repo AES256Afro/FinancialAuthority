@@ -2,7 +2,7 @@
 // always allow that recipient. Nothing leaves until a tap here, or an allowance made here. Each person approves
 // only their own sends: someone else's are listed with whose they are, and no button.
 import { User } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, useApi } from "../api";
 import { when } from "../format";
 import { ConfirmButton } from "./ConfirmButton";
@@ -36,7 +36,8 @@ interface ApprovalsOut {
 const STATUS_WORD: Record<ApprovalRow["status"], string> = { pending: "waiting", approved: "approved", denied: "denied", sent: "sent", failed: "not sent (it failed)" };
 const KIND_WORD: Record<string, string> = { key: " (an app using a key)", oauth: " (a connected app)" };
 
-export function Approvals({ onChanged }: { onChanged?: () => void }) {
+/** `onCount`: told how many of your own emails wait for your OK, each time the list loads (Needs you counts them). */
+export function Approvals({ onChanged, onCount }: { onChanged?: () => void; onCount?: (waiting: number) => void }) {
   const state = useApi<ApprovalsOut>("/api/v1/approvals?status=all&limit=30");
   // A connected app is recorded by its client id; its name comes from the list of connected apps.
   const clients = useApi<{ clients: { client_id: string; name: string }[] }>("/api/v1/oauth/clients");
@@ -48,6 +49,10 @@ export function Approvals({ onChanged }: { onChanged?: () => void }) {
   const pending = (data?.approvals ?? []).filter((a) => a.status === "pending" && mine(a));
   const others = (data?.approvals ?? []).filter((a) => a.status === "pending" && !mine(a));
   const recent = (data?.approvals ?? []).filter((a) => a.status !== "pending").slice(0, 5);
+  const waiting = data ? pending.length : null;
+  useEffect(() => {
+    if (waiting !== null) onCount?.(waiting);
+  }, [waiting]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function who(a: ApprovalRow): string {
     if (a.created_kind === "owner" || a.created_kind === "person") return mine(a) ? "you" : a.created_by;

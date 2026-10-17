@@ -77,10 +77,10 @@ export function Audit() {
   const clients = data ? Object.entries(data.week.by_client).sort((a, b) => b[1] - a[1]) : [];
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 980 }}>
-      <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Audit</h1>
-      <p style={{ margin: 0, color: "var(--ink-2)" }}>Every read a model, an app or a script made through the tools, newest first. Your own use of these screens is not logged, except a few pages and exports, which show "you" below.</p>
-      {error && !data && <Failed error={error} what="the audit log" onRetry={state.reload} />}
-      {!data && !error && <Loading what="the audit log" />}
+      <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Activity</h1>
+      <p style={{ margin: 0, color: "var(--ink-2)" }}>This page lists every read a model, an app or a script made through the tools, newest first. Your own use of these screens is not logged, except a few pages and exports, which show "you" below.</p>
+      {error && !data && <Failed error={error} what="the activity" onRetry={state.reload} />}
+      {!data && !error && <Loading what="the activity" />}
       {data && (
         <>
           <section className="card" style={{ padding: 14, display: "flex", gap: 24, flexWrap: "wrap" }}>

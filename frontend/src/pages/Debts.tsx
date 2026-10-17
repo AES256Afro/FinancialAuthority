@@ -2,12 +2,14 @@
 // month costs, and the two classic orders. Then paying it off: the date each debt is gone each way, with the extra
 // you name; advance apps by what they cost; money between people. The engine computed all of it; this page draws it.
 import { ArrowDownLeft, ArrowUpRight, Info } from "lucide-react";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, useApi } from "../api";
-import { Empty, Failed, Loading, Said } from "../components/State";
+import { api, useApi, type ApiError } from "../api";
+import { ConfirmButton } from "../components/ConfirmButton";
+import { dayWord } from "../components/Documents";
+import { Empty, Failed, Loading, Said, useWidth } from "../components/State";
 import { SeverityTag, StatusPill } from "../components/Status";
-import { money, monthYear, parseIso, parseMoney, shortDate, when } from "../format";
+import { money, monthYear, parseIso, parseMoney, shortDate } from "../format";
 import type { AdvanceCost, PayoffOut, PayoffWay, PersonLoan } from "../types";
 
 interface DebtItem {
@@ -59,7 +61,8 @@ function Terms({ d, onSaved, said, setSaid }: { d: DebtItem; onSaved: () => void
     setBusy(true);
     setSaid(null);
     try {
-      await api(`/api/v1/debts/${d.id}`, { method: "PUT", body: JSON.stringify({ apr: apr.trim() ? Number(apr) : undefined, credit_limit: limitValue ?? undefined, statement_day: statement.trim() ? day(statement) : undefined, due_day: due.trim() ? day(due) : undefined, minimum: minimumValue ?? undefined, pay_in_full: full }) });
+      // A box left empty is sent as null, so a term typed by mistake can be cleared.
+      await api(`/api/v1/debts/${d.id}`, { method: "PUT", body: JSON.stringify({ apr: apr.trim() ? Number(apr) : null, credit_limit: limitValue, statement_day: statement.trim() ? day(statement) : null, due_day: due.trim() ? day(due) : null, minimum: minimumValue, pay_in_full: full }) });
       setSaid({ tone: "info", text: "Saved." });
       onSaved();
     } catch (e) {
@@ -100,17 +103,21 @@ interface Mountain {
 
 // Series colours from the validated palette; the warning colour is kept for status and never used here.
 const KIND_TONE: Record<string, string> = { card: "var(--debt)", loan: "var(--debt-ink)", bnpl: "var(--bill)", advance: "var(--later)", medical: "var(--paycheck)" };
-const KIND_WORD: Record<string, string> = { card: "card", loan: "loan", bnpl: "installment plan", advance: "advance", medical: "medical" };
+const KIND_WORD: Record<string, string> = { card: "card", loan: "loan", bnpl: "pay-later plan", advance: "advance", medical: "medical" };
 
+// One drawing unit is one pixel, so each slice's name and balance stay readable on a phone; a slice too narrow for
+// its words keeps them in its tooltip and in the table below.
 function MountainChart({ items, total }: { items: DebtItem[]; total: number }) {
-  const w = 640;
+  const box = useRef<HTMLDivElement>(null);
+  const w = Math.max(260, Math.min(720, useWidth(box, 640)));
   const h = 150;
   const base = h - 24;
   let x = 0;
   const gap = 2;
   const usable = w - gap * Math.max(0, items.length - 1);
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} width="100%" role="img" aria-label="Debts as slices of the whole" style={{ display: "block", maxWidth: 720 }}>
+    <div ref={box} style={{ width: "100%", maxWidth: 720 }}>
+    <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h} role="img" aria-label={`Debts as slices of the whole: ${items.map((d) => `${d.name} ${money(d.balance ?? 0)}`).join("; ")}`} style={{ display: "block", maxWidth: "100%" }}>
       {items.map((d) => {
         const width = Math.max(2, ((d.balance ?? 0) / Math.max(1, total)) * usable);
         const height = 30 + 90 * ((d.balance ?? 0) / Math.max(1, total));
@@ -128,6 +135,7 @@ function MountainChart({ items, total }: { items: DebtItem[]; total: number }) {
       })}
       <line x1={0} x2={w} y1={base} y2={base} stroke="var(--ink-2)" strokeWidth={1} />
     </svg>
+    </div>
   );
 }
 
@@ -267,8 +275,73 @@ function AdvanceCosts({ items }: { items: AdvanceCost[] }) {
   );
 }
 
+// One person loan changed in place: who, which way, how much, the day and the note. Sent whole (a PUT replaces).
+function PersonEdit({ index, r, onSaved, onCancel }: { index: number; r: PersonLoan; onSaved: (text: string) => void; onCancel: () => void }) {
+  const [person, setPerson] = useState(r.person);
+  const [direction, setDirection] = useState<"lent" | "borrowed">(r.direction);
+  const [amount, setAmount] = useState(String(r.amount));
+  const [on, setOn] = useState(r.on);
+  const [note, setNote] = useState(r.note);
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<Note>(null);
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    const name = person.trim();
+    if (!name) return setSaid({ tone: "error", text: "Type the person's name." });
+    const value = parseMoney(amount);
+    if (value === null || value <= 0) return setSaid({ tone: "error", text: AMOUNT_HINT });
+    setBusy(true);
+    setSaid(null);
+    try {
+      await api<{ people: PersonLoan[] }>(`/api/v1/debts/payoff/people/${index}`, { method: "PUT", body: JSON.stringify({ person: name, direction, amount: value, on: on || null, note: note.trim(), settled: r.settled }) });
+      onSaved(`Changed: ${direction === "lent" ? `you lent ${name}` : `you borrowed from ${name}`} ${money(value, { cents: true })}.`);
+    } catch (err) {
+      setSaid({ tone: "error", text: `Couldn't change it: ${(err as Error).message}` });
+      setBusy(false);
+    }
+  }
+  return (
+    <form onSubmit={save} style={{ display: "flex", flexDirection: "column", gap: 8, padding: 10, borderRadius: 10, background: "var(--surface-2)" }}>
+      <fieldset style={{ border: 0, padding: 0, margin: 0, display: "flex", gap: 16, flexWrap: "wrap" }}>
+        <legend className="lab" style={{ padding: 0, marginBottom: 4 }}>Which way the money went</legend>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, minHeight: 36 }}>
+          <input type="radio" name={`person-edit-${index}`} checked={direction === "lent"} onChange={() => setDirection("lent")} style={{ width: 18, height: 18 }} />
+          I lent money to them
+        </label>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, minHeight: 36 }}>
+          <input type="radio" name={`person-edit-${index}`} checked={direction === "borrowed"} onChange={() => setDirection("borrowed")} style={{ width: 18, height: 18 }} />
+          I borrowed money from them
+        </label>
+      </fieldset>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "1 1 160px", minWidth: 0 }}>
+          <span className="lab">Person</span>
+          <input className="input" value={person} onChange={(e) => setPerson(e.target.value)} autoComplete="off" />
+        </label>
+        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span className="lab">Amount</span>
+          <input className="input num" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: "min(100%, 130px)" }} />
+        </label>
+        <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span className="lab">On</span>
+          <input className="input" type="date" value={on} onChange={(e) => setOn(e.target.value)} />
+        </label>
+      </div>
+      <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <span className="lab">Note (optional)</span>
+        <input className="input" value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} />
+      </label>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <button type="submit" className="btn dark" style={SMALL_BTN} disabled={busy}>{busy ? "Saving…" : "Keep the changes"}</button>
+        <button type="button" className="btn" style={SMALL_BTN} onClick={onCancel}>Cancel</button>
+        <Said text={said?.text ?? null} tone={said?.tone} />
+      </div>
+    </form>
+  );
+}
+
 // Money lent to or borrowed from people: a list kept by hand, with no rate. Settling is a switch, so it can be
-// turned back.
+// turned back; an entry typed wrong can be changed or removed.
 function People({ rows, onChanged }: { rows: PersonLoan[]; onChanged: () => void }) {
   const [person, setPerson] = useState("");
   const [direction, setDirection] = useState<"lent" | "borrowed">("lent");
@@ -278,6 +351,21 @@ function People({ rows, onChanged }: { rows: PersonLoan[]; onChanged: () => void
   const [busy, setBusy] = useState<string | null>(null);
   const [formSaid, setFormSaid] = useState<Note>(null);
   const [rowSaid, setRowSaid] = useState<Record<number, Note>>({});
+  const [editing, setEditing] = useState<number | null>(null);
+  const [listSaid, setListSaid] = useState<string | null>(null);
+
+  async function removeRow(index: number, r: PersonLoan) {
+    try {
+      await api<{ people: PersonLoan[] }>(`/api/v1/debts/payoff/people/${index}`, { method: "DELETE" });
+    } catch (err) {
+      if ((err as ApiError).status === 405) throw new Error("This version of the app cannot remove an entry yet. Change it with Edit, or mark it as settled.");
+      throw err;
+    }
+    setEditing(null);
+    setRowSaid({});
+    setListSaid(`Removed: ${r.direction === "lent" ? `you lent ${r.person}` : `you borrowed from ${r.person}`} ${money(r.amount, { cents: true })}.`);
+    onChanged();
+  }
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -345,15 +433,24 @@ function People({ rows, onChanged }: { rows: PersonLoan[]; onChanged: () => void
                   {r.settled ? <StatusPill status="good">Settled</StatusPill> : <SeverityTag severity="info" word="Still open" />}
                 </div>
                 {r.note && <div style={{ fontSize: 12, color: "var(--ink-2)", paddingLeft: 24 }}>{r.note}</div>}
-                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", paddingLeft: 24 }}>
-                  <button type="button" className="btn" style={SMALL_BTN} disabled={busy === `row-${i}`} onClick={() => settle(i, r)}>{r.settled ? "Mark as not settled" : "Mark as settled"}</button>
-                  {said && <Said text={said.text} tone={said.tone} />}
-                </div>
+                {editing === i ? (
+                  <div style={{ paddingLeft: 24 }}>
+                    <PersonEdit index={i} r={r} onCancel={() => setEditing(null)} onSaved={(text) => { setEditing(null); setRowSaid((all) => ({ ...all, [i]: { tone: "info", text } })); onChanged(); }} />
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", paddingLeft: 24 }}>
+                    <button type="button" className="btn" style={SMALL_BTN} disabled={busy === `row-${i}`} onClick={() => settle(i, r)}>{r.settled ? "Mark as not settled" : "Mark as settled"}</button>
+                    <button type="button" className="btn" style={SMALL_BTN} onClick={() => { setListSaid(null); setEditing(i); }}>Edit</button>
+                    <ConfirmButton label="Remove" style={SMALL_BTN} question={`Take ${r.direction === "lent" ? `the loan to ${r.person}` : `the loan from ${r.person}`} off the list?`} yes="Yes, remove it" no="Keep it" onConfirm={() => removeRow(i, r)} />
+                    {said && <Said text={said.text} tone={said.tone} />}
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
       )}
+      <Said text={listSaid} />
       <form onSubmit={add} style={{ display: "flex", flexDirection: "column", gap: 10, borderTop: "1px solid var(--hairline)", paddingTop: 10 }}>
         <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>Add to the list</h3>
         <fieldset style={{ border: 0, padding: 0, margin: 0, display: "flex", gap: 16, flexWrap: "wrap" }}>
@@ -445,7 +542,7 @@ function Payoff({ changed }: { changed: number }) {
         {!state.error && !p && <Loading card={false} what="the payoff dates" />}
         {p && scale && (
           p.debts.length === 0 ? (
-            <Empty card={false}>No debts with a balance to pay off. Cards, loans, installment plans and medical bills appear here once they have a balance.</Empty>
+            <Empty card={false}>No debts with a balance to pay off. Cards, loans, pay-later plans and medical bills appear here once they have a balance.</Empty>
           ) : (
             <>
               <div className="num" style={{ fontSize: 13, color: "var(--ink-2)" }}>
@@ -515,7 +612,7 @@ export function Debts() {
                 {data.items.map((d) => (
                   <React.Fragment key={d.source}>
                     <tr>
-                      <td><strong>{d.name}</strong>{d.credit_limit ? <div style={{ fontSize: 11, color: "var(--muted)" }}>credit limit {money(d.credit_limit)}{d.statement_day ? ` · statement day ${d.statement_day}` : ""}{d.due_day ? ` · due day ${d.due_day}` : ""}</div> : null}{d.kind === "bnpl" ? <div style={{ fontSize: 11, color: "var(--muted)" }}>{d.ends ? `ends ${when(d.ends)}` : ""}{d.finance_charge ? ` · ${money(d.finance_charge)} finance charge over its life` : " · 0% as far as your transactions show"}</div> : null}</td>
+                      <td><strong>{d.name}</strong>{d.credit_limit ? <div style={{ fontSize: 11, color: "var(--muted)" }}>credit limit {money(d.credit_limit)}{d.statement_day ? ` · statement day ${d.statement_day}` : ""}{d.due_day ? ` · due day ${d.due_day}` : ""}</div> : null}{d.kind === "bnpl" ? <div style={{ fontSize: 11, color: "var(--muted)" }}>{d.ends ? `ends ${dayWord(d.ends)}` : ""}{d.finance_charge ? ` · ${money(d.finance_charge)} finance charge over its life` : " · 0% as far as your transactions show"}</div> : null}</td>
                       <td style={{ color: "var(--ink-2)" }}>{KIND_WORD[d.kind] ?? d.kind}</td>
                       <td className="num" style={{ textAlign: "right" }}>{money(d.balance ?? 0)}</td>
                       <td className="num" style={{ textAlign: "right", color: "var(--ink-2)" }}>{d.apr !== null && d.apr !== undefined ? `${d.apr}%` : "—"}</td>
@@ -525,7 +622,7 @@ export function Debts() {
                     {d.source.startsWith("debt:") && (d.kind === "card" || d.kind === "loan") && <Terms key={`${d.source}-${d.apr}-${d.credit_limit}-${d.statement_day}-${d.due_day}-${d.minimum}-${String(d.pay_in_full)}`} d={d} onSaved={() => { reload(); setChanged((n) => n + 1); }} said={notes[d.source] ?? null} setSaid={(n) => setNotes((all) => ({ ...all, [d.source]: n }))} />}
                   </React.Fragment>
                 ))}
-                {data.items.length === 0 && <tr><td colSpan={6} style={{ color: "var(--muted)" }}>No debts on record. Cards, loans, installment plans and advances appear here as they are confirmed.</td></tr>}
+                {data.items.length === 0 && <tr><td colSpan={6} style={{ color: "var(--muted)" }}>No debts on record. Cards, loans, pay-later plans and advances appear here as they are confirmed.</td></tr>}
               </tbody>
             </table>
           </section>
@@ -545,7 +642,7 @@ export function Debts() {
             </div>
           )}
           <Payoff changed={changed} />
-          <div style={{ fontSize: 12, color: "var(--muted)" }}>{data.not_advice} Installment plans count what is left to pay; advances count the amount with its fee.</div>
+          <div style={{ fontSize: 12, color: "var(--muted)" }}>{data.not_advice} Pay-later plans count what is left to pay; advances count the amount with its fee.</div>
         </>
       )}
     </div>

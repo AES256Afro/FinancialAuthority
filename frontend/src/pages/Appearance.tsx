@@ -1,15 +1,15 @@
 // Settings › Appearance: make the app yours. Pick a home (a preset or your own arrangement of sections, each with
 // its picture, any hidden), the look, the colour of each part (checked for colour-blind readers before it can be
-// kept), the app's name and mark, the type size, the density and quiet numbers. Kept on the server, so every
-// device agrees.
+// kept), the app's name and mark, the type size, the density and hiding amounts. Kept on the server, so every
+// device agrees; the page waits for the server's copy before it lets anything change.
 import { ArrowDown, ArrowUp, CircleCheck, Eye, EyeOff, GripVertical, OctagonAlert, TriangleAlert, X } from "lucide-react";
-import { useState, type ReactNode } from "react";
-import { saveAppearance, useAppearance, type Arrangement, type AppearanceState, type Section } from "../appearance";
+import { useEffect, useState, type ReactNode } from "react";
+import { saveAppearance, useAppearance, useAppearanceLoad, type Arrangement, type AppearanceState, type Section } from "../appearance";
 import { defaultRoleColours, LOOKS, ROLES, VALIDATED_ORDER, type LookId, type Role } from "../looks";
-import { validatePalette, type Report } from "../looks/validate";
+import { asHex, validatePalette, type Report } from "../looks/validate";
 import { PRESETS, SECTIONS, sectionByKey } from "../sections";
 import { ConfirmButton } from "../components/ConfirmButton";
-import { Said } from "../components/State";
+import { Failed, Loading, Said } from "../components/State";
 
 // Where a save's outcome is said: beside the part of the page whose button caused it.
 type Area = "home" | "look" | "colours" | "name" | "text";
@@ -24,7 +24,8 @@ function H({ children, sub }: { children: string; sub?: string }) {
 }
 
 function Thumb({ a }: { a: Arrangement }) {
-  const fills: Record<string, string> = { one_thing: "var(--warning)", safe: "var(--safe)", paycheck: "var(--paycheck)", cover: "var(--debt)", saving: "var(--saving)", view: "var(--ink-2)", sixty: "var(--paycheck)", borrowing: "var(--critical)", debts: "var(--debt)" };
+  // Series colours only: green, amber and red are kept for status, which always comes with an icon and a word.
+  const fills: Record<string, string> = { one_thing: "var(--ink-2)", safe: "var(--housing)", paycheck: "var(--paycheck)", cover: "var(--debt)", saving: "var(--saving)", view: "var(--muted)", sixty: "var(--paycheck)", borrowing: "var(--later)", debts: "var(--debt)" };
   return (
     <div aria-hidden="true" style={{ display: "flex", flexDirection: "column", gap: 3, padding: 6, borderRadius: 8, background: "var(--surface-2)", width: 70, flexShrink: 0 }}>
       {a.sections.filter((s) => !s.hidden).slice(0, 6).map((s, i) => <div key={i} style={{ height: s.key === "view" || s.key === "paycheck" ? 14 : 6, borderRadius: 3, background: fills[s.key] ?? "var(--hairline)", opacity: 0.85 }} />)}
@@ -77,7 +78,10 @@ function Editor({ start, onSave, onCancel, said }: { start: Arrangement; onSave:
                 </select>
               ) : <span />}
               <span style={{ display: "inline-flex", gap: 4 }}>
-                <button type="button" className="btn" style={{ minHeight: 32, padding: "2px 8px" }} onClick={() => patch(i, { hidden: !s.hidden })} aria-label={s.hidden ? `Show ${def?.name}` : `Hide ${def?.name}`}>{s.hidden ? <EyeOff size={14} /> : <Eye size={14} />}</button>
+                <button type="button" className="btn" style={{ minHeight: 32, padding: "2px 8px", display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12 }} onClick={() => patch(i, { hidden: !s.hidden })} aria-pressed={!s.hidden}>
+                  <span className="sr-only">{def?.name ?? s.key} on Home: </span>
+                  {s.hidden ? <EyeOff size={14} aria-hidden="true" /> : <Eye size={14} aria-hidden="true" />}{s.hidden ? "Hidden" : "Shown"}
+                </button>
                 <button type="button" className="btn" style={{ minHeight: 32, padding: "2px 8px" }} onClick={() => setA({ ...a, sections: a.sections.filter((_, k) => k !== i) })} aria-label={`Remove ${def?.name}`}><X size={14} /></button>
               </span>
             </li>
@@ -106,7 +110,9 @@ function ColourEditor({ ap, onSave, said }: { ap: AppearanceState; onSave: (colo
   const [busy, setBusy] = useState(false);
   const reports: Report[] = [validatePalette(VALIDATED_ORDER.map((r) => light[r]), "light"), validatePalette(VALIDATED_ORDER.map((r) => dark[r]), "dark")];
   const ok = reports.every((r) => r.ok);
-  const changed = (mode: "light" | "dark", v: Record<Role, string>) => Object.fromEntries(Object.entries(v).filter(([r, hex]) => hex.toLowerCase() !== defaultRoleColours(mode)[r as Role].toLowerCase()));
+  // Kept as the server keeps them: "#rrggbb" in lower case, a "#" added to a colour typed without one.
+  const changed = (mode: "light" | "dark", v: Record<Role, string>) =>
+    Object.fromEntries(Object.entries(v).map(([r, hex]) => [r, asHex(hex) ?? hex] as const).filter(([r, hex]) => hex !== defaultRoleColours(mode)[r as Role].toLowerCase()));
   return (
     <div className="card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))", gap: 14 }}>
@@ -121,7 +127,7 @@ function ColourEditor({ ap, onSave, said }: { ap: AppearanceState; onSave: (colo
               </div>
               {ROLES.map((r) => (
                 <label key={r.role} style={{ display: "grid", gridTemplateColumns: "34px minmax(0, 1fr) minmax(0, 92px)", gap: 8, alignItems: "center", fontSize: 13 }}>
-                  <input type="color" value={vals[r.role]} onChange={(e) => set({ ...vals, [r.role]: e.target.value })} aria-label={`${r.label} on ${mode} looks`} style={{ width: 34, height: 32, border: 0, background: "none", padding: 0 }} />
+                  <input type="color" value={asHex(vals[r.role]) ?? "#000000"} onChange={(e) => set({ ...vals, [r.role]: e.target.value })} aria-label={`${r.label} on ${mode} looks`} style={{ width: 34, height: 32, border: 0, background: "none", padding: 0 }} />
                   <span>{r.label}{r.role === "aside" ? <span style={{ color: "var(--ink-2)" }}> · a neutral</span> : null}</span>
                   <input className="input num" value={vals[r.role]} maxLength={7} onChange={(e) => set({ ...vals, [r.role]: e.target.value })} aria-label={`${r.label} hex on ${mode} looks`} style={{ minHeight: 32, padding: "4px 8px", fontSize: 12 }} />
                 </label>
@@ -166,9 +172,12 @@ function readFile(f: File): Promise<string> {
 
 export function Appearance() {
   const ap = useAppearance();
+  const load = useAppearanceLoad();
   const [editing, setEditing] = useState<Arrangement | null>(null);
   const [note, setNote] = useState<{ at: Area; text: string; tone: "info" | "error" } | null>(null);
   const [name, setName] = useState(ap.brand.name);
+  // The name field follows what is kept: it arrives after the page opens, and changes when kept from another device.
+  useEffect(() => setName(ap.brand.name), [ap.brand.name]);
   // Says "kept" only when the server took it; a failure is said in its place, next to the same button.
   const save = async (at: Area, patch: Partial<AppearanceState>, done: string): Promise<boolean> => {
     setNote(null);
@@ -185,12 +194,24 @@ export function Appearance() {
   const mine = ap.arrangements;
   const all = [...mine.map((m) => ({ ...m, description: `${m.sections.length} sections, yours` })), ...PRESETS];
   const copy = (a: Arrangement) => setEditing({ id: `mine-${Date.now().toString(36)}`, name: mine.some((m) => m.id === a.id) ? a.name : `My ${a.name}`, sections: a.sections.map((s) => ({ ...s })) });
+  const heading = (
+    <section>
+      <h1 style={{ margin: "0 0 4px", fontSize: 20, fontWeight: 800 }}>Appearance</h1>
+      <p style={{ margin: 0, color: "var(--ink-2)" }}>Every home shows the same numbers. Pick the arrangement that reads best, or make your own. Saved for all your devices.</p>
+    </section>
+  );
+  // Until the kept appearance is here, nothing on the page can change it: a save would send the defaults.
+  if (load.status !== "ready") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 22, maxWidth: 1100 }}>
+        {heading}
+        {load.status === "failed" ? <Failed error={load.error ?? "The app did not answer."} what="your appearance" onRetry={load.retry} /> : <Loading what="your appearance" />}
+      </div>
+    );
+  }
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 22, maxWidth: 1100 }}>
-      <section>
-        <h1 style={{ margin: "0 0 4px", fontSize: 20, fontWeight: 800 }}>Appearance</h1>
-        <p style={{ margin: 0, color: "var(--ink-2)" }}>Every home shows the same numbers. Pick the arrangement that reads best, or make your own. Saved for all your devices.</p>
-      </section>
+      {heading}
 
       <section>
         <H sub="A home is a list of sections, each drawn the way you choose. Copy any of these and change it.">Home</H>
@@ -277,7 +298,7 @@ export function Appearance() {
       </section>
 
       <section>
-        <H sub="The whole app scales together. Quiet numbers keep figures blurred until you tap them: pictures first.">Text and spacing</H>
+        <H sub="The whole app scales together. Hide amounts keeps figures blurred until you tap them: pictures first. The header's Hide amounts button is the same switch.">Text and spacing</H>
         <div className="card" style={{ padding: 14, display: "flex", gap: 22, flexWrap: "wrap", alignItems: "center" }}>
           <div role="radiogroup" aria-label="Type size" style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
             <span className="lab">Type size</span>
@@ -288,8 +309,8 @@ export function Appearance() {
             {(["comfortable", "compact"] as const).map((t) => <button key={t} type="button" role="radio" aria-checked={ap.density === t} className={`btn${ap.density === t ? " dark" : ""}`} onClick={() => save("text", { density: t }, "Density kept.")}>{t[0].toUpperCase() + t.slice(1)}</button>)}
           </div>
           <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, minHeight: 32 }}>
-            <input type="checkbox" checked={ap.quiet} onChange={(e) => save("text", { quiet: e.target.checked }, e.target.checked ? "Quiet numbers on." : "Quiet numbers off.")} style={{ width: 18, height: 18 }} />
-            Quiet numbers
+            <input type="checkbox" checked={ap.quiet} onChange={(e) => save("text", { quiet: e.target.checked }, e.target.checked ? "Amounts are hidden until tapped." : "Amounts are shown.")} style={{ width: 18, height: 18 }} />
+            Hide amounts until tapped
           </label>
           {said("text")}
         </div>

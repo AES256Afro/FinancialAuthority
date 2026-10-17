@@ -1,7 +1,7 @@
 // Loading, failed and empty: the same three states on every screen, each saying what happened and what to do.
 // A failure always has a Try again; an empty list always says how to fill it.
 import { Inbox, Loader, OctagonAlert } from "lucide-react";
-import type { ReactNode } from "react";
+import { useLayoutEffect, useState, type ReactNode, type RefObject } from "react";
 import { Link } from "react-router-dom";
 import type { ApiError, Loaded } from "../api";
 
@@ -43,6 +43,23 @@ export function Show<T>({ state, what, isEmpty, empty, children }: { state: Load
   if (!state.data) return <Loading what={what} />;
   if (isEmpty && empty && isEmpty(state.data)) return <>{empty}</>;
   return <>{children(state.data)}</>;
+}
+
+/** The width of a box in pixels, followed as it changes, so a picture can be drawn one unit per pixel and its words
+ * stay readable on a phone. Starts at `start` until the box is measured. */
+export function useWidth(box: RefObject<HTMLElement | null>, start = 720): number {
+  const [width, setWidth] = useState(start);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const measure = () => el.clientWidth && setWidth(el.clientWidth);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [box]);
+  return width;
 }
 
 /** A save's outcome, next to the button that caused it. */

@@ -33,7 +33,7 @@ const SMALL = { minHeight: 32, padding: "4px 10px" } as const;
 const ROW = { display: "inline-flex", alignItems: "center", gap: 4 } as const;
 const FIELD = { display: "flex", flexDirection: "column", gap: 4 } as const;
 
-type Note = { text: string; tone: "info" | "error"; terms?: boolean } | null;
+type Note = { text: string; tone: "info" | "error"; terms?: boolean; homeless?: boolean } | null;
 
 /** A file's size in words: "340 KB", "2.1 MB". */
 function sizeWord(bytes: number): string {
@@ -312,8 +312,10 @@ export function Documents({
     try {
       const doc = await api<KeptDocument>("/api/v1/documents", { method: "POST", body: form });
       const offers = TERMS_KINDS.has(doc.kind) && doc.attach_to.startsWith("home:") && doc.has_text;
+      // A lease kept with nothing is kept, but its terms are read only once it is kept with a home.
+      const homeless = TERMS_KINDS.has(doc.kind) && !doc.attach_to.startsWith("home:");
       const kept = doc.period ? ` Kept with ${monthWord(doc.period)}.` : "";
-      setNote({ tone: "info", terms: offers, text: doc.note_text ? `Added “${doc.title}”. ${doc.note_text}${kept}` : `Added “${doc.title}”: ${pagesWord(doc)}.${kept}` });
+      setNote({ tone: "info", terms: offers, homeless, text: doc.note_text ? `Added “${doc.title}”. ${doc.note_text}${kept}` : `Added “${doc.title}”: ${pagesWord(doc)}.${kept}` });
       setTitle("");
       setMemo("");
       setPeriod("");
@@ -440,6 +442,7 @@ export function Documents({
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "baseline" }}>
           <Said text={note.text} tone={note.tone} />
           {note.terms && <span style={{ fontSize: 12, fontWeight: 700 }}>The terms it states wait for you on <Link to="/confirm">Needs you</Link>; nothing changes until you confirm them there.</span>}
+          {note.homeless && <span style={{ fontSize: 12, fontWeight: 700 }}>Its terms (rent, deposit, notice, due day) are read only for a document kept with a home. To have them read, remove it and add it again with its home picked under “It belongs to”, here or on <Link to="/housing">Housing</Link>.</span>}
         </div>
       )}
     </div>

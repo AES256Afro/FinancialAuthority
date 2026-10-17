@@ -192,7 +192,7 @@ export function Connectors() {
   const sectionStyle = { padding: 16, display: "flex", flexDirection: "column", gap: 10, scrollMarginTop: 16 } as const;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 900 }}>
-      <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Connectors</h1>
+      <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Connections</h1>
       <nav aria-label="On this page" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", fontSize: 13 }}>
         <span className="lab">Jump to</span>
         {JUMPS.filter((j) => j.id !== "rocketmoney" || rocket || !data).map((j) => (

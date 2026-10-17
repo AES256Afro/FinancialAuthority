@@ -1,11 +1,11 @@
 // Settings › Backups: the app's own copies of the whole database on a time line, each import with an undo, and
 // putting everything back to a copy. A copy of the moment before is always kept, so a put-back can be undone too.
-import { type ReactElement, useState } from "react";
+import { type ReactElement, useRef, useState } from "react";
 import { api, useApi } from "../api";
 import { when } from "../format";
 import { ConfirmButton } from "../components/ConfirmButton";
 import { DrillCard, OffboxCard, RecoveryKit } from "../components/Offbox";
-import { Failed, Loading, Said } from "../components/State";
+import { Failed, Loading, Said, useWidth } from "../components/State";
 import { StatusPill } from "../components/Status";
 
 interface Point { name: string; kind: string; reason: string; created_at: string; bytes: number; verified: boolean; transactions: number | null }
@@ -23,8 +23,10 @@ function size(bytes: number): string {
 }
 
 // The copies on one line from the oldest to now, each a mark shaped by its kind, so the gaps are seen at a glance.
+// One drawing unit is one pixel, so the dates stay readable on a phone.
 function Line({ points }: { points: Point[] }) {
-  const W = 760;
+  const box = useRef<HTMLDivElement>(null);
+  const W = Math.max(260, Math.min(900, useWidth(box, 760)));
   const H = 86;
   const now = Date.now();
   const times = points.map((p) => new Date(p.created_at).getTime()).filter((t) => !Number.isNaN(t));
@@ -37,7 +39,8 @@ function Line({ points }: { points: Point[] }) {
     "before-restore": (cx) => <rect x={cx - 6} y={32} width={12} height={12} transform={`rotate(45 ${cx} 38)`} fill="var(--muted)" stroke="var(--surface)" strokeWidth={2} />,
   };
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={`${points.length} copies of the database from ${when(new Date(start).toISOString())} to now`} style={{ display: "block", maxWidth: 900 }}>
+    <div ref={box} style={{ width: "100%", maxWidth: 900 }}>
+    <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label={`${points.length} copies of the database from ${when(new Date(start).toISOString())} to now`} style={{ display: "block", maxWidth: "100%" }}>
       <line x1={24} x2={W - 24} y1={38} y2={38} stroke="var(--hairline)" strokeWidth={4} strokeLinecap="round" />
       {points.map((p) => {
         const t = new Date(p.created_at).getTime();
@@ -46,6 +49,7 @@ function Line({ points }: { points: Point[] }) {
       <text x={24} y={72} fontSize={11} fill="var(--muted)">{when(new Date(start).toISOString())}</text>
       <text x={W - 24} y={72} fontSize={11} fill="var(--muted)" textAnchor="end">now</text>
     </svg>
+    </div>
   );
 }
 

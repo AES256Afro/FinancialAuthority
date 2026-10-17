@@ -23,6 +23,12 @@ export function isHex(v: string): boolean {
   return /^#?[0-9a-fA-F]{6}$/.test(v.trim());
 }
 
+/** A colour as the server keeps it, "#rrggbb" in lower case; a colour typed without its "#" gets one. Null when it
+ * is not six hex digits. */
+export function asHex(v: string): string | null {
+  return isHex(v) ? `#${v.trim().replace("#", "").toLowerCase()}` : null;
+}
+
 function srgb(hex: string): [number, number, number] {
   const h = hex.trim().replace("#", "");
   return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255) as [number, number, number];
@@ -84,7 +90,7 @@ export interface Report {
 /** Validate colours in the order they sit side by side (adjacent pairs). Nothing below the hard floors passes. */
 export function validatePalette(colours: string[], mode: Mode, surface = SURFACE[mode]): Report {
   const bad = colours.filter((c) => !isHex(c));
-  if (bad.length) return { mode, ok: false, checks: [{ name: "Colours", state: "fail", detail: `not a #rrggbb colour: ${bad.join(", ")}` }] };
+  if (bad.length) return { mode, ok: false, checks: [{ name: "Colours", state: "fail", detail: `type a colour like #2a78d6, six digits or letters a to f after the #; this is not one: ${bad.join(", ")}` }] };
   const [lo, hi] = BAND[mode];
   const checks: Check[] = [];
   const off = colours.filter((c) => { const { L } = oklch(c); return L < lo || L > hi; });

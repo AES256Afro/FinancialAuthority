@@ -66,11 +66,11 @@ interface Assets {
 
 type Note = { text: string; tone: "info" | "error" } | null;
 
-const KIND_WORD: Record<string, string> = { checking: "checking", savings: "savings", cash: "cash", investment: "investment", card: "card", loan: "loan", bnpl: "installment plan", advance: "advance", medical: "medical" };
+const KIND_WORD: Record<string, string> = { checking: "checking", savings: "savings", cash: "cash", investment: "investment", card: "card", loan: "loan", bnpl: "pay-later plan", advance: "advance", medical: "medical" };
 const ASSET_WORD: Record<AssetKind, string> = { home: "A home", car: "A car", other: "Something else" };
 const CONNECTOR_WORD: Record<string, string> = { plaid: "Plaid", teller: "Teller", rocketmoney: "Rocket Money export", demo: "demo data", manual: "entered by hand", mail: "mail", owner: "the value you set" };
-// Series colours from the validated palette, in its order; the status colours are never used here.
-const TONES = ["var(--housing)", "var(--bill)", "var(--debt)", "var(--later)", "var(--saving)", "var(--safe)"];
+// Series colours from the validated palette, in its order; the status colours (green, amber, red) are never used here.
+const TONES = ["var(--housing)", "var(--bill)", "var(--debt)", "var(--later)", "var(--saving)"];
 const SMALL: CSSProperties = { minHeight: 32, padding: "4px 10px", fontSize: 12 };
 const FIELD: CSSProperties = { display: "flex", flexDirection: "column", gap: 4 };
 const DAYS_A_MONTH = 30.44;
@@ -162,30 +162,82 @@ function MarkTag({ id, marks }: { id: number; marks: Marks }) {
   return <> <WhoTag shared={choice.shared} word={choice.word} /></>;
 }
 
+// Marking an account shared, or someone else's, lets that sign-in see its balance and transactions, so the choice
+// in the select is asked about first, in place. Marking it back as yours needs no question.
 function MarkControl({ id, name, marks }: { id: number; name: string; marks: Marks }) {
   const key = marks.keyOf(id);
   const [busy, setBusy] = useState(false);
+  const [asking, setAsking] = useState<string | null>(null);
   const [said, setSaid] = useState<Note>(null);
-  async function change(next: string) {
-    const word = marks.choices.find((c) => c.key === next)?.word ?? next;
-    setBusy(true);
+  const choiceOf = (k: string) => marks.choices.find((c) => c.key === k);
+  async function put(next: string) {
+    await api(`/api/v1/accounts/${id}/sharing`, { method: "PUT", body: JSON.stringify(keyToMark(next)) });
+    setSaid({ tone: "info", text: `Kept: ${choiceOf(next)?.word ?? next}.` });
+    marks.reload();
+  }
+  async function pick(next: string) {
     setSaid(null);
+    if (next === key) return setAsking(null);
+    if (choiceOf(next)?.word !== "Yours") return setAsking(next);
+    setBusy(true);
     try {
-      await api(`/api/v1/accounts/${id}/sharing`, { method: "PUT", body: JSON.stringify(keyToMark(next)) });
-      setSaid({ tone: "info", text: `Kept: ${word}.` });
-      marks.reload();
+      await put(next);
     } catch (err) {
       setSaid({ tone: "error", text: `Couldn't mark it: ${(err as Error).message}` });
     } finally {
       setBusy(false);
     }
   }
+  const asked = asking ? choiceOf(asking) : null;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
-      <select className="input" aria-label={`Whose is ${name}`} value={key} disabled={busy} onChange={(e) => change(e.target.value)} style={{ minHeight: 32, padding: "4px 8px", fontSize: 12 }}>
+      <select className="input" aria-label={`Whose is ${name}`} value={asking ?? key} disabled={busy} onChange={(e) => pick(e.target.value)} style={{ minHeight: 32, padding: "4px 8px", fontSize: 12 }}>
         {marks.choices.map((c) => <option key={c.key} value={c.key}>{c.word}</option>)}
       </select>
+      <ConfirmButton
+        open={asking !== null}
+        onCancel={() => setAsking(null)}
+        label=""
+        question={asked?.shared ? `Share ${name}? Everyone who signs in will see its balance and transactions.` : `Mark ${name} as ${asked?.word ?? "theirs"}? That person will see its balance and transactions when they sign in.`}
+        yes={asked?.shared ? "Yes, share it" : "Yes, mark it"}
+        no="Keep it as it is"
+        onConfirm={async () => {
+          if (!asking) return;
+          await put(asking);
+          setAsking(null);
+        }}
+      />
       <Said text={said?.text ?? null} tone={said?.tone} />
+    </div>
+  );
+}
+
+// The picture first: what you have against what you owe, on one scale, a piece per account as wide as its balance.
+// The engine's totals set the two bars' lengths and its balances the pieces' widths; nothing is added up here.
+function WhereBar({ data }: { data: Overview }) {
+  const top = Math.max(1, data.assets.total, data.debts.total);
+  const rows = [
+    { word: "You have", total: data.assets.total, items: data.assets.items.filter((a) => (a.balance ?? 0) > 0), tone: "var(--paycheck)", ink: "var(--paycheck-ink)" },
+    { word: "You owe", total: data.debts.total, items: data.debts.items.filter((a) => (a.balance ?? 0) > 0), tone: "var(--debt)", ink: "var(--debt-ink)" },
+  ];
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {rows.map((r) => (
+        <div key={r.word} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13 }}>
+            <span className="lab">{r.word}</span>
+            <strong className="num" style={{ color: r.ink }}>{money(r.total)}</strong>
+          </div>
+          <div role="img" aria-label={`${r.word} ${money(r.total)}: ${r.items.map((a) => `${a.name} ${money(a.balance ?? 0)}`).join("; ") || "nothing"}`} style={{ height: 26, background: "var(--surface-2)", borderRadius: 6, overflow: "hidden" }}>
+            <div style={{ display: "flex", gap: 2, height: "100%", width: `${Math.max(0, Math.min(100, (r.total / top) * 100))}%` }}>
+              {r.items.map((a, i) => (
+                <div key={a.source} title={`${a.name}: ${money(a.balance ?? 0)}`} style={{ flex: `${a.balance ?? 0} 1 0`, minWidth: 3, background: r.tone, opacity: i % 2 ? 0.7 : 1 }} />
+              ))}
+            </div>
+          </div>
+        </div>
+      ))}
+      <span style={{ fontSize: 12, color: "var(--ink-2)" }}>Both bars are on one scale. Each piece is one account or debt, as wide as its balance; the lists below name each one.</span>
     </div>
   );
 }
@@ -454,7 +506,7 @@ function OtherAssets({ state, onChanged }: { state: Loaded<Assets>; onChanged: (
                   </div>
                   {a.owed_against > 0 && (
                     <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
-                      Owed against it <span className="num">{money(a.owed_against)}</span>; yours after that (equity) <strong className="num" style={{ color: "var(--ink)" }}>{money(a.equity)}</strong>{a.equity < 0 ? ", so more is owed than it is worth" : ""}.
+                      Owed against it <span className="num">{money(a.owed_against)}</span>; yours after that (<Link to="/glossary#equity">equity</Link>) <strong className="num" style={{ color: "var(--ink)" }}>{money(a.equity)}</strong>{a.equity < 0 ? ", so more is owed than it is worth" : ""}.
                     </div>
                   )}
                   {a.note && <div style={{ fontSize: 12, color: "var(--muted)" }}>Note: {a.note}</div>}
@@ -497,11 +549,12 @@ export function Accounts() {
       {!data && !error && <Loading what="your accounts" />}
       {data && (
         <>
-          <section className="card" style={{ padding: 16, display: "flex", gap: 24, flexWrap: "wrap", alignItems: "baseline" }}>
-            <div><div className="lab">Net worth</div><div className="num" style={{ fontSize: 34, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.1, color: data.net < 0 ? "var(--critical-ink)" : "var(--ink)" }}>{money(data.net)}</div></div>
-            <div><div className="lab">You have</div><div className="num" style={{ fontSize: 22, fontWeight: 800, color: "var(--safe-ink)" }}>{money(data.assets.total)}</div></div>
-            <div><div className="lab">You owe</div><div className="num" style={{ fontSize: 22, fontWeight: 800, color: "var(--debt-ink)" }}>{money(data.debts.total)}</div></div>
-            {data.stale.length > 0 && <StatusPill status="warn">Balance may be out of date: {data.stale.join(", ")}</StatusPill>}
+          <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+            <WhereBar data={data} />
+            <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "baseline" }}>
+              <div><div className="lab"><Link to="/glossary#net-worth" style={{ color: "inherit" }}>Net worth</Link>: what you have less what you owe</div><div className="num" style={{ fontSize: 34, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.1, color: data.net < 0 ? "var(--critical-ink)" : "var(--ink)" }}>{money(data.net)}</div></div>
+              {data.stale.length > 0 && <StatusPill status="warn">Balance may be out of date: {data.stale.join(", ")}</StatusPill>}
+            </div>
           </section>
           {marksError && <Failed error={marksError} what="which accounts are shared" onRetry={marksRetry} />}
           {marks && <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Whose: a shared account is seen by everyone who signs in; an account marked for one person is seen by that person; anyone with everything sees every account. <Link to="/shared">See the shared accounts</Link>.</div>}
