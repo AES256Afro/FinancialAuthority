@@ -41,7 +41,7 @@ cd frontend && npm ci && npm run dev
 
 The dev server proxies `/api` and `/mcp` to the backend. `npm run build` writes `frontend/dist`, which the backend serves when it exists.
 
-Tests: `uv run pytest` in `backend/`, `npm test` in `frontend/`.
+Tests: `uv run pytest` in `backend/`, `npm test` in `frontend/`. Browser runs: `npm run build`, then `npm run e2e` in `frontend/` (the app with sign-in on and the synthetic household, on a phone and a desktop screen). More made-up households: `FA_PROPERTY_SEEDS=300 uv run pytest tests/test_invariants.py`. When a known figure moves on purpose: `FA_GOLDEN_WRITE=1 uv run pytest tests/test_golden.py`.
 
 One image, published by CI as `ghcr.io/aes256afro/financialauthority` (`:edge` from main, `:X.Y.Z` from tags): `deploy/compose/docker-compose.yml` runs it anywhere; on BigBox it is a [BoxPilot](https://github.com/AES256Afro/BoxPilot) catalog app.
 

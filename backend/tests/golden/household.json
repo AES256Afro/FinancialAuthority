@@ -1,0 +1,104 @@
+{
+  "credit": {
+    "late": 0,
+    "not_seen": 1,
+    "on_time": 25,
+    "share": null
+  },
+  "paycheck_parts": [
+    {
+      "parts": {
+        "aside": 927.5,
+        "bills": 791.0,
+        "card": 25.0,
+        "housing": 0.0,
+        "later": 331.0,
+        "saving": 0.0,
+        "yours": 220.5
+      },
+      "start": "2026-10-16"
+    },
+    {
+      "parts": {
+        "aside": 474.0,
+        "bills": 242.0,
+        "card": 0.0,
+        "housing": 1295.0,
+        "later": 38.0,
+        "saving": 207.7,
+        "yours": 910.8
+      },
+      "start": "2026-10-30"
+    },
+    {
+      "parts": {
+        "aside": 1291.5,
+        "bills": 436.0,
+        "card": 25.0,
+        "housing": 0.0,
+        "later": 38.0,
+        "saving": 158.95,
+        "yours": 764.55
+      },
+      "start": "2026-11-13"
+    },
+    {
+      "parts": {
+        "aside": 401.0,
+        "bills": 644.0,
+        "card": 0.0,
+        "housing": 1295.0,
+        "later": 0.0,
+        "saving": 225.95,
+        "yours": 965.55
+      },
+      "start": "2026-11-27"
+    }
+  ],
+  "safe_to_spend": 55.0,
+  "tax": {},
+  "way_off_advances": {
+    "borrow": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "fees_on_plan": 0.0,
+    "state": "exits"
+  },
+  "windows": [
+    {
+      "advances": 231.0,
+      "bills": 916.0,
+      "paycheck": 2240.0,
+      "safe": 220.5,
+      "set_aside": 927.5,
+      "start": "2026-10-16"
+    },
+    {
+      "advances": 0.0,
+      "bills": 1575.0,
+      "paycheck": 2240.0,
+      "safe": 1118.5,
+      "set_aside": 474.0,
+      "start": "2026-10-30"
+    },
+    {
+      "advances": 0.0,
+      "bills": 499.0,
+      "paycheck": 2240.0,
+      "safe": 923.5,
+      "set_aside": 1291.5,
+      "start": "2026-11-13"
+    },
+    {
+      "advances": 0.0,
+      "bills": 1939.0,
+      "paycheck": 2240.0,
+      "safe": 1191.5,
+      "set_aside": 401.0,
+      "start": "2026-11-27"
+    }
+  ]
+}
