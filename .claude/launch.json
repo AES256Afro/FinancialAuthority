@@ -39,6 +39,18 @@
         "scripts/dev_signin.py"
       ],
       "port": 8001
+    },
+    {
+      "name": "app-shots",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "--directory",
+        "backend",
+        "python",
+        "scripts/shots_server.py"
+      ],
+      "port": 8012
     }
   ]
 }

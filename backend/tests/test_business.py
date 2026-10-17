@@ -132,3 +132,20 @@ def test_the_tax_center_reads_cleanly_and_matches_only_car_loans(owner: TestClie
     assert "Your business shows" in t["said"] and "Next: " in t["said"]
     assert all("itemizable" in c for c in t["itemizable_categories"])
     assert owner.post("/api/v1/business/setup/ein", json={"done": True}).status_code == 400
+
+
+
+def test_a_business_at_a_loss_is_said_as_a_loss():
+    """A business whose costs run ahead of its income shows a loss in words, never "$-90.40 of profit"."""
+    from app.engine.taxcenter import tax_year
+    from app.models import Business
+
+    with Session(engine) as session:
+        acct = Account(name="Example Card", kind="card")
+        b = Business(name="Example Studio", kind="sole_prop")
+        session.add_all([acct, b])
+        session.flush()
+        session.add(Transaction(account_id=acct.id, date=date(2026, 5, 2), amount=90.40, merchant="Example Supplies", business_id=b.id, business_share=1.0, tax_line="office", row_hash="loss-1"))
+        session.commit()
+        said = tax_year(session, date(2026, 10, 14))["said"]
+    assert "a loss of $90.40" in said and "$-" not in said

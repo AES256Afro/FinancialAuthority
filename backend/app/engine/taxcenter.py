@@ -75,7 +75,8 @@ def tax_year(session: Session, today: date, year: int | None = None) -> dict[str
 
     said = []
     if businesses:
-        said.append(f"Your {'business shows' if len(businesses) == 1 else 'businesses show'} ${profit:,.2f} of profit in {year} so far" + (f", with about ${se:,.2f} of self-employment tax." if se else "."))
+        shows = f"${profit:,.2f} of profit" if profit >= 0 else f"a loss of ${-profit:,.2f}"
+        said.append(f"Your {'business shows' if len(businesses) == 1 else 'businesses show'} {shows} in {year} so far" + (f", with about ${se:,.2f} of self-employment tax." if se else "."))
     said.append(f"The {year} standard deduction for your filing status is ${standard:,.2f}; the costs that could be itemized come to ${itemizable:,.2f}, so the standard deduction is {'larger' if standard >= itemizable else 'smaller'}." if standard else "")
     if upcoming:
         d = date.fromisoformat(upcoming[0]["due"])
