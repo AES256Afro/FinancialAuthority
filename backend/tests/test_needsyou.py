@@ -130,21 +130,23 @@ def test_a_notice_from_someone_counted_another_way_never_becomes_a_second_bill(o
     wait on their own cards, which say where each is counted, and a Housing bill is changed only on Housing."""
     with Session(engine) as session:
         session.add(Home(name="Example Court 4", payee="Example Leasing Office"))
+        session.add(Home(name="Example Tower 9", payee="Example at the Riverside"))
         session.add(Debt(name="Example Rewards Card", kind="card", balance=300.0, apr=24.0, minimum=35.0))
         session.add(Advance(provider="Example Advance App", amount=100.0, taken_on=date(2026, 10, 1), repay_date=date(2026, 10, 30)))
         session.add(Bill(name="Rent · Example Court 4", amount=1200.0, due_day=1, home_id=1, pays_to="Example Leasing Office"))
         rows = [ExtractedFact(kind="bill_due", fields=json.dumps({"name": n, "amount": 50.0, "due_date": "2026-10-28"}), status="pending")
-                for n in ("Example Leasing Office", "Example Rewards Card", "Example Advance App", "Example Phone Co")]
+                for n in ("Example Leasing Office", "Example Rewards Card", "Example Advance App", "Example Phone Co", "Example at Riverside Leasing")]
         session.add_all(rows)
         session.commit()
         ids = [r.id for r in rows]
     plan = owner.post("/api/v1/needs-you/facts", json={"ids": ids, "action": "preview"}).json()
-    assert plan["adds"] == ["Example Phone Co"] and plan["own_card"] == 3
+    assert plan["adds"] == ["Example Phone Co"] and plan["own_card"] == 4
     facts = {f["id"]: f for f in owner.get("/api/v1/facts?status=pending").json()["facts"]}
     assert facts[ids[0]]["counted_elsewhere"] == "Rent · Example Court 4 is made from Housing, where the rent is changed"
     assert facts[ids[1]]["counted_elsewhere"] == "Example Rewards Card is counted on Debts"
     assert facts[ids[2]]["counted_elsewhere"] == "advances from Example Advance App are counted on Borrowing"
     assert facts[ids[3]].get("counted_elsewhere") is None
+    assert facts[ids[4]]["counted_elsewhere"] == "the rent for Example Tower 9 is counted from Housing"  # "the" and "Leasing" tell nothing apart
     assert owner.post(f"/api/v1/facts/{ids[0]}/confirm", json={"apply": True}).status_code == 400
     with Session(engine) as session:
         assert session.exec(select(Bill).where(Bill.home_id == 1)).one().amount == 1200.0
