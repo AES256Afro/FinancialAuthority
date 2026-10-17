@@ -36,6 +36,8 @@ def test_the_plan_lays_out_the_stairs_the_finish_line_and_the_order_with_reasons
     assert stairs["2026-10"] == 78.70 and stairs["2026-11"] == round(100.30 + 48.30 + 320.22 + 78.70 + 50.00, 2) and stairs["2027-01"] == round(320.22 + 50.00, 2)
     assert sum(stairs.values()) == round(out["totals"]["left_to_pay"], 2)
     assert {f["name"] for f in out["finish_line"]} == {"Example Glasses", "Example Headphones"}
+    # with nothing extra, the month-by-month run costs exactly the interest ahead the loans show
+    assert abs(out["schedule_alone"]["interest"] - sum(l["interest_ahead"] for l in out["loans"] if l["interest_ahead"] > 0)) <= 0.05
     kinds = [s["kind"] for s in out["steps"]]
     assert kinds[0] == "keep" and kinds[1] == "finish" and "extra" in kinds and kinds[-1] == "zero"
     assert "AutoPay is off on Example Desk (Wed Oct 28, $78.70)" in out["steps"][0]["text"]

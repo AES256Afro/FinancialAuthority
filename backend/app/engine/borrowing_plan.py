@@ -49,14 +49,20 @@ def _upcoming(p: InstallmentPlan, today: date) -> list[dict[str, Any]]:
     return out
 
 
-def payoff_estimate(payments: list[dict[str, Any]], apr: float | None) -> float:
-    """What it would take to end the loan today: the payments left, each brought back to today at the loan's rate
-    (simple interest, monthly). At 0% it is simply what is left to pay."""
+def _months_from(today: date, iso: str) -> int:
+    d = date.fromisoformat(iso)
+    return max(0, (d.year - today.year) * 12 + d.month - today.month)
+
+
+def payoff_estimate(payments: list[dict[str, Any]], apr: float | None, today: date | None = None) -> float:
+    """What it would take to end the loan today: each payment left brought back to today at the loan's monthly rate,
+    by the months between (a payment later this month, none). At 0% it is simply what is left to pay."""
     left = sum(e["amount"] for e in payments)
     if not apr:
         return _money(left)
     r = apr / 100 / 12
-    return _money(sum(e["amount"] / (1 + r) ** (i + 1) for i, e in enumerate(payments)))
+    start = today or date.fromisoformat(payments[0]["date"])
+    return _money(sum(e["amount"] / (1 + r) ** _months_from(start, e["date"]) for e in payments))
 
 
 def borrowing_plan(session: Session, today: date) -> dict[str, Any]:
@@ -67,7 +73,7 @@ def borrowing_plan(session: Session, today: date) -> dict[str, Any]:
         if not pays:
             continue
         left = _money(sum(e["amount"] for e in pays))
-        payoff = payoff_estimate(pays, p.apr)
+        payoff = payoff_estimate(pays, p.apr, today)
         interest = _money(max(0.0, left - payoff))
         loans.append({
             "id": p.id, "name": p.merchant or p.provider, "lender": plan_provider(p), "next_date": pays[0]["date"], "next_amount": _money(pays[0]["amount"]),
@@ -76,6 +82,9 @@ def borrowing_plan(session: Session, today: date) -> dict[str, Any]:
             "payments": pays, "source": f"plan:{p.id}", "dates_from_lender": not p.dates_estimated,
         })
     loans.sort(key=lambda l: (l["ends"], l["name"]))
+    named = [l["name"] for l in loans]
+    for l in loans:
+        l["label"] = f"{l['name']} (${l['next_amount']:,.2f})" if named.count(l["name"]) > 1 else l["name"]
 
     # The stairs: what the loans take each month, for the next year and a half
     months: list[str] = []
@@ -144,7 +153,7 @@ def borrowing_plan(session: Session, today: date) -> dict[str, Any]:
                   + (f" AutoPay is off on {', '.join(l['name'] + ' (' + _day(l['next_date']) + ', $' + format(l['next_amount'], ',.2f') + ')' for l in off)}: pay it on its day, or turn AutoPay on in the lender's app." if off else "")
                   + (f" AutoPay is not known for {len(unknown)}." if unknown else ""), "sources": [l["source"] for l in loans]})
     if finish:
-        names = "; ".join(f"{l['name']}: {l['payments_left']} payment{'s' if l['payments_left'] != 1 else ''} left, done {_day(l['ends'])}" for l in finish)
+        names = "; ".join(f"{l['label']}: {l['payments_left']} payment{'s' if l['payments_left'] != 1 else ''} left, done {_day(l['ends'])}" for l in finish)
         line = f"At the finish line: {names}. After {_day(last_finish)} you watch {after} loan{'s' if after != 1 else ''} instead of {len(loans)}."
         if freed_from and freed_from["freed"] > 0:
             line += f" From {_month(freed_from['month'])} the loans take ${freed_from['per_month_after']:,.2f} a month instead of ${freed_from['per_month_before']:,.2f}: ${freed_from['freed']:,.2f} frees up."
@@ -161,7 +170,7 @@ def borrowing_plan(session: Session, today: date) -> dict[str, Any]:
         steps.append({"kind": "room", "text": text, "sources": ["snapshot.windows", "snapshot.usual_pace"]})
     if order and extra > 0:
         a, b = ways["finish_first"], ways["rate_first"]
-        names = ", then ".join(l["name"] for l in order[:4])
+        names = ", then ".join(l["label"] for l in order[:4])
         why = (f"Finishing the smallest first costs ${abs(difference):,.2f} {'more' if difference > 0 else 'less'} in interest than the highest rate first, so the plan finishes them first: fewer loans to watch, sooner."
                if chosen == "finish_first" else
                f"The highest rate first saves ${difference:,.2f} in interest against finishing the smallest first, so the plan follows the rates.")
@@ -169,17 +178,17 @@ def borrowing_plan(session: Session, today: date) -> dict[str, Any]:
                       f"against {_month(base['done'])} on the schedule alone, and the interest falls from ${base['interest']:,.2f} to ${(a if chosen == 'finish_first' else b)['interest']:,.2f}.",
                       "sources": [l["source"] for l in order]})
     elif order:
-        steps.append({"kind": "extra", "text": f"When there is room, {'the smallest first' if chosen == 'finish_first' else 'the highest rate first'}: {', then '.join(l['name'] for l in order[:4])}. "
+        steps.append({"kind": "extra", "text": f"When there is room, {'the smallest first' if chosen == 'finish_first' else 'the highest rate first'}: {', then '.join(l['label'] for l in order[:4])}. "
                       f"Paying one off early saves its interest ahead (shown below); every one here charges interest.", "sources": [l["source"] for l in order]})
     if zero:
-        steps.append({"kind": "zero", "text": f"{', '.join(l['name'] for l in zero)}: no interest ahead, so paying early saves nothing; pay on schedule.", "sources": [l["source"] for l in zero]})
+        steps.append({"kind": "zero", "text": f"{', '.join(l['label'] for l in zero)}: no interest ahead, so paying early saves nothing; pay on schedule.", "sources": [l["source"] for l in zero]})
 
     totals = {"loans": len(loans), "left_to_pay": _money(sum(l["left_to_pay"] for l in loans)), "payoff_estimate": _money(sum(l["payoff_estimate"] for l in loans)),
               "interest_ahead": _money(sum(l["interest_ahead"] for l in loans))}
     for l in loans:
         l.pop("payments")
-    return {"as_of": today.isoformat(), "loans": loans, "stairs": stairs, "finish_line": [{"name": l["name"], "ends": l["ends"], "payments_left": l["payments_left"], "left_to_pay": l["left_to_pay"], "source": l["source"]} for l in finish],
-            "freed": freed_from, "order": [{"name": l["name"], "apr": l["apr"], "payoff_estimate": l["payoff_estimate"], "source": l["source"]} for l in order],
+    return {"as_of": today.isoformat(), "loans": loans, "stairs": stairs, "finish_line": [{"name": l["label"], "ends": l["ends"], "payments_left": l["payments_left"], "left_to_pay": l["left_to_pay"], "source": l["source"]} for l in finish],
+            "freed": freed_from, "order": [{"name": l["label"], "apr": l["apr"], "payoff_estimate": l["payoff_estimate"], "source": l["source"]} for l in order],
             "chosen": chosen, "extra_per_month": extra, "ways": {k: {kk: vv for kk, vv in v.items() if kk != "ended"} for k, v in ways.items()}, "schedule_alone": base,
             "room": room, "steps": steps, "totals": totals, "not_advice": NOT_ADVICE}
 
@@ -205,7 +214,7 @@ def simulate(loans: list[dict[str, Any]], extra: float, way: str, today: date) -
             if x["owed"] <= 0.005:
                 freed += due
                 continue
-            charge = x["owed"] * x["r"]
+            charge = x["owed"] * x["r"] if i > 0 else 0.0  # the plan starts today: this month's interest is in what is owed
             interest += charge
             x["owed"] += charge
             pay = min(x["owed"], due) if due else (x["owed"] if month > max(x["due"] or {"": ""}) else 0.0)
