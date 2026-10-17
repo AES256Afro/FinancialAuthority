@@ -80,11 +80,13 @@ def triage(session: Session, today: date) -> dict[str, Any]:
             continue
         past.append({"payment_id": p.id, "bill_id": b.id, "name": b.name, "amount": p.amount, "due_date": p.due_date.isoformat(), "days_late": (today - p.due_date).days,
                      "autopay": b.autopay, "candidates": payment_candidates(session, p, b), "source": f"payment:{p.id}"})
-    total = sum(g["count"] for g in out_groups) + len(past)
+    read = sum(g["count"] for g in out_groups)
+    total = read + len(past)
+    parts = ([f"{read} from your mail and documents"] if read else []) + ([f"{len(past)} bill{'s' if len(past) != 1 else ''} with no payment seen"] if past else [])
     return {
         "as_of": today.isoformat(), "groups": out_groups, "past_due": past, "total": total,
-        "word": ("Nothing waits for you." if total == 0 else
-                 f"{total} thing{'s' if total != 1 else ''} wait: {sum(g['count'] for g in out_groups)} from your mail and documents, {len(past)} bill{'s' if len(past) != 1 else ''} with no payment seen."),
+        "word": ("Nothing from your mail, documents or bills waits." if total == 0 else
+                 f"{total} {'thing waits' if total == 1 else 'things wait'} here: {' and '.join(parts)}."),
     }
 
 
@@ -95,6 +97,8 @@ def answer_payment(session: Session, payment: Payment, answer: str, today: date,
         tx = session.get(Transaction, transaction_id) if transaction_id else None
         if transaction_id and tx is None:
             raise ValueError("No such transaction")
+        if paid_on and paid_on > today:
+            raise ValueError("The day you paid cannot be after today")
         payment.status = "paid"
         payment.transaction_id = tx.id if tx else None
         payment.paid_date = tx.date if tx else (paid_on or today)

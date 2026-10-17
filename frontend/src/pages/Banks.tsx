@@ -1,6 +1,6 @@
 // Live bank links through Plaid (Trial plan) and Teller (developer tier): the bank's own login page opens in
 // the vendor's window; the app receives a token and reads with it. Nothing here ever asks for a bank password.
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { AlertTriangle, CheckCircle2, OctagonAlert } from "lucide-react";
 import { api, useApi } from "../api";
@@ -36,8 +36,17 @@ interface BanksOut {
 
 type TellerGlobal = { setup: (opts: { applicationId: string; environment: string; products: string[]; enrollmentId?: string; onSuccess: (enrollment: { accessToken: string; enrollment: { id: string; institution: { name: string } } }) => void; onExit?: () => void }) => { open: () => void } };
 
-// Where a result is said: under the Plaid box, the Teller box, or beside one bank link's buttons.
+// Where a result is said: under the Plaid box, the Teller box, beside one bank link's buttons, or under the list.
 type Note = { at: string; text: string; tone: "info" | "error" } | null;
+
+/** What happens to a removed link's accounts: they stay counted (`keep`, the server's default) or stay as history
+ * only (`history`: their rows kept, no longer counted). Linking the bank again takes either kind back. */
+type KeepAs = "keep" | "history";
+const KEEP_AS: { value: KeepAs; label: string; detail: string }[] = [
+  { value: "keep", label: "Keep its accounts in the plan", detail: "Their balances stay as last read and keep counting; nothing new comes in. Linking this bank again picks them up." },
+  { value: "history", label: "Keep them as history only (not counted)", detail: "Their past transactions are kept; their balances, and a card's debt, stop counting. Linking this bank again brings them back." },
+];
+const removeQuestion = (l: LinkRow) => (l.provider === "plaid" ? "Remove this bank link? Plaid does not give the trial login slot back." : "Remove this bank link? The app stops reading it; you can link it again.");
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -56,6 +65,8 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
   const [note, setNote] = useState<Note>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<number | null>(null);
+  // The link being removed and what its accounts become, asked in place before the link goes.
+  const [removing, setRemoving] = useState<{ id: number; accounts: KeepAs } | null>(null);
   const [params, setParams] = useSearchParams();
   const wanted = { signin: params.get("signin"), sync: params.get("sync"), connect: params.get("connect") };
   const synced = useRef<string | null>(null);
@@ -173,8 +184,17 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
     }
   }
 
-  async function remove(id: number) {
-    await api(`/api/v1/banks/${id}`, { method: "DELETE" });
+  // Asked first by ConfirmButton, which also says a failure beside its buttons.
+  async function remove(l: LinkRow, accounts: KeepAs) {
+    const r = await api<{ ok: boolean; accounts_retired?: number }>(`/api/v1/banks/${l.id}?accounts=${accounts}`, { method: "DELETE" });
+    setRemoving(null);
+    const bank = l.institution || "The bank";
+    const retired = r.accounts_retired ?? 0;
+    say("links", l.accounts.length === 0
+      ? `${bank} is removed.`
+      : accounts === "history"
+        ? `${bank} is removed. ${retired} ${retired === 1 ? "account is" : "accounts are"} kept as history: the transactions stay, and ${retired === 1 ? "it no longer counts" : "they no longer count"}.`
+        : `${bank} is removed. Its accounts stay in the plan as last read; linking the bank again picks them up.`);
     reload();
     onChanged?.();
   }
@@ -195,7 +215,8 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
             <thead><tr><th>Bank</th><th>Through</th><th>Accounts</th><th>Last read</th><th><span className="sr-only">Sync or remove</span></th></tr></thead>
             <tbody>
               {data.links.map((l) => (
-                <tr key={l.id}>
+                <Fragment key={l.id}>
+                <tr>
                   <td><strong>{l.institution || "Bank"}</strong>{l.needs_login && <div style={{ marginTop: 4 }}><StatusPill status="crit">Needs a new sign-in</StatusPill></div>}</td>
                   <td style={{ color: "var(--ink-2)" }}>{l.provider === "plaid" ? "Plaid" : "Teller"}</td>
                   <td style={{ color: "var(--ink-2)" }}>{l.accounts.map((a) => `${a.name} (${a.kind})`).join(", ") || "none yet"}</td>
@@ -211,22 +232,44 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
                         ? <button className="btn dark" type="button" disabled={!t?.configured || busy !== null} style={highlight(wanted.signin === String(l.id))} onClick={() => connectTeller(l)}>{busy === "teller-connect" ? "Opening…" : `Sign in again at ${l.institution || "the bank"}`}</button>
                         : <span style={{ ...highlight(wanted.signin === String(l.id)), fontSize: 12, color: "var(--ink-2)", maxWidth: 260, textAlign: "left", alignSelf: "center" }}>To sign in again: Remove this link, then press Connect a bank through Teller below and sign in to {l.institution || "the bank"}.</span>)}
                       <button className="btn" type="button" disabled={syncing !== null} onClick={() => sync(l.id)}>{syncing === l.id ? "Reading…" : "Sync now"}</button>
-                      <ConfirmButton
-                        label="Remove"
-                        question={l.provider === "plaid" ? "Remove this bank link? Plaid does not give the trial login slot back." : "Remove this bank link? The app stops reading it; you can link it again."}
-                        yes="Yes, remove it"
-                        no="Keep it"
-                        onConfirm={() => remove(l.id)}
-                      />
+                      {l.accounts.length > 0
+                        ? <button className="btn" type="button" aria-expanded={removing?.id === l.id} onClick={() => setRemoving(removing?.id === l.id ? null : { id: l.id, accounts: "keep" })}>Remove</button>
+                        : <ConfirmButton label="Remove" question={removeQuestion(l)} yes="Yes, remove it" no="Keep it" onConfirm={() => remove(l, "keep")} />}
                     </span>
                     {note?.at === `link-${l.id}` && <div style={{ marginTop: 4, textAlign: "left" }}>{said(`link-${l.id}`)}</div>}
                   </td>
                 </tr>
+                {removing?.id === l.id && (
+                  <tr>
+                    <td colSpan={5}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start" }}>
+                        <fieldset style={{ border: 0, padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
+                          <legend className="lab" style={{ padding: 0, marginBottom: 4, overflowWrap: "anywhere" }}>Before {l.institution || "the bank"} is removed: what happens to {l.accounts.map((a) => a.name).join(", ")}</legend>
+                          {KEEP_AS.map((k) => {
+                            const on = removing.accounts === k.value;
+                            return (
+                              <label key={k.value} style={{ display: "flex", alignItems: "flex-start", gap: 8, minHeight: 32, padding: "6px 10px", borderRadius: 10, cursor: "pointer", fontSize: 13, border: `1px solid ${on ? "var(--ink)" : "var(--hairline)"}`, background: on ? "var(--surface-2)" : "var(--surface)" }}>
+                                <input type="radio" name={`remove-${l.id}`} checked={on} onChange={() => setRemoving({ id: l.id, accounts: k.value })} style={{ width: 18, height: 18, margin: "1px 0 0", flexShrink: 0 }} />
+                                <span style={{ display: "flex", flexDirection: "column", gap: 1, minWidth: 0 }}>
+                                  <strong>{k.label}</strong>
+                                  <span style={{ fontSize: 12, color: "var(--ink-2)" }}>{k.detail}</span>
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </fieldset>
+                        <ConfirmButton open label="Remove" question={removeQuestion(l)} yes="Yes, remove it" no="Keep the link" onCancel={() => setRemoving(null)} onConfirm={() => remove(l, removing.accounts)} />
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>
         </div>
       )}
+      {said("links")}
       {data && !data.can_store_secrets && (
         <div role="alert" style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 13, color: "var(--critical-ink)" }}>
           <OctagonAlert size={15} aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }} />

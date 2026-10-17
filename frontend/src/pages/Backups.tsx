@@ -13,7 +13,7 @@ interface Point { name: string; kind: string; reason: string; created_at: string
 interface Status { count: number; bytes: number; latest_age_hours: number | null; database: { ok: boolean; result: string; bytes: number }; keep: Record<string, number>; last_check: { at: string; by: string; database: string; points_ok: boolean } | null }
 interface Batch { id: number; kind: string; source_file: string; via: string; account: string | null; inserted: number; duplicates: number; merged: number; summary: string; status: string; created_at: string; undone_at: string | null; restore_point: string | null }
 
-const KIND_WORD: Record<string, string> = { import: "Before an import", daily: "Daily", manual: "By hand", "before-restore": "Before a put-back" };
+const KIND_WORD: Record<string, string> = { import: "Before an import", daily: "Daily", manual: "By hand", "before-restore": "Before a put-back", offbox: "For the off-box copy" };
 const VIA_WORD: Record<string, string> = { upload: "uploaded", folder: "from the import folder", mail: "from mail" };
 
 // Where a result is said: beside the button that caused it.
@@ -38,6 +38,7 @@ function Line({ points }: { points: Point[] }) {
     import: (cx) => <rect x={cx - 6} y={32} width={12} height={12} rx={3} fill="var(--bill)" stroke="var(--surface)" strokeWidth={2} />,
     manual: (cx) => <path d={`M${cx} 30 L${cx + 7} 44 L${cx - 7} 44 Z`} fill="var(--ink-2)" stroke="var(--surface)" strokeWidth={2} />,
     "before-restore": (cx) => <rect x={cx - 6} y={32} width={12} height={12} transform={`rotate(45 ${cx} 38)`} fill="var(--muted)" stroke="var(--surface)" strokeWidth={2} />,
+    offbox: (cx) => <circle cx={cx} cy={38} r={6} fill="var(--surface)" stroke="var(--ink-2)" strokeWidth={3} />,
   };
   return (
     <div ref={box} style={{ width: "100%", maxWidth: 900 }}>
@@ -56,7 +57,7 @@ function Line({ points }: { points: Point[] }) {
 
 export function Backups({ me = null }: { me?: MePerson | null }) {
   const ownerOnly = roleOf(me) !== "owner";
-  const points = useApi<{ points: Point[]; status: Status }>("/api/v1/restore-points");
+  const points = useApi<{ points: Point[]; status: Status; kept_as_now?: string[] }>("/api/v1/restore-points");
   const imports = useApi<{ imports: Batch[] }>("/api/v1/imports/history");
   const [note, setNote] = useState<{ at: Area; ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -88,8 +89,11 @@ export function Backups({ me = null }: { me?: MePerson | null }) {
   }
   async function putBack(p: Point) {
     setNote(null);
-    await api(`/api/v1/restore-points/${p.name}/restore`, { method: "POST" });
-    setNote({ at: "copies", ok: true, text: `Everything is back as it was at ${when(p.created_at)}. The moment before is kept as a copy, so this can be undone the same way.` });
+    const r = await api<{ documents_missing?: number | string[] }>(`/api/v1/restore-points/${p.name}/restore`, { method: "POST" });
+    // Documents removed before their files were kept with the copies come back listed, without their file.
+    const missing = Array.isArray(r.documents_missing) ? r.documents_missing.length : r.documents_missing ?? 0;
+    const files = missing > 0 ? ` ${missing} ${missing === 1 ? "document's file was" : "documents' files were"} not in that copy: ${missing === 1 ? "that document is" : "those documents are"} listed on Documents without the file.` : "";
+    setNote({ at: "copies", ok: true, text: `Everything is back as it was at ${when(p.created_at)}. The moment before is kept as a copy, so this can be undone the same way.${files}` });
     reloadAll();
   }
   const said = (at: Area) => (note?.at === at ? <Said text={`${note.ok ? "Done." : "Not done."} ${note.text}`} tone={note.ok ? "info" : "error"} /> : null);
@@ -128,7 +132,7 @@ export function Backups({ me = null }: { me?: MePerson | null }) {
         {said("take")}
         <Line points={list} />
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12, color: "var(--ink-2)" }}>
-          <span>● Daily</span><span>■ Before an import</span><span>▲ By hand</span><span>◆ Before a put-back</span>
+          <span>● Daily</span><span>■ Before an import</span><span>▲ By hand</span><span>◆ Before a put-back</span><span>○ For the off-box copy</span>
         </div>
       </section>
 
@@ -164,7 +168,7 @@ export function Backups({ me = null }: { me?: MePerson | null }) {
 
       <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
         <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>Copies of the whole database</h2>
-        <span style={{ fontSize: 13, color: "var(--ink-2)" }}>Putting one back replaces everything with that moment: imports, mail, bills and settings after it are gone from the app, kept only in the copy taken just before.</span>
+        <span style={{ fontSize: 13, color: "var(--ink-2)" }}>Putting one back replaces everything with that moment: imports, mail, bills and settings after it are gone from the app, kept only in the copy taken just before. What stays as it is now is listed under the copies.</span>
         {said("copies")}
         <div style={{ overflowX: "auto" }}>
           <table className="ledger">
@@ -175,7 +179,7 @@ export function Backups({ me = null }: { me?: MePerson | null }) {
                 return (
                   <tr key={p.name}>
                     <td style={{ whiteSpace: "nowrap" }}>{when(p.created_at)}</td>
-                    <td>{KIND_WORD[p.kind] ?? p.kind}<div style={{ fontSize: 11, color: "var(--muted)" }}>{p.reason}{p.verified ? " · read back" : ""}</div></td>
+                    <td>{KIND_WORD[p.kind] ?? p.kind}<div style={{ fontSize: 11, color: "var(--muted)" }}>{[p.reason !== KIND_WORD[p.kind] ? p.reason : "", p.verified ? "read back" : ""].filter(Boolean).join(" · ")}</div></td>
                     <td className="num" style={{ textAlign: "right" }}>{size(p.bytes)}</td>
                     <td>
                       {ownerOnly ? <span style={{ fontSize: 12, color: "var(--ink-2)" }}>Only {ownerName(me?.owner)} can put this back</span> : <ConfirmButton
@@ -193,6 +197,14 @@ export function Backups({ me = null }: { me?: MePerson | null }) {
             </tbody>
           </table>
         </div>
+        {(points.data?.kept_as_now?.length ?? 0) > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <h3 style={{ margin: 0, fontSize: 13, fontWeight: 800 }}>Putting a copy back keeps these as they are now</h3>
+            <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: "var(--ink-2)", display: "flex", flexDirection: "column", gap: 2 }}>
+              {points.data?.kept_as_now?.map((k) => <li key={k} style={{ overflowWrap: "anywhere" }}>{k}</li>)}
+            </ul>
+          </div>
+        )}
       </section>
       <DrillCard />
       {ownerOnly ? <section className="card" style={{ padding: "14px 16px", fontSize: 14, color: "var(--ink-2)" }}>The copy kept off this server is set up by {ownerName(me?.owner)} only.</section> : <OffboxCard />}
