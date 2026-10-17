@@ -8,7 +8,7 @@ import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { when } from "../format";
 import type { Status } from "../guide";
-import { roleOf, type MePerson } from "../types-people";
+import { ownerName, roleOf, type MePerson } from "../types-people";
 import { ConfirmButton } from "../components/ConfirmButton";
 import { makePasskey, passkeysSupported, passkeyWords } from "../components/passkeys";
 import { Failed, Loading, Said, Show } from "../components/State";
@@ -431,6 +431,30 @@ function DeviceIcon({ ua }: { ua: string }) {
   return <Icon size={18} aria-hidden="true" style={{ flexShrink: 0, color: "var(--ink-2)", marginTop: 1 }} />;
 }
 
+// This browser's own row: signing out here ends this session and opens the sign-in page. It can be signed in again
+// at once, so it does not ask first.
+function SignOutHere() {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function go() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api("/api/auth/logout", { method: "POST" });
+      window.location.assign("/");
+    } catch (e) {
+      setError(`Not signed out: ${(e as Error).message}`);
+      setBusy(false);
+    }
+  }
+  return (
+    <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+      <button type="button" className="btn" disabled={busy} onClick={go} style={{ minHeight: 32, padding: "4px 10px" }}>{busy ? "Signing out…" : "Sign out here"}</button>
+      {error && <Said text={error} tone="error" />}
+    </span>
+  );
+}
+
 function SignedIn({ owner }: { owner: boolean }) {
   const state = useApi<{ sessions: SessionRow[] }>("/api/auth/sessions");
   const { data, reload, error } = state;
@@ -474,7 +498,7 @@ function SignedIn({ owner }: { owner: boolean }) {
                   <td style={{ whiteSpace: "nowrap" }}>{r.last_seen_at ? when(r.last_seen_at) : "not yet"}</td>
                   <td style={{ whiteSpace: "nowrap" }}>{when(r.created_at)}</td>
                   <td style={{ textAlign: "right" }}>
-                    {!r.this && <ConfirmButton label="Sign out" question={r.who && r.who !== "you" ? `Sign out ${r.who} on this browser for good?` : "Sign this browser out for good?"} yes="Sign it out" no="Keep" onConfirm={() => end({ session_id: r.id })} />}
+                    {r.this ? <SignOutHere /> : <ConfirmButton label="Sign out" question={r.who && r.who !== "you" ? `Sign out ${r.who} on this browser for good?` : "Sign this browser out for good?"} yes="Sign it out" no="Keep" onConfirm={() => end({ session_id: r.id })} />}
                   </td>
                 </tr>
               ))}
@@ -510,7 +534,7 @@ export function Security() {
       <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>{person ? "Your sign-in" : "Sign-in and security"}</h1>
       {person && me.data && (
         <InfoLine>
-          You sign in as <strong>{me.data.name}</strong>. Everything on this page is yours alone. Forgot your password or lost your phone? Ask {me.data.owner || "the owner"} for a new link: it clears your password, the code and your passkeys, and you choose a new password.
+          You sign in as <strong>{me.data.name}</strong>. Everything on this page is yours alone. Forgot your password or lost your phone? Ask {ownerName(me.data.owner)} for a new link: it clears your password, the code and your passkeys, and you choose a new password.
         </InfoLine>
       )}
       <Show state={factors} what="your sign-in settings">

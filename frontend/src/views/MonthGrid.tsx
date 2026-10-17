@@ -1,5 +1,7 @@
-// Month grid: the calendar with paydays, due dates and each week's lowest balance. On a phone the same weeks
-// show as an agenda: each week's lowest balance, then each day that has something on it, then its items.
+// Month grid: the calendar with paydays, due dates and each week's lowest left to spend. On a phone the same weeks
+// show as an agenda: each week's lowest left to spend, then each day that has something on it, then its items.
+// "Left to spend" is the engine's at_pace figure: checking less the safety cushion, what is kept for bills and the
+// usual everyday spending. It is not the bank balance, so it is never called one.
 import { TriangleAlert } from "lucide-react";
 import { Link } from "react-router-dom";
 import { money, parseIso, shortDate } from "../format";
@@ -8,7 +10,7 @@ import { inkOn } from "../paychecks";
 import { getPrefs } from "../prefs";
 import type { Event } from "../types";
 import type { ViewProps } from "./index";
-import { SafeExplain } from "../components/SafeExplain";
+import { PlanCaveats, SafeExplain, SafePill, safeTitle } from "../components/SafeExplain";
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -69,7 +71,7 @@ export function MonthGrid({ snapshot }: ViewProps) {
                 <span className="lab">Week of {shortDate(w.start)}</span>
                 <span style={{ fontSize: 12, color: bad ? "var(--warning-ink)" : "var(--ink-2)", fontWeight: bad ? 700 : 500 }}>
                   {bad && <TriangleAlert size={13} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 4 }} />}
-                  Lowest <strong className="num">{w.low === null ? "—" : money(w.low)}</strong>{w.low_date ? ` · ${lowWords(w)}` : ""}
+                  Lowest left to spend <strong className="num">{w.low === null ? "—" : money(w.low)}</strong>{w.low_date ? ` · ${lowWords(w)}` : ""}
                 </span>
               </div>
               {days.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)" }}>Nothing due this week.</div>}
@@ -77,7 +79,7 @@ export function MonthGrid({ snapshot }: ViewProps) {
                 <div key={day} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   <strong style={{ fontSize: 13 }}>{shortDate(day)}{day === today ? " · today" : ""}</strong>
                   {(byDate.get(day) ?? []).map((e, i) => (
-                    <span key={`${e.source}-${i}`} style={{ ...chipStyle(e), alignSelf: "flex-start", maxWidth: "100%", fontSize: 12, fontWeight: 700, borderRadius: 5, padding: "3px 8px", overflowWrap: "anywhere" }}>{chipText(e)}</span>
+                    <span key={`${e.source}-${i}`} style={{ ...chipStyle(e), alignSelf: "flex-start", maxWidth: "100%", fontSize: 12, fontWeight: 700, borderRadius: 5, padding: "3px 8px", overflowWrap: "anywhere" }}><span className="num">{chipText(e)}</span></span>
                   ))}
                 </div>
               ))}
@@ -89,7 +91,7 @@ export function MonthGrid({ snapshot }: ViewProps) {
       <section className="hidden md:block" style={{ overflowX: "auto" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(min(120px, 100%), 1fr)) 110px", gap: 4, minWidth: 960 }} aria-label="Calendar with paydays and bills">
           {DOW.map((d) => <div key={d} className="lab" style={{ padding: "0 6px 4px" }}>{d}</div>)}
-          <div className="lab" style={{ padding: "0 6px 4px" }}>Lowest balance</div>
+          <div className="lab" style={{ padding: "0 6px 4px" }}>Lowest left to spend</div>
           {weeks.map((w) => {
             const cells = daysOf(w.start);
             const bad = w.low !== null && w.low < 0;
@@ -106,14 +108,14 @@ export function MonthGrid({ snapshot }: ViewProps) {
                     <span style={{ fontSize: 12, fontWeight: 800 }}>{label}{isToday ? " · today" : ""}</span>
                     {events.map((e, i) => (
                       <span key={`${e.source}-${i}`} style={{ ...chipStyle(e), fontSize: 11, fontWeight: 700, borderRadius: 5, padding: "2px 6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={`${e.name} ${money(Math.abs(e.amount))}`}>
-                        {chipText(e)}
+                        <span className="num">{chipText(e)}</span>
                       </span>
                     ))}
                   </div>
                 );
               }),
               <div key={`low-${w.start}`} style={{ display: "flex", flexDirection: "column", justifyContent: "center", gap: 2, padding: "6px 8px", borderRadius: 10, background: bad ? "var(--warning-soft)" : "var(--surface-2)" }}>
-                <span className="lab">lowest</span>
+                <span className="lab">lowest left</span>
                 <span className="num" style={{ fontSize: 18, fontWeight: 800 }}>{w.low === null ? "—" : money(w.low)}</span>
                 <span style={{ fontSize: 11, color: bad ? "var(--warning-ink)" : "var(--muted)", fontWeight: bad ? 700 : 400 }}>{bad && <TriangleAlert size={12} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 3 }} />}{lowWords(w)}</span>
               </div>,
@@ -124,13 +126,18 @@ export function MonthGrid({ snapshot }: ViewProps) {
       <section style={{ display: "flex", flexWrap: "wrap", gap: 14, fontSize: 13 }}>
         <div className="card" style={{ flex: "1 1 360px", padding: "12px 16px", display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
           <div className="num" style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.02em" }}>{money(snapshot.safe_to_spend.amount)}</div>
-          <div style={{ flex: "1 1 200px" }}><strong>Safe to spend through {shortDate(snapshot.safe_to_spend.through)}.</strong><br /><span style={{ color: "var(--ink-2)" }}>The lowest balances assume you spend your usual {money(snapshot.usual_pace.per_day)} a day.</span></div>
+          <div style={{ flex: "1 1 200px", display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
+            <strong>{safeTitle(snapshot)}.</strong>
+            <SafePill s={snapshot} />
+            <span style={{ color: "var(--ink-2)" }}>Lowest left to spend is what stays free after the safety cushion, what is kept for bills, and your usual <span className="num">{money(snapshot.usual_pace.per_day)}</span> a day. It is not your bank balance.</span>
+          </div>
+          <PlanCaveats s={snapshot} />
           <SafeExplain s={snapshot} />
         </div>
         {firstBad && (
           <div className="card" style={{ flex: "1 1 360px", padding: "12px 16px", display: "flex", gap: 14, alignItems: "center", borderColor: "var(--warning)" }}>
             <TriangleAlert size={26} color="var(--warning-ink)" aria-label="Watch" style={{ flexShrink: 0 }} />
-            <div><strong>The week of {shortDate(firstBad.start)} dips {money(-(firstBad.low ?? 0))} under your safety cushion.</strong><br /><span style={{ color: "var(--ink-2)" }}>That is at your usual spending. </span><Link to="/bills">Open Bills</Link><span style={{ color: "var(--ink-2)" }}> to see which bill dates could move to help.</span></div>
+            <div><strong>The week of {shortDate(firstBad.start)} dips <span className="num">{money(-(firstBad.low ?? 0))}</span> under your safety cushion.</strong><br /><span style={{ color: "var(--ink-2)" }}>That is at your usual spending. </span><Link to="/bills">Open Bills</Link><span style={{ color: "var(--ink-2)" }}> to see which bill dates could move to help.</span></div>
           </div>
         )}
       </section>

@@ -90,8 +90,8 @@ export function TransitMap({ snapshot }: ViewProps) {
               {paydays.map((p) => (
                 <g key={p.date}>
                   <rect x={x(dayOf(p.date)) - 12} y={80} width={24} height={240} rx={12} fill={c.paycheck} />
-                  <text x={x(dayOf(p.date))} y={66} textAnchor={x(dayOf(p.date)) > W - 90 ? "end" : "middle"} fontSize={12} fontWeight={800} fill={c.paycheck}>PAYDAY {shortDate(p.date)}</text>
-                  <text x={x(dayOf(p.date))} y={346} textAnchor="middle" fontSize={12} fontWeight={800} fill={c.paycheck}>{money(-p.amount, { sign: true })}</text>
+                  <text x={x(dayOf(p.date))} y={66} textAnchor={x(dayOf(p.date)) > W - 90 ? "end" : "middle"} fontSize={12} fontWeight={800} fill="var(--paycheck-ink)">PAYDAY {shortDate(p.date)}</text>
+                  <text className="num" x={x(dayOf(p.date))} y={346} textAnchor="middle" fontSize={12} fontWeight={800} fill="var(--paycheck-ink)">{money(-p.amount, { sign: true })}</text>
                 </g>
               ))}
               {LINES.map((l) => (
@@ -109,7 +109,7 @@ export function TransitMap({ snapshot }: ViewProps) {
                         ) : (
                           <circle cx={x(dayOf(e.date))} cy={l.y} r={big ? 10 : 7} fill={c.surface} stroke={lineColor[l.id]} strokeWidth={3.5} />
                         )}
-                        <text x={x(dayOf(e.date))} y={above ? l.y - 24 : l.y + 30} textAnchor="middle" fontSize={11} fontWeight={big ? 800 : 700} fill={c.ink}>{e.name.length > 18 ? `${e.name.slice(0, 17)}…` : e.name} {money(e.amount)}</text>
+                        <text className="num" x={x(dayOf(e.date))} y={above ? l.y - 24 : l.y + 30} textAnchor="middle" fontSize={11} fontWeight={big ? 800 : 700} fill={c.ink}>{e.name.length > 18 ? `${e.name.slice(0, 17)}…` : e.name} {money(e.amount)}</text>
                       </g>
                     );
                   })}
@@ -124,19 +124,19 @@ export function TransitMap({ snapshot }: ViewProps) {
         {next && (
           <div className="card" style={{ flex: "1 1 300px", padding: "12px 16px", display: "flex", gap: 12, alignItems: "center" }}>
             <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true" style={{ flexShrink: 0 }}><circle cx="17" cy="17" r="14" fill={c.surface} stroke={lineColor[next.line ?? "utilities"]} strokeWidth="4" /></svg>
-            <div><h3 className="lab" style={{ margin: 0 }}>Next stop</h3><strong>{next.name} {money(next.amount)} · {shortDate(next.date)}</strong><div style={{ fontSize: 12, color: "var(--ink-2)" }}>{next.autopay ? "Autopay." : "Pay it yourself."} {next.funded === false ? "Not yet funded." : "Funded."}</div></div>
+            <div><h3 className="lab" style={{ margin: 0 }}>Next stop</h3><strong>{next.name} <span className="num">{money(next.amount)}</span> · {shortDate(next.date)}</strong><div style={{ fontSize: 12, color: "var(--ink-2)" }}>{next.autopay ? "Autopay." : "Pay it yourself."} {next.funded === false ? "Not yet funded." : "Funded."}</div></div>
           </div>
         )}
         {biggest && (
           <div className="card" style={{ flex: "1 1 300px", padding: "12px 16px", display: "flex", gap: 12, alignItems: "center" }}>
             <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true" style={{ flexShrink: 0 }}><circle cx="17" cy="17" r="14" fill={c.surface} stroke={lineColor[biggest.line ?? "utilities"]} strokeWidth="4" /></svg>
-            <div><h3 className="lab" style={{ margin: 0 }}>Biggest station</h3><strong>{biggest.name} {money(biggest.amount)} · {shortDate(biggest.date)}</strong><div style={{ fontSize: 12, color: "var(--ink-2)" }}><Link to="/bills">Open Bills</Link> to see whether its date could move.</div></div>
+            <div><h3 className="lab" style={{ margin: 0 }}>Biggest station</h3><strong>{biggest.name} <span className="num">{money(biggest.amount)}</span> · {shortDate(biggest.date)}</strong><div style={{ fontSize: 12, color: "var(--ink-2)" }}><Link to="/bills">Open Bills</Link> to see whether its date could move.</div></div>
           </div>
         )}
         {paydays[0] && (
           <div className="card" style={{ flex: "1 1 300px", padding: "12px 16px", display: "flex", gap: 12, alignItems: "center" }}>
             <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true" style={{ flexShrink: 0 }}><circle cx="17" cy="17" r="14" fill={c.surface} stroke={c.paycheck} strokeWidth="4" /></svg>
-            <div><h3 className="lab" style={{ margin: 0 }}>Interchange</h3><strong>{shortDate(paydays[0].date)} · {money(-paydays[0].amount, { sign: true })}</strong><div style={{ fontSize: 12, color: "var(--ink-2)" }}>{snapshot.advances.total > 0 ? `Advance apps take ${money(snapshot.advances.total)} back as it lands.` : "No advance apps take from it."}</div></div>
+            <div><h3 className="lab" style={{ margin: 0 }}>Interchange</h3><strong>{shortDate(paydays[0].date)} · <span className="num">{money(-paydays[0].amount, { sign: true })}</span></strong><div className={snapshot.advances.total > 0 ? "num" : undefined} style={{ fontSize: 12, color: "var(--ink-2)" }}>{snapshot.advances.total > 0 ? `Advance apps take ${money(snapshot.advances.total)} back as it lands.` : "No advance apps take from it."}</div></div>
           </div>
         )}
       </section>

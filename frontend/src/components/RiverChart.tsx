@@ -1,10 +1,11 @@
 // The river: sixty days of what is free to spend, drawn from the engine's projection.
-// Two series: at your usual spending (the band) and if nothing else is spent (the thin line).
+// Two series: at your usual spending (the band) and if nothing else is spent (the thin line). Neither is the bank
+// balance (that is "In checking" in a day's detail), so the low point is "lowest left to spend", never a balance.
 // Inline SVG, no chart library. It is drawn at the width it is given, so its words stay readable on a phone.
 // A day's detail shows on hover, on a tap, or from the keyboard (focus the chart, then the arrow keys); the
 // table twin shows every day as figures.
 import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
-import { money, monthDay, parseIso, shortDate } from "../format";
+import { amountClass, money, monthDay, parseIso, shortDate } from "../format";
 import { palette } from "../looks";
 import type { LookId } from "../looks";
 import type { Snapshot } from "../types";
@@ -57,6 +58,8 @@ export function RiverChart({ snapshot, look }: Props) {
   const floorY = y(0);
 
   const paydays = useMemo(() => {
+    // With no paycheck on file the engine's dates are a frame, not paydays: none is marked.
+    if (snapshot.next_paycheck.known === false) return [];
     // The engine lists the coming paydays by the paycheck's own cadence; the fourteen-day walk is only a fallback.
     const isos = snapshot.paydays?.length ? snapshot.paydays.map((p) => p.date) : [];
     if (isos.length === 0) {
@@ -95,9 +98,9 @@ export function RiverChart({ snapshot, look }: Props) {
 
   const whatHappens = (i: number): string => {
     const words: string[] = [];
-    if (paydays.includes(i)) words.push(snapshot.next_paycheck.known === false ? "payday" : `payday${i === paydays[0] ? ` ${money(snapshot.next_paycheck.amount, { sign: true })}` : ""}`);
+    if (paydays.includes(i)) words.push(`payday${i === paydays[0] ? ` ${money(snapshot.next_paycheck.amount, { sign: true })}` : ""}`);
     for (const b of bills) if (b.idx === i) words.push(`${b.e.name} ${money(b.e.amount)}`);
-    if (i === lowIdx) words.push("lowest balance");
+    if (i === lowIdx) words.push("lowest left to spend");
     return words.join(", ");
   };
   const detail = (i: number): string => {
@@ -143,7 +146,7 @@ export function RiverChart({ snapshot, look }: Props) {
                   <td className="num" style={{ textAlign: "right" }}>{money(p.at_pace)}</td>
                   <td className="num" style={{ textAlign: "right" }}>{i < windowEnd ? money(p.available) : "—"}</td>
                   <td className="num" style={{ textAlign: "right" }}>{money(p.cash)}</td>
-                  <td style={{ color: "var(--ink-2)" }}>{whatHappens(i)}</td>
+                  <td className={amountClass(whatHappens(i))} style={{ color: "var(--ink-2)" }}>{whatHappens(i)}</td>
                 </tr>
               ))}
             </tbody>
@@ -152,7 +155,7 @@ export function RiverChart({ snapshot, look }: Props) {
       ) : (
         <div ref={box} style={{ position: "relative" }}>
           <svg viewBox={`0 0 ${W} ${H}`} width="100%" style={{ display: "block", height: "auto", touchAction: "pan-y" }}
-            role="slider" tabIndex={0} aria-label="Your balance day by day for the next sixty days. Use the arrow keys to move from day to day."
+            role="slider" tabIndex={0} aria-label="What is free to spend, day by day, for the next sixty days. Use the arrow keys to move from day to day."
             aria-valuemin={0} aria-valuemax={Math.max(0, n - 1)} aria-valuenow={sel ?? 0} aria-valuetext={n ? detail(sel ?? 0) : "No days to show"}
             onPointerMove={(e) => { if (e.pointerType === "mouse" || e.buttons) setSel(dayAt(e)); }}
             onPointerDown={(e) => { pointing.current = true; if (e.pointerType !== "mouse") { setSel(dayAt(e)); setPinned(true); } }}
@@ -167,7 +170,7 @@ export function RiverChart({ snapshot, look }: Props) {
             {ticks.map((v) => (
               <g key={v}>
                 <line x1={LEFT} y1={y(v)} x2={RIGHT} y2={y(v)} stroke={c.hairline} strokeWidth={1} />
-                <text x={LEFT - 8} y={y(v) + 4} textAnchor="end" fontSize={11} fill={c.muted}>{money(v)}</text>
+                <text className="num" x={LEFT - 8} y={y(v) + 4} textAnchor="end" fontSize={11} fill={c.muted}>{money(v)}</text>
               </g>
             ))}
             <text x={LEFT - 8} y={floorY + 4} textAnchor="end" fontSize={11} fill={c.muted}>cushion</text>
@@ -177,13 +180,13 @@ export function RiverChart({ snapshot, look }: Props) {
             <path d={pathOf("available", windowEnd)} fill="none" stroke={c.ink2} strokeWidth={1.25} strokeLinejoin="round" strokeOpacity={0.7} />
             <line x1={LEFT} y1={floorY} x2={RIGHT} y2={floorY} stroke={c.buffer} strokeWidth={1.5} />
             {paydays.map((i, k) => {
-              const text = snapshot.next_paycheck.known === false ? "No payday on file" : k === 0 ? `Payday ${money(snapshot.next_paycheck.amount, { sign: true })}` : "Payday";
+              const text = k === 0 ? `Payday ${money(snapshot.next_paycheck.amount, { sign: true })}` : "Payday";
               const flip = x(i) + 8 + labelW(text) > W;
               return (
                 <g key={i}>
                   <line x1={x(i)} y1={floorY} x2={x(i)} y2={y(points[i].at_pace)} stroke={c.paycheck} strokeWidth={2} />
                   <circle cx={x(i)} cy={y(points[i].at_pace)} r={5.5} fill={c.paycheck} stroke={c.surface} strokeWidth={2} />
-                  <text x={flip ? x(i) - 8 : x(i) + 8} y={y(points[i].at_pace) - 10} textAnchor={flip ? "end" : "start"} fontSize={11} fontWeight={700} fill={c.ink}>{text}</text>
+                  <text className={k === 0 ? "num" : undefined} x={flip ? x(i) - 8 : x(i) + 8} y={y(points[i].at_pace) - 10} textAnchor={flip ? "end" : "start"} fontSize={11} fontWeight={700} fill={c.ink}>{text}</text>
                 </g>
               );
             })}
@@ -194,13 +197,13 @@ export function RiverChart({ snapshot, look }: Props) {
             <text x={x(0)} y={10} textAnchor="start" fontSize={11} fontWeight={700} fill={c.ink}>Today</text>
             {low && (() => {
               const text = narrow
-                ? `Lowest ${monthDay(low.date)}: ${low.at_pace < 0 ? `${money(-low.at_pace)} under the cushion` : money(low.at_pace)}`
-                : `Lowest balance ${shortDate(low.date)}: ${low.at_pace < 0 ? `${money(-low.at_pace)} under your safety cushion` : `${money(low.at_pace)} left`} at your usual spending`;
+                ? `Lowest left ${monthDay(low.date)}: ${low.at_pace < 0 ? `${money(-low.at_pace)} under the cushion` : money(low.at_pace)}`
+                : `Lowest left to spend ${shortDate(low.date)}: ${low.at_pace < 0 ? `${money(-low.at_pace)} under your safety cushion` : `${money(low.at_pace)} free`} at your usual spending`;
               const flip = x(lowIdx) + 8 + labelW(text) > W;
               return (
                 <g>
                   <circle cx={x(lowIdx)} cy={y(low.at_pace)} r={5} fill={c.surface} stroke={c.ink} strokeWidth={2} />
-                  <text x={flip ? Math.max(labelW(text), x(lowIdx) - 8) : x(lowIdx) + 8} y={Math.min(BASE + 16, y(low.at_pace) + 20)} textAnchor={flip ? "end" : "start"} fontSize={11} fontWeight={600} fill={c.ink2}>{text}</text>
+                  <text className="num" x={flip ? Math.max(labelW(text), x(lowIdx) - 8) : x(lowIdx) + 8} y={Math.min(BASE + 16, y(low.at_pace) + 20)} textAnchor={flip ? "end" : "start"} fontSize={11} fontWeight={600} fill={c.ink2}>{text}</text>
                 </g>
               );
             })()}

@@ -7,6 +7,30 @@ export function money(value: number, opts: { sign?: boolean; cents?: boolean } =
   return `${opts.sign ? "+" : ""}$${text}`;
 }
 
+/** A transaction's amount, said one way on every screen: money out is a plain amount ("$12.50"); money in, which
+ * the app keeps as a minus amount, is "+$2,240.00 in". */
+export function flow(value: number, opts: { cents?: boolean } = {}): string {
+  return value < 0 ? `+${money(Math.abs(value), opts)} in` : money(value, opts);
+}
+
+/** "num" when a sentence holds a dollar figure, so "Hide amounts" blurs it (a sentence from the server, a label). */
+export function amountClass(text: string | null | undefined): string | undefined {
+  return text && /\$\s?\d/.test(text) ? "num" : undefined;
+}
+
+const CONNECTOR_WORDS: Record<string, string> = { plaid: "Plaid", teller: "Teller", rocketmoney: "Rocket Money export", demo: "demo data", manual: "entered by hand", mail: "mail", owner: "the value you set", file: "a file you imported" };
+
+/** Where an account's figures come from, in words: "plaid" is "Plaid", "manual" is "entered by hand". */
+export function connectorWord(id: string | null | undefined): string {
+  if (!id) return "added in the app";
+  return CONNECTOR_WORDS[id] ?? id.replace(/_/g, " ");
+}
+
+/** A date as YYYY-MM-DD in local time (never the UTC day). */
+export function isoDay(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -47,8 +71,7 @@ export function when(value: string | null | undefined): string {
 
 /** Today as the owner's local date, YYYY-MM-DD (never the UTC date, which is tomorrow on a US evening). */
 export function localToday(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return isoDay(new Date());
 }
 
 /** An amount typed by a person: "$1,200.50" and "1200.5" both read; anything else is null. */

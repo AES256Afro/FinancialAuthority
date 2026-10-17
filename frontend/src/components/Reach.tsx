@@ -205,7 +205,7 @@ export function ShortcutRecipe() {
       <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>Ask Siri, or glance at a widget or your watch</h2>
       {g.data && <div style={{ fontSize: 13, padding: "8px 10px", borderRadius: 8, background: "var(--surface-2)" }}>“{g.data.text}”</div>}
       <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, display: "flex", flexDirection: "column", gap: 4 }}>
-        <li>On <Link to="/settings/clients">Clients</Link>, make a key. A key can only read. Copy it.</li>
+        <li>On <Link to="/settings/clients">Apps and keys</Link>, make a key that can only read (the choice it starts with). Copy it.</li>
         <li>In the Shortcuts app, make a new shortcut and add <strong>Get Contents of URL</strong>. Set the URL to the address below; under Headers add <code>Authorization</code> with the value <code>Bearer</code>, a space, and the key.</li>
         <li>Add <strong>Get Dictionary Value</strong> for the key <code>text</code>, then <strong>Speak Text</strong> (or Show Result).</li>
         <li>Name it <em>Money check</em>. Say "Hey Siri, money check"; add the Shortcuts widget to the Home Screen; on Apple Watch, add the Shortcuts complication and tap it.</li>
@@ -214,7 +214,7 @@ export function ShortcutRecipe() {
         <span className="lab">The glance address</span>
         <input className="input num" readOnly value={url} onFocus={(e) => e.target.select()} style={{ fontSize: 12 }} />
       </label>
-      <span style={{ fontSize: 12, color: "var(--ink-2)" }}>The key can only look; it cannot confirm, approve or change anything, and you can revoke it on Clients at any time.</span>
+      <span style={{ fontSize: 12, color: "var(--ink-2)" }}>A read-only key can only look; it cannot confirm, approve or change anything, and you can revoke it on Apps and keys at any time.</span>
     </section>
   );
 }

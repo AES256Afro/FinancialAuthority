@@ -3,13 +3,13 @@
 import { Flame } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useApi } from "../api";
-import { when } from "../format";
+import { amountClass, when } from "../format";
 import type { TodayThing } from "../guide";
 import { NAV_ITEMS } from "./Shell";
 import { Failed, Loading } from "./State";
 import { StatusPill } from "./Status";
 
-const PLACES: Record<string, string> = { "/settings/connectors": "Connections", "/settings/setup": "Setting up", "/settings/appearance": "Appearance", "/settings/notifications": "Notifications", "/checkin": "Check-in", "/welcome": "Setup steps", "/glossary": "Words" };
+const PLACES: Record<string, string> = { "/settings/connectors": "Connections", "/settings/setup": "Setting up", "/settings/appearance": "Appearance", "/settings/notifications": "Notifications", "/checkin": "Weekly check-in", "/welcome": "Setup steps", "/glossary": "Words" };
 
 /** The name of the screen a link opens, so a button can say where it goes: "Open Bills". */
 export function placeName(link: string): string {
@@ -31,14 +31,14 @@ export function OneThing() {
         <StatusPill status={d.status} />
       </div>
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-        <div style={{ fontSize: 17, fontWeight: 800, flex: "1 1 260px" }}>{d.thing.text}</div>
+        <div className={amountClass(d.thing.text)} style={{ fontSize: 17, fontWeight: 800, flex: "1 1 260px" }}>{d.thing.text}</div>
         {d.thing.link && <Link to={d.thing.link} className="btn dark" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Open {placeName(d.thing.link)}</Link>}
       </div>
-      <div style={{ fontSize: 13, color: "var(--ink-2)" }}>{d.thing.why}</div>
+      <div className={amountClass(d.thing.why)} style={{ fontSize: 13, color: "var(--ink-2)" }}>{d.thing.why}</div>
       {d.others.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
           <span className="lab">Then</span>
-          {d.others.map((o) => <Link key={o.source + o.date} to={o.link} style={{ color: "var(--ink)" }}>{o.text}</Link>)}
+          {d.others.map((o) => <Link key={o.source + o.date} to={o.link} style={{ color: "var(--ink)", minHeight: 32, display: "inline-flex", alignItems: "center" }}><span className={amountClass(o.text)}>{o.text}</span></Link>)}
         </div>
       )}
       {d.streaks.length > 0 && (

@@ -2,13 +2,15 @@
 import { CircleCheck, TriangleAlert } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useApi } from "../api";
-import { daysWord, money, shortDate, when } from "../format";
+import { amountClass, connectorWord, daysWord, money, shortDate, when } from "../format";
 import { palette } from "../looks";
 import { getPrefs } from "../prefs";
 import type { ViewProps } from "./index";
-import { SafeExplain } from "../components/SafeExplain";
-import { SeverityTag, StatusPill } from "../components/Status";
+import { PlanCaveats, SafeExplain, SafePill, noPayday } from "../components/SafeExplain";
+import { Failed, Loading } from "../components/State";
+import { SeverityTag } from "../components/Status";
 import { Watchlist } from "../components/Watchlist";
+import { jobWord } from "../pages/Jobs";
 
 interface JobsData {
   scheduler: string;
@@ -38,7 +40,7 @@ function Big({ value, sub }: { value: string; sub: string }) {
   return (
     <>
       <div className="num" style={{ fontSize: 28, fontWeight: 800, letterSpacing: "-0.02em" }}>{value}</div>
-      <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{sub}</div>
+      <div className={amountClass(sub)} style={{ fontSize: 12, color: "var(--ink-2)" }}>{sub}</div>
     </>
   );
 }
@@ -74,6 +76,7 @@ export function MissionControl({ snapshot }: ViewProps) {
   const soon = s.due_before_payday.total;
   const waiting = s.pending.total;
   const short = s.safe_to_spend.amount < 0;
+  const unknown = noPayday(s);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 16 }}>
@@ -84,17 +87,19 @@ export function MissionControl({ snapshot }: ViewProps) {
       </div>
       <section className="grid grid-cols-2 xl:grid-cols-4" style={{ gap: 12 }}>
         <Tile label="Safe to spend" border={short ? "var(--critical)" : "var(--safe)"}>
-          <Big value={money(s.safe_to_spend.amount)} sub={`through ${shortDate(s.safe_to_spend.through)} · safety cushion ${money(s.buffer)} kept`} />
-          {short && <div><StatusPill status="crit">Short before payday</StatusPill></div>}
+          <Big value={money(s.safe_to_spend.amount)} sub={`${unknown ? "now, counting no paycheck; bills due by" : "through"} ${shortDate(s.safe_to_spend.through)} · safety cushion ${money(s.buffer)} kept`} />
+          {(short || unknown) && <div><SafePill s={s} /></div>}
+          {unknown && <Link to="/paystubs#paycheck" style={{ fontSize: 12, fontWeight: 700 }}>Add your paycheck</Link>}
         </Tile>
-        <Tile label="Due before payday"><Big value={money(soon)} sub={s.due_before_payday.groups && s.due_before_payday.groups.length > 0 ? s.due_before_payday.groups.map((g) => `${g.label.toLowerCase()} ${money(g.total)}`).join(" · ") : s.due_before_payday.items.map((e) => e.name).join(", ") || "nothing"} /></Tile>
+        <Tile label={unknown ? `Due by ${shortDate(s.safe_to_spend.through)}` : "Due before payday"}><Big value={money(soon)} sub={s.due_before_payday.groups && s.due_before_payday.groups.length > 0 ? s.due_before_payday.groups.map((g) => `${g.label.toLowerCase()} ${money(g.total)}`).join(" · ") : s.due_before_payday.items.map((e) => e.name).join(", ") || "nothing"} /></Tile>
         <Tile label="Past due" border={s.pending.past_due ? "var(--critical)" : undefined}><Big value={String(s.pending.past_due)} sub={s.payments.late.length ? `${s.payments.late.length} not matched yet` : "none unmatched"} /></Tile>
         <Tile label="Needs you" border={waiting ? "var(--warning)" : undefined}><Big value={String(waiting)} sub={`${s.pending.confirmations} to confirm · ${s.pending.approvals} to approve`} /></Tile>
       </section>
+      <PlanCaveats s={s} />
       <SafeExplain s={s} />
       <section className="grid grid-cols-1 xl:grid-cols-[1.4fr_1fr_1fr]" style={{ gap: 12 }}>
         <Tile label="At your usual spending, next 30 days">
-          <svg viewBox="0 0 520 150" width="100%" style={{ display: "block", height: "auto" }} role="img" aria-label="Your balance day by day for the next thirty days, at your usual spending">
+          <svg viewBox="0 0 520 150" width="100%" style={{ display: "block", height: "auto" }} role="img" aria-label="What is free to spend, day by day, for the next thirty days, at your usual spending">
             <line x1={0} y1={y(0)} x2={520} y2={y(0)} stroke={c.buffer} strokeWidth={1} />
             <path d={`${line} L${x(pts.length - 1).toFixed(1)},${y(0)} L0,${y(0)} Z`} fill={c.safe} fillOpacity={0.16} />
             <path d={line} fill="none" stroke={c.safe} strokeWidth={2} />
@@ -102,22 +107,26 @@ export function MissionControl({ snapshot }: ViewProps) {
             <text x={4} y={14} fontSize={11} fontWeight={700} fill={c.ink2}>today</text>
             {pts.map((p, i) => (s.calendar.events.some((e) => e.kind === "paycheck" && e.date === p.date) ? <g key={p.date}><line x1={x(i)} y1={y(0)} x2={x(i)} y2={y(p.at_pace)} stroke={c.paycheck} strokeWidth={2} /><text x={x(i) + 4} y={y(p.at_pace) - 6} fontSize={11} fontWeight={700} fill={c.ink2}>payday</text></g> : null))}
           </svg>
-          <div style={{ fontSize: 11, color: "var(--muted)" }}>{money(s.usual_pace.per_day)} a day, from the last {s.usual_pace.basis_days} days of your transactions</div>
+          <div className="num" style={{ fontSize: 11, color: "var(--muted)" }}>{money(s.usual_pace.per_day)} a day, from the last {s.usual_pace.basis_days} days of your transactions</div>
         </Tile>
         <Tile label="Connections">
           {s.accounts.map((a) => {
             const old = stale.has(a.name);
-            return <Row key={a.id} left={`${a.name} · ${a.connector}`} right={a.balance_at ? `${old ? "Not updated since" : "Updated"} ${when(a.balance_at)}` : "Balance typed in"} tone={old ? "warn" : a.balance_at ? "ok" : undefined} />;
+            return <Row key={a.id} left={`${a.name} · ${connectorWord(a.connector)}`} right={a.balance_at ? `${old ? "Not updated since" : "Updated"} ${when(a.balance_at)}` : "Balance typed in"} tone={old ? "warn" : a.balance_at ? "ok" : undefined} />;
           })}
-          <Row left="Self-check" right={check.at ? `Ran ${when(check.at)} · ${check.free_gb} GB free · database ${check.db_mb} MB` : "Not run yet"} tone={check.at ? "ok" : "warn"} />
+          {settings.error && !settings.data && <Failed error={settings.error} what="the self-check and the mailboxes" onRetry={settings.reload} card={false} />}
+          {!settings.data && !settings.error && <Loading what="the self-check" card={false} />}
+          {settings.data && <Row left="Self-check" right={check.at ? `Ran ${when(check.at)} · ${check.free_gb} GB free · database ${check.db_mb} MB` : "Not run yet"} tone={check.at ? "ok" : "warn"} />}
           {settings.data && mailboxes.length === 0 && <Row left="Mailboxes" right="None connected yet" />}
           {mailboxes.map((m) => <Row key={m.name} left={`Mailbox · ${m.name}`} right={m.error ? `Problem: ${m.error}` : m.last_ok ? `Read ${when(m.last_ok)}` : "Not read yet"} tone={m.error || !m.last_ok ? "warn" : "ok"} />)}
           <div style={{ fontSize: 12 }}><Link to="/settings/connectors">Open Connections</Link></div>
         </Tile>
         <Tile label="Jobs">
+          {jobs.error && !jobs.data && <Failed error={jobs.error} what="the jobs" onRetry={jobs.reload} card={false} />}
+          {!jobs.data && !jobs.error && <Loading what="the jobs" card={false} />}
           {(jobs.data?.jobs ?? []).map((j) => {
             const r = lastRun(j.name);
-            return <Row key={j.name} left={j.name.replace(/_/g, " ")} right={r ? (r.ok === false ? "Failed" : r.summary.slice(0, 40) || "Ran fine") : "Not run yet"} tone={r ? (r.ok === false ? "warn" : "ok") : "warn"} />;
+            return <Row key={j.name} left={jobWord(j.name)} right={r ? (r.ok === false ? "Failed" : r.summary.slice(0, 40) || "Ran fine") : "Not run yet"} tone={r ? (r.ok === false ? "warn" : "ok") : "warn"} />;
           })}
           <div style={{ fontSize: 12 }}><Link to="/settings/jobs">Open Jobs: every run</Link></div>
         </Tile>
@@ -125,14 +134,16 @@ export function MissionControl({ snapshot }: ViewProps) {
       <section className="grid grid-cols-1 xl:grid-cols-3" style={{ gap: 12 }}>
         <Tile label="Needs you">
           {waiting === 0 && <div style={{ fontSize: 13, color: "var(--ink-2)" }}>Nothing. The next thing to confirm will appear here.</div>}
-          {s.pending.confirmations > 0 && <Row left={`${s.pending.confirmations} repeating charges to name`} right="Needs you" tone="warn" />}
+          {s.pending.series > 0 && <Row left={`${s.pending.series} repeating ${s.pending.series === 1 ? "charge" : "charges"} to name`} right="Needs you" tone="warn" />}
+          {s.pending.facts > 0 && <Row left={`${s.pending.facts} ${s.pending.facts === 1 ? "detail" : "details"} from your mail to confirm`} right="Needs you" tone="warn" />}
+          {(s.pending.pairs ?? 0) > 0 && <Row left={`${s.pending.pairs} matched ${s.pending.pairs === 1 ? "pair" : "pairs"} to check`} right="Needs you" tone="warn" />}
           {s.pending.approvals > 0 && <Row left={`${s.pending.approvals} emails waiting for your OK`} right="Needs you" tone="warn" />}
           <div style={{ fontSize: 12 }}><Link to="/confirm">Open Needs you</Link></div>
         </Tile>
         <Tile label="The brief">
           <div style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.5, display: "flex", flexDirection: "column", gap: 6 }}>
             {s.brief.length === 0 && <span style={{ color: "var(--ink-2)" }}>Nothing to tell you this morning.</span>}
-            {s.brief.map((b, i) => <div key={i} style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}><SeverityTag severity={b.severity} /><span style={{ flex: "1 1 160px", minWidth: 0 }}>{b.text}</span></div>)}
+            {s.brief.map((b, i) => <div key={i} style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}><SeverityTag severity={b.severity} /><span className={amountClass(b.text)} style={{ flex: "1 1 160px", minWidth: 0 }}>{b.text}</span></div>)}
           </div>
         </Tile>
         <Watchlist />

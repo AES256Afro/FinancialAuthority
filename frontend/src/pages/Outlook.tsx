@@ -6,7 +6,7 @@ import { Link } from "react-router-dom";
 import { TriangleAlert } from "lucide-react";
 import { api, useApi } from "../api";
 import { Failed, Loading, Said } from "../components/State";
-import { money, parseMoney } from "../format";
+import { amountClass, money, parseMoney } from "../format";
 
 interface YearRow {
   year: number;
@@ -34,7 +34,8 @@ interface Outlook {
   not_advice: string;
 }
 
-const TONE: Record<Scenario["id"], string> = { low: "var(--debt)", mid: "var(--paycheck)", high: "var(--safe)" };
+// Series colours of the look (never a status colour): card violet, housing blue, saving amber; each line is labelled.
+const TONE: Record<Scenario["id"], string> = { low: "var(--debt)", mid: "var(--paycheck)", high: "var(--saving)" };
 const pct = (r: number) => `${(r * 100).toFixed(r * 100 % 1 === 0 ? 0 : 1)}%`;
 
 function Chart({ scenarios, retireIn, real, now }: { scenarios: Scenario[]; retireIn: number | null; real: boolean; now: number }) {
@@ -208,9 +209,9 @@ function WhereToPut({ retireIn }: { retireIn: number | null }) {
       {error && !data && <Failed error={error} what="the comparison" onRetry={reload} card={false} />}
       {data && (
         <>
-          <div style={{ fontSize: 13, color: "var(--ink-2)" }}>{data.summary}</div>
+          <div className={amountClass(data.summary)} style={{ fontSize: 13, color: "var(--ink-2)" }}>{data.summary}</div>
           {data.basis && (
-            <div style={{ fontSize: 12, color: data.basis.per_paycheck === null ? "var(--warning-ink)" : "var(--ink-2)" }}>
+            <div className={data.basis.per_paycheck === null ? undefined : "num"} style={{ fontSize: 12, color: data.basis.per_paycheck === null ? "var(--warning-ink)" : "var(--ink-2)" }}>
               {data.basis.per_paycheck === null
                 ? <><TriangleAlert size={13} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 4 }} />{data.basis.note}. <Link to="/confirm">Needs you</Link> · <Link to="/paystubs">Paystubs</Link></>
                 : <>Your {data.basis.kind === "gross" ? "gross" : "take-home"} pay on file is {money(data.basis.per_paycheck, { cents: true })} a paycheck ({data.basis.note}), {data.paychecks_per_year ?? 24} paychecks a year{data.basis.kind === "gross" ? `; ${money(data.take_home_per_paycheck)} of take-home for the after-tax places` : ""}.</>}
@@ -224,15 +225,15 @@ function WhereToPut({ retireIn }: { retireIn: number | null }) {
                 <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
                   <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
                     <strong style={{ fontSize: 14 }}>{o.name}</strong>
-                    <span style={{ fontSize: 11, color: "var(--ink-2)" }}>
+                    <span className="num" style={{ fontSize: 11, color: "var(--ink-2)" }}>
                       {money(o.in_per_paycheck)} in{o.match_per_paycheck > 0 ? ` + ${money(o.match_per_paycheck)} match` : ""} · {(o.rate * 100).toFixed(1)}% · <span style={{ color: o.guaranteed ? "var(--safe-ink)" : "var(--bill-ink)", fontWeight: 700 }}>{o.guaranteed ? "guaranteed" : "not guaranteed"}</span>
                     </span>
                     <span className="num" style={{ marginLeft: "auto", fontWeight: 800, fontSize: 15 }}>{money(o.after_tax)}</span>
                   </div>
                   <div style={{ position: "relative", height: 14, background: "var(--surface-2)", borderRadius: 4, overflow: "hidden" }} title={`${money(o.after_tax)} kept of ${money(o.value)}; ${money(o.contributed)} put in`}>
-                    <div style={{ width: `${Math.max(2, (o.after_tax / best) * 100)}%`, height: "100%", background: o.guaranteed ? "var(--safe)" : "var(--paycheck)" }} />
+                    <div style={{ width: `${Math.max(2, (o.after_tax / best) * 100)}%`, height: "100%", background: o.guaranteed ? "var(--saving)" : "var(--paycheck)" }} />
                   </div>
-                  <div style={{ fontSize: 11, color: "var(--ink-2)", lineHeight: 1.4 }}>
+                  <div className="num" style={{ fontSize: 11, color: "var(--ink-2)", lineHeight: 1.4 }}>
                     kept after tax, of {money(o.value)} · reachable {o.reachable} · {o.tax}{o.note ? ` · ${o.note}` : ""}
                   </div>
                 </div>
@@ -332,17 +333,16 @@ export function Outlook() {
       {!d && !error && <Loading what="the outlook" />}
       {d && (
         <>
-          <WhereToPut retireIn={d.investments.years_to_retirement} />
           <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "baseline" }}>
               <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Investments</h2>
-              <span style={{ fontSize: 13, color: "var(--ink-2)" }}>
+              <span className="num" style={{ fontSize: 13, color: "var(--ink-2)" }}>
                 {money(d.investments.now)} today, {money(d.investments.per_paycheck)} a paycheck
                 {d.investments.contribution_source === "paystubs" ? ` from the paystubs (${d.investments.paystub_lines.map((l) => l.name).join(", ")})` : d.investments.contribution_source === "assumption" ? " as you set it" : " (no contribution on record)"}
                 {d.investments.employer_match_per_paycheck > 0 ? `, ${money(d.investments.employer_match_per_paycheck)} of it the employer's match` : ""} · {d.paychecks_per_year} paychecks a year
               </span>
               <div style={{ flexGrow: 1 }} />
-              <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}><input type="checkbox" checked={real} onChange={(e) => setReal(e.target.checked)} /> in today's dollars ({pct(d.assumptions.inflation)} inflation)</label>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, minHeight: 32, cursor: "pointer" }}><input type="checkbox" checked={real} onChange={(e) => setReal(e.target.checked)} /> in today's dollars ({pct(d.assumptions.inflation)} inflation)</label>
             </div>
             {d.investments.now === 0 && d.investments.per_paycheck === 0 ? (
               <div style={{ fontSize: 13, color: "var(--muted)" }}>Nothing to carry forward yet: add an investment account on <Link to="/investments">Investing</Link>, or set a contribution below.</div>
@@ -386,7 +386,7 @@ export function Outlook() {
           <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "baseline" }}>
               <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Savings</h2>
-              <span style={{ fontSize: 13, color: "var(--ink-2)" }}>
+              <span className="num" style={{ fontSize: 13, color: "var(--ink-2)" }}>
                 {money(d.savings.now)} today in {d.savings.accounts.length} savings account{d.savings.accounts.length === 1 ? "" : "s"}, {money(d.savings.per_paycheck)} a paycheck
                 {d.savings.goals_per_paycheck > 0 ? ` (${money(d.savings.goals_per_paycheck)} from your goals${d.savings.extra_per_paycheck > 0 ? ` and ${money(d.savings.extra_per_paycheck)} more` : ""})` : d.savings.extra_per_paycheck > 0 ? " as you set it" : ""}
                 , earning {pct(d.savings.apy)}
@@ -395,10 +395,13 @@ export function Outlook() {
             <SavingsLine months={d.savings.months} />
             <div style={{ display: "flex", gap: 18, flexWrap: "wrap", fontSize: 13 }}>
               {d.savings.milestones.map((m) => (
-                <div key={m.months}><div className="lab">{m.months} months</div><div className="num" style={{ fontWeight: 800, fontSize: 16 }}>{money(m.balance)}</div><div style={{ fontSize: 11, color: "var(--muted)" }}>{money(m.interest)} of it interest</div></div>
+                <div key={m.months}><div className="lab">{m.months} months</div><div className="num" style={{ fontWeight: 800, fontSize: 16 }}>{money(m.balance)}</div><div className="num" style={{ fontSize: 11, color: "var(--muted)" }}>{money(m.interest)} of it interest</div></div>
               ))}
             </div>
           </section>
+
+          {/* The pictures come first; the question "where does it do the most?" follows them. */}
+          <WhereToPut retireIn={d.investments.years_to_retirement} />
 
           <form onSubmit={save} className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
             <div>

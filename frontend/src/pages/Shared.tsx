@@ -7,12 +7,12 @@ import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useApi } from "../api";
 import { Empty, Failed, Show } from "../components/State";
-import { money, parseIso, shortDate, when } from "../format";
-import { possessive, roleOf, type MePerson, type PeopleOut, type SharedAccount, type SharedBill, type SharedOut } from "../types-people";
+import { flow, money, parseIso, shortDate, when } from "../format";
+import { KIND_WORD, ownerName, possessive, roleOf, type MePerson, type PeopleOut, type SharedAccount, type SharedBill, type SharedOut } from "../types-people";
 
 const DAY_MS = 86_400_000;
 const OWED_KINDS = new Set(["card", "loan", "bnpl", "advance", "medical"]);
-const KIND_WORD: Record<string, string> = { checking: "checking", savings: "savings", cash: "cash", investment: "investment", card: "card", loan: "loan" };
+
 const ROLE_SHORT: Record<string, string> = { everything: "everything", shared: "shared accounts only" };
 
 /** Whose an account is, drawn: two people for shared, one for a person's own. Never colour alone. */
@@ -192,7 +192,7 @@ function Recent({ data }: { data: SharedOut }) {
     <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "baseline" }}>
         <h2 style={h2}>The latest transactions</h2>
-        <span style={sub}>from these accounts, newest first. A minus sign is money in.</span>
+        <span style={sub}>from these accounts, newest first. Money out is a plain amount; money in says “in”, like +$40.00 in.</span>
       </div>
       {data.recent.length === 0 ? (
         <Empty card={false}>No transactions from these accounts in the last 45 days.</Empty>
@@ -213,7 +213,7 @@ function Recent({ data }: { data: SharedOut }) {
                     </td>
                     <td style={{ color: "var(--ink-2)" }}>{t.category || "Uncategorized"}</td>
                     <td style={{ color: "var(--ink-2)" }}>{t.account}</td>
-                    <td className="num" style={{ textAlign: "right", whiteSpace: "nowrap" }}>{money(t.amount, { cents: true })}</td>
+                    <td className="num" style={{ textAlign: "right", whiteSpace: "nowrap" }}>{flow(t.amount, { cents: true })}</td>
                   </tr>
                 ))}
               </tbody>
@@ -244,7 +244,7 @@ export function Shared({ me }: { me: MePerson | null }) {
   const asked = Number(params.get("person"));
   const personId = role !== "shared" && Number.isInteger(asked) && asked > 0 ? asked : null;
   const state = useApi<SharedOut>(personId ? `/api/v1/shared?person_id=${personId}` : "/api/v1/shared");
-  const owner = me?.owner || people.data?.owner || "the owner";
+  const owner = ownerName(me?.owner || people.data?.owner);
 
   function pick(value: string) {
     const next = new URLSearchParams(params);

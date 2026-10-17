@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useApi } from "./api";
 import { loadAppearance } from "./appearance";
@@ -7,6 +7,7 @@ import { Failed, Loading as Wait } from "./components/State";
 import { Home } from "./pages/Home";
 import { SignIn } from "./pages/SignIn";
 import { Today } from "./pages/Today";
+import { localToday } from "./format";
 import type { Snapshot } from "./types";
 import { roleOf, type MePerson } from "./types-people";
 
@@ -62,11 +63,30 @@ export default function App() {
   const joining = pathname === "/join";
   const me = useApi<MePerson>(joining ? null : "/api/auth/me");
   const role = roleOf(me.data);
-  // A sign-in that sees the shared accounts only reaches one page; it never asks for the plan.
-  const snapshot = useApi<Snapshot>(me.data && role !== "shared" ? "/api/v1/snapshot" : null);
+  // A sign-in that sees the shared accounts only reaches one page; it never asks for the plan. The plan is one
+  // shared answer: it is asked again after a save on any screen and when the tab is shown again (see useApi).
+  const snapshot = useApi<Snapshot>(me.data && role !== "shared" ? "/api/v1/snapshot" : null, { live: true });
   useEffect(() => {
     if (me.data) loadAppearance();
   }, [me.data]);
+  // A phone left open past midnight asks for today's plan once the day turns; once per day, so a server that keeps
+  // another time zone is not asked every minute.
+  const askedFor = useRef("");
+  const asOf = snapshot.data?.as_of;
+  const reloadPlan = snapshot.reload;
+  useEffect(() => {
+    if (!asOf) return;
+    const check = () => {
+      const today = localToday();
+      if (asOf !== today && askedFor.current !== today) {
+        askedFor.current = today;
+        reloadPlan();
+      }
+    };
+    check();
+    const timer = window.setInterval(check, 60_000);
+    return () => window.clearInterval(timer);
+  }, [asOf, reloadPlan]);
 
   if (joining) return <Suspense fallback={<Loading text="Opening…" />}><Join /></Suspense>;
   if (me.loading) return <Loading text="Opening…" />;
@@ -129,7 +149,7 @@ export default function App() {
         <Route path="/recap" element={<Recap />} />
         <Route path="/settings/security" element={<Security />} />
         <Route path="/settings/people" element={<People me={me.data} />} />
-        <Route path="/settings/privacy" element={<Privacy />} />
+        <Route path="/settings/privacy" element={<Privacy me={me.data} />} />
         <Route path="/settings/appearance" element={<Appearance />} />
         <Route path="/settings/clients" element={<Clients />} />
         <Route path="/settings/models" element={<Models />} />

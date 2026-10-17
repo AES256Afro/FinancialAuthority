@@ -10,14 +10,14 @@ import { Empty, Said, Show } from "../components/State";
 import { StatusPill } from "../components/Status";
 import { when } from "../format";
 import type { Status } from "../guide";
-import { keyToMark, markKey, possessive, roleOf, type Invite, type MarkedAccount, type MePerson, type PeopleOut, type PersonRow } from "../types-people";
+import { KIND_WORD, keyToMark, markKey, ownerName, possessive, roleOf, type Invite, type MarkedAccount, type MePerson, type PeopleOut, type PersonRow } from "../types-people";
 import { WhoTag } from "./Shared";
 
 type Note = { text: string; tone: "info" | "error" } | null;
 type PersonRole = PersonRow["role"];
 
 const ROLE_TITLE: Record<PersonRole, string> = { everything: "Everything", shared: "Shared accounts only" };
-const KIND_WORD: Record<string, string> = { checking: "checking", savings: "savings", cash: "cash", investment: "investment", card: "card", loan: "loan" };
+
 const h2 = { margin: 0, fontSize: 16, fontWeight: 800 } as const;
 const intro = { margin: 0, color: "var(--ink-2)", fontSize: 13 } as const;
 const field = { display: "flex", flexDirection: "column", gap: 4 } as const;
@@ -62,7 +62,7 @@ function Cell({ sees }: { sees: boolean }) {
 function WhoSees({ d }: { d: PeopleOut }) {
   const groups = groupsOf(d);
   const rows: { key: string; name: string; what: string; person: PersonRow | null }[] = [
-    { key: "owner", name: `You (${d.owner})`, what: "The owner: everything", person: null },
+    { key: "owner", name: ownerName(d.owner) === "the owner" ? "You" : `You (${d.owner})`, what: "The owner: everything", person: null },
     ...d.people.map((p) => ({ key: `p${p.id}`, name: p.display_name, what: `${ROLE_TITLE[p.role]}${p.active ? "" : " · turned off"}`, person: p })),
   ];
   return (
@@ -427,7 +427,7 @@ export function People({ me }: { me: MePerson | null }) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 900 }}>
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>People</h1>
-        <Empty to="/settings/security" action="Your sign-in">Only {me?.owner || "the owner"} adds, changes or removes people. Your own password, code and passkeys are on Your sign-in.</Empty>
+        <Empty to="/settings/security" action="Your sign-in">Only {ownerName(me?.owner)} adds, changes or removes people. Your own password, code and passkeys are on Your sign-in.</Empty>
       </div>
     );
   }

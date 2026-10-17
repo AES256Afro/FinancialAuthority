@@ -6,7 +6,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { ConfirmButton } from "../components/ConfirmButton";
-import { Failed, Loading, Said } from "../components/State";
+import { Empty, Failed, Loading, Said } from "../components/State";
 import { SeverityTag, StatusPill } from "../components/Status";
 import { money, monthDay, shortDate } from "../format";
 import { palette } from "../looks";
@@ -60,6 +60,15 @@ function StartForm({ list, onStarted }: { list: MoveList; onStarted: () => void 
     } finally {
       setBusy(false);
     }
+  }
+  // Nothing to switch from yet: say so, and where to add the account, instead of empty choices and a dead button.
+  if (spend.length === 0) {
+    return (
+      <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10, maxWidth: 760 }}>
+        <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Start switching banks</h2>
+        <Empty card={false} to="/settings/connectors" action="Connect a bank">No checking, savings or card account is in the app yet, so there is nothing to switch from. Connect the bank, or import a statement from it, first.</Empty>
+      </section>
+    );
   }
   return (
     <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12, maxWidth: 760 }}>

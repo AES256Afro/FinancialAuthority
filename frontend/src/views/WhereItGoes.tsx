@@ -1,7 +1,8 @@
 // Where it goes: the flow of one paycheck into advances, bills, what is kept for the next paycheck, the safety
 // cushion and what is yours.
 import { Empty } from "../components/State";
-import { money, shortDate } from "../format";
+import { noPayday } from "../components/SafeExplain";
+import { amountClass, money, shortDate } from "../format";
 import { getPrefs } from "../prefs";
 import { palette } from "../looks";
 import { inkOn } from "../paychecks";
@@ -21,11 +22,14 @@ function ribbon(x1: number, y1: number, h1: number, x2: number, y2: number, h2: 
 export function WhereItGoes({ snapshot }: ViewProps) {
   const c = palette(getPrefs().look);
   const w = snapshot.windows[0];
-  if (!w) return <Empty to="/paystubs#paycheck" action="Add your paycheck">No paycheck is known yet, so there is nothing to follow.</Empty>;
+  // With no paycheck on file the engine's window is a frame two weeks out, not a payday: nothing is drawn as one.
+  if (!w || noPayday(snapshot)) return <Empty to="/paystubs#paycheck" action="Add your paycheck">No paycheck is on file yet, so there is no paycheck to follow.</Empty>;
   const entering = w.inflow;
   const short = w.safe < 0;
-  // Text on a fill is dark or white by the fill; the short block is the soft red with dark red words.
+  const behind = w.carried_in < 0 ? Math.abs(w.carried_in) : 0; // checking is already short before payday
+  // Text on a fill is dark or white by the fill; the short blocks are the soft red with dark red words.
   const groups = [
+    { id: "behind", label: `Already short ${money(behind)}`, sub: "before payday", amount: behind, fill: "var(--critical-soft)", stroke: "var(--critical)", text: "var(--critical-ink)" },
     { id: "advances", label: `Advance apps ${money(w.advances.total)}`, amount: w.advances.total, fill: c.debt, text: inkOn(c.debt) },
     { id: "bills", label: `Bills ${money(w.bills.total)}`, sub: `${shortDate(w.start)} to ${shortDate(w.end)}`, amount: w.bills.total, fill: c.bill, text: inkOn(c.bill) },
     { id: "aside", label: `Set aside ${money(w.set_aside.total)}`, sub: "for the next paycheck", amount: w.set_aside.total, fill: c.surface, stroke: c.bill, text: c.ink },
@@ -79,22 +83,22 @@ export function WhereItGoes({ snapshot }: ViewProps) {
           <svg viewBox={`0 0 ${W} 500`} width="100%" style={{ display: "block", height: "auto", minWidth: 640 }} role="img" aria-label="Flow of the paycheck into advance apps, bills, what is kept for the next paycheck, the safety cushion and safe to spend">
             <rect x={40} y={TOP} width={150} height={srcHeight} rx={6} fill={c.paycheck} />
             <text x={115} y={TOP + srcHeight / 2 - 4} textAnchor="middle" fill={inkOn(c.paycheck)} fontSize={15} fontWeight={800}>Paycheck</text>
-            <text x={115} y={TOP + srcHeight / 2 + 16} textAnchor="middle" fill={inkOn(c.paycheck)} fontSize={13} fontWeight={700}>{money(w.paycheck)}{w.carried_in > 0 ? ` + ${money(w.carried_in)}` : ""}</text>
+            <text className="num" x={115} y={TOP + srcHeight / 2 + 16} textAnchor="middle" fill={inkOn(c.paycheck)} fontSize={13} fontWeight={700}>{money(w.paycheck)}{w.carried_in > 0 ? ` + ${money(w.carried_in)}` : ""}</text>
             {placed.map((g) => (
               <path key={`r-${g.id}`} d={ribbon(190, g.ySrc, g.h, 420, g.yMid, g.h)} fill={g.stroke ?? g.fill} fillOpacity={g.id === "aside" ? 0.14 : g.id === "buffer" ? 0.6 : 0.3} />
             ))}
             {placed.map((g) => (
               <g key={g.id}>
                 <rect x={420} y={g.yMid} width={150} height={g.h} rx={5} fill={g.fill} stroke={g.stroke} strokeWidth={g.stroke ? 2 : 0} />
-                {g.h >= 18 && <text x={495} y={g.yMid + g.h / 2 + (g.sub && g.h >= 36 ? -4 : 4)} textAnchor="middle" fill={g.text} fontSize={12} fontWeight={800}>{g.label}</text>}
-                {g.sub && g.h >= 36 && <text x={495} y={g.yMid + g.h / 2 + 14} textAnchor="middle" fill={g.text} fontSize={11} fontWeight={700}>{g.sub}</text>}
+                {g.h >= 18 && <text className={amountClass(g.label)} x={495} y={g.yMid + g.h / 2 + (g.sub && g.h >= 36 ? -4 : 4)} textAnchor="middle" fill={g.text} fontSize={12} fontWeight={800}>{g.label}</text>}
+                {g.sub && g.h >= 36 && <text className={amountClass(g.sub)} x={495} y={g.yMid + g.h / 2 + 14} textAnchor="middle" fill={g.text} fontSize={11} fontWeight={700}>{g.sub}</text>}
               </g>
             ))}
             {leafPlaced.map((l, i) => (
               <g key={i}>
                 <path d={ribbon(570, l.fromY, l.h, 790, l.y, l.h)} fill={l.stroke ?? l.fill} fillOpacity={l.stroke ? 0.1 : 0.22} />
                 <rect x={790} y={l.y} width={14} height={l.h} rx={3} fill={l.fill} stroke={l.stroke} strokeWidth={l.stroke ? 2 : 0} />
-                <text x={814} y={l.y + Math.min(l.h, 14) / 2 + 4} fontSize={12} fontWeight={700} fill={c.ink}>{l.label}</text>
+                <text className="num" x={814} y={l.y + Math.min(l.h, 14) / 2 + 4} fontSize={12} fontWeight={700} fill={c.ink}>{l.label}</text>
               </g>
             ))}
           </svg>
@@ -103,12 +107,12 @@ export function WhereItGoes({ snapshot }: ViewProps) {
           <h3 style={{ margin: 0, fontSize: 13, color: "var(--ink-2)", fontWeight: 600 }}>In the order it leaves</h3>
           {placed.map((g) => (
             <div key={g.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "6px 0", borderTop: "1px solid var(--surface-2)", fontSize: 13 }}>
-              <span><span className="sw" style={{ background: g.fill, border: g.stroke ? `1.5px solid ${g.stroke}` : undefined, boxSizing: "border-box" }} />{g.label.replace(/ \$[\d,]+$/, "")}{g.id === "aside" ? " for the next paycheck" : ""}</span>
-              <strong className="num">{money(g.id === "safe" ? w.safe : g.amount)}</strong>
+              <span><span className="sw" style={{ background: g.fill, border: g.stroke ? `1.5px solid ${g.stroke}` : undefined, boxSizing: "border-box" }} />{g.label.replace(/ −?\$[\d,]+$/, "")}{g.id === "aside" ? " for the next paycheck" : g.id === "behind" ? " before payday" : ""}</span>
+              <strong className="num">{money(g.id === "safe" ? w.safe : g.id === "behind" ? w.carried_in : g.amount)}</strong>
             </div>
           ))}
-          <div style={{ marginTop: 8, padding: "12px 14px", borderRadius: 10, background: "var(--surface-2)", fontSize: 12, color: "var(--ink-2)" }}>
-            {entering > 0 ? `${money(entering)} comes in with this paycheck; ${money(w.spoken_for)} of it already has somewhere to go.` : ""} The next paycheck starts with {money(w.set_aside.total)} kept for it.
+          <div className="num" style={{ marginTop: 8, padding: "12px 14px", borderRadius: 10, background: "var(--surface-2)", fontSize: 12, color: "var(--ink-2)" }}>
+            {behind > 0 ? `Checking is already ${money(behind)} short before payday, so ${money(w.paycheck)} comes in and ${money(entering)} is left to use; ${money(w.spoken_for)} already has somewhere to go.` : entering > 0 ? `${money(entering)} comes in with this paycheck; ${money(w.spoken_for)} of it already has somewhere to go.` : ""} The next paycheck starts with {money(w.set_aside.total)} kept for it.
           </div>
         </div>
       </section>

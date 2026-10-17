@@ -136,6 +136,8 @@ export function Notifications() {
         <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>Or send through ntfy or Gotify</h2>
         {error && !data && <Failed error={error} what="the ntfy and Gotify settings" onRetry={reload} card={false} />}
         {!data && !error && <Loading what="the ntfy and Gotify settings" card={false} />}
+        {/* The form shows only once the saved settings are in, so Save can never write the blank defaults over them. */}
+        {data && <>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(180px, 100%), 1fr))", gap: 10 }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <span className="lab">Service</span>
@@ -171,11 +173,13 @@ export function Notifications() {
         {form.kind === "gotify" && <Where id="gotify" />}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <button className="btn dark" type="button" disabled={busy} onClick={save}>{busy ? "Working…" : "Save"}</button>
-          <button className="btn" type="button" disabled={busy || !data?.configured} onClick={() => test("/api/v1/push/test")}>Send a test</button>
+          <button className="btn" type="button" disabled={busy || !data.configured} onClick={() => test("/api/v1/push/test")}>Send a test</button>
           <button className="btn" type="button" disabled={busy} onClick={() => test("/api/v1/push/brief")}>Send today's brief now</button>
           {note && <Said text={note.text} tone={note.tone} />}
         </div>
-        {data?.last_brief_day && <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Last brief sent on {when(data.last_brief_day)}.</div>}
+        {!data.configured && <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Send a test works once ntfy or Gotify is chosen and saved.</div>}
+        {data.last_brief_day && <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Last brief sent on {when(data.last_brief_day)}.</div>}
+        </>}
       </section>
       <ShortcutRecipe />
     </div>

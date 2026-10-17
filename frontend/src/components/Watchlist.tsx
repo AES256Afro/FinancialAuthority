@@ -4,7 +4,7 @@ import { ArrowUpRight, Clock, Copy, Sparkles, TrendingUp } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
-import { money, shortDate } from "../format";
+import { amountClass, money, shortDate } from "../format";
 import type { WatchFinding, WatchOut } from "../types";
 import { ConfirmButton } from "./ConfirmButton";
 import { placeName } from "./OneThing";
@@ -32,7 +32,7 @@ export function Watchlist() {
       {data.items.map((i, k) => (
         <div key={k} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: k === 0 ? 0 : "1px solid var(--surface-2)", flexWrap: "wrap" }}>
           <SeverityTag severity={i.severity} />
-          <div style={{ flex: "1 1 200px", minWidth: 0, fontSize: 13, fontWeight: i.severity === "info" ? 500 : 700 }}>{i.text}</div>
+          <div className={amountClass(i.text)} style={{ flex: "1 1 200px", minWidth: 0, fontSize: 13, fontWeight: i.severity === "info" ? 500 : 700 }}>{i.text}</div>
           {i.link && <Link to={i.link} className="btn" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", minHeight: 32, padding: "4px 10px" }} aria-label={`Open ${placeName(i.link)}: ${i.text}`}>→</Link>}
         </div>
       ))}
@@ -86,10 +86,10 @@ export function WorthALook() {
                 <kind.Icon size={16} />
               </span>
               <SeverityTag severity={f.severity} />
-              <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, flex: "1 1 200px", minWidth: 0 }}>{f.title}</h3>
+              <h3 className={amountClass(f.title)} style={{ margin: 0, fontSize: 14, fontWeight: 700, flex: "1 1 200px", minWidth: 0 }}>{f.title}</h3>
               <strong className="num" style={{ fontSize: 13 }}>{kind.amount(f.amount)}</strong>
             </div>
-            <div style={{ fontSize: 13, color: "var(--ink-2)" }}>{f.text}</div>
+            <div className={amountClass(f.text)} style={{ fontSize: 13, color: "var(--ink-2)" }}>{f.text}</div>
             {f.rows.length > 0 && (
               <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                 {f.rows.map((r) => (

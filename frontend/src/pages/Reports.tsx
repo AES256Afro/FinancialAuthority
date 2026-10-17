@@ -84,7 +84,9 @@ function MonthBars({ months }: { months: Spending["months"] }) {
 export function Reports() {
   const [months, setMonths] = useState(6);
   const [by, setBy] = useState<"category" | "merchant">("category");
-  const { data, error, reload } = useApi<Spending>(`/api/v1/reports/spending?months=${months}&by=${by}`);
+  const { data, error, reload, loading } = useApi<Spending>(`/api/v1/reports/spending?months=${months}&by=${by}`);
+  // A new choice keeps the old figures on screen until the new report arrives; they are dimmed and say so.
+  const stale = loading && data !== null;
   const [table, setTable] = useState(false);
   const groupMax = Math.max(1, ...(data?.groups.map((g) => Math.max(g.this_month, g.average)) ?? [1]));
   const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ block: "start", behavior: "smooth" });
@@ -115,8 +117,10 @@ export function Reports() {
       </nav>
       {error && !data && <Failed error={error} what="the report" onRetry={reload} />}
       {!data && !error && <Loading what="the report" />}
+      {stale && <span role="status" style={{ fontSize: 13, color: "var(--ink-2)" }}>Loading the last {months} months by {by}… the figures below are the ones before.</span>}
+      {error && data && !loading && <Failed error={error} what="the new report" onRetry={reload} />}
       {data && (
-        <>
+        <div aria-busy={stale} style={{ display: "flex", flexDirection: "column", gap: 14, opacity: stale ? 0.5 : 1, transition: "opacity .15s" }}>
           <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
             <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "baseline" }}>
               <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Spent and income, by month</h2>
@@ -187,7 +191,7 @@ export function Reports() {
             </section>
           </div>
           <div style={{ fontSize: 12, color: "var(--muted)" }}>{data.not_advice} Spending leaves out transfers, card payments, income and rows you ignored.</div>
-        </>
+        </div>
       )}
 
       <ReportBuilder />

@@ -186,9 +186,13 @@ export interface Snapshot {
   goals: { per_paycheck: number; items: { id: number; name: string; kind: string; target: number; funded: number; remaining: number; target_date: string | null; per_paycheck: number; on_track: boolean }[] };
   usual_pace: { per_day: number; per_window: number; basis_days: number; transactions: number; over_safe: number };
   board: { problems: { total: number; items: PaymentRow[] }; due_7: { total: number; items: Event[] }; later: { total: number; items: Event[] }; paid: { total: number; items: PaymentRow[] } };
-  debts: { id: number; name: string; kind: string; balance: number; apr: number; minimum: number; due_day: number | null }[];
+  debts: { id: number; name: string; kind: string; balance: number; apr: number | null; minimum: number | null; due_day: number | null; source?: string }[];
   pending: { total: number; confirmations: number; series: number; facts: number; pairs?: number; approvals: number; past_due: number };
+  /** Everything owed (cards, loans, pay-later plans and advance apps, each once): the Debts page's own total. */
   debts_total: number;
+  /** What debts_total counts, in the engine's words. */
+  debts_words?: string;
+  debts_cards_loans_total?: number;
   fresh?: { balances_as_of: string | null; accounts: { id: number; name: string; kind: string; as_of: string | null; connector: string }[]; newest_transaction: string | null };
   in_flight?: { pending: { total: number; items: { id: number; date: string; merchant: string; amount: number; account: string; source: string }[] }; mail: { total: number; counted: boolean; items: { amount: number; merchant: string; last4: string; date: string; source: string }[] } };
   mail: { pending: { id: number; kind: string; sender_name: string; subject: string; date: string | null }[]; alerts: { id: number; kind: string; fields: Record<string, string | number>; sender_name: string; date: string | null }[] };

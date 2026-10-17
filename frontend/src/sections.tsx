@@ -15,7 +15,7 @@ import { PurchaseCheck } from "./components/PurchaseCheck";
 import { RiverChart } from "./components/RiverChart";
 import { Show } from "./components/State";
 import { SeverityTag, StatusPill, Why } from "./components/Status";
-import { money, shortDate } from "./format";
+import { amountClass, money, shortDate } from "./format";
 import type { Cover, Saving } from "./guide";
 import { palette } from "./looks";
 import { PAYCHECK_MODES, PaycheckSection, type PaycheckMode } from "./pictures";
@@ -23,7 +23,7 @@ import { getPrefs } from "./prefs";
 import type { Snapshot } from "./types";
 import { MonthGrid } from "./views/MonthGrid";
 import { VIEWS, viewById } from "./views";
-import { SafeExplain } from "./components/SafeExplain";
+import { PlanCaveats, SafeExplain, noPayday, safeTitle } from "./components/SafeExplain";
 
 export interface SectionDef {
   key: string;
@@ -42,13 +42,13 @@ export function ShowAs({ modes, value, onChange, label }: { modes: { id: string;
   );
 }
 
-function Card({ title, children, link, picker }: { title: string; children: ReactNode; link?: { to: string; text: string }; picker?: ReactNode }) {
+function Card({ title, children, link, picker }: { title: ReactNode; children: ReactNode; link?: { to: string; text: string }; picker?: ReactNode }) {
   return (
     <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{title}</h2>
         {picker}
-        {link && <Link to={link.to} style={{ marginLeft: picker ? 0 : "auto", fontSize: 13 }}>{link.text}</Link>}
+        {link && <Link to={link.to} style={{ marginLeft: picker ? 0 : "auto", fontSize: 13, minHeight: 32, display: "inline-flex", alignItems: "center" }}>{link.text}</Link>}
       </div>
       {children}
     </section>
@@ -74,8 +74,9 @@ function SafeSection({ s, mode, setMode }: { s: Snapshot; mode: string; setMode?
   const head = (
     <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
       <div className="num" style={{ fontSize: mode === "hero" ? 52 : 34, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1, color: amount < 0 ? "var(--critical-ink)" : "var(--ink)" }}>{money(amount)}</div>
-      <h2 style={{ margin: 0, fontSize: 13, fontWeight: 400, color: "var(--ink-2)" }}>safe to spend through {shortDate(s.safe_to_spend.through)}</h2>
-      {amount < 0 && <StatusPill status="crit">Short before payday</StatusPill>}
+      <h2 style={{ margin: 0, fontSize: 13, fontWeight: 400, color: "var(--ink-2)" }}>{safeTitle(s).replace(/^Safe/, "safe")}</h2>
+      {amount < 0 && <StatusPill status="crit">{noPayday(s) ? "Short, and no payday on file" : "Short before payday"}</StatusPill>}
+      {amount >= 0 && noPayday(s) && <StatusPill status="warn">No payday on file</StatusPill>}
       <ShowAs modes={SAFE_MODES} value={mode} onChange={setMode} label="safe to spend" />
     </div>
   );
@@ -127,6 +128,8 @@ function SafeSection({ s, mode, setMode }: { s: Snapshot; mode: string; setMode?
   return (
     <section className="card" style={{ padding: 18, display: "flex", flexDirection: "column", gap: 10 }}>
       {head}
+      {noPayday(s) && <span style={{ fontSize: 13, color: "var(--ink-2)" }}>No payday on file, so this counts no paycheck. <Link to="/paystubs#paycheck" style={{ fontWeight: 700 }}>Add your paycheck</Link></span>}
+      <PlanCaveats s={s} />
       {body}
       <Why text={s.why?.safe_to_spend} />
       <SafeExplain s={s} />
@@ -157,7 +160,7 @@ function SavingSection({ mode, setMode }: { mode: string; setMode?: (v: string) 
         if (mode === "bar") {
           const r = s.next_rung;
           return (
-            <Card title={r ? `Saving · rung ${r.n}, ${r.name.toLowerCase()}` : "Saving · every rung reached"} link={{ to: "/saving", text: "Open Saving" }} picker={<ShowAs modes={SAVING_MODES} value={mode} onChange={setMode} label="saving" />}>
+            <Card title={r ? <>Saving · <Link to="/glossary#rung" style={{ color: "inherit" }}>rung</Link> {r.n}, {r.name.toLowerCase()}</> : <>Saving · every <Link to="/glossary#rung" style={{ color: "inherit" }}>rung</Link> reached</>} link={{ to: "/saving", text: "Open Saving" }} picker={<ShowAs modes={SAVING_MODES} value={mode} onChange={setMode} label="saving" />}>
               {r && (
                 <>
                   <div role="img" aria-label={`${money(s.balance)} of ${money(r.target)}`} style={{ height: 12, borderRadius: 6, background: "var(--surface-2)", overflow: "hidden" }}><div style={{ width: `${Math.round(r.progress * 100)}%`, height: "100%", background: c.saving }} /></div>
@@ -169,6 +172,7 @@ function SavingSection({ mode, setMode }: { mode: string; setMode?: (v: string) 
         }
         return (
           <Card title="The saving ladder" link={{ to: "/saving", text: "Open Saving" }} picker={<ShowAs modes={SAVING_MODES} value={mode} onChange={setMode} label="saving" />}>
+            <span style={{ fontSize: 12, color: "var(--ink-2)" }}>Each <Link to="/glossary#rung">rung</Link> is one savings goal; the next starts once it is reached.</span>
             {[...s.rungs].reverse().map((r) => (
               <div key={r.n} className={BAR_ROW} style={{ gap: "2px 8px", alignItems: "center", fontSize: 12 }}>
                 <span className={BAR_LABEL} style={{ fontWeight: s.next_rung?.n === r.n ? 800 : 600 }}>{r.n} · {r.name}</span>
@@ -190,7 +194,7 @@ function BriefSection({ s }: { s: Snapshot }) {
       {s.brief.map((b, i) => (
         <Link key={i} to={b.link || "/today"} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", color: "var(--ink)", textDecoration: "none", fontSize: 13, minHeight: 32 }}>
           <SeverityTag severity={b.severity} />
-          <span style={{ flex: "1 1 200px", minWidth: 0 }}>{b.text}</span>
+          <span className={amountClass(b.text)} style={{ flex: "1 1 200px", minWidth: 0 }}>{b.text}</span>
         </Link>
       ))}
     </Card>
@@ -216,7 +220,9 @@ function DebtsSection({ s }: { s: Snapshot }) {
   const c = palette(getPrefs().look);
   const max = Math.max(1, ...s.debts.map((d) => d.balance || 0));
   return (
-    <Card title={`Debts · ${money(total)}`} link={{ to: "/debts", text: "Open Debts" }}>
+    <Card title={<>Debts · <span className="num">{money(total)}</span></>} link={{ to: "/debts", text: "Open Debts" }}>
+      {/* The total is the Debts page's own: everything owed, said in the engine's words so nothing reads as left out. */}
+      {s.debts_words && <span style={{ fontSize: 12, color: "var(--ink-2)" }}>{s.debts_words[0].toUpperCase() + s.debts_words.slice(1)}.</span>}
       {s.debts.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)" }}>No debts on file.</div>}
       {s.debts.slice(0, 8).map((d) => (
         <div key={d.id} className={BAR_ROW} style={{ gap: "2px 8px", alignItems: "center", fontSize: 12 }}>
@@ -237,12 +243,12 @@ export const SECTIONS: SectionDef[] = [
   { key: "paycheck", name: "Your paychecks", description: "Where each check goes, drawn eight ways.", modes: PAYCHECK_MODES.map((m) => ({ id: m.id, name: m.name })), render: ({ snapshot, showAs, setShowAs }) => <PaycheckSection snapshot={snapshot} mode={(showAs as PaycheckMode) ?? "ribbon"} onMode={setShowAs} /> },
   { key: "cover", name: "Cover", description: "Whether each account has enough before each payday.", modes: COVER_MODES, render: ({ showAs, setShowAs }) => <CoverSection mode={(showAs as CoverMode) ?? "gauges"} setMode={setShowAs} /> },
   { key: "saving", name: "Saving", description: "The ladder and the next rung.", modes: SAVING_MODES, render: ({ showAs, setShowAs }) => <SavingSection mode={showAs ?? "ladder"} setMode={setShowAs} /> },
-  { key: "sixty", name: "Sixty days", description: "Your balance day by day, or the calendar.", modes: SIXTY_MODES, render: ({ snapshot, showAs, setShowAs }) => (
+  { key: "sixty", name: "Sixty days", description: "What is free to spend, day by day, or the calendar.", modes: SIXTY_MODES, render: ({ snapshot, showAs, setShowAs }) => (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       {setShowAs && <div style={{ display: "flex" }}><ShowAs modes={SIXTY_MODES} value={showAs ?? "river"} onChange={setShowAs} label="sixty days" /></div>}
       {showAs === "month" ? <MonthGrid snapshot={snapshot} /> : (
         <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
-          <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Your balance day by day, next 60 days</h2>
+          <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>What is free to spend, day by day, next 60 days</h2>
           <RiverChart snapshot={snapshot} look={getPrefs().look} />
         </section>
       )}

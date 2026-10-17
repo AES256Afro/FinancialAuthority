@@ -128,8 +128,13 @@ table.ledger td { padding: 7px 8px 7px 0; border-top: 1px solid var(--surface-2)
 .rail-group { display: flex; flex-direction: column; gap: 2px; }
 .rail-foot { flex: 0 0 auto; padding: 8px; border-top: 1px solid var(--hairline); }
 
-/* Quiet numbers: pictures first; a figure shows when tapped, hovered or focused. */
+/* Hide amounts: pictures first; a figure shows when tapped, hovered or focused. Every amount carries the class
+   "num": a figure, a sentence or a chip that holds one, and an amount drawn inside a chart. A chart's words are
+   blurred with the SVG filter the shell draws (CSS blur on SVG text is not drawn by every browser). A "num"
+   inside another is blurred and revealed with its holder, so one tap shows it. */
 :root[data-quiet="1"] .num { filter: blur(6px); cursor: pointer; transition: filter .15s; }
+:root[data-quiet="1"] svg .num { filter: url(#fa-quiet-blur); transition: none; }
+:root[data-quiet="1"] .num .num:not(input) { filter: none; pointer-events: none; }
 :root[data-quiet="1"] .num:hover, :root[data-quiet="1"] .num:focus-visible, :root[data-quiet="1"] .num.shown { filter: none; }
 @media (prefers-reduced-motion: reduce) { :root[data-quiet="1"] .num { transition: none; } }
 

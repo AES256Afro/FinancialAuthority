@@ -1,6 +1,6 @@
 // One fetch wrapper. Sends the session cookie and the header the server requires on writes.
 // In the static demo build the same calls are answered from the engine's recorded output instead.
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DEMO, demoFetch } from "./demo/shim";
 
 export class ApiError extends Error {
@@ -11,8 +11,23 @@ export class ApiError extends Error {
   }
 }
 
+// A write anywhere changes the plan: every answer kept is dropped, and the screens that show the plan (the header,
+// Today, Home, the Needs you badge) are told to ask again once the write is done.
+const WROTE = "fa-wrote";
+let writeCount = 0;
+// A few POSTs only work something out or try a connection (a preview, a test send, a scenario); they change
+// nothing, so they do not ask the plan again.
+const READ_ONLY_POST = /\/(preview|test|catalog|letter|drill)$|\/join\/check$|\/scenarios\/run$/;
+
+/** Calls `fn` after any write through `api()` succeeds. Returns the way to stop listening. */
+export function onWrite(fn: () => void): () => void {
+  window.addEventListener(WROTE, fn);
+  return () => window.removeEventListener(WROTE, fn);
+}
+
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
-  if (init.method && init.method.toUpperCase() !== "GET") shared.clear(); // a write makes every answer stale
+  const writes = Boolean(init.method && init.method.toUpperCase() !== "GET");
+  if (writes) shared.clear(); // a write makes every answer stale
   const headers = new Headers(init.headers);
   headers.set("X-Requested-With", "FinancialAuthority");
   if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
@@ -31,6 +46,10 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
       // not JSON
     }
     throw new ApiError(response.status, detail);
+  }
+  if (writes && !READ_ONLY_POST.test(path.split("?")[0])) {
+    writeCount += 1;
+    window.dispatchEvent(new Event(WROTE));
   }
   if (response.headers.get("content-type")?.includes("text/csv")) return (await response.text()) as unknown as T;
   return (await response.json()) as T;
@@ -72,14 +91,41 @@ function sharedGet<T>(path: string, fresh: boolean): Promise<T> {
   return promise;
 }
 
-export function useApi<T>(path: string | null): Loaded<T> {
+/** `live`: ask again a moment after any write in the app, and when the tab is shown again after being hidden, so
+ * an answer the whole app reads (the plan) never stays behind a change made on another screen. What is on screen
+ * stays until the new answer arrives. */
+export function useApi<T>(path: string | null, opts: { live?: boolean } = {}): Loaded<T> {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [loading, setLoading] = useState(Boolean(path));
   const [tick, setTick] = useState(0);
+  const live = Boolean(opts.live && path);
+  const askedAfter = useRef(-1); // how many writes had finished when the answer on screen was asked for
+  useEffect(() => {
+    if (!live) return;
+    let timer: number | undefined;
+    // Several writes in a row ask once; a screen that already asked again after the write is not asked twice.
+    const again = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        if (askedAfter.current !== writeCount) setTick((t) => t + 1);
+      }, 250);
+    };
+    const shown = () => {
+      if (document.visibilityState === "visible") setTick((t) => t + 1);
+    };
+    const stop = onWrite(again);
+    document.addEventListener("visibilitychange", shown);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", shown);
+      window.clearTimeout(timer);
+    };
+  }, [live]);
   useEffect(() => {
     if (!path) return;
     let alive = true;
+    askedAfter.current = writeCount;
     setLoading(true);
     sharedGet<T>(path, tick > 0)
       .then((d) => {
@@ -98,5 +144,6 @@ export function useApi<T>(path: string | null): Loaded<T> {
       alive = false;
     };
   }, [path, tick]);
-  return { data, error, loading, reload: () => setTick((t) => t + 1) };
+  const reload = useCallback(() => setTick((t) => t + 1), []);
+  return { data, error, loading, reload };
 }
