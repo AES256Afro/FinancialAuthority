@@ -82,6 +82,7 @@ app.include_router(privacy.router)
 app.include_router(plaid_webhook.router)
 for module in (custom_reports, sinking, payoff, recap, watch, homeassistant, housing, people, moving):
     app.include_router(module.router)
+app.include_router(moving.exit_router)
 app.include_router(routes.router)
 app.include_router(registers.router)
 app.include_router(mail.router)
