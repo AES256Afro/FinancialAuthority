@@ -6,6 +6,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi, type ApiError } from "../api";
 import { ConfirmButton } from "../components/ConfirmButton";
+import { CreditHealth } from "../components/CreditHealth";
 import { dayWord } from "../components/Documents";
 import { Empty, Failed, Loading, Said, useWidth } from "../components/State";
 import { SeverityTag, StatusPill } from "../components/Status";
@@ -641,6 +642,7 @@ export function Debts() {
               </section>
             </div>
           )}
+          <CreditHealth />
           <Payoff changed={changed} />
           <div style={{ fontSize: 12, color: "var(--muted)" }}>{data.not_advice} Pay-later plans count what is left to pay; advances count the amount with its fee.</div>
         </>
