@@ -225,7 +225,7 @@ function DebtsSection({ s }: { s: Snapshot }) {
       {s.debts_words && <span style={{ fontSize: 12, color: "var(--ink-2)" }}>{s.debts_words[0].toUpperCase() + s.debts_words.slice(1)}.</span>}
       {s.debts.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)" }}>No debts on file.</div>}
       {s.debts.slice(0, 8).map((d) => (
-        <div key={d.id} className={BAR_ROW} style={{ gap: "2px 8px", alignItems: "center", fontSize: 12 }}>
+        <div key={d.source ?? d.id} className={BAR_ROW} style={{ gap: "2px 8px", alignItems: "center", fontSize: 12 }}>
           <span className={BAR_LABEL}>{d.name}{d.apr ? <span style={{ color: "var(--muted)" }}> · {d.apr}% a year</span> : null}</span>
           <div style={{ height: 10, borderRadius: 5, background: "var(--surface-2)" }}><div style={{ width: `${(d.balance / max) * 100}%`, height: "100%", borderRadius: 5, background: c.debt }} /></div>
           <span className="num">{money(d.balance)}</span>

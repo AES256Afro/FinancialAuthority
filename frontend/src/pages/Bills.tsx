@@ -30,6 +30,10 @@ interface BillsOut {
   bills: Bill[];
   monthly_total: number;
   monthly_basis: string;
+  /** One-time costs (a move-in check, a truck): counted on their day, never as monthly. */
+  one_time?: { total: number; items: { bill_id: number; name: string; amount: number; date: string; source: string }[] };
+  /** Bills that begin later (a lease that has not started): not in today's monthly total. */
+  starting_later?: { total: number; items: { bill_id: number; name: string; amount: number; per_month: number; starts_on: string; source: string }[] };
   paid_from_choices?: PaidFromChoice[];
 }
 
@@ -349,8 +353,18 @@ export function Bills({ onChanged }: { onChanged: () => void }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 1100 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Bills</h1>
-        <span style={{ fontSize: 13, color: "var(--ink-2)" }}>{data ? `${data.bills.length} bills and subscriptions · about ${money(total)} a month, each counted by how often it comes` : ""}</span>
+        <span style={{ fontSize: 13, color: "var(--ink-2)" }}>{data ? `${data.bills.length} bills and subscriptions · about ${money(total)} a month today, each counted by how often it comes` : ""}</span>
       </div>
+      {data && ((data.one_time?.items.length ?? 0) > 0 || (data.starting_later?.items.length ?? 0) > 0) && (
+        <div style={{ fontSize: 13, color: "var(--ink-2)", display: "flex", flexDirection: "column", gap: 2 }}>
+          {data.one_time && data.one_time.items.length > 0 && (
+            <span>Not in the monthly figure, counted once on their day: {data.one_time.items.map((i) => `${i.name} ${money(i.amount, { cents: true })} on ${shortDate(i.date)}`).join("; ")}.</span>
+          )}
+          {data.starting_later && data.starting_later.items.length > 0 && (
+            <span>Starting later, so not in today's figure: {data.starting_later.items.map((i) => `${i.name} ${money(i.per_month, { cents: true })} a month from ${shortDate(i.starts_on)}`).join("; ")}.</span>
+          )}
+        </div>
+      )}
       <BillStrip />
       <Show
         state={state}

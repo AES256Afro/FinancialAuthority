@@ -1357,6 +1357,14 @@ export function Housing({ onChanged }: { onChanged?: () => void }) {
         <Loading what="your housing" />
       ) : (
         <>
+          {data.said && (
+            <div role="status" style={{ fontSize: 13, color: "var(--ink)", padding: "8px 12px", borderRadius: 10, background: "var(--paycheck-soft)" }}>{data.said}</div>
+          )}
+          {(data.warnings ?? []).map((w) => (
+            <div key={w} role="note" style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, padding: "8px 12px", borderRadius: 10, background: "var(--warning-soft)", color: "var(--warning-ink)" }}>
+              <TriangleAlert size={15} aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }} /><span>{w}</span>
+            </div>
+          ))}
           {data.move && <MoveTimeline data={data} move={data.move} />}
           {data.homes.length === 0 && <NoHome ctx={ctx} />}
           {data.homes.length > 0 && <RentBillsNotHeld ctx={ctx} />}
