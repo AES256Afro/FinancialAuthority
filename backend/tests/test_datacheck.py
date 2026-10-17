@@ -147,3 +147,10 @@ def test_affirms_own_emails_set_autopay_and_true_dates_and_an_approval_is_its_pl
         plans = {p.installment: p for p in session.exec(select(InstallmentPlan)).all()}
         assert plans[48.30].autopay is True and plans[48.30].next_date == date(2026, 10, 16)
         assert plans[83.76].dates_estimated is True and plans[83.76].count == 3 and plans[83.76].next_date == date(2026, 10, 24)
+
+
+def test_an_approval_whose_payments_have_all_fallen_starts_nothing():
+    from app.engine.borrowing import approval_has_ended
+
+    assert approval_has_ended({"message_date": "2026-01-05", "cadence_days": 30, "count": 3}, TODAY) is True
+    assert approval_has_ended({"message_date": "2026-09-24", "cadence_days": 30, "count": 3}, TODAY) is False

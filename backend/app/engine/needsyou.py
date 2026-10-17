@@ -157,6 +157,17 @@ def plan_many(session: Session, facts: list[ExtractedFact], today: date, *, loos
                 step.update(do="own_card", why="no plan on file matches this AutoPay notice yet")
             else:
                 step.update(do="apply", autopay=f"{match.merchant or match.provider} ${match.installment:,.2f}", lender=str(fields.get("provider") or "the lender"))
+        elif f.kind == "installment" and fields.get("notice") == "approved":
+            from .borrowing import approval_has_ended, plan_for_notice
+
+            match = plan_for_notice(session, fields)
+            label = f"{fields.get('merchant') or 'a store'} ${float(fields.get('installment') or 0):,.2f}"
+            if match is not None and abs(match.installment - float(fields.get("installment") or 0)) <= 0.02:
+                step.update(do="apply", approved_known=label)
+            elif approval_has_ended(fields, today):
+                step.update(do="apply", record=True)  # every payment has fallen by now: history, it starts nothing
+            else:
+                step.update(do="apply", approved_new=label)
         elif f.kind == "installment" and not fields.get("schedule") and not fields.get("notice") and AUTOPAY.search(str(fields.get("subject") or "")):
             step.update(do="apply", record=True)  # an older AutoPay notice read before the dates were taken from it
         elif not complete(f):
@@ -194,12 +205,18 @@ def plan_many(session: Session, facts: list[ExtractedFact], today: date, *, loos
     own = sum(1 for s in steps if s["do"] == "own_card")
     records = sum(1 for s in applying if s.get("record"))
     autopays = sorted({s["autopay"] for s in applying if s.get("autopay")})
-    plans = sorted({s["plan"] for s in applying if s.get("plan")})
+    known = sum(1 for s in applying if s.get("approved_known"))
+    new_plans = sorted({s["approved_new"] for s in applying if s.get("approved_new")})
+    plans = sorted({s["plan"] for s in applying if s.get("plan") and s["plan"] != "None"})
     lenders = sorted({s["lender"] for s in applying if s.get("lender")})
-    others = sum(1 for s in applying if not s.get("name") and not s.get("record") and not s.get("plan") and not s.get("autopay"))
+    others = sum(1 for s in applying if not any(s.get(k) for k in ("name", "record", "plan", "autopay", "approved_known", "approved_new")))
     parts = []
     if plans:
         parts.append(f"sets up or updates {len(plans)} pay-later plan{'s' if len(plans) != 1 else ''} with {_names(lenders)}, one per loan")
+    if known:
+        parts.append(f"matches {known} approval email{'s' if known != 1 else ''} to plans on file")
+    if new_plans:
+        parts.append(f"adds {len(new_plans)} plan{'s' if len(new_plans) != 1 else ''} from approvals, dated by estimate until the lender sets the dates ({_names(new_plans)})")
     if autopays:
         parts.append(f"marks AutoPay on {len(autopays)} plan{'s' if len(autopays) != 1 else ''} with the lender's dates ({_names(autopays)})")
     if records:

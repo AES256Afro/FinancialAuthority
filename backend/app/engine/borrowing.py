@@ -595,6 +595,14 @@ def reread_lender_notices(session: Session) -> int:
     return n
 
 
+def approval_has_ended(fields: dict, today: date) -> bool:
+    """An approval whose every payment would have fallen by now (sent, plus each payment's gap, plus a month's grace)."""
+    if not fields.get("message_date"):
+        return False
+    sent = date.fromisoformat(fields["message_date"])
+    return sent + timedelta(days=int(fields.get("cadence_days") or 30) * int(fields.get("count") or 1) + 30) < today
+
+
 def apply_lender_notice(session: Session, fields: dict, today: date) -> InstallmentPlan:
     """An AutoPay notice sets its plan's AutoPay (and, when it lists them, the true dates); an approval is its plan, or
     a new one whose dates are estimated until the lender sets them. Raises ValueError when nothing matches."""
@@ -621,6 +629,8 @@ def apply_lender_notice(session: Session, fields: dict, today: date) -> Installm
             return plan
         sent = date.fromisoformat(fields["message_date"]) if fields.get("message_date") else today
         cadence = int(fields.get("cadence_days") or 30)
+        if approval_has_ended(fields, today):
+            raise ValueError("That plan has run its course by now, so it starts nothing")
         plan = InstallmentPlan(provider=str(fields.get("provider") or "Affirm"), merchant=str(fields.get("merchant") or ""), total=float(fields.get("total") or 0.0),
                                installment=float(fields["installment"]), count=int(fields["count"]), remaining=int(fields["count"]),
                                next_date=sent + timedelta(days=cadence), cadence_days=cadence, dates_estimated=True)
