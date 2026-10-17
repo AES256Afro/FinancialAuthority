@@ -65,3 +65,12 @@ def advance_exit(session: Session = Depends(get_session), _: auth.Principal = De
     from ..engine.advance_exit import exit_plan
 
     return exit_plan(session, today())
+
+
+@exit_router.get("/plan")
+def get_borrowing_plan(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+    """The pay-later loans as one plan with its reasons (M54): the monthly stairs, the finish line, the interest
+    ahead and the order for money beyond the schedule."""
+    from ..engine.borrowing_plan import borrowing_plan
+
+    return borrowing_plan(session, today())
