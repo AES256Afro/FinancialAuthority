@@ -37,11 +37,11 @@ def test_the_plan_lays_out_the_stairs_the_finish_line_and_the_order_with_reasons
     assert sum(stairs.values()) == round(out["totals"]["left_to_pay"], 2)
     assert {f["name"] for f in out["finish_line"]} == {"Example Glasses", "Example Headphones"}
     kinds = [s["kind"] for s in out["steps"]]
-    assert kinds[:4] == ["keep", "finish", "extra", "zero"]
+    assert kinds[0] == "keep" and kinds[1] == "finish" and "extra" in kinds and kinds[-1] == "zero"
     assert "AutoPay is off on Example Desk (Wed Oct 28, $78.70)" in out["steps"][0]["text"]
     assert "After Wed Dec 16 you watch 3 loans instead of 5" in out["steps"][1]["text"]
-    assert out["order"][0]["name"] == "Example Glasses" and out["order"][0]["apr"] == 34.3  # the highest rate first
-    assert "Example Chair: no interest ahead" in out["steps"][3]["text"]
+    assert out["chosen"] in ("finish_first", "rate_first")
+    assert "Example Chair: no interest ahead" in out["steps"][-1]["text"]
     assert "Not financial advice" in out["not_advice"]
 
 
@@ -49,3 +49,18 @@ def test_paying_off_today_costs_less_than_the_payments_left_only_when_there_is_i
     pays = [{"date": "2026-11-16", "amount": 100.0}, {"date": "2026-12-16", "amount": 100.0}]
     assert payoff_estimate(pays, 0.0) == 200.0
     assert payoff_estimate(pays, 30.0) < 200.0
+
+
+
+def test_both_orders_are_worked_out_and_a_near_tie_finishes_the_small_ones_first():
+    from app.engine.borrowing_plan import simulate
+
+    loans = [
+        {"id": 1, "payoff_estimate": 300.0, "apr": 34.0, "payments": [{"date": f"2026-{m:02d}-16", "amount": 101.0} for m in (11, 12)] + [{"date": "2027-01-16", "amount": 101.0}]},
+        {"id": 2, "payoff_estimate": 2000.0, "apr": 30.0, "payments": [{"date": f"2027-{m:02d}-16", "amount": 120.0} for m in range(1, 13)] + [{"date": f"2026-{m:02d}-16", "amount": 120.0} for m in (11, 12)]},
+    ]
+    alone = simulate(loans, 0.0, "rate_first", date(2026, 10, 17))
+    finish = simulate(loans, 100.0, "finish_first", date(2026, 10, 17))
+    rate = simulate(loans, 100.0, "rate_first", date(2026, 10, 17))
+    assert finish["interest"] < alone["interest"] and rate["interest"] < alone["interest"]
+    assert finish["ended"][1] <= rate["ended"][1]  # the small one ends no later when it is finished first

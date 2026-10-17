@@ -10,7 +10,7 @@ import { getPrefs } from "../prefs";
 import { Show } from "./State";
 import { SeverityTag } from "./Status";
 
-interface Loan { id: number; name: string; next_date: string; next_amount: number; payments_left: number; ends: string; left_to_pay: number; payoff_estimate: number; interest_ahead: number; apr: number | null; autopay: boolean | null; early_100_saves: number; source: string }
+interface Loan { id: number; name: string; next_date: string; next_amount: number; payments_left: number; ends: string; left_to_pay: number; payoff_estimate: number; interest_ahead: number; apr: number | null; autopay: boolean | null; source: string }
 interface PlanOut {
   loans: Loan[];
   stairs: { month: string; total: number; parts: { id: number; name: string; amount: number }[] }[];
@@ -85,7 +85,7 @@ export function BorrowingPlan() {
 
             <div style={{ overflowX: "auto" }}>
               <table className="ledger" style={{ fontSize: 13 }}>
-                <thead><tr><th>Loan</th><th>Next</th><th style={{ textAlign: "right" }}>Left</th><th style={{ textAlign: "right" }}>Interest ahead</th><th style={{ textAlign: "right" }}>$100 early saves</th><th>AutoPay</th></tr></thead>
+                <thead><tr><th>Loan</th><th>Next</th><th style={{ textAlign: "right" }}>Left</th><th style={{ textAlign: "right" }}>Interest ahead</th><th style={{ textAlign: "right" }}>Pay off today</th><th>AutoPay</th></tr></thead>
                 <tbody>
                   {p.loans.map((l) => (
                     <tr key={l.id}>
@@ -93,7 +93,7 @@ export function BorrowingPlan() {
                       <td className="num">{shortDate(l.next_date)}<div style={{ fontSize: 11, color: "var(--muted)" }}>{money(l.next_amount, { cents: true })}</div></td>
                       <td className="num" style={{ textAlign: "right" }}>{money(l.left_to_pay, { cents: true })}<div style={{ fontSize: 11, color: "var(--muted)" }}>{l.payments_left} payment{l.payments_left === 1 ? "" : "s"}</div></td>
                       <td className="num" style={{ textAlign: "right", color: l.interest_ahead > 0 ? "var(--critical-ink)" : "var(--ink-2)" }}>{l.interest_ahead > 0 ? money(l.interest_ahead, { cents: true }) : "none"}</td>
-                      <td className="num" style={{ textAlign: "right" }}>{l.early_100_saves > 0 ? money(l.early_100_saves, { cents: true }) : "nothing"}</td>
+                      <td className="num" style={{ textAlign: "right" }}>{money(l.payoff_estimate, { cents: true })}<div style={{ fontSize: 11, color: "var(--muted)" }}>about</div></td>
                       <td>{l.autopay === true ? <SeverityTag severity="good" word="On" /> : l.autopay === false ? <SeverityTag severity="warning" word="Off" /> : <span style={{ fontSize: 12, color: "var(--muted)" }}>not said</span>}</td>
                     </tr>
                   ))}
