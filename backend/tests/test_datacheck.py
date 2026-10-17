@@ -154,3 +154,20 @@ def test_an_approval_whose_payments_have_all_fallen_starts_nothing():
 
     assert approval_has_ended({"message_date": "2026-01-05", "cadence_days": 30, "count": 3}, TODAY) is True
     assert approval_has_ended({"message_date": "2026-09-24", "cadence_days": 30, "count": 3}, TODAY) is False
+
+
+
+def test_an_older_autopay_email_never_overwrites_dates_the_lender_confirmed_later(owner: TestClient):
+    from app.engine.borrowing import apply_lender_notice
+
+    with Session(engine) as session:
+        plan = InstallmentPlan(provider="Affirm", merchant="Example Store", total=193.2, installment=48.30, count=4, remaining=2, next_date=date(2026, 11, 16), cadence_days=30,
+                               loan_id="L-2", autopay=True, schedule_as_of=date(2026, 10, 17),
+                               schedule=json.dumps([{"date": "2026-11-16", "amount": 48.30}, {"date": "2026-12-16", "amount": 47.41}]))
+        session.add(plan)
+        session.commit()
+        old = {"provider": "Affirm", "notice": "autopay", "autopay": True, "installment": 48.30, "message_date": "2026-10-07",
+               "autopay_schedule": [{"date": "2026-11-16", "amount": 48.30}, {"date": "2026-12-16", "amount": 48.00}]}
+        apply_lender_notice(session, old, TODAY)
+        kept = session.exec(select(InstallmentPlan).where(InstallmentPlan.loan_id == "L-2")).one()
+        assert json.loads(kept.schedule)[-1]["amount"] == 47.41
