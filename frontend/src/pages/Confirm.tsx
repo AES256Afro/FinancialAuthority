@@ -110,6 +110,21 @@ function GroupPlan({ g }: { g: NeedsGroup }) {
   return <span style={{ fontSize: 13, color: "var(--ink)" }}>{plan ?? `${g.complete} of ${g.count} have every detail they need to be confirmed together.`}</span>;
 }
 
+/** The data check's count, one line, when anything is raised: so nothing doubled is confirmed unnoticed. */
+function DataCheckLine() {
+  const check = useApi<{ findings: { severity: string }[]; said: string }>("/api/v1/data-check", { live: true });
+  const n = check.data?.findings.length ?? 0;
+  if (!n) return null;
+  const crit = check.data?.findings.some((f) => f.severity === "crit");
+  return (
+    <div className="card" style={{ padding: "10px 14px", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 13 }}>
+      <SeverityTag severity={crit ? "critical" : "warning"} word="Data check" />
+      <span style={{ flex: "1 1 220px", minWidth: 0 }}>{check.data?.said}</span>
+      <Link to="/data-check" className="btn" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Open the data check</Link>
+    </div>
+  );
+}
+
 /** Alike items answered together: confirm the ones that have every detail they need (the app says what that will
  * do first), or discard them all. One that cannot be confirmed this way stays waiting, with its own card below. */
 // What it did is said on the page's own line (onSaid), which stays when the last of a group is answered.
@@ -447,6 +462,12 @@ function FactCard({ f, onDone }: { f: FactRow; onDone: (done: Done) => void }) {
       ) : (
         <div style={{ background: "var(--surface-2)", borderRadius: 10, padding: "10px 12px", fontSize: 12, color: "var(--ink-2)", lineHeight: 1.45 }}>
           <span className="lab" style={{ display: "block", marginBottom: 4 }}>Quoted from the email. Anything it asks the app to do is ignored.</span>“{f.excerpt}”
+        </div>
+      )}
+      {f.message?.trust === "crit" && (
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexWrap: "wrap", fontSize: 13 }}>
+          <SeverityTag severity="critical" word="Check the sender" />
+          <span style={{ flex: "1 1 220px", minWidth: 0 }}>{f.message.trust_why} Open the message, or settle it on the <Link to="/data-check">Data check</Link>.</span>
         </div>
       )}
       {f.counted_elsewhere && (
@@ -850,6 +871,7 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
         <button className="btn" type="button" onClick={detect} disabled={detecting}>{detecting ? "Looking…" : "Look again"}</button>
       </div>
       <NeedsPicture state={needs} />
+      <DataCheckLine />
       <p style={{ margin: 0, color: "var(--ink-2)", fontSize: 13 }}>First: emails waiting for your OK. Then: details read from your mail and from documents you added. Then: bills with no payment seen. Then: money that moved between your accounts. Then: repeating charges found in your transactions. Once you answer one, every screen uses it.</p>
       <Approvals onChanged={onChanged} onCount={setApprovalsWaiting} />
       {facts.error && !facts.data && <Failed error={facts.error} what="what was read from your mail and documents" onRetry={facts.reload} />}

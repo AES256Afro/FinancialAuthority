@@ -18,6 +18,7 @@ const ITEMS: Item[] = [
   { to: "/settings/notifications", title: "Notifications", text: "Notifications on this device, reminders, and the morning brief through ntfy or Gotify." },
   { to: "/settings/backups", title: "Backups", text: "A copy of everything before each import and once a day; undo an import, or put everything back to a moment.", person: { text: "A copy of everything before each import and once a day. Only the owner puts everything back to a moment or sets the copy kept off this server." } },
   { to: "/settings/jobs", title: "Jobs", text: "What the app does on its own, and whether it ran." },
+  { to: "/data-check", title: "Data check", text: "Anything counted twice, and mail that may not be genuine." },
   { to: "/settings/audit", title: "Activity", text: "Every read a model, an app or a script made of your data." },
 ];
 

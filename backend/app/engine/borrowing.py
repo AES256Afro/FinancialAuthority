@@ -277,8 +277,9 @@ def borrowing_summary(session: Session, today: date) -> dict:
 
 def sync_borrowing(session: Session, today: date) -> dict:
     """Keep the advances register current from the ledger, file every borrowing row under its own category,
-    retire any 'bill' that is really an advance app's repayment, and queue each installment stream the register
-    does not know as a series to name."""
+    retire any 'bill' that is really an advance app's repayment or a pay-later plan's installment (the lender's
+    plan counts it, with its own schedule and end), and queue each installment stream the register does not know
+    as a series to name. A debt is counted once, where its schedule is: never also as a bill."""
     recategorised = ensure_borrowing_rules(session)
     refresh_plan_progress(session, today)
     advance_rows, installment_rows = _rows(session, today)
@@ -324,6 +325,31 @@ def sync_borrowing(session: Session, today: date) -> dict:
             session.add(s)
     queued = 0
     plans = session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all()  # noqa: E712
+    # A bill for a pay-later lender that a plan already pays (same lender, an installment within a dollar) counts the
+    # same payments twice. The plan has the lender's schedule and its last payment, so the bill steps aside; each
+    # retirement is kept on the data check with its reason.
+    taken: set[int] = set()
+    for b in session.exec(select(Bill).where(Bill.active == True)).all():  # noqa: E712
+        lender = provider_of(f"{b.name} {b.pays_to or ''}", INSTALLMENT_PROVIDERS)
+        if not lender:
+            continue
+        plan = next((p for p in plans if p.id not in taken and plan_provider(p).lower() == lender.lower() and abs(p.installment - b.amount) <= 1.0), None)
+        if plan is None:
+            continue
+        taken.add(plan.id or 0)
+        b.active = False
+        session.add(b)
+        retired += 1
+        if b.series_id:
+            series = session.get(RecurringSeries, b.series_id)
+            if series is not None:
+                series.kind, series.confirmed = "installment", True
+                session.add(series)
+        from .datacheck import note_fixed
+
+        note_fixed(session, today, what=f"Stopped counting the bill “{b.name}” (${b.amount:,.2f})",
+                   why=f"Your {lender} plan{' for ' + plan.merchant if plan.merchant else ''} already counts the same ${plan.installment:,.2f} payment, with the lender's own dates and its last payment.",
+                   sources=[f"bill:{b.id}", f"plan:{plan.id}"])
     bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
     series_rows = session.exec(select(RecurringSeries)).all()
     streams = [s for s in installment_streams(installment_rows, today) if s["active"]]

@@ -91,6 +91,17 @@ def checks_from_report(report: dict[str, Any], backup_age_hours: float | None, j
     return out
 
 
+def datacheck_part(last: dict[str, Any] | None) -> dict[str, Any]:
+    """The data check as a part of the app's health: warn while anything doubled or doubtful waits for an answer."""
+    if not last:
+        return {"key": "datacheck", "label": "Data check", "state": "good", "note": "not run yet"}
+    n, crit = int(last.get("count") or 0), int(last.get("crit") or 0)
+    if not n:
+        return {"key": "datacheck", "label": "Data check", "state": "good", "note": "nothing doubled or doubtful"}
+    return {"key": "datacheck", "label": "Data check", "state": "warn",
+            "note": f"{n} thing{'s' if n != 1 else ''} to look at" + (f", {crit} changing what the plan counts" if crit else "")}
+
+
 def record(session: Session, report: dict[str, Any], checks: list[dict[str, Any]], backup_age_hours: float | None, at: datetime) -> HealthSample:
     sample = HealthSample(at=at, free_gb=float(report.get("free_gb") or 0.0), db_mb=float(report.get("db_mb") or 0.0), backup_age_hours=backup_age_hours, checks=json.dumps(checks))
     session.add(sample)
@@ -145,7 +156,7 @@ def history(samples: list[HealthSample], today: date, days: int = 30, tz: Any = 
             "latest_at": latest.at.isoformat() if latest else None, "said": said}
 
 
-WHERE = {"disk": "/settings/jobs", "backups": "/settings/backups", "jobs": "/settings/jobs", "public": "/settings/setup", "push": "/settings/notifications"}
+WHERE = {"datacheck": "/data-check", "disk": "/settings/jobs", "backups": "/settings/backups", "jobs": "/settings/jobs", "public": "/settings/setup", "push": "/settings/notifications"}
 
 
 def plan_alerts(prior: dict[str, Any], checks: list[dict[str, Any]], now: datetime) -> tuple[list[dict[str, str]], dict[str, Any]]:

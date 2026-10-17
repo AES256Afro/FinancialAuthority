@@ -140,8 +140,11 @@ def plan_many(session: Session, facts: list[ExtractedFact], today: date, *, loos
     for f in facts:
         fields = json.loads(f.fields or "{}")
         step: dict[str, Any] = {"id": f.id, "kind": f.kind}
+        ref = ref_of(f)
         if f.status != "pending":
             step.update(do="skip", why="already answered")
+        elif ref is not None and ref.trust == "crit":
+            step.update(do="own_card", why=f"check the sender first: {ref.trust_why}")
         elif f.kind == "installment" and not fields.get("schedule") and AUTOPAY.search(str(fields.get("subject") or "")):
             step.update(do="apply", record=True)  # "You've enabled AutoPay": a notice about a plan, not a plan
         elif not complete(f):

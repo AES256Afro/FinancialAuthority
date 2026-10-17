@@ -36,6 +36,7 @@ const Debts = lazy(() => import("./pages/Debts").then((m) => ({ default: m.Debts
 const Connectors = lazy(() => import("./pages/Connectors").then((m) => ({ default: m.Connectors })));
 const Investments = lazy(() => import("./pages/Investments").then((m) => ({ default: m.Investments })));
 const Jobs = lazy(() => import("./pages/Jobs").then((m) => ({ default: m.Jobs })));
+const DataCheck = lazy(() => import("./pages/DataCheck").then((m) => ({ default: m.DataCheck })));
 const Mail = lazy(() => import("./pages/Mail").then((m) => ({ default: m.Mail })));
 const Models = lazy(() => import("./pages/Models").then((m) => ({ default: m.Models })));
 const Outlook = lazy(() => import("./pages/Outlook").then((m) => ({ default: m.Outlook })));
@@ -161,6 +162,7 @@ export default function App() {
         <Route path="/settings/notifications" element={<Notifications />} />
         <Route path="/settings/connectors" element={<Connectors />} />
         <Route path="/settings/jobs" element={<Jobs />} />
+        <Route path="/data-check" element={<DataCheck />} />
         <Route path="/settings/audit" element={<Audit />} />
         <Route path="/settings/backups" element={<Backups me={me.data} />} />
         <Route path="/settings/setup" element={<Setup />} />

@@ -39,6 +39,8 @@ class Parsed:
     html: str
     attachments: list[Attachment] = field(default_factory=list)
     links: list[str] = field(default_factory=list)
+    auth_results: str = ""  # the receiving server's Authentication-Results (mail/trust.py)
+    reply_to: str = ""
 
 
 class _HtmlText(HTMLParser):
@@ -122,7 +124,11 @@ def parse_message(raw: bytes) -> Parsed:
         html_text, links = html_to_text(html)
         if not text or len(text) < 40:
             text = html_text[:MAX_TEXT]
-    return Parsed(message_id=(msg.get("Message-ID", "") or "")[:500], sender=sender.lower()[:320], sender_name=sender_name[:200], subject=(msg.get("Subject", "") or "")[:1000], date=date, text=text, html=html, attachments=attachments, links=links[:200])
+    from .trust import auth_header
+
+    auth_results, reply_to = auth_header(msg)
+    return Parsed(message_id=(msg.get("Message-ID", "") or "")[:500], sender=sender.lower()[:320], sender_name=sender_name[:200], subject=(msg.get("Subject", "") or "")[:1000], date=date, text=text, html=html, attachments=attachments, links=links[:200],
+                  auth_results=auth_results, reply_to=reply_to)
 
 
 # The Bridge sidecar forwards the Bridge's loopback ports to the standard ones, so from the app's container
@@ -205,6 +211,17 @@ class ImapClient:
             return int(resp[0]) if resp and resp[0] else 0
         except (TypeError, ValueError):
             return 0
+
+    def fetch_headers(self, uid: int) -> bytes:
+        """Only the message's headers, read-only (PEEK): enough to judge who sent it."""
+        assert self.conn
+        status, data = self.conn.uid("fetch", str(uid), "(BODY.PEEK[HEADER])")
+        if status != "OK" or not data:
+            raise RuntimeError(f"cannot fetch the headers of uid {uid}")
+        for item in data:
+            if isinstance(item, tuple) and len(item) >= 2:
+                return item[1]
+        raise RuntimeError(f"no headers for uid {uid}")
 
     def fetch_raw(self, uid: int) -> bytes:
         assert self.conn

@@ -30,6 +30,7 @@ const JOB_WORD: Record<string, string> = {
   restore_drill: "Prove the newest copy opens",
   prune_job_runs: "Tidy old job records",
   app_watch: "Tell your phone when the app breaks",
+  data_check: "Look for anything counted twice",
 };
 
 export function jobWord(id: string): string {

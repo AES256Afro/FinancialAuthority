@@ -93,6 +93,11 @@ def handle_message(session: Session, account: MailAccount, folder: str, uid: int
         subject=parsed.subject[:300], date=parsed.date, has_attachments=bool(parsed.attachments), attachment_names=", ".join(a.name for a in parsed.attachments)[:400],
         snippet=clean(parsed.text, 200), kind=kind,
     )
+    from ..mail.trust import judge
+    from ..engine.datacheck import learned_senders
+
+    verdict, why = judge(parsed.sender, parsed.sender_name, parsed.auth_results, parsed.reply_to, learned_senders(session))
+    ref.trust, ref.trust_why = verdict or "unknown", why[:300]
     session.add(ref)
     session.flush()
     outcome: dict = {"kind": kind}
