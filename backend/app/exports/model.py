@@ -180,7 +180,7 @@ NOT_EXPORTED = {
     "oauth_tokens": "sign-in tokens: secret", "web_sessions": "signed-in browsers: who may get in", "passkeys": "passkeys: who may get in",
     "people": "the people you let in, with their password hashes: who may get in", "settings": "settings hold keys and passwords; the plan they make is in the snapshot",
     "mail_accounts": "mailboxes and their passwords", "message_refs": "mail is never included", "approvals": "emails waiting or sent: mail is never included",
-    "extracted_facts": "read from mail and documents; what you confirmed is in the registers it changed", "job_runs": "the app's own job record",
+    "extracted_facts": "read from mail and documents; what you confirmed is in the registers it changed", "job_runs": "the app's own job record", "health_samples": "the app's own health record",
     "audit_entries": "the record of who read what, on Settings › Activity",
 }
 MAIL_RULES = ("sender_autoconfirm", "send_allowance")  # these name email addresses: mail is never included

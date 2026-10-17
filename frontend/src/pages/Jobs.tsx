@@ -4,6 +4,7 @@ import { api, useApi } from "../api";
 import { when } from "../format";
 import { Failed, Loading, Said } from "../components/State";
 import { StatusPill } from "../components/Status";
+import { AppHealth } from "../components/AppHealth";
 
 interface JobsData {
   scheduler: string;
@@ -28,6 +29,7 @@ const JOB_WORD: Record<string, string> = {
   offbox_copy: "Seal the off-box copy",
   restore_drill: "Prove the newest copy opens",
   prune_job_runs: "Tidy old job records",
+  app_watch: "Tell your phone when the app breaks",
 };
 
 export function jobWord(id: string): string {
@@ -77,6 +79,7 @@ export function Jobs() {
         {data && (data.scheduler === "running" ? <StatusPill status="good">The scheduler is running</StatusPill> : <StatusPill status="crit">The scheduler is {data.scheduler}</StatusPill>)}
         <span>Each job is safe to run again, and a failure always shows here.</span>
       </div>
+      <AppHealth />
       {error && !data && <Failed error={error} what="the jobs" onRetry={reload} />}
       {!data && !error && <Loading what="the jobs" />}
       {data && (

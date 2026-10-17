@@ -563,6 +563,18 @@ class JobRun(SQLModel, table=True):
     summary: str = ""
 
 
+class HealthSample(SQLModel, table=True):
+    """One hour of the app's own health (M51): disk, the newest restore point, and every part's state with a note."""
+
+    __tablename__ = "health_samples"
+    id: int | None = Field(default=None, primary_key=True)
+    at: dt.datetime = Field(default_factory=utcnow, index=True)
+    free_gb: float = 0.0
+    db_mb: float = 0.0
+    backup_age_hours: float | None = None
+    checks: str = "[]"  # JSON [{key, label, state: good|warn|crit, note}]
+
+
 class AuditEntry(SQLModel, table=True):
     __tablename__ = "audit_entries"
     id: int | None = Field(default=None, primary_key=True)
