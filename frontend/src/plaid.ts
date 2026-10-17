@@ -23,6 +23,9 @@ type PlaidGlobal = { create: (opts: { token: string; receivedRedirectUri?: strin
 export interface LinkResult {
   link: { id: number; institution: string };
   sync: { summary: string };
+  /** The same sign-in linked a second time: the server undid the new link and says why. */
+  duplicate?: boolean;
+  said?: string;
 }
 
 interface Pending {
@@ -65,7 +68,7 @@ async function finish(publicToken: string, institution: string, linkId: number |
       onDone(`Signed in again. ${r.summary}`);
     } else {
       const r = await api<LinkResult>("/api/v1/banks/plaid/exchange", { method: "POST", body: JSON.stringify({ public_token: publicToken, institution }) });
-      onDone(`${r.link.institution || "The vendor"} is linked. ${r.sync.summary}`);
+      onDone(r.duplicate && r.said ? r.said : `${r.link.institution || "The vendor"} is linked. ${r.sync.summary}`);
     }
   } catch (e) {
     onDone((e as Error).message);

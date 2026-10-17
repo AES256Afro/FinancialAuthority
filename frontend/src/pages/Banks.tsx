@@ -151,8 +151,8 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
         ...(link?.enrollment_id ? { enrollmentId: link.enrollment_id } : {}),
         onSuccess: async (enrollment) => {
           try {
-            const r = await api<{ link: LinkRow; sync: { summary: string } }>("/api/v1/banks/teller/enroll", { method: "POST", body: JSON.stringify({ access_token: enrollment.accessToken, enrollment_id: enrollment.enrollment.id, institution: enrollment.enrollment.institution?.name ?? link?.institution ?? "" }) });
-            say(at, `${r.link.institution || "The bank"} is ${link ? "signed in again" : "linked"}. ${r.sync.summary}`);
+            const r = await api<{ link: LinkRow; sync: { summary: string }; duplicate?: boolean; said?: string }>("/api/v1/banks/teller/enroll", { method: "POST", body: JSON.stringify({ access_token: enrollment.accessToken, enrollment_id: enrollment.enrollment.id, institution: enrollment.enrollment.institution?.name ?? link?.institution ?? "" }) });
+            say(at, r.duplicate && r.said ? r.said : `${r.link.institution || "The bank"} is ${link ? "signed in again" : "linked"}. ${r.sync.summary}`);
             reload();
             onChanged?.();
           } catch (e) {

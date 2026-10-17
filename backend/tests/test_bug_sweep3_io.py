@@ -133,7 +133,13 @@ def test_linking_a_bank_again_takes_over_its_accounts_and_history(plaid: TestCli
 
 def test_linking_the_same_bank_twice_reads_each_account_once(plaid: TestClient):
     first = _link(plaid, _item("A", _checking("A"), _grocer_rows("A")))["link"]
+    with Session(engine) as s:  # the first link needs a new sign-in, so the owner links the bank afresh: the new link stays
+        broken = s.get(BankLink, first["id"])
+        broken.needs_login = True
+        s.add(broken)
+        s.commit()
     second = _link(plaid, _item("C", _checking("C"), _grocer_rows("C")))
+    assert "duplicate" not in second
     assert second["sync"]["inserted"] == 0 and "already read through your other Example Bank link" in second["sync"]["summary"]
     with Session(engine) as s:
         assert len(s.exec(select(Account).where(Account.active == True)).all()) == 1  # noqa: E712

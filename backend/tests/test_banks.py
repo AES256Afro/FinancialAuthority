@@ -364,3 +364,91 @@ def test_the_webhook_route_refuses_what_does_not_verify(client: TestClient):
     r = client.post("/api/plaid/webhook", content=b'{"webhook_type":"TRANSACTIONS","item_id":"x"}', headers={"Plaid-Verification": "not.a.token", "Content-Type": "application/json"})
     assert r.status_code == 401 and r.json() == {"ok": False}
     assert client.post("/api/plaid/webhook", content=b"{}").status_code == 401
+
+
+class TwoSignIns(FakePlaid):
+    """The same bank sign-in linked twice: a second item, its own token and account ids, the same accounts by
+    their last four digits. `/item/get` says when Plaid last heard from the bank."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.sync_pages += [{"added": [], "modified": [], "removed": [], "next_cursor": f"e{i}", "has_more": False} for i in range(6)]
+        self.exchanges = 0
+        self.bank_updated: str | None = None
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        path = request.url.path
+        if path == "/item/public_token/exchange":
+            self.requests.append((path, body))
+            self.exchanges += 1
+            return httpx.Response(200, json={"access_token": f"access-sandbox-{'abc' if self.exchanges == 1 else 'two'}", "item_id": f"item-{self.exchanges}"})
+        if path == "/item/get":
+            self.requests.append((path, body))
+            status = {"transactions": {"last_successful_update": self.bank_updated}} if self.bank_updated else {}
+            return httpx.Response(200, json={"item": {}, "status": status})
+        if path == "/accounts/get" and body["access_token"] == "access-sandbox-two":
+            self.requests.append((path, body))
+            return httpx.Response(200, json={"item": {"institution_name": "Example Bank"}, "accounts": [
+                {"account_id": "two-chk", "name": "Everyday Checking", "mask": "1234", "type": "depository", "subtype": "checking", "balances": {"current": 99.0}},
+                {"account_id": "two-sav", "name": "Rainy Day", "mask": "5678", "type": "depository", "subtype": "savings", "balances": {"current": 99.0}},
+                {"account_id": "two-card", "name": "Rewards Card", "mask": "9012", "type": "credit", "subtype": "credit card", "balances": {"current": 99.0}},
+            ]})
+        if path == "/transactions/sync" and body["access_token"] == "access-sandbox-two":
+            self.requests.append((path, body))
+            return httpx.Response(200, json={"added": [], "modified": [], "removed": [], "next_cursor": "z", "has_more": False})
+        return super().handler(request)
+
+
+def test_the_same_sign_in_linked_twice_is_undone_and_says_why(owner: TestClient):
+    """A debit card is part of its checking account: linking 'the card' signs in to the same bank again. That second
+    link brings nothing new, so it is undone at Plaid at once and the owner is told in words; nothing is doubled."""
+    fake = TwoSignIns()
+    CONNECTORS["plaid"].client_factory = lambda: httpx.Client(transport=httpx.MockTransport(fake.handler))
+    try:
+        owner.put("/api/v1/banks/plaid/settings", json={"client_id": "cid", "secret": "s3cret-value-77", "environment": "sandbox"})
+        first = owner.post("/api/v1/banks/plaid/exchange", json={"public_token": "p1", "institution": "Example Bank"}).json()
+        assert "duplicate" not in first and len(first["link"]["accounts"]) == 3
+        second = owner.post("/api/v1/banks/plaid/exchange", json={"public_token": "p2", "institution": "Example Bank"}).json()
+        assert second["duplicate"] is True and "same Example Bank sign-in" in second["said"] and "debit card" in second["said"]
+        assert fake.requests[-1] == ("/item/remove", fake.requests[-1][1]) and fake.requests[-1][1]["access_token"] == "access-sandbox-two"
+        assert [l["id"] for l in owner.get("/api/v1/banks").json()["links"]] == [first["link"]["id"]]
+        with Session(engine) as session:
+            assert len(session.exec(select(Account)).all()) == 3
+            assert session.exec(select(Account).where(Account.external_id == "acc-chk")).one().balance == 300.0  # the second link wrote nothing
+    finally:
+        CONNECTORS["plaid"].client_factory = None
+
+
+def test_a_balance_read_off_the_bank_stands_until_the_bank_sends_newer(owner: TestClient):
+    """A bank's feed can run a day behind and leave holds out. The owner types what the bank's own screen shows; a
+    sync of older bank data leaves it standing, and the balance is dated when the bank sent it, not when the app
+    asked. Once the bank sends newer data, the bank's balance is the balance again."""
+    from datetime import UTC, datetime, timedelta
+
+    fake = TwoSignIns()
+    fake.bank_updated = (datetime.now(UTC) - timedelta(hours=20)).isoformat().replace("+00:00", "Z")
+    CONNECTORS["plaid"].client_factory = lambda: httpx.Client(transport=httpx.MockTransport(fake.handler))
+    try:
+        owner.put("/api/v1/banks/plaid/settings", json={"client_id": "cid", "secret": "s3cret-value-77", "environment": "sandbox"})
+        link = owner.post("/api/v1/banks/plaid/exchange", json={"public_token": "p1", "institution": "Example Bank"}).json()["link"]
+        assert link["bank_updated_at"] and link["bank_updated_at"].startswith(fake.bank_updated[:16])
+        with Session(engine) as session:
+            chk = session.exec(select(Account).where(Account.external_id == "acc-chk")).one()
+            assert chk.balance == 300.0 and chk.balance_at.isoformat()[:16] == fake.bank_updated[:16]  # dated by the bank
+            chk_id = chk.id
+        out = owner.post(f"/api/v1/banks/accounts/{chk_id}/shows", json={"amount": 215.80}).json()
+        assert "$215.80 in Everyday Checking" in out["said"] and "newer data" in out["said"]
+        owner.post(f"/api/v1/banks/{link['id']}/sync")  # the bank has sent nothing newer
+        with Session(engine) as session:
+            assert session.get(Account, chk_id).balance == 215.80
+        told = next(a for a in owner.get("/api/v1/snapshot").json()["fresh"]["accounts"] if a["id"] == chk_id)
+        assert told["told"]["amount"] == 215.80
+        fake.bank_updated = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        owner.post(f"/api/v1/banks/{link['id']}/sync")
+        with Session(engine) as session:
+            assert session.get(Account, chk_id).balance == 300.0  # the bank's newer balance takes over
+        assert "told" not in next(a for a in owner.get("/api/v1/snapshot").json()["fresh"]["accounts"] if a["id"] == chk_id)
+        assert owner.post("/api/v1/banks/accounts/999999/shows", json={"amount": 1}).status_code == 404
+    finally:
+        CONNECTORS["plaid"].client_factory = None
