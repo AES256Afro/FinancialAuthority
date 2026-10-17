@@ -153,8 +153,11 @@ def plan_many(session: Session, facts: list[ExtractedFact], today: date, *, loos
             from .borrowing import plan_for_notice
 
             match = plan_for_notice(session, fields)
+            sent = str(fields.get("message_date") or "")
             if match is None:
                 step.update(do="own_card", why="no plan on file matches this AutoPay notice yet")
+            elif match.schedule_as_of and sent and sent < match.schedule_as_of.isoformat():
+                step.update(do="apply", record=True)  # older than what the plan already knows from the lender
             else:
                 step.update(do="apply", autopay=f"{match.merchant or match.provider} ${match.installment:,.2f}", lender=str(fields.get("provider") or "the lender"))
         elif f.kind == "installment" and fields.get("notice") == "approved":

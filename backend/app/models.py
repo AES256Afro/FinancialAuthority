@@ -459,6 +459,7 @@ class InstallmentPlan(SQLModel, table=True):
     interest_paid: float = 0.0  # interest charged so far, as the lender's statements add it up
     autopay: bool | None = None  # from the lender's AutoPay notices: on, off, or not said
     dates_estimated: bool = False  # made from an approval before the lender set the dates
+    schedule_as_of: dt.date | None = None  # the day its dates and amounts were last known from the lender; older mail never overwrites them
 
 
 class Advance(SQLModel, table=True):

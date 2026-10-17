@@ -609,9 +609,12 @@ def apply_lender_notice(session: Session, fields: dict, today: date) -> Installm
     import json
 
     plan = plan_for_notice(session, fields)
+    sent = date.fromisoformat(fields["message_date"]) if fields.get("message_date") else today
     if fields.get("notice") == "autopay":
         if plan is None:
             raise ValueError("No plan on file matches this AutoPay notice yet; it may be for a loan that is not on file")
+        if plan.schedule_as_of and sent < plan.schedule_as_of:
+            return plan  # older than what the plan already knows from the lender: it changes nothing
         plan.autopay = bool(fields.get("autopay"))
         dates = [e for e in fields.get("autopay_schedule") or [] if e["date"] >= today.isoformat()]
         if dates:
@@ -621,13 +624,13 @@ def apply_lender_notice(session: Session, fields: dict, today: date) -> Installm
             plan.schedule = json.dumps(past + [{"date": e["date"], "amount": e["amount"]} for e in dates])
             plan.remaining = len(dates)
             plan.dates_estimated = False
+            plan.schedule_as_of = sent
         session.add(plan)
         session.commit()
         return plan
     if fields.get("notice") == "approved":
         if plan is not None and abs(plan.installment - float(fields["installment"])) <= 0.02:
             return plan
-        sent = date.fromisoformat(fields["message_date"]) if fields.get("message_date") else today
         cadence = int(fields.get("cadence_days") or 30)
         if approval_has_ended(fields, today):
             raise ValueError("That plan has run its course by now, so it starts nothing")
@@ -760,6 +763,13 @@ def apply_affirm_statement(session: Session, parsed: dict, today: date, *, sourc
             created += 1
         else:
             updated += 1
+        if plan.schedule_as_of and period_end < plan.schedule_as_of:
+            # An older statement than what the plan already knows from the lender: only its interest is added.
+            if loan["loan_id"] in parsed.get("interest", {}) and set_setting_interest(session, loan["loan_id"], period_end, parsed["interest"][loan["loan_id"]]):
+                plan.interest_paid = round(plan.interest_paid + parsed["interest"][loan["loan_id"]], 2)
+                session.add(plan)
+            by_id[loan["loan_id"]] = plan
+            continue
         plan.loan_id = loan["loan_id"]
         plan.merchant = loan["merchant"] or plan.merchant
         plan.loan_amount = loan["amount"]
