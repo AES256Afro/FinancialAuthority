@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import shutil
 import threading
@@ -170,8 +171,10 @@ def self_check() -> str:
             problems.append("under 2 GB free")
         from .. import restore
 
+        backup_age: float | None = None
         try:
             backups = restore.status(fresh=True)
+            backup_age = backups["latest_age_hours"]
             if backups["latest_age_hours"] is None or backups["latest_age_hours"] > 48:
                 problems.append("no restore point in the last two days")
             if not backups["database"]["ok"]:
@@ -198,6 +201,11 @@ def self_check() -> str:
             "problems": problems,
         }
         set_setting(session, "selfcheck", report)
+        # The hour's sample of every part, for the health strips and for telling the phone (app_watch).
+        from ..engine import apphealth
+
+        checks = apphealth.checks_from_report(report, backup_age, apphealth.job_checks(session, jobs.specs), now)
+        apphealth.record(session, report, checks, backup_age, utcnow())
         return f"{report['free_gb']} GB free · db {report['db_mb']} MB · last transaction {report['last_transaction']} · {len(problems)} problem(s)" + (": " + "; ".join(problems) if problems else "")
 
 
@@ -459,6 +467,44 @@ def restore_point_daily() -> str:
 
 jobs.register("restore_point_daily", restore_point_daily, 6 * 3600, "Keep a copy of the whole database once a day, the last seven kept")
 
+
+ALERTS = "watch.app.alerts"  # telling the phone about the app's own health: on unless the owner turns it off
+OPEN = "watch.app.open"  # what is broken now and when the phone was last told
+
+
+def app_watch() -> str:
+    """Tell the phone when a part of the app breaks, again once a day while it stays broken, and when it is fixed.
+    Only the part and where to look are sent, never a job's own error text."""
+    from .. import notify
+    from ..engine import apphealth
+    from ..models import HealthSample
+
+    with session_scope() as session:
+        if not get_setting(session, ALERTS, True):
+            return "not due: telling the phone is off"
+        latest = session.exec(select(HealthSample).order_by(HealthSample.at.desc())).first()
+        if latest is None:
+            return "not due: no health sample yet"
+        prior = get_setting(session, OPEN, {}) or {}
+        messages, state = apphealth.plan_alerts(prior, json.loads(latest.checks or "[]"), datetime.now(timezone.utc))
+        if not messages:
+            set_setting(session, OPEN, state)
+            return f"nothing new: {len(state)} part{'s' if len(state) != 1 else ''} still need{'s' if len(state) == 1 else ''} a look" if state else "nothing new"
+        if len(messages) > 3:
+            messages = [{"title": f"{len(messages)} changes in the app's health", "body": " ".join(m["body"] for m in messages), "link": "/settings/jobs"}]
+        sent = 0
+        for m in messages:
+            result = notify.send(session, m["title"], m["body"], link=m["link"], tags=["warning"])
+            if result.get("skipped"):
+                # With nothing to send to, nothing counts as told: setting push up later tells what is open then.
+                return "not due: push is off"
+            sent += 1 if result.get("ok") else 0
+        set_setting(session, OPEN, state)
+        return f"told the phone {sent} of {len(messages)}: " + "; ".join(m["title"] for m in messages)
+
+
+jobs.register("app_watch", app_watch, 3600, "Tell your phone when a part of the app itself breaks, daily while it stays broken, and when it is fixed", writes=False)
+
 IDLE = ("nothing new", "not due", "reviewer off", "sent 0", "today's copy is there", "no off-box folder", "not due yet")
 
 
@@ -471,6 +517,9 @@ def prune_job_runs() -> str:
     now = utcnow()
     with session_scope() as session:
         old = session.exec(delete(JobRun).where(JobRun.started_at < now - _td(days=30))).rowcount or 0
+        from ..models import HealthSample
+
+        session.exec(delete(HealthSample).where(HealthSample.at < now - _td(days=90)))
         idle = 0
         for r in session.exec(select(JobRun).where(JobRun.started_at < now - _td(days=2), JobRun.ok == True)).all():  # noqa: E712
             if (r.summary or "").startswith(IDLE):

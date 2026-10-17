@@ -275,6 +275,6 @@ Six audits (security twice, the engine, the plumbing, and the screens twice) fou
 - ✅ **M48 Credit health from your own data.** (built 2026-10-16) Each card's share of its limit on its statement day, what to pay before then, and the on-time record; no credit pull.
 - ☐ **M49 Reading photos for free.** Photos of receipts and leases read on the server with a free OCR in the image.
 - ☐ **M50 Tax-time pack.** The year's tax categories, receipts, paystub totals and statements in one export.
-- ☐ **M51 Watching the app itself.** A failed job or a stale source sent to the phone; a health history of disk, backups and syncs.
+- ✅ **M51 Watching the app itself.** (built 2026-10-17) An hourly sample of every part (disk, restore points, each mailbox and bank link, the jobs, the public address, the phone); thirty days drawn a square per day on Jobs; the phone told once when a part breaks, daily while it stays broken, and once when fixed, never with a job's own error text.
 
 Left out on purpose: multi-currency and crypto (little use for one US household), a bill-negotiation or cancellation concierge (it would act for the owner and take a share), and paid data sources (SimpleFIN, valuation and credit-score services), each possible later as an opt-in.
