@@ -9,7 +9,9 @@ from typing import Any
 
 from sqlmodel import Session, select
 
-from ..models import Account, Advance, BalanceSnapshot, Bill, Debt, Goal, InstallmentPlan, Payment, Paystub, Transaction
+from ..models import (Account, AccountMove, Advance, BalanceSnapshot, BankLink, Bill, CategoryBudget, Debt, Document, Goal, Holding, HomeCharge, HomeCost, Home, ImportBatch,
+                      Income, InstallmentPlan, MoveItem, OtherAsset, Payment, Paystub, PlannedPayment, RecurringSeries, ReviewRun, Rule, Scenario, Transaction, TransactionPair,
+                      TransactionSplit, Utility)
 from ..store import get_setting
 
 NOT_ADVICE = "Computed by the engine from your registers and the ledger. Not financial advice."
@@ -134,24 +136,67 @@ def build_report(session: Session, today: date, sections: list[str] | None = Non
             "sources": "finance.snapshot, paycheck.views, accounts.cover and saving.plan, as of " + today.isoformat(), "not_advice": NOT_ADVICE}
 
 
+def _all_but(model, *left_out: str) -> list[str]:  # noqa: ANN001 - a table model
+    return [f for f in model.model_fields if f not in left_out]
+
+
+# Every register the data exports carry, with its fields: the rows as stored, minus anything secret. Each table
+# the app keeps is either here or in NOT_EXPORTED with the reason; a test fails when a table is in neither.
+REGISTERS: list[tuple[str, type, list[str]]] = [
+    ("accounts", Account, ["id", "name", "institution", "kind", "subtype", "balance", "balance_at", "credit_limit", "spendable", "connector", "active", "shared", "person_id", "created_at"]),
+    ("transactions", Transaction, ["id", "date", "posted_date", "account_id", "merchant", "raw_name", "description", "amount", "category", "note", "tags", "pending", "is_transfer",
+                                   "is_card_payment", "is_income", "is_ignored", "source", "import_id", "created_at"]),
+    ("splits", TransactionSplit, ["id", "transaction_id", "category", "amount", "note"]),
+    ("pairs", TransactionPair, _all_but(TransactionPair, "before")),
+    ("bills", Bill, _all_but(Bill)),
+    ("payments", Payment, _all_but(Payment)),
+    ("incomes", Income, _all_but(Income)),
+    ("recurring", RecurringSeries, _all_but(RecurringSeries)),
+    ("debts", Debt, _all_but(Debt)),
+    ("plans", InstallmentPlan, _all_but(InstallmentPlan, "loan_id")),
+    ("advances", Advance, _all_but(Advance)),
+    ("paystubs", Paystub, _all_but(Paystub, "stub_hash", "fact_id")),
+    ("goals", Goal, _all_but(Goal)),
+    ("budgets", CategoryBudget, _all_but(CategoryBudget)),
+    ("planned", PlannedPayment, _all_but(PlannedPayment)),
+    ("balances", BalanceSnapshot, _all_but(BalanceSnapshot)),
+    ("assets", OtherAsset, _all_but(OtherAsset)),
+    ("holdings", Holding, _all_but(Holding, "external_id")),
+    ("homes", Home, _all_but(Home)),
+    ("home_charges", HomeCharge, _all_but(HomeCharge)),
+    ("home_costs", HomeCost, _all_but(HomeCost)),
+    ("utilities", Utility, _all_but(Utility, "account_last4_enc")),
+    ("documents", Document, _all_but(Document, "pages_enc")),  # what each kept file is; the files themselves are on Documents
+    ("rules", Rule, _all_but(Rule)),
+    ("scenarios", Scenario, _all_but(Scenario)),
+    ("bank_moves", AccountMove, _all_but(AccountMove)),
+    ("bank_move_items", MoveItem, _all_but(MoveItem)),
+    ("imports", ImportBatch, _all_but(ImportBatch, "restore_point")),
+    ("bank_links", BankLink, ["id", "provider", "institution", "environment", "active", "needs_login", "created_at", "last_sync_at", "last_error"]),
+    ("reviews", ReviewRun, ["id", "created_at", "trigger", "provider", "model", "ok", "notes", "cost"]),
+]
+NOT_EXPORTED = {
+    "api_keys": "keys: who may get in, and secret", "oauth_clients": "connected apps: who may get in", "oauth_codes": "sign-in codes: secret",
+    "oauth_tokens": "sign-in tokens: secret", "web_sessions": "signed-in browsers: who may get in", "passkeys": "passkeys: who may get in",
+    "people": "the people you let in, with their password hashes: who may get in", "settings": "settings hold keys and passwords; the plan they make is in the snapshot",
+    "mail_accounts": "mailboxes and their passwords", "message_refs": "mail is never included", "approvals": "emails waiting or sent: mail is never included",
+    "extracted_facts": "read from mail and documents; what you confirmed is in the registers it changed", "job_runs": "the app's own job record",
+    "audit_entries": "the record of who read what, on Settings › Activity",
+}
+MAIL_RULES = ("sender_autoconfirm", "send_allowance")  # these name email addresses: mail is never included
+
+
 def registers(session: Session) -> dict[str, list[dict]]:
     """Every register as rows, for CSV, JSON and the workbook. Nothing secret: no keys, no tokens, no mail."""
     accounts = session.exec(select(Account)).all()
     names = {a.id: a.name for a in accounts}
 
-    def rows(model, fields):
+    def rows(model, fields):  # noqa: ANN001, ANN202
         return [{f: (v.isoformat() if hasattr(v, "isoformat") else v) for f in fields for v in [getattr(r, f, None)]} for r in session.exec(select(model)).all()]
 
-    txns = [{**r, "account": names.get(r["account_id"], "")} for r in rows(Transaction, ["id", "date", "account_id", "merchant", "description", "amount", "category", "note", "is_transfer", "is_card_payment", "is_income", "is_ignored", "source"])]
-    return {
-        "accounts": rows(Account, ["id", "name", "institution", "kind", "subtype", "balance", "balance_at", "credit_limit", "connector", "active"]),
-        "transactions": txns,
-        "bills": rows(Bill, ["id", "name", "kind", "amount", "amount_mode", "cadence", "due_day", "autopay", "pay_from_account_id", "paid_from", "movable", "category", "active"]),
-        "payments": rows(Payment, ["id", "bill_id", "due_date", "amount", "status", "paid_date", "transaction_id"]),
-        "debts": rows(Debt, ["id", "name", "kind", "balance", "apr", "minimum", "statement_day", "due_day", "account_id", "pay_in_full", "credit_limit", "active"]),
-        "plans": rows(InstallmentPlan, ["id", "provider", "merchant", "total", "installment", "count", "remaining", "next_date", "cadence_days", "active"]),
-        "advances": rows(Advance, ["id", "provider", "amount", "fee", "taken_on", "repay_date", "repaid"]),
-        "paystubs": rows(Paystub, ["id", "employer", "pay_date", "period_start", "period_end", "gross", "net", "status"]),
-        "goals": rows(Goal, ["id", "name", "kind", "target", "target_date", "pace", "priority", "funded", "active"]),
-        "balances": rows(BalanceSnapshot, ["id", "account_id", "date", "balance"]),
-    }
+    out: dict[str, list[dict]] = {}
+    for name, model, fields in REGISTERS:
+        out[name] = rows(model, fields)
+    out["transactions"] = [{**r, "account": names.get(r["account_id"], "")} for r in out["transactions"]]
+    out["rules"] = [r for r in out["rules"] if r["kind"] not in MAIL_RULES]
+    return out

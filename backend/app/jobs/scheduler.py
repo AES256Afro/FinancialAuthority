@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -18,6 +19,7 @@ from ..connectors import CONNECTORS
 from ..db import session_scope
 from ..models import Account, JobRun, Transaction, utcnow
 from ..store import get_setting, set_setting
+from .writing import one_writer
 
 log = logging.getLogger("fa.jobs")
 
@@ -28,25 +30,43 @@ class JobSpec:
     func: Callable[[], str]
     seconds: int
     description: str
+    writes: bool = True  # rebuilds what the app works out from the ledger: runs alone (jobs/writing.py)
+
+
+BUSY_SECONDS = 600  # how long "Run now" waits for the same job's scheduled run to finish
 
 
 class Jobs:
     def __init__(self) -> None:
         self.specs: dict[str, JobSpec] = {}
         self.scheduler: BackgroundScheduler | None = None
+        self.running: dict[str, threading.Lock] = {}
 
-    def register(self, name: str, func: Callable[[], str], seconds: int, description: str) -> None:
-        self.specs[name] = JobSpec(name, func, seconds, description)
+    def register(self, name: str, func: Callable[[], str], seconds: int, description: str, *, writes: bool = True) -> None:
+        self.specs[name] = JobSpec(name, func, seconds, description, writes)
+        self.running.setdefault(name, threading.Lock())
 
     def run(self, name: str) -> JobRun:
+        """One run of a job, recorded. The same job never runs twice at once ("Run now" waits for the scheduled run,
+        then runs), and a job that writes waits for any other writer (jobs/writing.py)."""
         spec = self.specs[name]
         started = utcnow()
         ok, summary = True, ""
-        try:
-            summary = spec.func() or ""
-        except Exception as error:  # noqa: BLE001  (a job must never take the scheduler down)
-            ok, summary = False, f"{type(error).__name__}: {error}"
-            log.exception("job %s failed", name)
+        mine = self.running.setdefault(name, threading.Lock())
+        if not mine.acquire(timeout=BUSY_SECONDS):
+            ok, summary = False, f"the run before this one was still going after {BUSY_SECONDS // 60} minutes; this one did not start"
+        else:
+            try:
+                if spec.writes:
+                    with one_writer():
+                        summary = spec.func() or ""
+                else:
+                    summary = spec.func() or ""
+            except Exception as error:  # noqa: BLE001  (a job must never take the scheduler down)
+                ok, summary = False, f"{type(error).__name__}: {error}"
+                log.exception("job %s failed", name)
+            finally:
+                mine.release()
         # The run is written once, after the work, so a busy database at the start never loses the record.
         with session_scope() as session:
             run = JobRun(name=name, started_at=started, finished_at=utcnow(), ok=ok, summary=summary[:2000])
@@ -99,15 +119,22 @@ def self_check() -> str:
         usage = shutil.disk_usage(settings.data_dir)
         db_bytes = settings.db_path.stat().st_size if settings.db_path.exists() else 0
         last_tx = session.exec(select(Transaction.date).order_by(Transaction.date.desc())).first()
-        accounts = session.exec(select(Account)).all()
+        from ..connectors.banks import LIVE_PROVIDERS
+
+        accounts = session.exec(select(Account).where(Account.active == True)).all()  # noqa: E712
         stale = []
+        typed: list[dict[str, Any]] = []
         now = datetime.now(timezone.utc)
         for a in accounts:
             known = a.balance_at
             if known is not None and known.tzinfo is None:
                 known = known.replace(tzinfo=timezone.utc)
-            if known is not None and (now - known).days > 2:
-                stale.append(a.name)
+            if known is None or (now - known).days <= 2:
+                continue
+            if a.connector in LIVE_PROVIDERS:
+                stale.append(a.name)  # a link should have refreshed it: that is a problem
+            else:
+                typed.append({"name": a.name, "days": (now - known).days})  # typed or imported: only the owner can update it
         from ..models import BankLink, MailAccount
 
         sources = []
@@ -136,6 +163,9 @@ def self_check() -> str:
             problems.append("the public address did not answer, and no browser has reached it in the last day")
         if stale:
             problems.append(f"stale balances: {', '.join(stale)}")
+        pushed = get_setting(session, "push.last_error", None)
+        if pushed and (pushed.get("detail") or pushed.get("at")):
+            problems.append(f"push to your phone failed: {str(pushed.get('detail') or 'no detail')[:120]}")
         if usage.free < 2e9:
             problems.append("under 2 GB free")
         from .. import restore
@@ -161,6 +191,7 @@ def self_check() -> str:
             "last_transaction": last_tx.isoformat() if last_tx else None,
             "public_address": {"answers_from_inside": reachable, "last_seen_from_outside": seen_outside},
             "stale_accounts": stale,
+            "typed_balances": typed,
             "connectors": sorted(CONNECTORS),
             "sources": sources,
             "public_url_reachable": reachable,
@@ -249,7 +280,7 @@ def detect_recurring() -> str:
     from ..engine.borrowing import sync_borrowing
     from .detect import run_detection
 
-    with session_scope() as session:
+    with one_writer(), session_scope() as session:
         result = run_detection(session, _today())
         sync_borrowing(session, _today())
     matched = match_payments_job()
@@ -260,7 +291,7 @@ def match_payments_job() -> str:
     """Match each bill period to its payment, or mark it late, then past due."""
     from ..engine.payments import match_payments
 
-    with session_scope() as session:
+    with one_writer(), session_scope() as session:
         counts = match_payments(session, _today())
         return f"payments: {counts['paid']} paid, {counts['late']} late, {counts['past_due']} past due, {counts['scheduled']} scheduled"
 
@@ -270,18 +301,15 @@ def mail_sync() -> str:
     with session_scope() as session:
         result = CONNECTORS["mail"].sync(session, today=_today())
     if result.inserted:
-        with session_scope() as session:
-            from ..engine.payments import match_payments
-
-            match_payments(session, _today())
+        match_payments_job()  # under the write lock: never beside a detection matching the same periods
     if not result.ok:
         # A mailbox that could not be read is a failed run on the Jobs page, never a quiet "ok".
         raise RuntimeError(result.summary or "a mailbox could not be read")
     return result.summary
 
 
-jobs.register("mail_sync", mail_sync, 900, "Read every connected mailbox for new messages")
-jobs.register("self_check", self_check, 3600, "Connector health, stale data, disk and database size")
+jobs.register("mail_sync", mail_sync, 900, "Read every connected mailbox for new messages", writes=False)  # the mailbox read takes long; its matching takes the lock
+jobs.register("self_check", self_check, 3600, "Connector health, stale data, disk and database size", writes=False)
 jobs.register("import_watch", import_watch, 300, "Import new files from the import folder")
 jobs.register("detect_recurring", detect_recurring, 6 * 3600, "Find recurring charges and paychecks in the ledger, then match payments")
 jobs.register("match_payments", match_payments_job, 24 * 3600, "Match each bill period to its payment; mark late and past due")
@@ -294,7 +322,7 @@ def review_if_due() -> str:
     return run_if_due(session_scope, today())
 
 
-jobs.register("review_if_due", review_if_due, 3600, "Ask the reviewer for notes on payday and after a confirmed change")
+jobs.register("review_if_due", review_if_due, 3600, "Ask the reviewer for notes on payday and after a confirmed change", writes=False)
 
 
 def bank_sync() -> str:
@@ -356,10 +384,13 @@ def morning_brief() -> str:
         if result.get("ok"):
             notify.mark_brief_sent(session, now)
             return f"sent {len(snap['brief'])} lines"
-        return f"not sent: {result.get('detail') or result.get('reason')}"
+        if result.get("skipped"):
+            return "not due: no channel is set up"
+        # A channel that refused is a failed run on the Jobs page, never a quiet one; the next run tries again.
+        raise RuntimeError(f"not sent: {result.get('detail') or result.get('reason') or 'the push channel refused it'}")
 
 
-jobs.register("morning_brief", morning_brief, 600, "Send the brief to the phone once a day, from the chosen hour")
+jobs.register("morning_brief", morning_brief, 600, "Send the brief to the phone once a day, from the chosen hour", writes=False)
 
 
 def reminders() -> str:
@@ -371,7 +402,10 @@ def reminders() -> str:
 
     with session_scope() as session:
         out = run(session, datetime.now(timezone.utc), today())
-        return f"sent {out['sent']}" + (f" ({out['reason']})" if out.get("reason") else "")
+    if out.get("failed"):
+        # A reminder that is due and could not be delivered fails the run; it is tried again on the next one.
+        raise RuntimeError(f"sent {out['sent']}, {out['failed']} not delivered: {out.get('detail') or 'the push channel refused them'}")
+    return f"sent {out['sent']}" + (f" ({out['reason']})" if out.get("reason") else "")
 
 
 def moves_verify() -> str:
@@ -392,7 +426,7 @@ def moves_verify() -> str:
 jobs.register("moves_verify", moves_verify, 6 * 3600, "Confirm each switch of a bank move from the ledger, and find what still uses the old account")
 
 
-jobs.register("reminders", reminders, 900, "Send the reminders you switched on, once each, from the chosen hour")
+jobs.register("reminders", reminders, 900, "Send the reminders you switched on, once each, from the chosen hour", writes=False)
 
 
 def balance_history() -> str:
@@ -462,7 +496,8 @@ def offbox_copy() -> str:
         if not offbox.due(session):
             return "not due, or not set up"
         made = offbox.copy_now(session)
-        return f"sealed {made['file']} ({made['bytes'] // 1024} KB) into {made['folder']}"
+        missing = f"; {made['documents_missing']} document file(s) were not on disk" if made.get("documents_missing") else ""
+        return f"sealed {made['file']} ({made['bytes'] // 1024} KB, {made['documents']} document file(s)) into {made['folder']}{missing}"
 
 
 def restore_drill() -> str:
@@ -482,8 +517,8 @@ def restore_drill() -> str:
         return result["detail"]
 
 
-jobs.register("offbox_copy", offbox_copy, 3600, "Seal a copy of the database into the off-box folder, daily or weekly as set on Backups")
-jobs.register("restore_drill", restore_drill, 6 * 3600, "Once a week, open the newest copy on its own and prove it holds what it should")
+jobs.register("offbox_copy", offbox_copy, 3600, "Seal a copy of the database and the kept documents into the off-box folder, daily or weekly as set on Backups")
+jobs.register("restore_drill", restore_drill, 6 * 3600, "Once a week, open the newest copy on its own and prove it holds what it should", writes=False)
 
 
 
@@ -497,10 +532,12 @@ def watch_daily() -> str:
         if not new:
             return "nothing new"
         sent = notify.send(session, f"{len(new)} thing{'s' if len(new) != 1 else ''} worth a look", "\n".join(f["text"] for f in new[:4]), link="/today", tags=["eyes"])
-        return f"{len(new)} found; " + ("told" if sent.get("ok") else "not sent: " + str(sent.get("reason") or sent.get("detail") or "no channel"))
+        if sent.get("ok") or sent.get("skipped"):
+            return f"{len(new)} found; " + ("told" if sent.get("ok") else "not sent: no channel is set up (they are on the Watch page)")
+        raise RuntimeError(f"{len(new)} found, not told: {sent.get('detail') or sent.get('reason') or 'the push channel refused it'} (they are on the Watch page)")
 
 
-jobs.register("watch_daily", watch_daily, 6 * 3600, "Look over the ledger for unusual or double charges, new subscriptions and price rises; tell each once")
+jobs.register("watch_daily", watch_daily, 6 * 3600, "Look over the ledger for unusual or double charges, new subscriptions and price rises; tell each once", writes=False)
 
 
 def recap_keep() -> str:
@@ -530,8 +567,10 @@ def week_recap_push() -> str:
             return "not due"
         recap = week_recap(session, _today())
         sent = notify.send(session, "Your week", recap["text"], link="/recap", tags=["calendar"])
+        if not (sent.get("ok") or sent.get("skipped")):
+            raise RuntimeError(f"not sent: {sent.get('detail') or sent.get('reason') or 'the push channel refused it'}")  # tried again next hour
         set_setting(session, key, True)
-        return "sent" if sent.get("ok") else "not sent: " + str(sent.get("reason") or "no channel")
+        return "sent" if sent.get("ok") else "not sent: no channel is set up"
 
 
-jobs.register("week_recap_push", week_recap_push, 3600, "Sunday evening, the week's spending in one line on the phone")
+jobs.register("week_recap_push", week_recap_push, 3600, "Sunday evening, the week's spending in one line on the phone", writes=False)

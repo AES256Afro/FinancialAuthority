@@ -15,7 +15,8 @@ router = APIRouter(prefix="/api/v1/restore-points", tags=["restore"])
 
 @router.get("")
 def list_points(_: auth.Principal = Depends(auth.require_admin)) -> dict:  # noqa: B008
-    return {"points": restore.list_points(), "keep": restore.KEEP, "status": restore.status()}
+    """The points, how many of each kind are kept, and what a restore leaves as it is now (kept_as_now)."""
+    return {"points": restore.list_points(), "keep": restore.KEEP, "status": restore.status(), "kept_as_now": restore.KEPT_AS_NOW}
 
 
 @router.post("")

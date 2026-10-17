@@ -249,7 +249,10 @@ def capture_export(session: Session, url: str, fetch: Fetcher) -> dict:
     rows = parse_csv(text, "rocketmoney-export-from-mail.csv")
     if rows is None:
         return {"imported": 0, "note": "the link did not give a Rocket Money transactions export"}
-    result = import_rows(session, rows, "rocketmoney-export-from-mail.csv", via="mail")
+    from ..jobs.writing import one_writer
+
+    with one_writer():  # never beside a detection, a sync or another import of the same rows
+        result = import_rows(session, rows, "rocketmoney-export-from-mail.csv", via="mail")
     return {"imported": result.inserted, "duplicates": result.duplicates, "note": f"export imported: {result.summary}"}
 
 

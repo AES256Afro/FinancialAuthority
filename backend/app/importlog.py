@@ -13,7 +13,8 @@ from typing import Any
 from sqlmodel import Session, select
 
 from . import restore
-from .models import Account, Bill, ImportBatch, Payment, Paystub, PlannedPayment, Transaction, utcnow
+from .jobs.writing import one_writer
+from .models import Account, Bill, Document, ImportBatch, Transaction, utcnow
 
 log = logging.getLogger(__name__)
 BILL_FIELDS = ("amount", "cadence", "due_day", "anchor_date", "autopay", "category")
@@ -53,27 +54,29 @@ def bill_before(bill: Bill) -> dict[str, Any]:
 
 def undo(session: Session, batch_id: int, today: date) -> dict[str, Any]:
     """Remove what one import added and put back what it changed. Returns what was undone."""
+    with one_writer():  # never beside a detection, a sync or another import that would read the rows half gone
+        return _undo(session, batch_id, today)
+
+
+def _undo(session: Session, batch_id: int, today: date) -> dict[str, Any]:
+    from .connectors.banks import detach
+
     batch = session.get(ImportBatch, batch_id)
     if batch is None:
         raise ValueError("No such import")
     if batch.status == "undone":
         raise ValueError("That import is already undone")
     rows = list(session.exec(select(Transaction).where(Transaction.import_id == batch.id)).all())
-    ids = [t.id for t in rows]
-    if ids:
-        # What was matched to these rows is unmatched; the matcher runs again below.
-        for p in session.exec(select(Payment).where(Payment.transaction_id.in_(ids))).all():
-            p.transaction_id = None
-            if p.status == "paid":
-                p.status = "scheduled"
-            session.add(p)
-        for model in (PlannedPayment, Paystub):
-            for r in session.exec(select(model).where(model.transaction_id.in_(ids))).all():
-                r.transaction_id = None
-                session.add(r)
-        session.flush()
+    ids = [t.id for t in rows if t.id is not None]
+    # What was matched to these rows is unmatched (the matcher runs again below); their splits and pairings go, and
+    # a receipt kept with one stays, unmatched: the next import's rows take these ids and must inherit nothing.
+    detach(session, ids)
     for t in rows:
         session.delete(t)
+    # The statement the import kept goes with it.
+    kept = list(session.exec(select(Document).where(Document.source == f"import:{batch.id}")).all())
+    for doc in kept:
+        session.delete(doc)
     bills_removed = bills_restored = 0
     for c in json.loads(batch.changes or "[]"):
         bill = session.get(Bill, int(c.get("id", 0)))
@@ -103,6 +106,8 @@ def undo(session: Session, batch_id: int, today: date) -> dict[str, Any]:
     batch.status, batch.undone_at = "undone", utcnow()
     session.add(batch)
     session.commit()
+    for sha in {d.sha256 for d in kept if d.sha256}:
+        restore.release_document_file(sha)  # the file stays while a restore point still names it
     from .engine.borrowing import sync_borrowing
     from .engine.payments import match_payments
     from .jobs.detect import run_detection
@@ -111,7 +116,7 @@ def undo(session: Session, batch_id: int, today: date) -> dict[str, Any]:
         run_detection(session, today)
         sync_borrowing(session, today)  # an advance the undone rows showed goes with them
     match_payments(session, today)
-    return {"id": batch.id, "removed": len(rows), "bills_removed": bills_removed, "bills_restored": bills_restored, "accounts_closed": accounts_closed}
+    return {"id": batch.id, "removed": len(rows), "bills_removed": bills_removed, "bills_restored": bills_restored, "accounts_closed": accounts_closed, "documents_removed": len(kept)}
 
 
 def history(session: Session, limit: int = 30) -> list[dict[str, Any]]:

@@ -21,13 +21,15 @@ from sqlmodel import Session, select
 
 from .. import crypto
 from ..config import settings
+from ..jobs.writing import one_writer
 from ..models import BankLink, Transaction
-from .banks import SAVINGS_SUBTYPES, TELLER_CATEGORIES, bank_settings, finish_link, link_token, remove_transaction, upsert_account, upsert_transaction
+from .banks import SAVINGS_SUBTYPES, SEEN, TELLER_CATEGORIES, bank_settings, duplicate_of, finish_link, link_token, remove_transaction, upsert_account, upsert_transaction
 from .base import Connector, SyncResult
 
 log = logging.getLogger("fa.teller")
 
 BASE = "https://api.teller.io"
+LINK_NOTES = "fa_link_notes"  # session.info: what a link sync has to say beyond its counts
 # Teller reports a purchase as a negative amount; the ledger keeps money out positive.
 DEBITS_NEGATIVE = True
 ClientFactory = Callable[[str], httpx.Client]
@@ -163,20 +165,27 @@ class TellerConnector(Connector):
         from ..usage import flush
 
         for link in links:
-            try:
-                n_ins, n_upd, account_ids = self.sync_link(session, api, link)
-                inserted, updated = inserted + n_ins, updated + n_upd
-                flush(session)
-                finish_link(session, link, ok=True, accounts=account_ids)
-                notes.append(f"{link.institution}: {n_ins} new, {n_upd} changed")
-            except Exception as error:  # noqa: BLE001 - one link's failure is recorded on it and never stops the others
-                session.rollback()
-                ok = False
-                if isinstance(error, TellerError) and error.code in ("enrollment.disconnected", "401", "unauthorized"):
-                    link.needs_login = True
-                message = str(error) if isinstance(error, TellerError) else f"{type(error).__name__}: {error}"
-                finish_link(session, link, ok=False, error=message[:300])
-                notes.append(f"{link.institution}: {message[:120]}")
+            with one_writer():  # one sync of a link at a time, whoever asks
+                session.info.pop(SEEN, None)  # the accounts this link takes; every other link's are on its list
+                try:
+                    session.refresh(link)
+                    if not link.active:
+                        continue  # removed while this sync waited its turn
+                    n_ins, n_upd, account_ids = self.sync_link(session, api, link)
+                    inserted, updated = inserted + n_ins, updated + n_upd
+                    flush(session)
+                    finish_link(session, link, ok=True, accounts=account_ids)
+                    notes.append(f"{link.institution}: {n_ins} new, {n_upd} changed" + "".join(f"; {n}" for n in session.info.pop(LINK_NOTES, [])))
+                except Exception as error:  # noqa: BLE001 - one link's failure is recorded on it and never stops the others
+                    session.rollback()
+                    session.info.pop(LINK_NOTES, None)
+                    session.info.pop(SEEN, None)
+                    ok = False
+                    if isinstance(error, TellerError) and error.code in ("enrollment.disconnected", "401", "unauthorized"):
+                        link.needs_login = True
+                    message = str(error) if isinstance(error, TellerError) else f"{type(error).__name__}: {error}"
+                    finish_link(session, link, ok=False, error=message[:300])
+                    notes.append(f"{link.institution}: {message[:120]}")
         flush(session)
         session.commit()
         return SyncResult(ok=ok, summary="; ".join(notes), inserted=inserted, details={"updated": updated})
@@ -201,8 +210,15 @@ class TellerConnector(Connector):
             balance = float(chosen) if chosen not in (None, "") else None
             if kind == "card" and balance is not None:
                 balance = -balance  # Teller gives what a card owes as negative; a card in credit stays a credit
-            account = upsert_account(session, provider="teller", external_id=a["id"], name=str(a.get("name") or "Account"), institution=institution, kind=kind, balance=balance, last4=str(a.get("last_four") or ""))
             ids.append(a["id"])
+            name = str(a.get("name") or "Account")
+            if duplicate_of(session, link=link, external_id=a["id"], institution=institution, last4=str(a.get("last_four") or "")) is not None:
+                # The same account is read through another link to this bank: it stays with that one.
+                session.info.setdefault(LINK_NOTES, []).append(f"{name} is already read through your other {institution or 'bank'} link, so this link leaves it out; remove one of the two links")
+                continue
+            account = upsert_account(session, provider="teller", external_id=a["id"], name=name, institution=institution, kind=kind, balance=balance, last4=str(a.get("last_four") or ""))
+            if not account.active:
+                continue  # an account the owner removed gets no balance and no rows
             for tx in txs:
                 pending = str(tx.get("status") or "posted") == "pending"  # the same id posts later; the row is updated in place
                 raw = float(tx["amount"])

@@ -126,17 +126,25 @@ def import_file(
         raise HTTPException(400, str(error)) from error
     from ..jobs.detect import run_detection
 
-    if raw.startswith(b"%PDF") and result.details.get("account_id"):
-        # The statement itself is kept with its account and its month.
-        from ..engine.documents import save_document
+    if raw.startswith(b"%PDF") and result.details.get("account_id") and result.inserted and result.details.get("import_id"):
+        # The statement itself is kept with its account and its month, once: an import that added nothing keeps
+        # nothing, and the same file already kept with the account is not kept again. Undoing the import removes it.
+        import hashlib
 
-        last = max((r["date"] for r in rows if r.get("date")), default=None)
-        month = (last.isoformat() if hasattr(last, "isoformat") else str(last or today()))[:7]
-        try:
-            save_document(session, raw, filename=file.filename or "statement.pdf", title=f"Statement · {name} · {month}", kind="statement",
-                          attach_to=f"account:{result.details['account_id']}", period=month, source=f"import:{result.details.get('import_id') or ''}")
-        except ValueError:
-            pass
+        from sqlmodel import select
+
+        from ..engine.documents import save_document
+        from ..models import Document
+
+        attach = f"account:{result.details['account_id']}"
+        if session.exec(select(Document).where(Document.sha256 == hashlib.sha256(raw).hexdigest(), Document.attach_to == attach)).first() is None:
+            last = max((r["date"] for r in rows if r.get("date")), default=None)
+            month = (last.isoformat() if hasattr(last, "isoformat") else str(last or today()))[:7]
+            try:
+                save_document(session, raw, filename=file.filename or "statement.pdf", title=f"Statement · {name} · {month}", kind="statement",
+                              attach_to=attach, period=month, source=f"import:{result.details['import_id']}")
+            except ValueError:
+                pass
     detection = run_detection(session, today()) if result.inserted else {}
     return {"ok": True, "summary": result.summary, "inserted": result.inserted, "duplicates": result.duplicates, "merged": result.details.get("merged", 0), "accounts_created": result.accounts,
             "account_id": result.details.get("account_id"), "import_id": result.details.get("import_id"), "detection": detection}

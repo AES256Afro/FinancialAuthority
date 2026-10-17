@@ -240,7 +240,10 @@ class RocketMoneyConnector(Connector):
     settings_schema = []
 
     def sync(self, session: Session, text: str = "", source_file: str = "upload.csv", **_: object) -> SyncResult:
+        from ..jobs.writing import one_writer
+
         rows = parse_csv(text, source_file)
         if rows is None:
             return SyncResult(ok=False, summary=f"{source_file}: not a Rocket Money transactions export (missing columns)")
-        return import_rows(session, rows, source_file, via=str(_.get("via") or "upload"))
+        with one_writer():  # the same export uploaded and dropped at once imports once
+            return import_rows(session, rows, source_file, via=str(_.get("via") or "upload"))

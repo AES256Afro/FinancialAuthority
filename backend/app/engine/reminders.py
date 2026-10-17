@@ -7,11 +7,10 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from sqlmodel import Session
 
-from ..config import settings
+from ..clock import zone
 from ..store import get_setting, set_setting
 
 SETTING = "reminders"
@@ -107,26 +106,35 @@ def due_today(session: Session, today: date) -> list[dict[str, Any]]:
 
 
 def run(session: Session, now: datetime, today: date) -> dict[str, Any]:
-    """Send what is due and not yet sent. Returns what went out."""
+    """Send what is due and not yet sent. Returns what went out, and how many could not be delivered (each is tried
+    again on the next run, and the job says it failed)."""
     from .. import notify
 
     s = reminder_settings(session)
     if not (notify.push_state(session)["configured"] or notify.has_devices(session)):
         return {"sent": 0, "reason": "no channel is set up"}  # nothing to compute when nothing can be sent
-    local = now.astimezone(ZoneInfo(settings.tz) if settings.tz else None)
+    local = now.astimezone(zone())  # a time zone the server does not know falls back on its own, as everywhere else
     if local.hour < int(s["hour"]):
         return {"sent": 0, "reason": "before the hour"}
     sent_log = get_setting(session, SENT, {}) or {}
-    sent = 0
+    sent = failed = 0
+    detail = reason = ""
     for r in due_today(session, today):
         if r["key"] in sent_log:
             continue
         result = notify.send(session, r["title"], r["body"], link=r["link"], tags=[r["tag"]])
         if result.get("skipped"):
-            return {"sent": sent, "reason": "no channel is set up"}
+            reason = "no channel is set up"
+            break
         if result.get("ok"):
             sent_log[r["key"]] = today.isoformat()
             sent += 1
+        else:
+            failed += 1
+            detail = detail or str(result.get("detail") or result.get("reason") or "")
     cutoff = (today - timedelta(days=45)).isoformat()
     set_setting(session, SENT, {k: v for k, v in sent_log.items() if v >= cutoff})
-    return {"sent": sent}
+    out: dict[str, Any] = {"sent": sent, **({"reason": reason} if reason else {})}
+    if failed:
+        out.update(failed=failed, detail=detail[:200])
+    return out
