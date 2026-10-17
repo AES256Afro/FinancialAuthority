@@ -300,6 +300,21 @@ def list_facts_rows(session: Session, status: str | None, limit: int) -> list[di
     rows = session.exec(query.order_by(ExtractedFact.created_at.desc()).limit(limit)).all()
     refs = {r.id: r for r in session.exec(select(MessageRef).where(MessageRef.id.in_([f.message_ref_id for f in rows if f.message_ref_id]))).all()} if rows else {}
     out = [fact_out(f, refs.get(f.message_ref_id)) for f in rows]
+    notices = [(item, f) for item, f in zip(out, rows) if f.kind in ("bill_due", "past_due", "price_change") and f.status == "pending"]
+    if notices:
+        # A notice from someone counted another way says where, so confirming it does not count it twice.
+        from ..engine.needsyou import counted_elsewhere, elsewhere_index, notice_name
+        from ..engine.recurring import bill_named
+
+        index = elsewhere_index(session)
+        bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
+        for item, f in notices:
+            name = notice_name(json.loads(f.fields or "{}"), refs.get(f.message_ref_id))
+            bill = bill_named(bills, merchant_key(name), loose=True)
+            if bill is not None and bill.home_id:
+                item["counted_elsewhere"] = f"{bill.name} is made from Housing, where the rent is changed"
+            elif bill is None:
+                item["counted_elsewhere"] = counted_elsewhere(index, name)
     for item, f in zip(out, rows):
         if f.kind == "receipt" and f.status == "pending":
             from ..engine.receipts import candidates
@@ -422,6 +437,8 @@ def apply_fact(session: Session, fact: ExtractedFact, ref: MessageRef | None, bo
         from ..engine.recurring import bill_named
 
         bill = bill_named(bills, key, loose=owner)  # a key changes only the bill of exactly that name
+        if bill is not None and bill.home_id:
+            raise HTTPException(400, f"{bill.name} is made from Housing; change the rent there, or discard this notice")
         if bill is None:
             if amount is None or due is None:
                 raise HTTPException(400, "A new bill needs an amount and a due date; add them to the confirmation")
