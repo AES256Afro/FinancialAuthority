@@ -17,7 +17,7 @@ from sqlmodel import Session, select
 import json
 from hashlib import sha256 as _sha256
 
-from ..models import Account, Advance, Bill, Debt, Goal, Income, InstallmentPlan, Paystub, Transaction
+from ..models import Account, Advance, BankLink, Bill, Debt, Goal, Income, InstallmentPlan, Paystub, Transaction
 
 TODAY = date(2026, 10, 14)
 NET_PAY = 2240.0
@@ -192,8 +192,10 @@ def generate(today: date = TODAY, months: int = 12, seed: int = 42) -> Household
 
 
 def seed(session: Session, household: Household | None = None) -> dict:
-    """Insert the household into an empty database. Idempotent: a second call does nothing."""
-    if session.exec(select(Account)).first() is not None:
+    """Insert the household into an empty database. Idempotent: a second call does nothing. A database that holds
+    anything of the owner's (an account, a transaction, a bill, a paystub, a bank link) is refused, so the example
+    household never lands beside real bills."""
+    if any(session.exec(select(model)).first() is not None for model in (Account, Transaction, Bill, Paystub, BankLink)):
         return {"seeded": False}
     h = household or generate()
     ids: dict[str, int] = {}
@@ -236,6 +238,14 @@ def seed(session: Session, household: Household | None = None) -> dict:
         ))
     session.commit()
     return {"seeded": True, "accounts": len(h.accounts), "transactions": len(h.transactions), "bills": len(h.bills)}
+
+
+def demo_rows(session: Session) -> int:
+    """How many accounts, transactions and paystubs of the example household this database holds. The household's
+    bills are paid from its own accounts, so they are found through those."""
+    count = len(session.exec(select(Account.id).where(Account.connector == "demo")).all())
+    count += len(session.exec(select(Transaction.id).where(Transaction.source == "demo")).all())
+    return count + len(session.exec(select(Paystub.id).where(Paystub.source == "demo")).all())
 
 
 def paystubs_for(h: Household, today: date) -> list[dict]:

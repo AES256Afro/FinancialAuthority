@@ -17,7 +17,7 @@ from .security import SecurityMiddleware
 from .api import apphealth, appearance, business, datacheck, approvals, banks, borrowing, credit, custom_reports, exports, goals, guide, homeassistant, housing, imports, moving, needsyou, people, moves, investments, ledger_rules, llm, mail, payoff, planned, plaid_webhook, privacy, projections, push, recap, registers, restore, routes, scenarios, sinking, tools, watch
 from .config import settings
 from .db import init_db, session_scope
-from .engine.household import seed
+from .engine.household import demo_rows, seed
 from .jobs.scheduler import jobs
 from .mcp_server import asgi_routes, mcp_server
 from .version import __version__
@@ -56,6 +56,10 @@ async def lifespan(app: FastAPI):
             from .jobs.scheduler import detect_recurring
 
             log.info("demo detection: %s", detect_recurring())
+    else:
+        with session_scope() as session:
+            if demo_rows(session):
+                log.error("demo mode is off, but this database holds the example household's rows; they are counted as real. Put back a restore point from before they appeared.")
     log.info("data dir: %s · imports: %s · tz: %s", settings.data_dir, settings.import_root, settings.tz)
     if not auth.auth_enabled():
         log.warning("sign-in is OFF because FA_PASSWORD is empty; never run like this where anyone else can reach it")

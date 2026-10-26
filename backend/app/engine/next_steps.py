@@ -26,6 +26,12 @@ def next_steps(session: Session, today: date) -> dict:
     if not settings.data_key:
         steps.append(_step("data-key", "critical", "Secrets cannot be stored until FA_DATA_KEY is set in the app's environment.", "How", "/settings/setup#secrets", "setting:data_key"))
 
+    if not settings.demo:
+        from .household import demo_rows
+
+        if demo_rows(session):
+            steps.append(_step("demo-data", "critical", "This database holds the example household (Example Bank, Example Employer) while demo mode is off. Its bills, paychecks and balances are not yours but are counted as if they were. Put back a restore point from before it appeared.", "Backups", "/settings/backups", "demo"))
+
     links = session.exec(select(BankLink).where(BankLink.active == True)).all()  # noqa: E712
     link_by_account: dict[str, BankLink] = {}
     for link in links:

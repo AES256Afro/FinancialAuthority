@@ -84,7 +84,7 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
     // An OAuth bank sent the browser back here mid-sign-in: Plaid Link reopens and finishes with the same token.
     if (resumed.current) return;
     resumed.current = true;
-    resumePlaidLink({ onDone: (m) => { say("plaid", m); reload(); onChanged?.(); setParams({}, { replace: true }); }, onExit: () => setParams({}, { replace: true }) })
+    resumePlaidLink({ onDone: (m) => { say("plaid", m); reload(); onChanged?.(); setParams({}, { replace: true }); }, onExit: (m) => { if (m) say("plaid", m, "error"); setParams({}, { replace: true }); } })
       .then((did) => { if (did) setBusy("plaid-connect"); })
       .catch((e) => say("plaid", (e as Error).message, "error"))
       .finally(() => setBusy(null));
@@ -126,7 +126,7 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
     setBusy("plaid-connect");
     setNote(null);
     try {
-      await openPlaidLink({ purpose, linkId, onNote: (m) => say(at, m), onDone: (m) => { say(at, m); reload(); onChanged?.(); }, onExit: () => setBusy(null) });
+      await openPlaidLink({ purpose, linkId, onNote: (m) => say(at, m), onDone: (m) => { say(at, m); reload(); onChanged?.(); }, onExit: (m) => { if (m) say(at, m, "error"); setBusy(null); } });
     } catch (e) {
       say(at, (e as Error).message, "error");
     } finally {
