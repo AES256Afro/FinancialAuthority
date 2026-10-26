@@ -32,6 +32,12 @@ PLAID_VERSION = "2020-09-14"
 ClientFactory = Callable[[], httpx.Client]
 
 
+# Item errors only a new sign-in on the same link mends; Sync now cannot. NO_ACCOUNTS is an item whose every
+# account was withdrawn, at the bank's OAuth page or by closing them.
+SIGN_IN_CODES = {"ITEM_LOGIN_REQUIRED", "NO_ACCOUNTS"}
+MUTATION_RETRIES = 3
+
+
 class PlaidError(RuntimeError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(f"{code}: {message}")
@@ -95,7 +101,10 @@ class PlaidClient:
             "client_name": "FinancialAuthority", "language": "en", "country_codes": ["US"], "user": {"client_user_id": "owner"},
         }
         if access_token:
-            body["access_token"] = access_token  # update mode: the owner signs in again on the same item
+            # Update mode: the owner signs in again on the same item and picks its accounts again, which is how an
+            # item that lost every account (NO_ACCOUNTS, a bank's OAuth consent withdrawn) gets them back.
+            body["access_token"] = access_token
+            body["update"] = {"account_selection_enabled": True}
         elif purpose == "investments":
             body["products"] = ["investments"]
             body["optional_products"] = ["transactions"]
@@ -236,7 +245,7 @@ class PlaidConnector(Connector):
                     session.info.pop(LINK_NOTES, None)
                     session.info.pop(SEEN, None)
                     ok = False
-                    if isinstance(error, PlaidError) and error.code == "ITEM_LOGIN_REQUIRED":
+                    if isinstance(error, PlaidError) and error.code in SIGN_IN_CODES:
                         link.needs_login = True
                     message = str(error) if isinstance(error, PlaidError) else f"{type(error).__name__}: {error}"
                     finish_link(session, link, ok=False, error=message[:300])
@@ -252,13 +261,21 @@ class PlaidConnector(Connector):
         bank_as_of = api.bank_updated(token)
         got = api.accounts(token)
         pages: list[dict] = []
-        cursor = link.cursor or ""
-        for _page in range(50):
-            page = api.sync_page(token, cursor)
-            pages.append(page)
-            cursor = str(page.get("next_cursor") or cursor)
-            if not page.get("has_more"):
+        for attempt in range(MUTATION_RETRIES):
+            # Plaid can change the item's rows while the pages are read (a first two-year pull often does);
+            # it then refuses the next page, and every page is read again from the cursor the read began at.
+            pages, cursor = [], link.cursor or ""
+            try:
+                for _page in range(50):
+                    page = api.sync_page(token, cursor)
+                    pages.append(page)
+                    cursor = str(page.get("next_cursor") or cursor)
+                    if not page.get("has_more"):
+                        break
                 break
+            except PlaidError as error:
+                if error.code != "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION" or attempt == MUTATION_RETRIES - 1:
+                    raise
         holdings = None
         if any(account_kind(str(a.get("type") or ""), a.get("subtype")) == "investment" for a in got.get("accounts", [])):
             holdings = self.fetch_holdings(api, token)
