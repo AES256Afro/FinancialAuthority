@@ -464,3 +464,65 @@ def test_a_balance_read_off_the_bank_stands_until_the_bank_sends_newer(owner: Te
         assert owner.delete(f"/api/v1/banks/accounts/{chk_id}/shows").status_code == 404
     finally:
         CONNECTORS["plaid"].client_factory = None
+
+
+class FlakyPlaid(FakePlaid):
+    """Refuses chosen calls once each, the way Plaid does: `refuse` maps a path to the error it answers first."""
+
+    def __init__(self, refuse: dict[str, list[dict]]) -> None:
+        super().__init__()
+        self.refuse = refuse
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        queued = self.refuse.get(request.url.path)
+        if queued:
+            self.requests.append((request.url.path, json.loads(request.content)))
+            return httpx.Response(400, json=queued.pop(0))
+        return super().handler(request)
+
+
+def _link_with(owner: TestClient, fake: FakePlaid) -> dict:
+    CONNECTORS["plaid"].client_factory = lambda: httpx.Client(transport=httpx.MockTransport(fake.handler))
+    owner.put("/api/v1/banks/plaid/settings", json={"client_id": "cid", "secret": "s3cret-value-77", "environment": "sandbox"})
+    return owner.post("/api/v1/banks/plaid/exchange", json={"public_token": "public-sandbox-xyz", "institution": "Example Bank"}).json()
+
+
+def test_a_sync_whose_rows_change_mid_read_reads_again_from_its_cursor(owner: TestClient):
+    # The second page is refused once: the read starts over from the first page, not from the page it reached.
+    mutation = {"error_code": "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION", "error_message": "Underlying transaction data changed"}
+    fake = FlakyPlaid({})
+    first = fake.sync_pages[0]
+    fake.sync_pages.insert(1, None)  # the refused call takes no page
+    original = fake.handler
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/transactions/sync" and fake.sync_pages and fake.sync_pages[0] is None:
+            fake.sync_pages[0] = first  # the read begins again with the first page
+            fake.requests.append((request.url.path, json.loads(request.content)))
+            return httpx.Response(400, json=mutation)
+        return original(request)
+
+    fake.handler = handler  # type: ignore[method-assign]
+    try:
+        linked = _link_with(owner, fake)
+        assert linked["sync"]["ok"] and linked["sync"]["inserted"] == 4 and linked["link"]["last_error"] == ""
+        cursors = [body.get("cursor", "") for path, body in fake.requests if path == "/transactions/sync"]
+        assert cursors == ["", "c1", "", "c1"]
+    finally:
+        CONNECTORS["plaid"].client_factory = None
+
+
+def test_an_item_with_no_accounts_asks_for_a_sign_in_that_picks_accounts_again(owner: TestClient):
+    fake = FlakyPlaid({})
+    try:
+        link = _link_with(owner, fake)["link"]
+        fake.refuse["/accounts/get"] = [{"error_code": "NO_ACCOUNTS", "error_message": "No valid accounts were found at the financial institution."}]
+        synced = owner.post(f"/api/v1/banks/{link['id']}/sync").json()
+        assert not synced["ok"] and synced["link"]["needs_login"] is True
+        steps = {s["id"]: s for s in owner.get("/api/v1/next_steps").json()["steps"]}
+        assert steps[f"link-signin-{link['id']}"]["link"] == f"/settings/connectors?signin={link['id']}"
+        owner.post("/api/v1/banks/plaid/link_token", json={"link_id": link["id"]})
+        body = fake.requests[-1][1]
+        assert body["access_token"] == "access-sandbox-abc" and body["update"] == {"account_selection_enabled": True}
+    finally:
+        CONNECTORS["plaid"].client_factory = None
