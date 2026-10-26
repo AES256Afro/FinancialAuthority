@@ -20,7 +20,7 @@ from sqlmodel import Session, select
 from .. import crypto
 from ..jobs.writing import one_writer
 from ..models import BankLink, Transaction
-from .banks import (PLAID_CATEGORIES, PLAID_DETAILED, PLAID_KINDS, SAVINGS_SUBTYPES, SEEN, bank_settings, duplicate_of, finish_link, link_token, remove_transaction, tx_hash,
+from .banks import (HANDED_OVER, PLAID_CATEGORIES, PLAID_DETAILED, PLAID_KINDS, SAVINGS_SUBTYPES, SEEN, bank_settings, duplicate_of, finish_link, link_token, remove_transaction, tx_hash,
                     upsert_account, upsert_holding, upsert_transaction)
 from .base import Connector, SyncResult
 
@@ -235,7 +235,15 @@ class PlaidConnector(Connector):
                     session.refresh(link)
                     if not link.active:
                         continue  # removed while this sync waited its turn
+                    session.info.pop(HANDED_OVER, None)
                     n_ins, n_upd, n_rem, account_ids = self.sync_link(session, api, link)
+                    if session.info.pop(HANDED_OVER, False) and link.cursor:
+                        # The link took over a removed link's accounts after its cursor had passed their rows, so
+                        # those rows are read again from the start: the old rows are claimed, and no gap is left.
+                        link.cursor = ""
+                        session.info.pop(SEEN, None)
+                        more = self.sync_link(session, api, link)
+                        n_ins, n_upd, n_rem, account_ids = n_ins + more[0], n_upd + more[1], n_rem + more[2], more[3]
                     inserted, updated, removed = inserted + n_ins, updated + n_upd, removed + n_rem
                     flush(session)
                     finish_link(session, link, ok=True, accounts=account_ids)
@@ -282,6 +290,7 @@ class PlaidConnector(Connector):
         institution = link.institution or str((got.get("item") or {}).get("institution_name") or "")
         accounts = {}
         listed: list[str] = []
+        left_out = False
         for a in got.get("accounts", []):
             balances = a.get("balances") or {}
             current = balances.get("current")
@@ -293,7 +302,9 @@ class PlaidConnector(Connector):
             name = str(a.get("name") or a.get("official_name") or "Account")
             listed.append(a["account_id"])
             if duplicate_of(session, link=link, external_id=a["account_id"], institution=institution, last4=str(a.get("mask") or "")) is not None:
-                # The same account is read through another link to this bank: it stays with that one.
+                # The same account is read through another link to this bank: it stays with that one. Its rows are
+                # not read, so the cursor stays where it was, for this link to read them once the other is removed.
+                left_out = True
                 session.info.setdefault(LINK_NOTES, []).append(f"{name} is already read through your other {institution or 'bank'} link, so this link leaves it out; remove one of the two links")
                 continue
             account = upsert_account(
@@ -332,7 +343,8 @@ class PlaidConnector(Connector):
         for page in pages:
             for tx in page.get("removed", []):
                 removed += int(remove_transaction(session, "plaid", tx["transaction_id"]))
-        link.cursor = cursor
+        if not left_out:
+            link.cursor = cursor
         link.needs_login = False
         if bank_as_of is not None:
             link.bank_updated_at = bank_as_of

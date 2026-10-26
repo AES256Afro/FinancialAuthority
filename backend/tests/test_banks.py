@@ -526,3 +526,65 @@ def test_an_item_with_no_accounts_asks_for_a_sign_in_that_picks_accounts_again(o
         assert body["access_token"] == "access-sandbox-abc" and body["update"] == {"account_selection_enabled": True}
     finally:
         CONNECTORS["plaid"].client_factory = None
+
+
+class TwoItemPlaid:
+    """The same bank linked twice: two items that read one checking account under two account ids."""
+
+    ITEMS = {
+        "pa": ("tok-a", "item-a", "acc-a", [("ta1", 54.12, "2026-10-10")]),
+        "pb": ("tok-b", "item-b", "acc-b", [("tb1", 54.12, "2026-10-10"), ("tb2", 20.00, "2026-10-20")]),
+    }
+
+    def __init__(self) -> None:
+        self.by_token = {tok: (acc, txs) for tok, _item, acc, txs in self.ITEMS.values()}
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        body, path = json.loads(request.content), request.url.path
+        if path == "/link/token/create":
+            return httpx.Response(200, json={"link_token": "link-sandbox-123"})
+        if path == "/item/public_token/exchange":
+            tok, item, _acc, _txs = self.ITEMS[body["public_token"]]
+            return httpx.Response(200, json={"access_token": tok, "item_id": item})
+        acc, txs = self.by_token.get(body.get("access_token"), (None, []))
+        if path == "/accounts/get":
+            return httpx.Response(200, json={"item": {"institution_name": "Example Bank"}, "accounts": [
+                {"account_id": acc, "name": "Everyday Checking", "mask": "1234", "type": "depository", "subtype": "checking", "balances": {"current": 300.0, "available": 300.0}}]})
+        if path == "/transactions/sync":
+            added = [] if body.get("cursor") else [
+                {"transaction_id": t, "account_id": acc, "amount": amount, "date": when, "name": "EXAMPLE GROCER", "merchant_name": "Example Grocer", "pending": False} for t, amount, when in txs]
+            return httpx.Response(200, json={"added": added, "modified": [], "removed": [], "next_cursor": f"{acc}-1", "has_more": False})
+        return httpx.Response(200, json={})
+
+
+def test_a_second_link_takes_over_with_the_history_it_left_out(owner: TestClient):
+    fake = TwoItemPlaid()
+    CONNECTORS["plaid"].client_factory = lambda: httpx.Client(transport=httpx.MockTransport(fake.handler))
+    try:
+        owner.put("/api/v1/banks/plaid/settings", json={"client_id": "cid", "secret": "s3cret-value-77", "environment": "sandbox"})
+        first = owner.post("/api/v1/banks/plaid/exchange", json={"public_token": "pa", "institution": "Example Bank"}).json()["link"]
+        with Session(engine) as session:
+            old = session.get(BankLink, first["id"])
+            old.last_error = "NO_ACCOUNTS: No valid accounts were found at the financial institution."
+            session.add(old)
+            session.commit()
+        second = owner.post("/api/v1/banks/plaid/exchange", json={"public_token": "pb", "institution": "Example Bank"}).json()
+        assert "already read through your other" in second["sync"]["summary"]
+        with Session(engine) as session:
+            assert session.get(BankLink, second["link"]["id"]).cursor == ""  # it read none of the account's rows
+            # A link made before this change saved its cursor past them anyway.
+            row = session.get(BankLink, second["link"]["id"])
+            row.cursor = "acc-b-1"
+            session.add(row)
+            session.commit()
+
+        assert owner.delete(f"/api/v1/banks/{first['id']}?accounts=keep").json()["ok"]
+        synced = owner.post(f"/api/v1/banks/{second['link']['id']}/sync").json()
+        assert synced["ok"]
+        with Session(engine) as session:
+            account = session.exec(select(Account).where(Account.external_id == "acc-b")).one()
+            rows = session.exec(select(Transaction).where(Transaction.account_id == account.id)).all()
+            assert sorted((t.date.isoformat(), t.amount, t.source) for t in rows) == [("2026-10-10", 54.12, "plaid"), ("2026-10-20", 20.0, "plaid")]
+            assert session.get(BankLink, second["link"]["id"]).cursor == "acc-b-1"
+    finally:
+        CONNECTORS["plaid"].client_factory = None
