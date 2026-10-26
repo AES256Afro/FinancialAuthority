@@ -102,6 +102,7 @@ ADOPTABLE = ("rocketmoney", "file", "manual")  # accounts made by an import or b
 MERGE_DAYS = 3  # a link's date and an import's can differ by posting; within this many days they are one
 UNLINKED = "-unlinked"  # a row a removed link brought, waiting for the link that replaces it to claim it ("plaid-unlinked")
 REMOVED = "accounts.removed"  # accounts the owner removed: a sync leaves them removed
+HANDED_OVER = "fa_link_handed_over"  # session.info: a sync took over an account a removed link had read
 SEEN = "fa_link_accounts"  # session.info: the accounts a sync in this session already took, so no second account takes them too
 
 
@@ -305,6 +306,7 @@ def upsert_account(session: Session, *, provider: str, external_id: str, name: s
         if row is not None:
             if row.connector in LIVE_PROVIDERS:
                 _hand_over(session, row)
+                session.info[HANDED_OVER] = True
             row.connector, row.external_id = provider, external_id  # the link takes over the account its history was imported into
     if row is None:
         row = Account(name=name or "Account", institution=institution, kind=kind, connector=provider, external_id=external_id)
