@@ -2,42 +2,32 @@
 import SwiftUI
 
 enum Format {
-    private static let whole: NumberFormatter = {
-        let f = NumberFormatter()
-        f.numberStyle = .currency
-        f.currencyCode = "USD"
-        f.maximumFractionDigits = 0
-        return f
-    }()
-
-    private static let cents: NumberFormatter = {
-        let f = NumberFormatter()
-        f.numberStyle = .currency
-        f.currencyCode = "USD"
-        f.minimumFractionDigits = 2
-        f.maximumFractionDigits = 2
-        return f
-    }()
-
+    /// Dollars as the web app writes them (frontend/src/format.ts): halves rounded away from zero, a true minus
+    /// before the dollar sign, and a figure that rounds to nothing shown as "$0", never "−$0".
     static func money(_ v: Double, cents withCents: Bool = false) -> String {
-        (withCents ? cents : whole).string(from: NSNumber(value: v)) ?? "$\(Int(v))"
+        let text = abs(v).formatted(.number.precision(.fractionLength(withCents ? 2 : 0)).rounded(rule: .toNearestOrAwayFromZero).locale(Locale(identifier: "en_US")))
+        return (v < 0 && text.contains(where: { "123456789".contains($0) }) ? "\u{2212}$" : "$") + text
     }
 
-    private static let iso: DateFormatter = {
-        let f = DateFormatter()
-        f.calendar = Calendar(identifier: .gregorian)
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy-MM-dd"
-        return f
-    }()
+    /// Safe to spend, or the plain words when no balance is reported yet (unknown is not $0).
+    static func safe(_ v: Double?) -> String {
+        v.map { money($0) } ?? "No balance yet"
+    }
+
+    /// A server date (yyyy-MM-dd) as local midnight, so the day shown is the day sent in any time zone.
+    private static func date(_ iso: String) -> Date? {
+        let p = iso.split(separator: "-").compactMap { Int($0) }
+        guard p.count == 3 else { return nil }
+        return Calendar.current.date(from: DateComponents(year: p[0], month: p[1], day: p[2]))
+    }
 
     static func day(_ isoDate: String) -> String {
-        guard let d = iso.date(from: isoDate) else { return isoDate }
+        guard let d = date(isoDate) else { return isoDate }
         return d.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
     }
 
     static func shortDay(_ isoDate: String) -> String {
-        guard let d = iso.date(from: isoDate) else { return isoDate }
+        guard let d = date(isoDate) else { return isoDate }
         return d.formatted(.dateTime.month(.abbreviated).day())
     }
 

@@ -1,5 +1,5 @@
 // The iPhone and iPad app: Today, the paychecks, Cover and Settings, all read from your own server. Widgets on
-// the Home Screen and the Lock Screen show the glance; the watch gets the sign-in from here.
+// the Home Screen and the Lock Screen show the glance; the watch's own sign-in is started from Settings here.
 import SwiftUI
 import WidgetKit
 
@@ -15,10 +15,18 @@ struct FinancialAuthorityApp: App {
         WindowGroup {
             if signedIn {
                 MainTabs(onSignOut: {
-                    Keychain.clear()
-                    WidgetCenter.shared.reloadAllTimelines()
-                    signedIn = false
+                    Task {
+                        await APIClient.signOut()
+                        WidgetCenter.shared.reloadAllTimelines()
+                        signedIn = false
+                    }
                 })
+                .onReceive(NotificationCenter.default.publisher(for: .signedOut)) { _ in
+                    if Keychain.load() == nil {
+                        WidgetCenter.shared.reloadAllTimelines()
+                        signedIn = false
+                    }
+                }
             } else {
                 SignInView(onSignedIn: {
                     WidgetCenter.shared.reloadAllTimelines()

@@ -1,0 +1,11 @@
+# Made by `xcodegen` from project.yml; never edit or commit them.
+FinancialAuthority.xcodeproj/
+App/Info.plist
+App/App.entitlements
+Widgets/Info.plist
+Widgets/Widgets.entitlements
+Watch/Info.plist
+Watch/Watch.entitlements
+WatchWidgets/
+build/
+DerivedData/

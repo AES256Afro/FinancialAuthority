@@ -1,5 +1,5 @@
 // The tokens live in the Keychain, shared with the widgets through an access group; nothing secret is written
-// anywhere else. On the watch, the phone hands the tokens over through WatchConnectivity.
+// anywhere else. The watch keeps a sign-in of its own, which the phone hands over once through WatchConnectivity.
 import Foundation
 import Security
 

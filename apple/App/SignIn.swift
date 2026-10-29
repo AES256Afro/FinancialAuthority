@@ -28,11 +28,46 @@ enum SignIn {
         return try JSONDecoder().decode(ServerMetadata.self, from: data)
     }
 
-    static func register(at endpoint: URL) async throws -> String {
+    /// The server address as typed, if the app may use it: https, or plain http only to this computer's loopback (a
+    /// dev server seen from the Simulator). Kept without a trailing slash so paths join cleanly.
+    static func server(_ typed: String) -> URL? {
+        var text = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        while text.hasSuffix("/") { text.removeLast() }
+        guard let url = URL(string: text), let host = url.host()?.lowercased() else { return nil }
+        if url.scheme == "https" { return url }
+        return url.scheme == "http" && ["localhost", "127.0.0.1", "::1"].contains(host) ? url : nil
+    }
+
+    /// The whole sign-in for one client: register it with the read scope, open the server's consent page in a
+    /// private browser sheet, check the state, and trade the code for tokens. The phone and the watch each run it
+    /// once with their own name, so each holds its own client and renews its own refresh token.
+    @MainActor
+    static func authorize(base: URL, clientName: String, using webAuth: WebAuthenticationSession) async throws -> Credentials {
+        let meta = try await metadata(for: base)
+        guard let registration = meta.registration_endpoint else { throw APIError.server(0, "the server does not register apps") }
+        let clientID = try await register(at: registration, name: clientName)
+        let (verifier, challenge) = pkce()
+        let state = UUID().uuidString
+        guard var components = URLComponents(url: meta.authorization_endpoint, resolvingAgainstBaseURL: false) else { throw APIError.decoding("the sign-in address") }
+        components.queryItems = [
+            .init(name: "response_type", value: "code"), .init(name: "client_id", value: clientID), .init(name: "redirect_uri", value: callback),
+            .init(name: "code_challenge", value: challenge), .init(name: "code_challenge_method", value: "S256"), .init(name: "state", value: state), .init(name: "scope", value: "read"),
+        ]
+        guard let start = components.url else { throw APIError.decoding("the sign-in address") }
+        let back = try await webAuth.authenticate(using: start, callbackURLScheme: callbackScheme, preferredBrowserSession: .ephemeral)
+        let items = URLComponents(url: back, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        guard items.first(where: { $0.name == "state" })?.value == state, let code = items.first(where: { $0.name == "code" })?.value else {
+            throw SignInRefused(allowed: items.first(where: { $0.name == "error" }) == nil)
+        }
+        let tokens = try await exchange(code: code, verifier: verifier, clientID: clientID, at: meta.token_endpoint)
+        return Credentials(baseURL: base, clientID: clientID, tokenEndpoint: meta.token_endpoint, accessToken: tokens.access_token, refreshToken: tokens.refresh_token)
+    }
+
+    static func register(at endpoint: URL, name: String) async throws -> String {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let body: [String: Any] = ["client_name": "FinancialAuthority for iPhone and iPad", "redirect_uris": [callback], "token_endpoint_auth_method": "none",
+        let body: [String: Any] = ["client_name": name, "redirect_uris": [callback], "token_endpoint_auth_method": "none",
                                    "grant_types": ["authorization_code", "refresh_token"], "response_types": ["code"], "scope": "read"]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -51,6 +86,11 @@ enum SignIn {
         guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw APIError.server((response as? HTTPURLResponse)?.statusCode ?? 0, "the code was not accepted") }
         return try JSONDecoder().decode(TokenResponse.self, from: data)
     }
+}
+
+struct SignInRefused: LocalizedError {
+    let allowed: Bool
+    var errorDescription: String? { allowed ? "The server did not send a code." : "Access was not allowed." }
 }
 
 extension Data {
@@ -83,37 +123,21 @@ struct SignInView: View {
                 } label: {
                     if busy { ProgressView() } else { Text("Sign in") }
                 }
-                .disabled(busy || URL(string: address)?.scheme != "https")
+                .disabled(busy || SignIn.server(address) == nil)
             }
             if let note { Section { Text(note).font(.footnote).foregroundStyle(.secondary) } }
         }
     }
 
     private func signIn() async {
-        guard let base = URL(string: address.trimmingCharacters(in: .whitespaces)) else { return }
+        guard let base = SignIn.server(address) else { return }
         busy = true
         defer { busy = false }
         do {
-            let meta = try await SignIn.metadata(for: base)
-            guard let registration = meta.registration_endpoint else { throw APIError.server(0, "the server does not register apps") }
-            let clientID = try await SignIn.register(at: registration)
-            let (verifier, challenge) = SignIn.pkce()
-            let state = UUID().uuidString
-            var components = URLComponents(url: meta.authorization_endpoint, resolvingAgainstBaseURL: false)!
-            components.queryItems = [
-                .init(name: "response_type", value: "code"), .init(name: "client_id", value: clientID), .init(name: "redirect_uri", value: SignIn.callback),
-                .init(name: "code_challenge", value: challenge), .init(name: "code_challenge_method", value: "S256"), .init(name: "state", value: state), .init(name: "scope", value: "read"),
-            ]
-            let back = try await webAuth.authenticate(using: components.url!, callbackURLScheme: SignIn.callbackScheme, preferredBrowserSession: .ephemeral)
-            let items = URLComponents(url: back, resolvingAgainstBaseURL: false)?.queryItems ?? []
-            guard items.first(where: { $0.name == "state" })?.value == state, let code = items.first(where: { $0.name == "code" })?.value else {
-                note = items.first(where: { $0.name == "error" }).map { _ in "Access was not allowed." } ?? "The server did not send a code."
-                return
-            }
-            let tokens = try await SignIn.exchange(code: code, verifier: verifier, clientID: clientID, at: meta.token_endpoint)
-            Keychain.save(Credentials(baseURL: base, clientID: clientID, tokenEndpoint: meta.token_endpoint, accessToken: tokens.access_token, refreshToken: tokens.refresh_token))
-            PhoneSession.shared.sendCredentials()
+            Keychain.save(try await SignIn.authorize(base: base, clientName: "FinancialAuthority for iPhone and iPad", using: webAuth))
             onSignedIn()
+        } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin {
+            note = nil
         } catch {
             note = error.localizedDescription
         }

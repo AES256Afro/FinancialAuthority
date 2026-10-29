@@ -6,7 +6,8 @@ struct Glance: Codable, Equatable {
     struct Bill: Codable, Equatable { let name: String; let amount: Double; let date: String }
     struct CoverCounts: Codable, Equatable { let good: Int; let watch: Int; let act: Int }
     let as_of: String
-    let safe_to_spend: Double
+    /// Null until a bank or the owner reports a balance: unknown, never $0.
+    let safe_to_spend: Double?
     let through: String
     let payday: Payday
     let next_bill: Bill?
@@ -59,8 +60,10 @@ struct PaycheckViews: Codable {
     struct Part: Codable, Identifiable { let key: String; let label: String; let amount: Double; var id: String { key } }
     struct Check: Codable, Identifiable {
         let start: String
-        let inflow: Double
-        let short: Double
+        let paycheck: Double?
+        /// Null in the first window when no balance is reported yet: what it brings in and leaves is unknown.
+        let inflow: Double?
+        let short: Double?
         let actual: Bool
         let parts: [Part]
         var id: String { start }
