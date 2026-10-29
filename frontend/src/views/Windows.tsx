@@ -1,7 +1,7 @@
 // Paycheck columns: one column per paycheck, filled from the bottom with what leaves it.
 import { Empty } from "../components/State";
 import { noPayday } from "../components/SafeExplain";
-import { amountClass, money, shortDate } from "../format";
+import { amountClass, eventDay, money, shortDate } from "../format";
 import { palette } from "../looks";
 import { inkOn } from "../paychecks";
 import { getPrefs } from "../prefs";
@@ -47,13 +47,14 @@ function Column({ w, index, c }: { w: Window; index: number; c: Palette }) {
         ) : short ? (
           <Block h={px(safe)} bg="var(--critical-soft)" border="var(--critical)" color="var(--critical-ink)" label={`Short by ${money(-safe)}`} />
         ) : (
-          <Block h={px(safe)} bg={c.safe} label={`Safe to spend ${money(safe)}`} />
+          // What this check leaves (the window's own figure), never called safe to spend: that is the headline's figure.
+          <Block h={px(safe)} bg={c.safe} label={`Left ${money(safe)}`} />
         )}
         {w.buffer > 0 && <Block h={px(w.buffer)} bg={c.buffer} label={`Safety cushion ${money(w.buffer)}`} />}
         {w.set_aside.total > 0 && <Block h={px(w.set_aside.total)} bg={c.surface} border={c.bill} color="var(--ink)" label={`Kept for the next paycheck ${money(w.set_aside.total)} · ${w.set_aside.items.length} items`} />}
         {bills.map((e: Event, i: number) => {
           const fill = e.kind === "installment" ? c.debt : c.bill;
-          return <Block key={`${e.source}-${i}`} h={px(e.amount)} bg={fill} label={`${e.name} ${money(e.amount)} · ${shortDate(e.date)}`} />;
+          return <Block key={`${e.source}-${i}`} h={px(e.amount)} bg={fill} label={`${e.name} ${money(e.amount)} · ${eventDay(e)}`} />;
         })}
         {w.advances.total > 0 && <Block h={px(w.advances.total)} bg={c.debt} label={`Advance apps take back ${money(w.advances.total)}`} />}
         {carriedIn !== null && carriedIn < 0 && <Block h={px(carriedIn)} bg="var(--critical-soft)" border="var(--critical)" color="var(--critical-ink)" label={`Already short before payday ${money(Math.abs(carriedIn))}`} />}
@@ -87,7 +88,7 @@ export function Windows({ snapshot }: ViewProps) {
               <tbody>
                 {order.map((e, i) => (
                   <tr key={`${e.source}-${i}`}>
-                    <td style={{ whiteSpace: "nowrap" }}>{shortDate(e.date)}</td>
+                    <td style={{ whiteSpace: "nowrap" }}>{eventDay(e)}</td>
                     <td><span className="sw" style={{ background: e.kind === "bill" || e.kind === "subscription" ? c.bill : c.debt }} />{e.name}</td>
                     <td style={{ color: "var(--ink-2)" }}>{sourceWord(e.source)}</td>
                     <td className="num" style={{ textAlign: "right" }}>{money(e.amount)}</td>

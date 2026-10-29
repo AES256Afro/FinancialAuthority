@@ -8,7 +8,7 @@ from sqlmodel import Session
 from .. import auth
 from ..db import get_session
 from ..engine.sinking import make_goal, sinking_funds
-from .routes import today
+from .routes import today, under_writer
 
 router = APIRouter(prefix="/api/v1/goals/sinking", tags=["goals"])
 
@@ -19,6 +19,7 @@ def list_funds(session: Session = Depends(get_session), _: auth.Principal = Depe
 
 
 @router.post("/{bill_id}")
+@under_writer
 def start_fund(bill_id: int, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     try:
         make_goal(session, today(), bill_id)

@@ -143,6 +143,7 @@ def judge(sender: str, sender_name: str, auth_results: str = "", reply_to: str =
 def auth_header(msg) -> tuple[str, str]:  # noqa: ANN001 - an email.message.Message
     """The receiving server's Authentication-Results (the first, topmost header, which is its own) and the
     Reply-To address."""
-    results = msg.get_all("Authentication-Results") or msg.get_all("ARC-Authentication-Results") or []
+    first = msg.get("Authentication-Results") or msg.get("ARC-Authentication-Results")  # the first only: parsing every one cost a second per thousand
+    results = [first] if first else []
     reply = getaddresses([msg.get("Reply-To", "") or ""])
     return (str(results[0])[:1000] if results else ""), (reply[0][1].lower()[:320] if reply and reply[0][1] else "")

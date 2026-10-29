@@ -97,7 +97,7 @@ def unconfirm_fact(session: Session, fact_id: int, by: str = "") -> dict[str, An
         if kind == "paystub" and rest.isdigit():
             said = _paystub(session, fact, int(rest))
         elif kind in ("bill", "plan") and fact.made.split(":")[:2] == [kind, rest]:
-            said = _bill(session, int(rest)) if kind == "bill" else _plan(session, fact, int(rest))
+            said = _bill(session, int(rest), fact) if kind == "bill" else _plan(session, fact, int(rest))
         elif kind in ("bill", "plan"):
             raise ValueError(f"Confirming it changed a {kind} you already had; change that {kind} back where it is kept, then reject this one if you like.")
         else:
@@ -108,10 +108,18 @@ def unconfirm_fact(session: Session, fact_id: int, by: str = "") -> dict[str, An
     return {"ok": True, "undone": tag, "by": by, "said": said}
 
 
-def _bill(session: Session, bill_id: int) -> str:
+def _changed_since(session: Session, fact: ExtractedFact, tag: str) -> bool:
+    """Another confirmation applied to what this one made (a later notice for the same biller, the same loan): taking
+    this one back would delete what that one still names, and SQLite gives the id to the next row made (sweep 19)."""
+    return session.exec(select(ExtractedFact.id).where(ExtractedFact.applied_to == tag, ExtractedFact.status == "applied", ExtractedFact.id != fact.id)).first() is not None
+
+
+def _bill(session: Session, bill_id: int, fact: ExtractedFact | None = None) -> str:
     bill = session.get(Bill, bill_id)
     if bill is None:
         return "The bill it made is already gone; it waits for an answer again."
+    if fact is not None and _changed_since(session, fact, f"bill:{bill_id}"):
+        raise ValueError(f"A later message for {bill.name} changed it since; it stays. Change it on Bills if it is not yours.")
     if session.exec(select(Payment).where(Payment.bill_id == bill_id, (Payment.status == "paid") | (Payment.transaction_id != None))).first() is not None:  # noqa: E711
         raise ValueError(f"{bill.name} has a payment matched or marked since; it stays. Remove it on Bills if it is not yours.")
     held = [m for m, field in ((Home, Home.bill_id), (HomeCharge, HomeCharge.bill_id), (HomeCost, HomeCost.bill_id), (Utility, Utility.bill_id)) if session.exec(select(m).where(field == bill_id)).first() is not None]
@@ -128,6 +136,8 @@ def _plan(session: Session, fact: ExtractedFact, plan_id: int) -> str:
     plan = session.get(InstallmentPlan, plan_id)
     if plan is None:
         return "The plan it made is already gone; it waits for an answer again."
+    if _changed_since(session, fact, f"plan:{plan_id}"):
+        raise ValueError(f"A later message for the {plan.provider} plan changed it since; it stays. End it on Borrowing if it is not yours.")
     left = fact.made.split(":")[2] if fact.made.count(":") >= 2 else ""
     if plan.debt_id is not None or not left.isdigit() or plan.remaining != int(left):
         raise ValueError(f"The {plan.provider} plan has a payment ticked or a debt tied to it since; it stays. End it on Borrowing if it is not yours.")

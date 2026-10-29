@@ -15,7 +15,8 @@ interface Check {
   outside?: { horizon: string; charges: { date: string; amount: number }[] } | null;
   breaks: { date: string; name: string; event_date: string; shortfall: number; already_short: number } | null;
   first_ok_date: string | null;
-  low_point: { date: string; at_pace: number };
+  /** Both null when there is no balance to count from (no_balance). */
+  low_point: { date: string | null; at_pace: number | null };
   fits_safe_to_spend: boolean | null;
   /** No bank has reported a balance: the check cannot say yes or no, and says why (verdict "outside"). */
   no_balance?: boolean;
@@ -83,7 +84,7 @@ export function PurchaseCheck() {
           </div>
           <div style={{ fontSize: 13, lineHeight: 1.5, display: "flex", flexDirection: "column", gap: 2 }}>
             <div className="num">
-              <strong>{money(r.amount)}</strong>{r.installments ? ` in ${r.installments} payments` : ""}{r.verdict === "yes" ? ` fits. The lowest left to spend would be ${money(r.low_point.at_pace)} on ${shortDate(r.low_point.date)}, after your safety cushion, what is kept for bills and your usual spending.` : ""}
+              <strong>{money(r.amount)}</strong>{r.installments ? ` in ${r.installments} payments` : ""}{r.verdict === "yes" && r.low_point.at_pace !== null && r.low_point.date !== null ? ` fits. The lowest left to spend would be ${money(r.low_point.at_pace)} on ${shortDate(r.low_point.date)}, after your safety cushion, what is kept for bills and your usual spending.` : ""}
             </div>
             {r.breaks && (
               <div className="num">

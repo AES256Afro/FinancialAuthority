@@ -23,6 +23,16 @@ def list_accounts(session: Session) -> list[dict]:
     ]
 
 
+MAX_SEARCH = 200  # characters of a search string that are matched; more names nothing a merchant or a subject holds
+
+
+def contains(text: str) -> str:
+    """A LIKE pattern for "holds this text": % and _ in what was typed are matched as themselves, not as wildcards
+    (a search for "100%" or "a_b" matched every row), with backslash as the escape. Use with escape="\\"."""
+    plain = str(text)[:MAX_SEARCH].replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{plain}%"
+
+
 def search_transactions(
     session: Session,
     *,
@@ -38,21 +48,31 @@ def search_transactions(
     limit: int = 50,
     tag: str | None = None,
     offset: int = 0,
+    after: str | None = None,
 ) -> dict:
     limit = max(1, min(int(limit), 500))
     offset = max(0, min(int(offset), 10_000_000))
+    cursor = None
+    if after:
+        day, _, ident = str(after).partition(":")
+        try:
+            cursor = (date.fromisoformat(day), int(ident))
+        except ValueError as error:
+            raise ValueError("after is the `next` a previous page returned") from error
     query = select(Transaction, Account).join(Account, Account.id == Transaction.account_id)
     if text:
-        like = f"%{text}%"
-        query = query.where((Transaction.merchant.ilike(like)) | (Transaction.raw_name.ilike(like)) | (Transaction.description.ilike(like)) | (Transaction.note.ilike(like)))
+        like = contains(text)
+        query = query.where((Transaction.merchant.ilike(like, escape="\\")) | (Transaction.raw_name.ilike(like, escape="\\")) | (Transaction.description.ilike(like, escape="\\"))
+                            | (Transaction.note.ilike(like, escape="\\")))
     if category:
         query = query.where(Transaction.category == category)
     if tag:
         word = tag.strip().lower()
-        query = query.where((Transaction.tags == word) | Transaction.tags.like(f"{word},%") | Transaction.tags.like(f"%,{word}") | Transaction.tags.like(f"%,{word},%"))
+        bare = contains(word)[1:-1]  # the tag with its wildcards escaped
+        query = query.where((Transaction.tags == word) | Transaction.tags.like(f"{bare},%", escape="\\") | Transaction.tags.like(f"%,{bare}", escape="\\") | Transaction.tags.like(f"%,{bare},%", escape="\\"))
     if account:
-        like = f"%{account}%"
-        query = query.where((Account.name.ilike(like)) | (Account.institution.ilike(like)))
+        like = contains(account)
+        query = query.where((Account.name.ilike(like, escape="\\")) | (Account.institution.ilike(like, escape="\\")))
     if start:
         query = query.where(Transaction.date >= start)
     if end:
@@ -66,7 +86,13 @@ def search_transactions(
     # `total` counts every row the filter matches, so a caller can page with `offset`; newest first with the id
     # breaking ties keeps a page from repeating or skipping a row between calls.
     total = session.exec(select(func.count()).select_from(query.with_only_columns(Transaction.id).subquery())).one()
-    rows = session.exec(query.order_by(Transaction.date.desc(), Transaction.id.desc()).offset(offset).limit(limit)).all()
+    if cursor is not None:
+        # Past the last row of the page before, by its place in the order: a row added or deleted between pages (a sync
+        # landing, a pending charge replaced) shifts an offset and repeats or skips a row; the place does not (sweep 19).
+        query = query.where((Transaction.date < cursor[0]) | ((Transaction.date == cursor[0]) & (Transaction.id < cursor[1])))
+    rows = session.exec(query.order_by(Transaction.date.desc(), Transaction.id.desc()).offset(offset).limit(limit + 1)).all()
+    more = len(rows) > limit
+    rows = rows[:limit]
     from .engine.edits import splits_by_tx
 
     split = splits_by_tx(session, [t.id for t, _ in rows]) if redaction == "full" else {}
@@ -95,7 +121,8 @@ def search_transactions(
             "splits": [{"category": s.category, "amount": s.amount, "note": s.note} for s in split.get(t.id, [])],
             "receipts": kept.get(t.id, []),
         })
-    return {"returned": len(items), "total": total, "offset": offset, "limit": limit, "total_amount": round(sum(i["amount"] for i in items), 2), "transactions": items}
+    nxt = f"{rows[-1][0].date.isoformat()}:{rows[-1][0].id}" if more and rows else None
+    return {"returned": len(items), "total": total, "offset": offset, "limit": limit, "next": nxt, "total_amount": round(sum(i["amount"] for i in items), 2), "transactions": items}
 
 
 def audit(session: Session, *, client: str, client_kind: str, tool: str, args: dict | None = None, rows: int = 0, redaction: str = "full") -> None:

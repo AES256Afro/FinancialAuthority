@@ -2,7 +2,7 @@
 import { Empty } from "../components/State";
 import { Link } from "react-router-dom";
 import { noPayday } from "../components/SafeExplain";
-import { money, moneyOr, shortDate } from "../format";
+import { eventDay, money, moneyOr, shortDate } from "../format";
 import type { Event } from "../types";
 import type { ViewProps } from "./index";
 
@@ -29,7 +29,7 @@ function envelope(e: Env) {
         <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: `${Math.round(Math.max(0, Math.min(1, e.fill)) * 100)}%`, background: bg }} />
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", fontSize: 13 }}>
-        <strong className="num">{money(e.amount)}{e.target !== e.amount && <span style={{ fontWeight: 600, color: "var(--muted)" }}> of {money(e.target)}</span>}</strong>
+        <strong className="num">{e.tag === "no balance" ? "no balance yet" : money(e.amount)}{e.target !== e.amount && <span style={{ fontWeight: 600, color: "var(--muted)" }}> of {money(e.target)}</span>}</strong>
         <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".06em", padding: "2px 7px", borderRadius: 999, background: track, color: ink }}>{e.tag}</span>
       </div>
     </div>
@@ -54,7 +54,7 @@ export function Envelopes({ snapshot }: ViewProps) {
       small.push(e);
       continue;
     }
-    envs.push({ key: e.source, name: e.name, sub: `due ${shortDate(e.date)}${e.autopay ? " · autopay" : ""}`, amount: e.amount, target: e.amount, fill: e.funded ? 1 : 0, tone: e.kind === "installment" ? "debt" : "bill", tag: e.funded === null ? "unknown" : e.funded ? "funded" : "not yet" });
+    envs.push({ key: e.source, name: e.name, sub: `${e.late ? eventDay(e) : `due ${shortDate(e.date)}`}${e.autopay ? " · autopay" : ""}`, amount: e.amount, target: e.amount, fill: e.funded ? 1 : 0, tone: e.kind === "installment" ? "debt" : "bill", tag: e.funded === null ? "unknown" : e.funded ? "funded" : "not yet" });
   }
   if (w.bills.small.count) {
     const g = w.bills.small;
@@ -63,7 +63,7 @@ export function Envelopes({ snapshot }: ViewProps) {
   }
   for (const e of [...w.set_aside.items].sort((a, b) => b.amount - a.amount)) {
     const share = e.share ?? 1;
-    envs.push({ key: `aside-${e.source}`, name: e.name, sub: `due ${shortDate(e.date)} · kept for the next paycheck`, amount: e.kept ?? e.amount, target: e.amount, fill: e.funded ? share : 0, tone: "bill", tag: e.funded === null ? "unknown" : e.funded ? (share < 1 ? "half kept" : "kept") : "not yet" });
+    envs.push({ key: `aside-${e.source}`, name: e.name, sub: `${e.late ? eventDay(e) : `due ${shortDate(e.date)}`} · kept for the next paycheck`, amount: e.kept ?? e.amount, target: e.amount, fill: e.funded ? share : 0, tone: "bill", tag: e.funded === null ? "unknown" : e.funded ? (share < 1 ? "half kept" : "kept") : "not yet" });
   }
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>

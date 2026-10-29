@@ -4,7 +4,7 @@
 // engine's; the bar only draws it.
 import { OctagonAlert } from "lucide-react";
 import { Link } from "react-router-dom";
-import { money, shortDate } from "../format";
+import { eventDay, money, shortDate } from "../format";
 import { cashFigure, noBalance, noPayday } from "./SafeExplain";
 import { palette } from "../looks";
 import { inkOn } from "../paychecks";
@@ -46,7 +46,7 @@ function Lines({ items, c }: { items: Event[]; c: ReturnType<typeof palette> }) 
         <div key={`${e.source}-${e.date}-${i}`} style={{ display: "flex", gap: 6, alignItems: "baseline", minWidth: 0 }}>
           <span className="sw" style={{ background: e.kind === "card_payment" ? c.debt : e.kind === "advance" ? c.later : e.kind === "installment" ? c.bill : e.planned ? c.paycheck : c.bill, margin: 0, flexShrink: 0 }} />
           <span style={{ flexGrow: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={e.name}>
-            {e.name} <span style={{ color: "var(--muted)" }}>· {shortDate(e.date)}{e.via_card ? " · charged to the card" : ""}{e.planned ? " · already sent" : ""}{e.pending ? " · end date not set" : ""}</span>
+            {e.name} <span style={{ color: "var(--muted)" }}>· {eventDay(e)}{e.via_card ? " · charged to the card" : ""}{e.planned ? " · already sent" : ""}{e.pending ? " · end date not set" : ""}</span>
             {e.kind === "card_payment" && e.parts && <span className="num" style={{ color: "var(--muted)" }}> · carried {money(e.parts.balance)} + bills {money(e.parts.bills)} + usual spend {money(e.parts.spend)}</span>}
           </span>
           <strong className="num" style={{ whiteSpace: "nowrap" }}>{money(e.amount)}</strong>
@@ -76,7 +76,7 @@ export function ByCheck({ s }: { s: Snapshot }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
           <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>{noPayday(s) ? "Now" : "Before your next paycheck"}</h3>
-          <span style={{ fontSize: 12, color: "var(--ink-2)" }}>{noPayday(s) ? "bills due by" : "through"} {shortDate(s.safe_to_spend.through)} · from <span className="num">{cashFigure(s)}</span> in checking</span>
+          <span style={{ fontSize: 12, color: "var(--ink-2)" }}>{noPayday(s) ? "bills due by" : "through"} {shortDate(s.safe_to_spend.through)} · {noBalance(s) ? "no balance from your bank yet" : <>from <span className="num">{cashFigure(s)}</span> in checking</>}</span>
           <span className="num" style={{ marginLeft: "auto", fontWeight: 800 }}>{money(before.total)} due · {noBalance(s) || s.safe_to_spend.amount === null ? "no balance yet" : `${money(s.safe_to_spend.amount)} safe`}</span>
         </div>
         <Bar parts={beforeParts} total={s.cash === null ? before.total + s.buffer : Math.max(s.cash, before.total + s.buffer)} />

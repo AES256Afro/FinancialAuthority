@@ -49,7 +49,7 @@ def _match_for(bill: Bill, bill_key: list[str], series_key: str | None, due: dat
     return None
 
 
-def _match_in_month(bill: Bill, bill_key: list[str], series_key: str | None, due: date, transactions: list[Transaction], used: set, today: date) -> Transaction | None:
+def _match_in_month(bill: Bill, bill_key: list[str], series_key: str | None, due: date, transactions: list[Transaction], used: set, today: date, others: list[date] = ()) -> Transaction | None:
     """The row that paid a monthly bill's month when none sits near the due day: under the bill's own names (never
     by amount alone), in the same calendar month, not used by another period. A bill whose due day the owner moved
     was paid on its old day in the months before the move; a payment later in the month is still that month's."""
@@ -57,6 +57,8 @@ def _match_in_month(bill: Bill, bill_key: list[str], series_key: str | None, due
     for t in transactions:
         if t.id in used or t.date > today or (t.date.year, t.date.month) != (due.year, due.month):
             continue
+        if any(d != due and d - timedelta(days=BEFORE_DAYS) <= t.date <= d + timedelta(days=max(AFTER_DAYS, bill.grace_days)) for d in others):
+            continue  # it sits near another period's day (rent due the 2nd paid on the 28th before): that period's payment, never a missed month's
         if abs(t.amount - bill.amount) <= tolerance and _looks_like(bill_key, series_key, merchant_key(t.merchant)):
             return t
     return None
@@ -99,6 +101,11 @@ def match_payments(session: Session, today: date) -> dict:
             elif p.status == "paid" and p.transaction_id and holders.get(p.transaction_id) == 1:
                 used.discard(p.transaction_id)
                 released[p.transaction_id] = p
+        for (b, _), p in existing.items():
+            t = by_id.get(p.transaction_id) if b == bill.id and p.status == "paid" and p.transaction_id else None
+            if t is not None and (p.amount, p.paid_date) != (t.amount, t.date):
+                p.amount, p.paid_date = t.amount, t.date  # the bank changed the row after it was matched: every kept period follows, the old day's too
+                session.add(p)
         paid_months = {p.due_date.strftime("%Y-%m") for (b, _), p in existing.items() if b == bill.id and p.status == "paid"}
         # A bill is looked for from the day it was added, never in the months before it existed; before the lookback only
         # the periods already kept are looked at again, none is made.
@@ -107,11 +114,7 @@ def match_payments(session: Session, today: date) -> dict:
             if due < start and payment is None:
                 continue
             if payment is not None and payment.status == "paid":
-                t = by_id.get(payment.transaction_id) if payment.transaction_id else None
-                if t is not None and (payment.amount, payment.paid_date) != (t.amount, t.date):
-                    payment.amount, payment.paid_date = t.amount, t.date  # the bank changed the row after it was matched
-                    session.add(payment)
-                counts["paid"] += 1
+                counts["paid"] += 1  # its row's changes were followed above
                 continue
             # A monthly bill is paid once a month: a period on a new due day is not owed again in a month whose period
             # on the old day is already paid (the owner moved the day; the months before the move were paid as they were),
@@ -124,7 +127,7 @@ def match_payments(session: Session, today: date) -> dict:
             else:
                 match = _match_for(bill, bill_key, series_key, due, transactions, used)
                 if match is None and monthly and due < today:
-                    match = _match_in_month(bill, bill_key, series_key, due, transactions, used | set(released), today)
+                    match = _match_in_month(bill, bill_key, series_key, due, transactions, used | set(released), today, dues)
             if match is not None:
                 status, paid_date, tx_id, amount, evidence = "paid", match.date, match.id, match.amount, f"transaction:{match.id}"
                 used.add(match.id)

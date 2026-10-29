@@ -9,7 +9,7 @@ import { streamChat, type ChatTurn } from "../chat";
 import { ConfirmButton } from "../components/ConfirmButton";
 import { cashFigure, noBalance, safeFigure, safeShort } from "../components/SafeExplain";
 import { Failed, Loading, Said } from "../components/State";
-import { money, shortDate, when } from "../format";
+import { amountClass, money, shortDate, when } from "../format";
 import type { ReviewRun, Snapshot } from "../types";
 import { toolWord } from "./Audit";
 import { CHAT_KEY } from "../session";
@@ -241,7 +241,7 @@ export function Chat({ snapshot, onChanged }: { snapshot: Snapshot; onChanged: (
           )}
           {turns.map((t, i) => (
             <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: t.role === "user" ? "flex-end" : "flex-start", gap: 4 }}>
-              <div style={{ maxWidth: "88%", padding: "10px 12px", borderRadius: 14, background: t.role === "user" ? "var(--paycheck-soft)" : "var(--surface-2)", color: t.role === "user" ? "var(--paycheck-ink)" : "var(--ink)", fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+              <div className={amountClass(t.content)} style={{ maxWidth: "88%", padding: "10px 12px", borderRadius: 14, background: t.role === "user" ? "var(--paycheck-soft)" : "var(--surface-2)", color: t.role === "user" ? "var(--paycheck-ink)" : "var(--ink)", fontSize: 14, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
                 {t.content || (t.role === "assistant" && busy && i === turns.length - 1 ? <span style={{ color: "var(--muted)" }}>{tools.length ? `Reading: ${toolWord(tools[tools.length - 1])}…` : "Thinking…"}</span> : t.content)}
               </div>
               {t.role === "assistant" && (t.used?.length || t.unverified?.length || t.error || t.model) ? (

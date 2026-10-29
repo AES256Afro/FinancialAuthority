@@ -11,7 +11,7 @@ from .inputs import In
 from .. import approvals, auth, services
 from ..db import get_session
 from ..engine.moving import moving_plan, tick
-from .routes import today
+from .routes import today, under_writer
 
 router = APIRouter(prefix="/api/v1/move/plan", tags=["moving"])
 
@@ -76,6 +76,7 @@ class PaidIn(In):
 
 
 @exit_router.post("/plans/{plan_id}/paid")
+@under_writer
 def plan_payment_paid(plan_id: int, body: PaidIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     """The owner says a plan's next payment is made: it counts now, and the bank's row takes its place when it comes."""
     from ..engine.borrowing import mark_installment_paid

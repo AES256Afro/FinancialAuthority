@@ -79,7 +79,11 @@ def scan_pages(raw: bytes, max_pages: int = MAX_SCAN_PAGES, seconds: float = SCA
         return pages
 
 
-TOTAL = re.compile(r"(?im)^[^\S\n]*(?:grand[^\S\n]+)?total(?:[^\S\n]+(?:due|paid|amount))?[^\S\n]*[:\-]?[^\S\n]*(?:usd)?[^\S\n]*\$?[^\S\n]*([0-9]{1,3}(?:,[0-9]{3})*\.[0-9]{2}|[0-9]+\.[0-9]{2})\b")
+# Each run of blanks is possessive (*+, ++, ?+): the runs sit next to each other with only optional words between, so
+# "total" and a long run of blanks with no figure after it was tried every way the run splits among them, which is
+# the run's length to the fourth power (10 KB of spaces after "total" did not finish in 20 s). A figure has to come
+# next whatever the split, so taking each run whole finds the same totals.
+TOTAL = re.compile(r"(?im)^[^\S\n]*+(?:grand[^\S\n]++)?total(?>[^\S\n]++(?:due|paid|amount))?[^\S\n]*+[:\-]?+[^\S\n]*+(?:usd)?+[^\S\n]*+\$?+[^\S\n]*+([0-9]{1,3}(?:,[0-9]{3})*\.[0-9]{2}|[0-9]+\.[0-9]{2})\b")
 DATE_US = re.compile(r"\b(0?[1-9]|1[0-2])[/-](0?[1-9]|[12][0-9]|3[01])[/-]((?:20)?[0-9]{2})\b")
 DATE_ISO = re.compile(r"\b(20[0-9]{2})-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])\b")
 

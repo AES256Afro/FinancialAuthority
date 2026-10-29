@@ -2,7 +2,7 @@
 // goal), the engine's sentence on when none is needed and the fees that saves. Every figure is the engine's.
 import { CircleCheck, TriangleAlert } from "lucide-react";
 import { useApi } from "../api";
-import { money, shortDate } from "../format";
+import { amountClass, money, shortDate } from "../format";
 import { Show } from "./State";
 import { StatusPill } from "./Status";
 
@@ -41,7 +41,7 @@ export function AdvanceExit() {
             {p.state === "short" && <StatusPill status="warn">Still short at your usual spending</StatusPill>}
           </div>
           {p.state !== "none" && p.steps.length > 0 && <Rows steps={p.steps} />}
-          <div style={{ fontSize: 14, color: "var(--ink)" }}>{p.word}</div>
+          <div className={amountClass(p.word)} style={{ fontSize: 14, color: "var(--ink)" }}>{p.word}</div>
           {p.state !== "none" && (
             <div style={{ fontSize: 13, color: "var(--ink-2)", display: "flex", flexWrap: "wrap", gap: "4px 16px" }}>
               {p.owed_now ? <span>Owed to the apps now, with fees: <strong className="num">{money(p.owed_now, { cents: true })}</strong></span> : null}
@@ -67,8 +67,10 @@ function Rows({ steps }: { steps: ExitStep[] }) {
               <div style={{ width: `${(s.borrow / scale) * 100}%`, height: "100%", background: "var(--later)", borderRadius: 6 }} />
             </div>
             <span style={{ fontSize: 12, color: "var(--ink-2)", lineHeight: 1.5 }}>
+              {/* `borrow` is the advance, rounded up to what an app lends: never called the shortfall, which is the
+                  check's own figure (River and Windows say it). */}
               {s.borrow > 0 ? (
-                <><TriangleAlert size={13} aria-hidden="true" style={{ display: "inline-block", color: "var(--warning-ink)", verticalAlign: -2, marginRight: 4 }} />Short by <strong className="num">{money(s.borrow)}</strong>; the smallest advance that covers it costs <span className="num">{money(s.fee, { cents: true })}</span></>
+                <><TriangleAlert size={13} aria-hidden="true" style={{ display: "inline-block", color: "var(--warning-ink)", verticalAlign: -2, marginRight: 4 }} />Needs an advance of <strong className="num">{money(s.borrow)}</strong>, the smallest that covers this check's shortfall; it costs <span className="num">{money(s.fee, { cents: true })}</span></>
               ) : (
                 <><CircleCheck size={13} aria-hidden="true" style={{ display: "inline-block", color: "var(--safe-ink)", verticalAlign: -2, marginRight: 4 }} />No new advance</>
               )}

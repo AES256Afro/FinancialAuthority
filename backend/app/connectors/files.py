@@ -5,6 +5,7 @@ and dropped it here."""
 
 from __future__ import annotations
 
+import bisect
 import csv
 import html
 import io
@@ -92,6 +93,11 @@ def parse_date(value: str | None) -> date | None:
     if not value:
         return None
     text = str(value).strip()
+    if len(text) == 8 and text.isascii() and text.isdigit():  # OFX's 20261014: read directly, not after eight formats fail (100 µs a row)
+        try:
+            return date(int(text[:4]), int(text[4:6]), int(text[6:]))
+        except ValueError:
+            pass
     for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y", "%Y/%m/%d", "%d/%m/%Y", "%b %d, %Y", "%B %d, %Y", "%d %b %Y", "%Y%m%d", "%m-%d-%Y", "%d-%b-%Y"):
         try:
             return datetime.strptime(text[:10] if fmt in ("%Y-%m-%d",) else text, fmt).date()
@@ -103,12 +109,18 @@ def parse_date(value: str | None) -> date | None:
         return None
 
 
+MAX_COLUMNS = 500  # a bank's or a vendor's export has a few dozen; a header of a million made each column lookup scan them all
+
+
 def _table(text: str) -> tuple[list[str], list[dict]]:
     """A CSV's column names and rows. A field past the reader's limit (128 KB, far beyond any bank's) is refused
-    with ValueError rather than left to crash the caller."""
+    with ValueError rather than left to crash the caller, and so is a header with more columns than any export has
+    (a 10 MB header of a million columns took eleven seconds of matching names before a row was read)."""
     try:
         reader = csv.DictReader(io.StringIO(text))
         columns = [c for c in (reader.fieldnames or []) if c is not None]
+        if len(columns) > MAX_COLUMNS:
+            raise ValueError(f"The file has {len(columns):,} columns; a bank's export has a few dozen, so check that it is a CSV of transactions")
         return columns, list(reader)
     except csv.Error as error:
         raise ValueError("A field in the file is longer than any bank's export carries; check that it is a CSV") from error
@@ -220,8 +232,22 @@ def parse_ofx(text: str) -> dict[str, Any]:
             statements.append((a, b, block.get("ACCTID", ""), kind))
     trn_spans: list[tuple[int, int]] = []
     trns = _ofx_blocks(upper, "STMTTRN", trn_spans)
+    # The statement that holds each transaction, by bisection: one tag's blocks never overlap and come in order, so the
+    # last one starting at or before a transaction is the only one of that tag that can hold it; a bank statement is
+    # looked for before a card's, as before. (A scan of every statement for every transaction took 26 s on a 3 MB
+    # file of empty statements.)
+    by_kind = {kind: [st for st in statements if st[3] == kind] for kind in ("", "card")}
+    starts = {kind: [st[0] for st in rows] for kind, rows in by_kind.items()}
+
+    def holder(at: int) -> tuple[str, str]:
+        for kind in ("", "card"):
+            i = bisect.bisect_right(starts[kind], at) - 1
+            if i >= 0 and by_kind[kind][i][0] <= at < by_kind[kind][i][1]:
+                return by_kind[kind][i][2], kind
+        return "", ""
+
     for t, (at, _end) in zip(trns, trn_spans):
-        held_by = next(((number, kind) for a, b, number, kind in statements if a <= at < b), ("", ""))
+        held_by = holder(at)
         when = parse_date((t.get("DTPOSTED") or t.get("DTUSER") or "")[:8])
         amount = parse_amount(t.get("TRNAMT"))
         if when is None or amount is None:

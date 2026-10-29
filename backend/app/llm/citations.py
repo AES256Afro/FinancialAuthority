@@ -8,6 +8,7 @@ scripted reply that invents a figure.
 
 from __future__ import annotations
 
+import bisect
 import re
 from typing import Any
 
@@ -146,14 +147,19 @@ def figures_in(text: str) -> list[tuple[str, float]]:
 
 
 def unverified(text: str, allowed: set[float]) -> list[str]:
-    """The figures in `text` that the engine did not return."""
+    """The figures in `text` that the engine did not return. A figure with cents is looked up by bisection among the
+    engine's numbers, sorted once: compared with each in turn, a 1 MB reply of cents against a snapshot's three
+    thousand numbers took 13 s of the chat's worker."""
     bad: list[str] = []
+    ordered = sorted(allowed)
     for token, value in figures_in(text):
         if value == int(value):
             # A whole figure may be an engine number with its cents dropped or rounded; `allowed` holds both.
             if value in allowed:
                 continue
-        elif any(abs(value - a) < 0.005 for a in allowed):
-            continue
+        else:
+            i = bisect.bisect_left(ordered, value - 0.005)
+            if any(abs(value - a) < 0.005 for a in ordered[i:i + 2]):
+                continue
         bad.append(token)
     return bad

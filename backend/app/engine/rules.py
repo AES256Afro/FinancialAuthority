@@ -7,6 +7,7 @@ connector or an import adds afterwards, so a merchant is cleaned once and stays 
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 
 from sqlmodel import Session, select
 
@@ -32,6 +33,21 @@ def forget(session: Session) -> None:
     session.info.pop(CACHE_KEY, None)
 
 
+NESTED_QUANTIFIER = re.compile(r"\([^)]*(?:[*+?}]|\|)[^)]*\)\s*[*+?{]")
+
+
+@lru_cache(maxsize=256)
+def _rule_regex(source: str) -> re.Pattern | None:
+    """A saved rule's pattern, compiled once. A quantified group that holds a quantifier or an alternation (the shape
+    that backtracks without end) is refused, as is one that does not compile."""
+    if NESTED_QUANTIFIER.search(source):
+        return None
+    try:
+        return re.compile(source, re.IGNORECASE)
+    except re.error:
+        return None
+
+
 def matches(rule: Rule, t: Transaction) -> bool:
     field = rule.match_field or "merchant"
     haystack = {"merchant": t.merchant, "raw_name": t.raw_name}.get(field, f"{t.merchant} {t.raw_name} {t.description}").lower()
@@ -39,10 +55,9 @@ def matches(rule: Rule, t: Transaction) -> bool:
     if not pattern:
         return False
     if pattern.startswith("re:"):
-        try:
-            return re.search(pattern[3:], haystack, re.IGNORECASE) is not None
-        except re.error:
-            return False
+        compiled = _rule_regex(pattern[3:])
+        # Bounded: a saved pattern runs on every row in every detection, under the writer lock.
+        return compiled is not None and compiled.search(haystack[:400]) is not None
     return pattern.lower() in haystack
 
 

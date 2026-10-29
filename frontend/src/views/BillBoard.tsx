@@ -1,5 +1,5 @@
 // Bill board: every bill period is a card that moves right as it is paid. A card that stops moving is the problem.
-import { amountClass, money, shortDate } from "../format";
+import { amountClass, eventDay, money, shortDate } from "../format";
 import type { Event } from "../types";
 import type { ViewProps } from "./index";
 import { PlanCaveats, SafeExplain, noPayday, safeFigure, safeShort } from "../components/SafeExplain";
@@ -97,14 +97,14 @@ export function BillBoard({ snapshot }: ViewProps) {
           {problems.map((p) => <Card key={p.source} title={p.name} amount={p.amount} when={shortDate(p.due_date)} src={sourceWord(p.source)} funding={p.status === "past_due" ? "past_due" : "unmatched"} note={p.status === "late" ? "If you paid it, your transactions catch up at the next sync." : undefined} />)}
         </Column>
         <Column title="Due in 7 days" total={board.due_7.total} bg="var(--warning-soft)" empty="Nothing due this week.">
-          {due7.map((e, i) => <Card key={`${e.source}-${i}`} title={e.name} amount={e.amount} when={`${shortDate(e.date)} · ${e.autopay ? "autopay" : "pay it yourself"}`} src={sourceWord(e.source)} funding={fundingOf(e)} />)}
+          {due7.map((e, i) => <Card key={`${e.source}-${i}`} title={e.name} amount={e.amount} when={`${eventDay(e)} · ${e.autopay ? "autopay" : "pay it yourself"}`} src={sourceWord(e.source)} funding={fundingOf(e)} />)}
         </Column>
         <Column title={unknown ? "Due later" : "Due later this paycheck"} total={board.later.total} empty={unknown ? "Nothing more in the next weeks." : "Nothing more before the next paycheck."}>
-          {later.map((e, i) => <Card key={`${e.source}-${i}`} title={e.name} amount={e.amount} when={`${shortDate(e.date)} · ${e.autopay ? "autopay" : "pay it yourself"}`} src={sourceWord(e.source)} funding={fundingOf(e)} />)}
+          {later.map((e, i) => <Card key={`${e.source}-${i}`} title={e.name} amount={e.amount} when={`${eventDay(e)} · ${e.autopay ? "autopay" : "pay it yourself"}`} src={sourceWord(e.source)} funding={fundingOf(e)} />)}
         </Column>
         <Column title={unknown ? "Kept for the weeks after" : "Kept for the next paycheck"} total={w?.set_aside.total ?? 0} empty="Nothing kept for it yet.">
           {/* Each card shows what is kept for it now (half of a big bill), so the cards add up to the column's total. */}
-          {nextWindow.map((e, i) => <Card key={`${e.source}-${i}`} title={e.name} amount={e.kept ?? e.amount} when={`${shortDate(e.date)} · ${(e.share ?? 1) < 1 ? `half of ${money(e.amount)} kept` : "all kept"}`} src={sourceWord(e.source)} funding={e.funded ? "funded" : "not_yet"} />)}
+          {nextWindow.map((e, i) => <Card key={`${e.source}-${i}`} title={e.name} amount={e.kept ?? e.amount} when={`${eventDay(e)} · ${(e.share ?? 1) < 1 ? `half of ${money(e.amount)} kept` : "all kept"}`} src={sourceWord(e.source)} funding={e.funded ? "funded" : "not_yet"} />)}
         </Column>
         <Column title="Paid recently" total={board.paid.total} bg="var(--surface-2)" empty="No payments matched yet; your transactions need a few weeks of history.">
           {paid.map((p) => <Card key={p.source} title={p.name} amount={p.amount} when={`${shortDate(p.paid_date ?? p.due_date)} · matched to your transactions`} src="your transactions" funding="paid" muted />)}

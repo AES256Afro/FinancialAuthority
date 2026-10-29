@@ -7,7 +7,7 @@ import { AdvanceExit } from "../components/AdvanceExit";
 import { BorrowingPlan } from "../components/BorrowingPlan";
 import { Failed, Loading, Said, useJumpToHash, useWidth } from "../components/State";
 import { SeverityTag, StatusPill } from "../components/Status";
-import { money, monthDay, shortDate } from "../format";
+import { amountClass, money, monthDay, shortDate } from "../format";
 import { palette } from "../looks";
 import { getPrefs } from "../prefs";
 
@@ -37,7 +37,9 @@ interface Stream {
   cadence_days: number;
   cadence_assumed: boolean;
   payments_seen: number;
-  last_date: string;
+  /** null on a plan from the register that no bank row shows yet (read from mail or typed): no payment dates seen. */
+  first_date?: string | null;
+  last_date: string | null;
   next_date: string;
   active: boolean;
   paid_so_far: number;
@@ -164,9 +166,9 @@ function StreamRow({ s, onDone }: { s: Stream; onDone: () => void }) {
   const canSet = s.status === "bill" || s.status === "pending";
   return (
     <tr>
-      <td><strong>{s.provider}</strong><div style={{ fontSize: 11, color: "var(--muted)" }}>{CADENCE[s.cadence_days] ?? `every ${s.cadence_days} days`}{s.cadence_assumed ? " (assumed from one payment)" : ""} · {s.payments_seen} paid, {money(s.paid_so_far)} so far</div></td>
+      <td><strong>{s.provider}</strong><div style={{ fontSize: 11, color: "var(--muted)" }}>{CADENCE[s.cadence_days] ?? `every ${s.cadence_days} days`}{s.cadence_assumed ? " (assumed from one payment)" : ""} · {s.payments_seen} paid, {money(s.paid_so_far)} so far{s.last_date ? `, last ${shortDate(s.last_date)}` : " · payment dates not known"}</div></td>
       <td className="num" style={{ textAlign: "right" }}>{money(s.amount, { cents: true })}</td>
-      <td>{shortDate(s.next_date)}</td>
+      <td>{s.next_date ? shortDate(s.next_date) : "date not known"}</td>
       <td>
         {s.status === "plan" ? (
           <span>{s.remaining} payment{s.remaining === 1 ? "" : "s"} left · ends {s.ends ? shortDate(s.ends) : "date not known"}</span>
@@ -267,7 +269,7 @@ export function Borrowing() {
         <div className="card" style={{ padding: 14, borderTop: "4px solid var(--debt)" }}>
           <div className="lab">Lost to borrowing, a month</div>
           <div className="num" style={{ fontSize: 28, fontWeight: 800 }}>{money(d.cost.fees_month)}</div>
-          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{money(d.cost.fees_year)} a year at this pace · advance fees {money(d.cost.fees_90d)} in {d.window_days} days over {d.cost.advances_90d} advances{d.cost.affirm_interest_month ? ` · Affirm interest ${money(d.cost.affirm_interest_month)} last statement, ${money(d.cost.affirm_interest_ytd ?? 0)} this year` : ""}</div>
+          <div className="num" style={{ fontSize: 12, color: "var(--ink-2)" }}>{money(d.cost.fees_year)} a year at this pace · advance fees {money(d.cost.fees_90d)} in {d.window_days} days over {d.cost.advances_90d} advances{d.cost.affirm_interest_month ? ` · Affirm interest ${money(d.cost.affirm_interest_month)} last statement, ${money(d.cost.affirm_interest_ytd ?? 0)} this year` : ""}</div>
         </div>
         <div className="card" style={{ padding: 14, borderTop: "4px solid var(--later)" }}>
           <div className="lab">Owed back from your next paycheck</div>
@@ -284,7 +286,7 @@ export function Borrowing() {
           {d.becomes ? (
             <>
               <div className="num" style={{ fontSize: 28, fontWeight: 800 }}>{money(d.becomes.after_tax)}</div>
-              <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{money(d.becomes.per_paycheck)} a paycheck for {d.becomes.years} years in {d.becomes.name.toLowerCase()}{d.becomes.guaranteed ? ", guaranteed" : ""} · <Link to="/outlook">compare</Link></div>
+              <div className="num" style={{ fontSize: 12, color: "var(--ink-2)" }}>{money(d.becomes.per_paycheck)} a paycheck for {d.becomes.years} years in {d.becomes.name.toLowerCase()}{d.becomes.guaranteed ? ", guaranteed" : ""} · <Link to="/outlook">compare</Link></div>
             </>
           ) : (
             <div style={{ fontSize: 12, color: "var(--ink-2)" }}>no fees in the last {d.window_days} days</div>
@@ -301,7 +303,7 @@ export function Borrowing() {
             <tbody>
               {d.providers.map((p) => (
                 <tr key={p.provider}>
-                  <td><strong>{p.provider}</strong><div style={{ fontSize: 11, color: "var(--muted)" }}>usually {money(p.typical_advance)}{p.typical_days ? ` for ${p.typical_days} days` : ""}{p.outstanding ? ` · ${money(p.outstanding)} out now` : ""}</div></td>
+                  <td><strong>{p.provider}</strong><div className="num" style={{ fontSize: 11, color: "var(--muted)" }}>usually {money(p.typical_advance)}{p.typical_days ? ` for ${p.typical_days} days` : ""}{p.outstanding ? ` · ${money(p.outstanding)} out now` : ""}</div></td>
                   <td className="num" style={{ textAlign: "right" }}>{p.advances}</td>
                   <td className="num" style={{ textAlign: "right" }}>{money(p.advanced)}</td>
                   <td className="num" style={{ textAlign: "right", color: "var(--critical-ink)", fontWeight: 800 }}>{money(p.fees)}</td>
@@ -320,7 +322,7 @@ export function Borrowing() {
           <table className="ledger">
             <thead><tr><th>Plan</th><th style={{ textAlign: "right" }}>Each</th><th>Next</th><th>Payments left</th></tr></thead>
             <tbody>
-              {active.map((s) => <StreamRow key={`${s.provider}-${s.amount}-${s.status}`} s={s} onDone={reload} />)}
+              {active.map((s) => <StreamRow key={`${s.provider}-${s.amount}-${s.status}-${s.plan_id ?? ""}`} s={s} onDone={reload} />)}
               {active.length === 0 && <tr><td colSpan={4} style={{ color: "var(--muted)" }}>No pay-later lender in your transactions from the last {d.window_days} days. An Affirm statement uploaded below adds every loan it lists.</td></tr>}
             </tbody>
           </table>
@@ -339,7 +341,7 @@ export function Borrowing() {
         <section className="card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 8 }} id="loans">
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
             <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Pay-later loans, from the lender's own figures</h2>
-            <span style={{ fontSize: 12, color: "var(--muted)" }}>{money(d.loans_left_to_pay)} left to pay{d.statement?.period_end ? ` as of the statement to ${shortDate(d.statement.period_end)}` : ""}{d.loans_finance_charge > 0 ? ` · ${money(d.loans_finance_charge)} of finance charges over their lives` : ""}</span>
+            <span className="num" style={{ fontSize: 12, color: "var(--muted)" }}>{money(d.loans_left_to_pay)} left to pay{d.statement?.period_end ? ` as of the statement to ${shortDate(d.statement.period_end)}` : ""}{d.loans_finance_charge > 0 ? ` · ${money(d.loans_finance_charge)} of finance charges over their lives` : ""}</span>
           </div>
           <div style={{ overflowX: "auto" }}>
           <table className="ledger" style={{ fontSize: 13 }}>
@@ -375,7 +377,7 @@ export function Borrowing() {
                 <strong>{c.name}</strong>
                 <span className="num">{money(c.balance)}{c.credit_limit ? ` of a ${money(c.credit_limit)} credit limit` : ""}</span>
                 {c.utilisation_status && <StatusPill status={c.utilisation_status.status}>{c.utilisation_status.word}</StatusPill>}
-                {c.apr !== null && c.apr !== undefined && <span style={{ color: "var(--ink-2)" }}>{c.apr}% APR{c.pay_in_full ? ", paid in full" : `, ${money(c.interest_month_if_carried)} a month if carried`}</span>}
+                {c.apr !== null && c.apr !== undefined && <span className="num" style={{ color: "var(--ink-2)" }}>{c.apr}% APR{c.pay_in_full ? ", paid in full" : `, ${money(c.interest_month_if_carried)} a month if carried`}</span>}
                 {c.next_statement && <span style={{ color: "var(--ink-2)" }}>statement closes {shortDate(c.next_statement)}</span>}
                 {c.next_due && <span style={{ color: "var(--ink-2)" }}>due {shortDate(c.next_due)}</span>}
                 {!c.credit_limit && <Link to="/debts" style={{ fontSize: 12 }}>Add the credit limit and APR on Debts →</Link>}
@@ -397,7 +399,7 @@ export function Borrowing() {
       <section className="card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}><h2 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>The way out, in order</h2><span style={{ fontSize: 12, color: "var(--muted)" }}>each step is a figure from your transactions and the place to act on it</span></div>
         <ol style={{ margin: 0, paddingLeft: 22, display: "flex", flexDirection: "column", gap: 6, fontSize: 14, lineHeight: 1.5 }}>
-          {d.steps.map((s) => <li key={s.n}>{s.text} <Link to={s.link} style={{ whiteSpace: "nowrap" }}>{s.action} →</Link></li>)}
+          {d.steps.map((s) => <li key={s.n}><span className={amountClass(s.text)}>{s.text}</span> <Link to={s.link} style={{ whiteSpace: "nowrap" }}>{s.action} →</Link></li>)}
         </ol>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", fontSize: 13, borderTop: "1px solid var(--surface-2)", paddingTop: 8 }}>
           <label htmlFor="cards-pay-from">Hold the card balance of <strong className="num">{money(d.cost.card_balance)}</strong> back from:</label>

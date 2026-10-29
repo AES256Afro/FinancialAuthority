@@ -123,11 +123,12 @@ def test_the_affirm_statement_pdf_by_mail_lands_on_the_plans(owner: TestClient):
     from app.mail.imap import parse_message
 
     m = EmailMessage()
-    m["From"] = "Affirm <statements@affirm.test>"
+    m["From"] = "Affirm <statements@affirm.com>"  # the lender's own domain, vouched for: a statement from anyone else waits (test_sweep19_security)
     m["To"] = "owner@example.test"
     m["Subject"] = "Your Affirm Loans Statement is ready"
     m["Date"] = "Sun, 01 Nov 2026 08:00:00 +0000"
-    m["Message-ID"] = "<affirm-statement-1@affirm.test>"
+    m["Message-ID"] = "<affirm-statement-1@example.test>"
+    m["Authentication-Results"] = "mx.example.test; dmarc=pass; dkim=pass; spf=pass"
     m.set_content("Your Affirm Loans Statement for October is attached.\n")
     m.add_attachment(pdf_of(affirm_statement_lines(date(2026, 10, 31))), maintype="application", subtype="pdf", filename="affirm-statement-2026-10.pdf")
     with Session(engine) as session:

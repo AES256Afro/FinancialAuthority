@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { ByCheck } from "../components/ByCheck";
 import { RiverChart } from "../components/RiverChart";
 import { Watchlist } from "../components/Watchlist";
-import { amountClass, daysWord, money, moneyOr, shortDate } from "../format";
+import { amountClass, daysWord, eventDay, money, moneyOr, shortDate } from "../format";
 import { getPrefs } from "../prefs";
 import type { Window } from "../types";
 import type { ViewProps } from "./index";
@@ -137,7 +137,7 @@ export function River({ snapshot }: ViewProps) {
             {s.window.items.map((e, i) => (
               <div key={`${e.source}-${i}`} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
                 <span className="sw" style={{ background: e.kind === "installment" ? "var(--debt)" : "var(--bill)" }} />
-                <span style={{ flexGrow: 1, minWidth: 0 }}>{e.name} <span style={{ color: "var(--muted)" }}>· {shortDate(e.date)}{e.autopay ? " · autopay" : ""}{e.via_card ? " · charged to the card" : ""}{e.planned ? " · already sent" : ""}{e.pending ? " · payments left not set" : ""}</span></span>
+                <span style={{ flexGrow: 1, minWidth: 0 }}>{e.name} <span style={{ color: "var(--muted)" }}>· {eventDay(e)}{e.autopay ? " · autopay" : ""}{e.via_card ? " · charged to the card" : ""}{e.planned ? " · already sent" : ""}{e.pending ? " · payments left not set" : ""}</span></span>
                 <strong className="num">{money(e.amount)}</strong>
               </div>
             ))}

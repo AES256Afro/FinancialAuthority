@@ -90,6 +90,9 @@ def account_cover(session: Session, today: date, *, saving: dict | None = None) 
     default_id = deposit.id if deposit else None
     debts = session.exec(select(Debt).where(Debt.active == True)).all()  # noqa: E712
     ticks = get_setting(session, SHEET_KEY, {}) or {}
+    from .needsyou import past_due_waiting
+
+    past_due = past_due_waiting(session, today)
     if saving is None:
         from .saving import saving_plan
 
@@ -108,22 +111,26 @@ def account_cover(session: Session, today: date, *, saving: dict | None = None) 
             keep = buffer if a.id == default_id else 0.0
             out_w = []
             running = has
+            # The check's set-aside for the window after stays in the deposit account (the sheet's "Leave in"); what
+            # the window leaves is after it, so Cover, Saving's per-check figure and the plan say one thing (sweep 21).
+            asides = {w.get("start"): float(w.get("set_aside") or 0.0) for w in (saving or {}).get("windows", [])}
             for k, (start, end) in enumerate(windows):
                 items = [e for e in mine if start <= e["date"] <= end]
                 inflow = (p1, float(inp["net_for"](p1))) if (k == 1 and a.id == default_id and inp["has_income"]) else None
                 days = max(0, (end - start).days + (1 if k == 1 else 0))
                 spend = pace * days
-                needs = sum(e["amount"] for e in items) + spend + keep
+                aside = asides.get(start.isoformat(), 0.0) if (k == 1 and a.id == default_id) else 0.0
+                needs = sum(e["amount"] for e in items) + spend + keep + aside
                 start_balance = running
                 low, low_day = _walk(start_balance - keep, items, pace, start, end, inflow, pace_from_start=k == 1)
                 left = start_balance + (inflow[1] if inflow else 0.0) - needs
                 out_w.append({
                     "start": start.isoformat(), "end": end.isoformat(), "has": _money(start_balance), "inflow": _money(inflow[1]) if inflow else 0.0, "has_total": _money(start_balance + (inflow[1] if inflow else 0.0)), "needs": _money(needs),
-                    "bills": _money(sum(e["amount"] for e in items)), "everyday": _money(spend), "buffer": _money(keep), "left": _money(left),
+                    "bills": _money(sum(e["amount"] for e in items)), "everyday": _money(spend), "buffer": _money(keep), "set_aside": _money(aside), "left": _money(left),
                     "low": _money(low), "low_on": low_day.isoformat(),
                     "items": [{"name": e["name"], "amount": e["amount"], "date": e["date"].isoformat(), "kind": e["kind"], "source": e.get("source", "")} for e in items],
                 })
-                running = left + keep  # the buffer is still in the account; the next window keeps it again
+                running = left + keep + aside  # the buffer and the set-aside are still in the account; the next window keeps them again
             w1, w2 = out_w
             if a.balance is None:
                 # No bank has reported this account's balance and none was typed: what it holds is unknown, not $0, so
@@ -134,8 +141,10 @@ def account_cover(session: Session, today: date, *, saving: dict | None = None) 
                 continue
             if w1["left"] < 0:
                 status, headline = "crit", f"Short {_usd(w1['left'])} before {_short(p1)}; the balance runs lowest on {_short(date.fromisoformat(w1['low_on']))}"
+            elif w2["left"] + w2["set_aside"] < 0:
+                status, headline = "warn", f"Covered until {_short(p1)}; the {_short(p1)} check leaves it short {_usd(w2['left'] + w2['set_aside'])} before {_short(p2)}"
             elif w2["left"] < 0:
-                status, headline = "warn", f"Covered until {_short(p1)}; the {_short(p1)} check leaves it short {_usd(w2['left'])} before {_short(p2)}"
+                status, headline = "warn", f"Covered until {_short(p2 - timedelta(days=1))}; the {_short(p1)} check keeps {_usd(w2['left'])} less than the {_short(p2)} window's bills need set aside"
             else:
                 status, headline = "good", f"Covered through {_short(p2 - timedelta(days=1))}; {_usd(w1['left'])} over before {_short(p1)}"
             out_accounts.append({**base, "role": "spend", "status": status, "headline": headline, "deposit": a.id == default_id, "pace_per_day": _money(pace), "windows": out_w})
@@ -168,7 +177,12 @@ def account_cover(session: Session, today: date, *, saving: dict | None = None) 
                 status = "warn"
             else:
                 status = "good"
-            if status != "good" and pay_by and to_target > 0:
+            # A payment of this card's own bill gone past due is said first, as Needs you says it (sweep 21).
+            overdue = [p for p in past_due if p.bill_id in by_bill]
+            if overdue:
+                status = "crit"
+                headline = f"Past due: {_usd(overdue[0].amount)} was due {_short(overdue[0].due_date)}, no payment seen" + (f" (and {len(overdue) - 1} more)" if len(overdue) > 1 else "")
+            elif status != "good" and pay_by and to_target > 0:
                 headline = f"Pay {_usd(to_target)} by {_short(pay_by)} and the {_short(statement)} statement reports under {int(UTILISATION_TARGET * 100)}% used"
             elif mine_pay:
                 headline = f"Next payment {_usd(mine_pay[0]['amount'])} on {_short(mine_pay[0]['date'])}" + (" (the minimum)" if mine_pay[0]["name"].endswith("minimum") else "")

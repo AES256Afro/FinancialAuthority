@@ -27,13 +27,15 @@ def usual_pace(session: Session, today: date, bill_names: set[str]) -> dict:
     the card is paid."""
     since = today - timedelta(days=PACE_DAYS)
     rows = session.exec(select(Transaction).where(Transaction.date >= since, Transaction.date < today)).all()
-    kinds = {a.id: a.kind for a in session.exec(select(Account)).all()}
+    every = session.exec(select(Account)).all()
+    kinds = {a.id: a.kind for a in every}
+    theirs = {a.id for a in every if a.person_id is not None and not a.shared}  # a second person's own spending is theirs, as their balance is
     names = {n.lower() for n in bill_names}
     total = cash_total = card_total = 0.0
     by_account: dict[int, float] = {}
     counted = 0
     for t in rows:
-        if not t.is_spending or t.amount <= 0 or t.category in OBLIGATION_CATEGORIES or t.merchant.lower() in names:
+        if t.account_id in theirs or not t.is_spending or t.amount <= 0 or t.category in OBLIGATION_CATEGORIES or t.merchant.lower() in names:
             continue
         total += t.amount
         by_account[t.account_id] = by_account.get(t.account_id, 0.0) + t.amount
@@ -131,8 +133,10 @@ def _finance_snapshot(session: Session, today: date) -> dict:
     from .borrowing import plan_covers_series
     from .payments import paid_periods, unposted_periods
 
-    bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
-    plans = session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all()  # noqa: E712
+    from .projection import paid_by_household
+
+    bills = paid_by_household(session, session.exec(select(Bill).where(Bill.active == True)).all())  # noqa: E712 - a second person's own pays theirs
+    plans = paid_by_household(session, session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all())  # noqa: E712
     advances = session.exec(select(Advance).where(Advance.repaid == False)).all()  # noqa: E712
     debts = session.exec(select(Debt).where(Debt.active == True)).all()  # noqa: E712
     unconfirmed_rows = session.exec(select(RecurringSeries).where(RecurringSeries.confirmed == False, RecurringSeries.active == True)).all()  # noqa: E712
@@ -359,7 +363,7 @@ NO_BALANCE_WORDS = "No bank has reported a balance yet: link a bank or type what
 def _no_balance(snap: dict, accounts: list) -> None:
     """An account no bank has reported a balance for, and the owner has not typed one into, holds an unknown amount,
     not $0. When no account the plan spends from has a balance, every figure that starts from the balance (cash, safe
-    to spend, the first window's carried-in and what it leaves, the weekly lows) is None and the snapshot says what is
+    to spend, the first window's carried-in and what it leaves, the daily line and its weekly lows) is None and the snapshot says what is
     missing, so no screen, brief or model states a shortfall built on nothing. When some have one, those are counted
     and the others are named."""
     from .projection import is_spendable
@@ -401,6 +405,8 @@ def _no_balance(snap: dict, accounts: list) -> None:
         w["bills"]["small"]["all_funded"] = None
     for wk in snap["calendar"]["weeks"]:
         wk.update(low=None, low_date=None)
+    for pt in snap["projection"]:
+        pt.update(available=None, at_pace=None, cash=None)  # the daily line starts from the balance: drawn from $0 it showed a dip under the cushion
 
 
 def _explain_safe(session: Session, accounts: list, before: list[dict], advances_due: list[dict], next_payday: date, *, buffer: float, advances_before: float,

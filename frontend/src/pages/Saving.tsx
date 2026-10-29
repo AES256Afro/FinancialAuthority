@@ -117,6 +117,9 @@ export function Saving() {
     }
   }
 
+  // A rung's target is the engine's figure on the ladder; the sentence under it names the same one, not the sum it
+  // was rounded up from.
+  const rungTarget = (n: number) => s.rungs.find((r) => r.n === n)?.target;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 1000 }}>
       <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -126,7 +129,7 @@ export function Saving() {
         </div>
         <Ladder s={s} etas={etas} />
         <div style={{ fontSize: 12, color: "var(--ink-2)", maxWidth: "75ch" }}>
-          Each <Link to="/glossary#rung">rung</Link> is one savings goal. Rung 1 is a first cushion, so a surprise comes out of savings instead of an advance. Rung 2 is <span className="num">{money(s.must_pays)}</span>, the bills, card payments and advances of your heavier next check. A month here is <span className="num">{money(s.month)}</span>: your bills and your usual everyday spending.
+          Each <Link to="/glossary#rung">rung</Link> is one savings goal. Rung 1 is a first cushion, so a surprise comes out of savings instead of an advance. Rung 2 is <span className="num">{money(rungTarget(2) ?? s.must_pays)}</span>: the bills, card payments and advances of your heavier next check, <span className="num">{money(s.must_pays)}</span>, rounded up. A month here is <span className="num">{money(s.month)}</span> of bills and usual everyday spending; rung 3 rounds it up to <span className="num">{money(rungTarget(3) ?? s.month)}</span>.
         </div>
       </section>
 
@@ -157,7 +160,7 @@ export function Saving() {
         <div style={{ overflowX: "auto" }}>
           <table className="ledger">
             <thead><tr><th>Paycheck</th><th style={{ textAlign: "right" }}>Leaves after bills and everyday spending</th><th style={{ textAlign: "right" }}>Keep at {s.share_used}%</th></tr></thead>
-            <tbody>{s.per_check.map((p) => <tr key={p.date}><td>{shortDate(p.date)}</td><td className="num" style={{ textAlign: "right", color: p.left < 0 ? "var(--critical-ink)" : "inherit" }}>{money(p.left)}</td><td className="num" style={{ textAlign: "right", fontWeight: 800 }}>{money(p.keep)}</td></tr>)}</tbody>
+            <tbody>{s.per_check.map((p) => <tr key={p.date}><td>{shortDate(p.date)}</td><td className={p.left === null ? undefined : "num"} style={{ textAlign: "right", color: p.left !== null && p.left < 0 ? "var(--critical-ink)" : "inherit" }}>{p.left === null ? "no balance yet" : money(p.left)}</td><td className="num" style={{ textAlign: "right", fontWeight: 800 }}>{money(p.keep)}</td></tr>)}</tbody>
           </table>
         </div>
         <Why label="How the share is worked out" text={`${s.basis} A check that leaves nothing keeps nothing. Nothing moves until you move it.`} />

@@ -36,6 +36,8 @@ interface Search {
   total: number;
   offset: number;
   limit: number;
+  /** Where the next page starts (pass it back as `after`), null on the last page; absent from an older server. */
+  next?: string | null;
   total_amount: number;
   transactions: Row[];
 }
@@ -345,9 +347,11 @@ function Editor({ row, onSaved, onClose, readReceipt }: { row: Row; onSaved: (id
   );
 }
 
-// The table shows a hundred rows at a time, asked of the server one page at a time (offset and limit), so a long
-// ledger is paged to its end; Older and Newer move through the pages. Five hundred at once were over 8,000 elements
-// on a phone.
+// The table shows a hundred rows at a time, asked of the server one page at a time, so a long ledger is paged to its
+// end; Older and Newer move through the pages. Five hundred at once were over 8,000 elements on a phone. A page is
+// asked for from where the page before it ended (the server's `next`, sent back as `after`), so a sync landing
+// between pages never repeats or skips a row; a page with no such cursor (an older server, or a page reached
+// straight from a receipt link) is asked for by its offset.
 const PAGE = 100;
 // Finding the row a receipt link names: the list is read this many rows at a time, up to SEEK_PAGES times.
 const SEEK = 500;
@@ -385,11 +389,24 @@ export function Transactions() {
   }
   const filterKey = filter.toString();
   const [page, setPage] = useState(0);
+  // The cursor each page starts from, learnt from the `next` of the page before it.
+  const [cursors, setCursors] = useState<Record<number, string>>({});
+  const after = page > 0 ? cursors[page] : undefined;
   const params = new URLSearchParams(filter);
   params.set("limit", String(PAGE));
-  params.set("offset", String(page * PAGE));
+  if (after) params.set("after", after);
+  else params.set("offset", String(page * PAGE));
   const path = `/api/v1/transactions/search?${params}`;
   const { data, error, reload } = useApi<Search>(path);
+  // Which page the rows on screen are: an answer only arrives for the page asked for last, so it is that page.
+  const shownPage = useRef(-1);
+  useEffect(() => {
+    if (!data) return;
+    shownPage.current = page;
+    const next = data.next;
+    if (next) setCursors((c) => (c[page + 1] === next ? c : { ...c, [page + 1]: next }));
+    // Only an answer arriving moves this on: the page it was asked for is the page in state then.
+  }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
   const rows = data?.transactions ?? NO_ROWS;
   const onPage = rows;
   const total = data?.total ?? rows.length;
@@ -414,6 +431,7 @@ export function Transactions() {
     setOpenId(null);
     setSaid(null);
     setPage(0);
+    setCursors({});
   }, [filterKey]);
 
   const shownIds = useMemo(() => new Set(onPage.map((r) => r.id)), [onPage]);
@@ -463,7 +481,7 @@ export function Transactions() {
   // Its page loaded: the row opens and takes the focus.
   useEffect(() => {
     const id = focusId;
-    if (id === null || !data || data.offset !== page * PAGE) return;
+    if (id === null || !data || shownPage.current !== page) return;
     setFocusId(null);
     if (!data.transactions.some((r) => r.id === id)) return;
     setOpenId(id);
@@ -736,7 +754,7 @@ export function Transactions() {
                 ))}
               </tbody>
             </table>
-            {total > PAGE && <Pages page={page} count={total} onPage={turnPage} />}
+            {total > PAGE && <Pages page={page} count={total} more={data && data.next !== undefined ? data.next !== null : undefined} onPage={turnPage} />}
           </>
         )}
       </div>
@@ -745,8 +763,9 @@ export function Transactions() {
 }
 
 /** Newer and Older through the server's pages: which hundred is on screen, of how many match. */
-function Pages({ page, count, onPage }: { page: number; count: number; onPage: (page: number) => void }) {
-  const last = Math.ceil(count / PAGE) - 1;
+function Pages({ page, count, more, onPage }: { page: number; count: number; more?: boolean; onPage: (page: number) => void }) {
+  // A server that pages by cursor says whether there is an older page; an older one is read from the count.
+  const last = more === undefined ? Math.ceil(count / PAGE) - 1 : more ? page + 1 : page;
   return (
     <nav aria-label="Pages of rows" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 10, fontSize: 13 }}>
       <button type="button" className="btn" disabled={page === 0} onClick={() => onPage(page - 1)} style={SMALL}>Newer</button>

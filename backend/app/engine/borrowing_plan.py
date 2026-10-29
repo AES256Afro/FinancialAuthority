@@ -66,7 +66,14 @@ def payoff_estimate(payments: list[dict[str, Any]], apr: float | None, today: da
     return _money(sum(e["amount"] / (1 + r) ** _months_from(start, e["date"]) for e in payments))
 
 
+def _signed(v: float) -> str:
+    """-$383.00, the sign before the dollar, as the recap says money (never "$-383.00")."""
+    return f"{'-' if v < 0 else ''}${abs(v):,.2f}"
+
+
 def borrowing_plan(session: Session, today: date) -> dict[str, Any]:
+    from .reports import _plan_month
+
     plans = [p for p in session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all() if p.remaining > 0]  # noqa: E712
     loans = []
     for p in plans:
@@ -79,7 +86,7 @@ def borrowing_plan(session: Session, today: date) -> dict[str, Any]:
         loans.append({
             "id": p.id, "name": p.merchant or p.provider, "lender": plan_provider(p), "next_date": pays[0]["date"], "next_amount": _money(pays[0]["amount"]),
             "payments_left": len(pays), "ends": pays[-1]["date"], "left_to_pay": left, "payoff_estimate": payoff, "interest_ahead": interest,
-            "apr": p.apr, "autopay": p.autopay,
+            "apr": p.apr, "autopay": p.autopay, "per_month": _plan_month(p),  # the one monthly figure Debts and Borrowing give it; the stairs are each month's own dates
             "payments": pays, "source": f"plan:{p.id}", "dates_from_lender": not p.dates_estimated,
         })
     loans.sort(key=lambda l: (l["ends"], l["name"]))
@@ -161,7 +168,7 @@ def borrowing_plan(session: Session, today: date) -> dict[str, Any]:
         steps.append({"kind": "finish", "text": line, "sources": [l["source"] for l in finish]})
     if room is not None:
         if room["short_now"]:
-            text = (f"Right now there is no room beyond the schedule: this paycheck runs short (safe to spend ${room['safe_now']:,.2f}). Keep to step one; "
+            text = (f"Right now there is no room beyond the schedule: this paycheck runs short (safe to spend {_signed(room['safe_now'])}). Keep to step one; "
                     + (f"the money that frees up from {_month(freed_from['month'])} is the first to put toward the next step." if freed_from and freed_from["freed"] > 0 else "room can come from moving a bill or pausing a goal on Cover."))
         elif room["least_after_a_payday"] <= 0:
             text = f"After bills, payments and your usual ${room['per_day']:,.2f} a day, the leanest paycheck has nothing left over, so the plan is step one until the stairs step down."

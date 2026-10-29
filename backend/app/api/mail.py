@@ -17,7 +17,7 @@ from ..connectors.mail import MailConnector, account_password, folder_list, safe
 from ..db import get_session
 from ..engine import facts
 from ..engine.recurring import merchant_key
-from ..mail.box import box_untrusted
+from ..mail.box import MAIL_WORDS, box_fields, box_untrusted
 from ..mail.imap import check_credential, parse_message
 from ..models import Account, Bill, ExtractedFact, InstallmentPlan, MailAccount, MessageRef
 from .routes import today
@@ -225,18 +225,21 @@ def message_out(m: MessageRef, labels: dict[int, str]) -> dict:
 
 
 @router.get("/mail/messages")
-def search_messages(q: str | None = None, sender: str | None = None, kind: str | None = None, limit: int = Query(30, ge=1, le=200), session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+def search_messages(q: str | None = None, sender: str | None = None, kind: str | None = None, limit: int = Query(30, ge=1, le=200), session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
     query = select(MessageRef)
     if q:
-        like = f"%{q}%"
-        query = query.where((MessageRef.subject.ilike(like)) | (MessageRef.sender.ilike(like)) | (MessageRef.sender_name.ilike(like)) | (MessageRef.snippet.ilike(like)))
+        like = services.contains(q)  # % and _ as typed, not wildcards
+        query = query.where((MessageRef.subject.ilike(like, escape="\\")) | (MessageRef.sender.ilike(like, escape="\\")) | (MessageRef.sender_name.ilike(like, escape="\\")) | (MessageRef.snippet.ilike(like, escape="\\")))
     if sender:
-        query = query.where(MessageRef.sender.ilike(f"%{sender}%"))
+        query = query.where(MessageRef.sender.ilike(services.contains(sender), escape="\\"))
     if kind:
         query = query.where(MessageRef.kind == kind)
     rows = session.exec(query.order_by(MessageRef.date.desc(), MessageRef.id.desc()).limit(limit)).all()
     labels = {a.id: a.label for a in session.exec(select(MailAccount)).all()}
-    return {"returned": len(rows), "messages": [message_out(m, labels) for m in rows]}
+    messages = [message_out(m, labels) for m in rows]
+    if principal.kind == "key":  # a key or a connected app reads the sender's words boxed, as mail_search frames them
+        return {"returned": len(rows), "messages": [box_fields(m, f"message {m['id']}") for m in messages], "how": MAIL_WORDS}
+    return {"returned": len(rows), "messages": messages}
 
 
 def fetch_parsed(session: Session, message_id: int):  # noqa: ANN201
@@ -297,16 +300,19 @@ def read_attachment(message_id: int, name: str, session: Session = Depends(get_s
 
 
 @router.get("/mail/messages/{message_id}")
-def read_message(message_id: int, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+def read_message(message_id: int, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
     ref, account, parsed = fetch_parsed(session, message_id)
     facts = session.exec(select(ExtractedFact).where(ExtractedFact.message_ref_id == ref.id)).all()
     labels = {account.id: account.label}
-    return {
+    out = {
         **message_out(ref, labels),
         "boxed": box_untrusted(parsed.text, f"{parsed.sender_name or parsed.sender} ({account.label})"),
         "attachments": [{"name": a.name, "content_type": a.content_type, "size": a.size} for a in parsed.attachments],
         "facts": [fact_out(f, ref) for f in facts],
     }
+    if principal.kind == "key":  # the headers and the facts boxed too; the body already is
+        return {**box_fields(out, f"message {ref.id}"), "how": MAIL_WORDS}
+    return out
 
 
 # ---- facts ---------------------------------------------------------------------------------
@@ -363,6 +369,8 @@ def list_facts(status: str | None = "pending", limit: int = Query(50, ge=1, le=5
             item["resolved_at"] = fact.resolved_at.isoformat() if fact.resolved_at else None
             item["undoable"] = facts.undoable(fact)
     pending = len(session.exec(select(ExtractedFact.id).where(ExtractedFact.status == "pending")).all())
+    if principal.kind == "key":  # a key or a connected app reads the sender's words boxed, as facts_list frames them
+        return {"facts": [box_fields(item, f"fact {item['id']}") for item in rows], "pending": pending, "how": MAIL_WORDS}
     return {"facts": rows, "pending": pending}
 
 
@@ -571,6 +579,30 @@ def _apply_receipt(session: Session, fact: ExtractedFact, ref: MessageRef | None
     return f"document:{doc.id}"
 
 
+def told_owner(client: str, confirmed: list[tuple[str, int, str]]) -> None:
+    """Facts a key or a connected app confirmed, pushed to the owner with where each went, so a confirmation the owner
+    did not make is seen the day it happens and can be undone (the bill, plan or paystub it made). Every way a key
+    confirms (the MCP tool, the fact's own route, the batch on Needs you) pushes; a push that fails never undoes or
+    fails the confirmation."""
+    import logging
+
+    from .. import notify
+    from ..db import session_scope
+
+    if not confirmed:
+        return
+    words = {"bill_due": "a bill", "paystub": "a paystub", "installment": "a pay-later plan", "investment_balance": "a statement balance", "receipt": "a receipt"}
+    kind, fact_id, applied = confirmed[0]
+    what = words.get(kind, f"a {kind.replace('_', ' ')}") if len(confirmed) == 1 else f"{len(confirmed)} items"
+    said = (f"Fact {fact_id}{f' became {applied}' if applied else ' was marked confirmed'}." if len(confirmed) == 1
+            else "Facts " + ", ".join(f"{i}{f' ({a})' if a else ''}" for _k, i, a in confirmed[:20]) + ("" if len(confirmed) <= 20 else ", and more") + ".")
+    try:
+        with session_scope() as session:
+            notify.send(session, f"{(client or 'A connected app')[:60]} confirmed {what} from the mail", f"{said} If you did not want it, undo it on Needs you; the activity log lists every call.", tags=["memo"], link="/confirm")
+    except Exception:  # noqa: BLE001
+        logging.getLogger(__name__).warning("could not push the confirmation of fact %s", fact_id)
+
+
 @router.post("/facts/{fact_id}/confirm")
 def confirm_fact(fact_id: int, body: ConfirmIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_scope("confirm"))) -> dict:
     from ..jobs.writing import one_writer
@@ -589,6 +621,8 @@ def confirm_fact(fact_id: int, body: ConfirmIn, session: Session = Depends(get_s
         facts.resolve_fact(session, fact, "applied" if applied else "confirmed", applied_to=applied, by=facts.who(principal), before=b)
         session.commit()
         session.refresh(fact)
+    if principal.kind == "key":  # a key or a connected app: the owner hears of it, as from the MCP tool
+        told_owner(principal.name, [(fact.kind, fact.id, applied)])
     if applied:
         from ..llm.reviewer import mark_pending
 

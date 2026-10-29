@@ -180,19 +180,14 @@ def feed_revoke(session: Session = Depends(get_session), principal: auth.Princip
 
 
 _hits: dict[str, list[float]] = {}
-FEED_LIMIT = 60  # requests an hour, per address
+FEED_LIMIT = 60  # requests an hour: wrong addresses per caller, and the right one on its own count
 
 
-@router.get("/api/calendar/{token}.ics", include_in_schema=False)
-def feed(token: str, request: Request, session: Session = Depends(get_session)) -> Response:
-    # Per address: the forwarded one behind a proxy the owner named, else the peer (or, with a forwarding header
-    # and no proxy named, one shared count). Counted by the token instead, every wrong guess opened a fresh count,
-    # so a guesser behind the tunnel was never slowed and the table grew with every try.
-    key = "feed:" + auth._client_ip(request)
-    now = time.time()
+def _allow(key: str, now: float) -> bool:
     recent = [t for t in _hits.get(key, []) if now - t < 3600]
     if len(recent) >= FEED_LIMIT:
-        raise HTTPException(429, "Too many requests")
+        _hits[key] = recent
+        return False
     _hits[key] = [*recent, now]
     if len(_hits) > 5000:  # strangers never grow the table without end: the quiet go first, then the oldest
         for k in [k for k, v in _hits.items() if not v or now - v[-1] > 3600]:
@@ -200,8 +195,20 @@ def feed(token: str, request: Request, session: Session = Depends(get_session)) 
         if len(_hits) > 5000:
             for k in sorted(_hits, key=lambda k: _hits[k][-1])[: len(_hits) - 5000]:
                 _hits.pop(k, None)
+    return True
+
+
+@router.get("/api/calendar/{token}.ics", include_in_schema=False)
+def feed(token: str, request: Request, session: Session = Depends(get_session)) -> Response:
+    # A wrong address is counted per caller: the forwarded one behind a proxy the owner named, else the peer (or, with
+    # a forwarding header and no proxy named, one shared count), so a guesser is slowed wherever it guesses from. The
+    # right address has a count of its own: counted with the guesses, a stranger's sixty wrong tries an hour through
+    # the same proxy (all one "forwarded" caller) shut the owner's own calendar out.
     feed_cfg = get_setting(session, FEED_KEY, {}) or {}
-    if not feed_cfg.get("hash") or len(token) < 30 or not secrets.compare_digest(_hash(token), feed_cfg["hash"]):
+    right = bool(feed_cfg.get("hash")) and len(token) >= 30 and secrets.compare_digest(_hash(token), feed_cfg["hash"])
+    if not _allow("feed:the-feed" if right else "feed:" + auth._client_ip(request), time.time()):
+        raise HTTPException(429, "Too many requests")
+    if not right:
         raise HTTPException(404, "Not found")
     brand = ((get_setting(session, "appearance", {}) or {}).get("brand") or {}).get("name") or "FinancialAuthority"
     body = data_formats.calendar(session, today(), amounts=bool(feed_cfg.get("amounts")), name=brand)

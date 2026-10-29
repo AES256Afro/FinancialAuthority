@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
 from .inputs import In
+from .routes import under_writer
 from .. import auth, crypto
 from ..config import settings
 from ..connectors import CONNECTORS
@@ -335,6 +336,7 @@ class ShowsIn(In):
 
 
 @router.post("/accounts/{account_id}/shows")
+@under_writer
 def bank_shows(account_id: int, body: ShowsIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     """The owner types the balance their bank's own screen shows now (checking: the available balance; a card: what
     is owed). It stands until the bank sends newer data, at most a day, since a bank's feed can run behind."""
@@ -355,6 +357,7 @@ def bank_shows(account_id: int, body: ShowsIn, session: Session = Depends(get_se
 
 
 @router.delete("/accounts/{account_id}/shows")
+@under_writer
 def bank_shows_clear(account_id: int, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     """Take a typed balance back: the bank's own last figure is the balance again."""
     from .. import services

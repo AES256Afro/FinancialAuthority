@@ -1,7 +1,7 @@
 // Transit map: bills as stations on three lines across four weeks, paydays as the interchanges.
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { money, monthDay, parseIso, shortDate } from "../format";
+import { eventDay, money, monthDay, parseIso, shortDate } from "../format";
 import { palette } from "../looks";
 import { getPrefs } from "../prefs";
 import type { Event } from "../types";
@@ -69,7 +69,7 @@ export function TransitMap({ snapshot }: ViewProps) {
               <tbody>
                 {events.map((e, i) => (
                   <tr key={`${e.source}-${e.date}-${i}`}>
-                    <td style={{ whiteSpace: "nowrap" }}>{shortDate(e.date)}</td>
+                    <td style={{ whiteSpace: "nowrap" }}>{e.kind === "paycheck" ? shortDate(e.date) : eventDay(e)}</td>
                     <td>{e.kind === "paycheck" ? "Payday" : e.name}</td>
                     <td style={{ color: "var(--ink-2)" }}>{e.kind === "paycheck" ? "every line" : lineName(lineOf(e))}</td>
                     <td className="num" style={{ textAlign: "right" }}>{e.kind === "paycheck" ? money(-e.amount, { sign: true }) : money(e.amount)}</td>
@@ -127,7 +127,7 @@ export function TransitMap({ snapshot }: ViewProps) {
         {next && (
           <div className="card" style={{ flex: "1 1 300px", padding: "12px 16px", display: "flex", gap: 12, alignItems: "center" }}>
             <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true" style={{ flexShrink: 0 }}><circle cx="17" cy="17" r="14" fill={c.surface} stroke={lineColor[lineOf(next)]} strokeWidth="4" /></svg>
-            <div><h3 className="lab" style={{ margin: 0 }}>Next stop</h3><strong>{next.name} <span className="num">{money(next.amount)}</span> · {shortDate(next.date)}</strong><div style={{ fontSize: 12, color: "var(--ink-2)" }}>{next.autopay ? "Autopay." : "Pay it yourself."} {next.funded === false ? "Not yet funded." : "Funded."}</div></div>
+            <div><h3 className="lab" style={{ margin: 0 }}>Next stop</h3><strong>{next.name} <span className="num">{money(next.amount)}</span> · {eventDay(next)}</strong><div style={{ fontSize: 12, color: "var(--ink-2)" }}>{next.autopay ? "Autopay." : "Pay it yourself."} {next.funded === false ? "Not yet funded." : "Funded."}</div></div>
           </div>
         )}
         {biggest && (

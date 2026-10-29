@@ -153,11 +153,34 @@ def verdict(difference: float | None) -> dict:
     return {"status": "good", "short": False, "word": "Take-home pay matches the usual"}
 
 
-def paystubs_overview(session: Session, limit: int = 8) -> dict:
-    rows = session.exec(select(Paystub).order_by(Paystub.pay_date.desc()).limit(limit)).all()
+def lines_moved(p: Paystub, before: Paystub | None) -> list[dict]:
+    """The lines that differ from the stub before: hours, gross and each deduction by name, so a short check says why."""
+    if before is None:
+        return []
     out = []
-    for p in rows:
+    if p.hours is not None and before.hours is not None and abs(p.hours - before.hours) >= 0.01:
+        out.append({"name": "Hours", "before": before.hours, "after": p.hours, "change": round(p.hours - before.hours, 2)})
+    pairs = [("Gross pay", before.gross, p.gross)]
+    was = {str(d.get("name")): float(d.get("amount") or 0.0) for d in json.loads(before.deductions or "[]")}
+    now = {str(d.get("name")): float(d.get("amount") or 0.0) for d in json.loads(p.deductions or "[]")}
+    pairs += [(name, was.get(name), now.get(name)) for name in dict.fromkeys([*was, *now])]
+    for name, a, b in pairs:
+        if a is None and b is None:
+            continue
+        a, b = a or 0.0, b or 0.0
+        if abs(b - a) >= 1.0:  # cents of rounding are not a line that moved
+            out.append({"name": name, "before": round(a, 2), "after": round(b, 2), "change": round(b - a, 2)})
+    return out
+
+
+def paystubs_overview(session: Session, limit: int = 8) -> dict:
+    rows = session.exec(select(Paystub).order_by(Paystub.pay_date.desc()).limit(limit + 1)).all()
+    older = rows[1:]
+    rows = rows[:limit]
+    out = []
+    for i, p in enumerate(rows):
         row = paystub_out(p)
+        row["moved"] = lines_moved(p, older[i] if i < len(older) else None)  # PLAN 7: a discrepancy is flagged with the lines that moved
         kept = session.exec(select(Document).where(Document.attach_to == f"paystub:{p.id}")).first()
         row["document_id"] = kept.id if kept else None
         usual = expected_net(session, p.pay_date)  # judged afresh, by position of the month, against what is known now

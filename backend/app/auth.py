@@ -60,6 +60,23 @@ def open_install_problem() -> str | None:
             "Set FA_PASSWORD (compose: in .env; BoxPilot generates it), or FA_DEMO=true to look around with the example household.")
 
 
+def open_demo_problem(session: Session) -> str | None:
+    """Why an installed copy in demo mode must not start open: FA_DEMO lets it run without a password because the
+    example household holds nothing real, and the refusal above names FA_DEMO as the way to look around. A database
+    that holds anything the example household does not (an account or a row of the owner's, a paystub, a mailbox, a
+    bank link, a kept document) is real, and is not served to anyone who reaches the port."""
+    if auth_enabled() or not settings.demo or not settings.install:
+        return None
+    from .models import Account, BankLink, Document, MailAccount, Paystub, Transaction
+
+    real = (select(Account.id).where(Account.connector != "demo"), select(Transaction.id).where(Transaction.source != "demo"), select(Paystub.id).where(Paystub.source != "demo"),
+            select(MailAccount.id), select(BankLink.id), select(Document.id))
+    if not any(session.exec(query.limit(1)).first() is not None for query in real):
+        return None
+    return (f"FA_DEMO is on with FA_PASSWORD empty on this {settings.install} install, and the database holds data that is not the example household's, "
+            "so anyone who reaches the port would see it as the owner. Set FA_PASSWORD (compose: in .env; BoxPilot generates it), or point FA_DATA_DIR at an empty folder for the demo.")
+
+
 def _serializer() -> URLSafeTimedSerializer:
     secret = settings.signing_secret()
     return URLSafeTimedSerializer(secret, salt="fa-session-v1")
@@ -535,7 +552,8 @@ def note_public_sighting(request: Request, session: Session) -> None:
 @router.get("/me")
 def me(request: Request, session: Session = Depends(get_session)) -> dict:
     principal = principal_from_request(request, session)
-    if principal is None:
+    if principal is None or principal.kind == "key":
+        # A sign-in's own page: a key or a connected app learns nothing here (it named the owner's sign-in username).
         raise HTTPException(401, "Not signed in")
     note_public_sighting(request, session)
     return {"kind": principal.kind, "name": principal.name, "scopes": sorted(principal.scopes), "auth_enabled": auth_enabled(), "person_id": principal.person_id,
