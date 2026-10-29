@@ -9,9 +9,10 @@ import { api, useApi, type ApiError, type Loaded } from "../api";
 import { Approvals } from "../components/Approvals";
 import { ConfirmButton } from "../components/ConfirmButton";
 import { PurchaseChoices, dayWord } from "../components/Documents";
+import { PAST_DUE_WORDS, PaidQuestions, type PastDueRow } from "../components/PaidQuestions";
 import { Empty, Failed, Loading, Said, useJumpToHash } from "../components/State";
 import { SeverityTag } from "../components/Status";
-import { amountClass, localToday, money, ordinal, parseMoney, shortDate, when } from "../format";
+import { amountClass, money, ordinal, parseMoney, shortDate, when } from "../format";
 import type { DocumentTermsFields, FactRow, PairRow, PairSide, PairsOut, SeriesRow, Snapshot } from "../types";
 import type { FactWithCandidates, ReceiptFields } from "../types-receipts";
 
@@ -40,17 +41,13 @@ const alreadyDone = (e: unknown): Done | null => ((e as ApiError).status === 409
 
 // What waits, as the app groups it (M44). Every count here is the app's; the screen only lays them out.
 interface NeedsGroup { kind: string; words: string; count: number; complete: number; one_at_a_time: boolean; items: (FactRow & { complete: boolean })[] }
-interface PaidCandidate { id: number; date: string; merchant: string; amount: number; account: string; source: string }
-interface PastDueRow { payment_id: number; bill_id: number; name: string; amount: number; due_date: string; days_late: number; autopay: boolean; candidates: PaidCandidate[]; source: string }
 interface NeedsYouOut { as_of: string; groups: NeedsGroup[]; past_due: PastDueRow[]; total: number; word: string }
 interface ManyOut { done: { id: number; applied_to: string }[]; failed: { id: number; error: string }[]; said: string }
 interface ManyPlan { apply: number; set_aside: number; own_card: number; updates: string[]; adds: string[]; said: string }
 // A long list goes in parts, so one answer never waits on a hundred mail fetches; the server judges each part
 // against every notice it holds, so the parts add up to the same result.
 const PART = 25;
-type PaidAnswer = { answer: "paid" | "not_yet" | "stopped"; transaction_id?: number; paid_on?: string };
 
-const PAST_DUE_WORDS = "Bills with no payment seen";
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /** The picture first: one bar per kind of thing that waits, as long as how many wait, each with its words and its
@@ -193,86 +190,6 @@ function Together({ state, onAnswered, onSaid }: { state: Loaded<NeedsYouOut>; o
   );
 }
 
-/** One bill the bank shows no payment for: when it was due, how much, how late, the payments that might be it (the
- * app's, the closest amount and date first), and the four answers. */
-function PaidCard({ p, onDone }: { p: PastDueRow; onDone: (text: string, answer: PaidAnswer["answer"]) => void }) {
-  const [choice, setChoice] = useState<number | null>(p.candidates[0]?.id ?? null);
-  const [paidOn, setPaidOn] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const late = p.days_late <= 0 ? "Due today" : `${plural(p.days_late, "day", "days")} late`;
-
-  async function send(body: PaidAnswer) {
-    const r = await api<{ said: string }>(`/api/v1/needs-you/payments/${p.payment_id}`, { method: "POST", body: JSON.stringify(body) });
-    onDone(r.said, body.answer);
-  }
-  async function answer(body: PaidAnswer) {
-    setBusy(true);
-    setError(null);
-    try {
-      await send(body);
-    } catch (e) {
-      setError(`Couldn't save your answer: ${(e as Error).message}`);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="card" style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
-          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, overflowWrap: "anywhere" }}>{p.name}</h3>
-          <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 12, color: "var(--ink-2)" }}>
-            <SeverityTag severity="critical" word={late} />
-            <span>Was due {shortDate(p.due_date)}{p.autopay ? " · set to pay automatically (autopay)" : ""}</span>
-          </span>
-        </div>
-        <strong className="num" style={{ fontSize: 18 }}>{money(p.amount, { cents: true })}</strong>
-      </div>
-      {p.candidates.length > 0 ? (
-        <PurchaseChoices name={`payment-${p.payment_id}`} legend="The payment that might be it (the closest amount and date first)" list={p.candidates.map((c) => ({ ...c, named: false, has_receipt: false }))} value={choice} onPick={setChoice} />
-      ) : (
-        <div style={{ fontSize: 13, color: "var(--ink-2)" }}>No payment with a close amount was found in your transactions near the due date.</div>
-      )}
-      <label style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
-        <span className="lab">If you paid another way: the day you paid (empty means today)</span>
-        <input className="input" type="date" value={paidOn} max={localToday()} onChange={(e) => setPaidOn(e.target.value)} />
-      </label>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
-        {p.candidates.length > 0 && <button className="btn dark" type="button" disabled={busy || choice === null} onClick={() => choice !== null && answer({ answer: "paid", transaction_id: choice })}>Paid with this one</button>}
-        <button className="btn" type="button" disabled={busy} onClick={() => answer({ answer: "paid", paid_on: paidOn || undefined })}>Paid another way</button>
-        <button className="btn" type="button" disabled={busy} onClick={() => answer({ answer: "not_yet" })}>Not paid yet</button>
-        <ConfirmButton label="This bill has stopped" question={`${p.name} has stopped? It is no longer counted from ${shortDate(p.due_date)} on.`} yes="Yes, it has stopped" no="Keep counting it" onConfirm={() => send({ answer: "stopped" })} />
-      </div>
-      <Said text={error} tone="error" />
-    </div>
-  );
-}
-
-function PaidQuestions({ state, onAnswered }: { state: Loaded<NeedsYouOut>; onAnswered: () => void }) {
-  const [said, setSaid] = useState<Done | null>(null);
-  const list = state.data?.past_due ?? [];
-  if (list.length === 0 && !said) return null;
-  return (
-    <>
-      <h2 className="lab" style={{ margin: "6px 0 0" }}>{PAST_DUE_WORDS}: is it paid? · {list.length}</h2>
-      <DoneLine done={said} />
-      {list.map((p) => (
-        <PaidCard
-          key={p.payment_id}
-          p={p}
-          onDone={(text, answer) => {
-            // "Not paid yet" keeps the card; its sentence does not name the bill, so the name goes first.
-            setSaid({ text: answer === "not_yet" ? `${p.name}: ${text}` : text, to: "/bills", link: "See it on Bills" });
-            state.reload();
-            onAnswered();
-          }}
-        />
-      ))}
-    </>
-  );
-}
 
 // The terms a lease or a charge sheet states, in the order a person reads a lease, each in plain words.
 type TermKey = keyof DocumentTermsFields["terms"];
@@ -451,7 +368,7 @@ function FactCard({ f, onDone }: { f: FactRow; onDone: (done: Done) => void }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
         <div>
           <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{FACT_LABEL[f.kind] ?? f.kind}{who ? ` · ${who}` : ""}</h3>
-          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{f.message?.subject}{f.message?.date ? ` · ${when(f.message.date)}` : ""} · from mail{via ? ` via ${via}` : ""} · {Math.round(f.confidence * 100)}% sure</div>
+          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{f.message ? `${f.message.subject}${f.message.date ? ` · ${when(f.message.date)}` : ""} · from mail` : `${String(f.fields.attachment || "a file")} · ${f.fields.source === "upload" ? "added here" : "from the import folder"}`}{via ? ` via ${via}` : ""} · {Math.round(f.confidence * 100)}% sure</div>
         </div>
         {f.fields.amount !== undefined && <strong className="num" style={{ fontSize: 18 }}>{money(Number(f.fields.amount), { cents: true })}</strong>}
       </div>
@@ -461,7 +378,7 @@ function FactCard({ f, onDone }: { f: FactRow; onDone: (done: Done) => void }) {
         </div>
       ) : (
         <div style={{ background: "var(--surface-2)", borderRadius: 10, padding: "10px 12px", fontSize: 12, color: "var(--ink-2)", lineHeight: 1.45 }}>
-          <span className="lab" style={{ display: "block", marginBottom: 4 }}>Quoted from the email. Anything it asks the app to do is ignored.</span>“{f.excerpt}”
+          <span className="lab" style={{ display: "block", marginBottom: 4 }}>Quoted from the {f.message ? "email" : "document"}. Anything it asks the app to do is ignored.</span>“{f.excerpt}”
         </div>
       )}
       {f.message?.trust === "crit" && (

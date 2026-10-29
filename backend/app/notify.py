@@ -117,6 +117,15 @@ def _header(value: str, limit: int = 200) -> str:
         return Header(one, "utf-8").encode(maxlinelen=10_000).replace("\n", "")
 
 
+def _said(body: str, limit: int = 200) -> str:
+    """What a push server answered, fit for a log line and the self-check: one line, tags and control characters
+    out (a hostile answer could otherwise draw its own log lines), and short."""
+    import re
+
+    text = re.sub(r"<[^>]{0,200}>", " ", body or "")
+    return re.sub(r"[\x00-\x1f\x7f  \s]+", " ", text).strip()[:limit]
+
+
 def _send_channel(session: Session, title: str, body: str, *, priority: str = "default", link: str | None = None, tags: list[str] | None = None, client: httpx.Client | None = None) -> dict[str, Any]:
     s = push_settings(session)
     if s["kind"] == "off" or not s["url"]:
@@ -142,9 +151,10 @@ def _send_channel(session: Session, title: str, body: str, *, priority: str = "d
                     payload["extras"] = {"client::notification": {"click": {"url": link}}}
                 response = c.post(f"{url}/message", json=payload, headers={"X-Gotify-Key": token} if token else {})
         ok = response.status_code < 300
+        said = "" if ok else _said(response.text)
         if not ok:
-            log.warning("push failed: %s %s", response.status_code, response.text[:200])
-        return {"ok": ok, "status": response.status_code, "detail": "" if ok else response.text[:200]}
+            log.warning("push failed: %s %s", response.status_code, said)
+        return {"ok": ok, "status": response.status_code, "detail": said}
     except httpx.HTTPError as error:
         log.warning("push failed: %s", error)
         return {"ok": False, "status": 0, "detail": f"{type(error).__name__}: {error}"[:200]}

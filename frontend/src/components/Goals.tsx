@@ -124,6 +124,7 @@ export function Goals({ onChanged }: { onChanged?: () => void }) {
   const [name, setName] = useState("");
   const [target, setTarget] = useState("");
   const [when, setWhen] = useState("");
+  const [kind, setKind] = useState<"save" | "paydown">("save");
   const [fund, setFund] = useState<Record<number, string>>({});
   const [addSaid, setAddSaid] = useState<{ text: string; tone: "info" | "error" } | null>(null);
   const [fundSaid, setFundSaid] = useState<Record<number, { text: string; tone: "info" | "error" }>>({});
@@ -136,7 +137,7 @@ export function Goals({ onChanged }: { onChanged?: () => void }) {
       return;
     }
     try {
-      await api("/api/v1/goals", { method: "POST", body: JSON.stringify({ name, target: amount, target_date: when || null }) });
+      await api("/api/v1/goals", { method: "POST", body: JSON.stringify({ name, kind, target: amount, target_date: when || null }) });
       setName("");
       setTarget("");
       setWhen("");
@@ -191,6 +192,13 @@ export function Goals({ onChanged }: { onChanged?: () => void }) {
             <input className="input num" inputMode="decimal" value={target} onChange={(e) => setTarget(e.target.value)} placeholder="1200" required style={{ minHeight: 34, padding: "4px 10px" }} />
           </label>
           <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            <span className="lab">What it is</span>
+            <select className="input" value={kind} onChange={(e) => setKind(e.target.value as "save" | "paydown")} style={{ minHeight: 34, padding: "4px 10px" }}>
+              <option value="save">Save up</option>
+              <option value="paydown">Pay down a debt</option>
+            </select>
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
             <span className="lab">By when (if you have a date)</span>
             <input className="input" type="date" value={when} onChange={(e) => setWhen(e.target.value)} style={{ minHeight: 34, padding: "4px 10px" }} />
           </label>
@@ -206,6 +214,7 @@ export function Goals({ onChanged }: { onChanged?: () => void }) {
           <div key={g.id} style={{ display: "flex", flexDirection: "column", gap: 6, borderTop: "1px solid var(--surface-2)", paddingTop: 8 }}>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 13 }}>
               <strong>{g.name}</strong>
+              {g.kind === "paydown" && <span className="lab">pay down</span>}
               <span className="num" style={{ color: "var(--ink-2)" }}>{money(g.funded)} of {money(g.target)}{g.target_date ? ` by ${shortDate(g.target_date)}` : ""}</span>
               {g.remaining <= 0 ? (
                 <StatusPill status="good">Done</StatusPill>

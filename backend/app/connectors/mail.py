@@ -75,6 +75,12 @@ def explain_error(host: str, error: Exception) -> str:
             return "The Bridge is not answering. It may still be starting; if this stays, start it again on the server (the command is under Mailboxes on Connectors)."
     if host in ("127.0.0.1", "localhost", "::1") and isinstance(error, ConnectionRefusedError):
         return "Nothing answers at 127.0.0.1 from inside the app. For Proton, the host is bridge: the Bridge's own screen says 127.0.0.1 because it speaks from inside its container."
+    if isinstance(error, socket.gaierror):
+        return f"The mail server's address could not be found ({host}). Check the host name."
+    if isinstance(error, ConnectionRefusedError):
+        return f"Nothing answers at {host} on that port. Check the port, and whether the server wants SSL or STARTTLS."
+    if isinstance(error, TimeoutError):
+        return f"The mail server at {host} did not answer in time. Check the host and the port; it may be unreachable from the server."
     if signin_refused(error):
         if host == "bridge" and re.search(r"no such user", str(error), re.IGNORECASE):
             return "The Bridge has no account signed in: it needs your one sign-in on the server (the two commands are under Mailboxes on Connectors), then Sync now."
@@ -183,7 +189,12 @@ def handle_message(session: Session, account: MailAccount, folder: str, uid: int
     if kind == "upcoming_bills":
         outcome.update(upcoming_bills_facts(session, ref, parsed, today, produced_by))
         return outcome
-    # A PDF attachment that reads like a paystub becomes a paystub fact whatever the subject said.
+    # A PDF attachment that is a lender's statement (Affirm's Loans Statement) lands on the plans at once, as it does
+    # from the import folder; one that reads like a paystub becomes a paystub fact, whatever the subject said.
+    statement = statement_from_attachments(session, parsed, today, produced_by)
+    if statement:
+        outcome.update(fact="applied", kind="statement", note=f"a lender's statement, {statement['loans']} loans landed")
+        return outcome
     stub_fact = paystub_from_attachments(session, ref, parsed, today, produced_by)
     if stub_fact and kind in ("none", "paystub", "statement"):
         outcome["fact"] = "pending"
@@ -290,6 +301,21 @@ def upcoming_bills_facts(session: Session, ref: MessageRef, parsed: Parsed, toda
         else:
             pending += 1
     return {"fact": "pending" if pending else "auto", "charges": len(charges), "pending": pending, "already_known": known}
+
+
+def statement_from_attachments(session: Session, parsed: Parsed, today: date, produced_by: str) -> dict | None:
+    """The first PDF attachment that is a lender's loans statement, applied; None when none is."""
+    from ..engine.borrowing import statement_fact_from_file
+
+    pdfs = [a for a in parsed.attachments if (a.content_type == "application/pdf" or a.name.lower().endswith(".pdf")) and a.data]
+    for attachment in pdfs[:MAX_PDF_ATTACHMENTS]:
+        try:
+            applied = statement_fact_from_file(session, attachment.data, attachment.name or "statement.pdf", today, f"mail:{parsed.sender}")
+        except Exception:  # noqa: BLE001 - a PDF that is not a statement is simply not one
+            applied = None
+        if applied:
+            return applied
+    return None
 
 
 def paystub_from_attachments(session: Session, ref: MessageRef, parsed: Parsed, today: date, produced_by: str) -> bool:

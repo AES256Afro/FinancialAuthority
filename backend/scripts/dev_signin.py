@@ -14,7 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 os.environ.update({
-    "FA_DATA_DIR": tempfile.mkdtemp(prefix="fa-signin-"), "FA_DEMO": "true", "TZ": "America/Chicago", "FA_JOBS": "false", "FA_USERNAME": "owner",
+    "FA_DATA_DIR": tempfile.mkdtemp(prefix="fa-signin-"), "FA_DEMO": "true", "TZ": "America/Chicago", "FA_PORT": os.environ.get("FA_DEV_PORT", "8001"), "FA_JOBS": "false", "FA_USERNAME": "owner",
     "FA_PASSWORD": "correct horse battery", "FA_SESSION_SECRET": "dev-signin-session", "FA_DATA_KEY": "dev-signin-data-key", "FA_PUBLIC_URL": "",
 })
 sys.path.insert(0, str(ROOT))
@@ -22,4 +22,4 @@ sys.path.insert(0, str(ROOT))
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("app.main:app", host="127.0.0.1", port=int(os.environ.get("FA_DEV_PORT", "8001")))
+    uvicorn.run("app.main:app", host="127.0.0.1", port=int(os.environ.get("FA_DEV_PORT", "8001")), server_header=False)

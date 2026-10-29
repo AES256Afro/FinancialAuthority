@@ -451,7 +451,7 @@ function SignOutHere() {
   }
   return (
     <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-      <button type="button" className="btn" disabled={busy} onClick={go} style={{ minHeight: 32, padding: "4px 10px" }}>{busy ? "Signing out…" : "Sign out here"}</button>
+      <button type="button" className="btn" disabled={busy} onClick={go} style={{ minHeight: 32, padding: "4px 10px", whiteSpace: "nowrap" }}>{busy ? "Signing out…" : "Sign out here"}</button>
       {error && <Said text={error} tone="error" />}
     </span>
   );
@@ -500,7 +500,7 @@ function SignedIn({ owner }: { owner: boolean }) {
                   <td style={{ whiteSpace: "nowrap" }}>{r.last_seen_at ? when(r.last_seen_at) : "not yet"}</td>
                   <td style={{ whiteSpace: "nowrap" }}>{when(r.created_at)}</td>
                   <td style={{ textAlign: "right" }}>
-                    {r.this ? <SignOutHere /> : <ConfirmButton label="Sign out" question={r.who && r.who !== "you" ? `Sign out ${r.who} on this browser for good?` : "Sign this browser out for good?"} yes="Sign it out" no="Keep" onConfirm={() => end({ session_id: r.id })} />}
+                    {r.this ? <SignOutHere /> : <ConfirmButton label="Sign out" question={r.who && r.who !== "you" ? `Sign out ${r.who} on this browser for good?` : "Sign this browser out for good?"} yes="Sign it out" no="Keep" onConfirm={() => end({ session_id: r.id })} style={{ whiteSpace: "nowrap" }} />}
                   </td>
                 </tr>
               ))}

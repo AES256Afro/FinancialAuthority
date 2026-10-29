@@ -198,7 +198,7 @@ def where_to_put(session: Session, today: date, amount: float, *, years: int | N
         options.append({
             "id": f"debt:{d.id}", "name": f"Pay down {d.name}", "in_per_paycheck": take_home, "match_per_paycheck": 0.0, "rate": apr,
             "value": _money(after), "contributed": _money(contributed), "after_tax": _money(after),
-            "guaranteed": True, "reachable": "the freed payment, once it is gone", "tax": "avoided interest is never taxed",
+            "guaranteed": True, "reachable": "once it is gone, from the payment it frees", "tax": "avoided interest is never taxed",
             "action": "See the debts", "link": "/debts", "exists": True, "source": f"debt:{d.id}",
             "note": f"earns its {d.apr:g}% APR, guaranteed, for about {payoff} months until it is gone; the same money then goes at the {word} return" if payoff < months else f"earns its {d.apr:g}% APR, guaranteed, the whole way",
             "milestones": milestones(debt_at),

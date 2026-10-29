@@ -31,6 +31,8 @@ DEBOUNCE = 60  # a link is synced at most once a minute however many notices arr
 
 _keys: dict[str, tuple[float, dict[str, Any]]] = {}
 _last_sync: dict[int, float] = {}
+_seen: dict[str, float] = {}  # signatures already taken, kept for as long as their notice could still verify
+SEEN_MAX = 10_000
 _lock = threading.Lock()
 
 
@@ -74,6 +76,17 @@ def verify(token: str, body: bytes, fetch_key: Callable[[str], dict[str, Any]], 
     expected = hashlib.sha256(body).hexdigest()
     if not hmac.compare_digest(str(claims.get("request_body_sha256", "")), expected):
         raise Refused("the body does not match")
+    # A notice is taken once: the same signed token sent again inside its five minutes (a replay by whoever saw it on
+    # the way) is refused, however well it verifies.
+    mark = hashlib.sha256(signature).hexdigest()
+    with _lock:
+        for k in [k for k, t in _seen.items() if now - t > 2 * MAX_AGE]:
+            _seen.pop(k, None)
+        if mark in _seen:
+            raise Refused("already taken")
+        if len(_seen) >= SEEN_MAX:
+            _seen.pop(min(_seen, key=_seen.get), None)
+        _seen[mark] = now
     return claims
 
 

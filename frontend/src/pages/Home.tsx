@@ -5,6 +5,7 @@ import { useAppearance, type Section } from "../appearance";
 import { arrangementById, sectionByKey } from "../sections";
 import { useShowAs } from "../showas";
 import type { Snapshot } from "../types";
+import { FirstRunBanner } from "./Welcome";
 
 // One section of the home, with its picture remembered for this place in this arrangement.
 function Placed({ s, at, snapshot }: { s: Section; at: string; snapshot: Snapshot }) {
@@ -25,6 +26,8 @@ export function Home({ snapshot }: { snapshot: Snapshot }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
       {/* The page's one h1; each section and home view titles itself with an h2. */}
       <h1 className="sr-only">Home: {chosen.name}</h1>
+      {/* Sign-in lands here: the five setup steps show until they are done or hidden, as on Today. */}
+      <FirstRunBanner />
       {shown.map((s, i) => <Placed key={`${chosen.id}-${s.key}-${i}`} s={s} at={`home.${chosen.id}.${i}`} snapshot={snapshot} />)}
       <div style={{ fontSize: 12, color: "var(--muted)" }}>
         {chosen.name} · <Link to="/settings/appearance">arrange this home</Link>

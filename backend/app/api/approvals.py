@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-from .. import approvals, auth
+from .. import approvals, auth, services
 from ..db import get_session
 from ..models import Approval
 
@@ -76,7 +76,14 @@ def queue(body: ApprovalIn, session: Session = Depends(get_session), principal: 
                                for_person_id=_mine(principal))
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
+    _audit(session, principal, "approval_queued", row)
     return approvals.out(row)
+
+
+def _audit(session: Session, principal: auth.Principal, what: str, row: Approval) -> None:
+    """Settings › Activity shows a draft queued, approved or denied like any tool call: who, what, the approval's id
+    hashed; never the recipient, the subject or the body."""
+    services.audit(session, client=principal.name, client_kind=principal.kind, tool=what, args={"approval_id": row.id}, rows=1, redaction=principal.redaction)
 
 
 @router.put("/{approval_id}")
@@ -109,6 +116,7 @@ def approve(approval_id: int, body: DecideIn | None = None, session: Session = D
         row = approvals.approve(session, row, decided_by=principal.name, allow_always=bool(body and body.allow_always))
     except ValueError as error:
         raise HTTPException(409, str(error)) from error
+    _audit(session, principal, "approval_approved", row)
     return approvals.out(row)
 
 
@@ -122,6 +130,7 @@ def deny(approval_id: int, session: Session = Depends(get_session), principal: a
         row = approvals.deny(session, row, decided_by=principal.name)
     except ValueError as error:
         raise HTTPException(409, str(error)) from error
+    _audit(session, principal, "approval_denied", row)
     return approvals.out(row)
 
 

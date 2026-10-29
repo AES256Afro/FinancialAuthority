@@ -245,10 +245,21 @@ def plan_many(session: Session, facts: list[ExtractedFact], today: date, *, loos
 
 
 def payment_candidates(session: Session, payment: Payment, bill: Bill, limit: int = 3) -> list[dict[str, Any]]:
-    """Transactions that might be this payment: ten days before the due date to thirty after, within 15% of the bill
-    (40% for a bill whose amount varies), not already matched to another bill, nearest amount and date first."""
+    """Transactions that might be this payment: ten days before the due date to thirty after; under the bill's names
+    within the matcher's own drift (payments._match_for: 15%, 40% for an estimate), or at its exact amount, or an
+    unnamed row within the fixed 15% (the owner naming a payee the app did not know); never one already matched to a
+    bill, and never one that carries another bill's name. The bill's own names first, then nearest."""
+    from .payments import _looks_like
+    from .recurring import bill_keys, merchant_key
+
     used = {p.transaction_id for p in session.exec(select(Payment).where(Payment.transaction_id != None)).all()}  # noqa: E711
     tolerance = max(2.0, bill.amount * (0.4 if bill.amount_mode == "estimate" else 0.15))
+    unnamed_tolerance = max(2.0, bill.amount * 0.15)  # an estimate's wider drift is for rows under its own name only
+    series_keys = {s.id: s.merchant_key for s in session.exec(select(RecurringSeries)).all()}
+    # The other bills' names: a row that carries one of them is that bill's own charge (the $89 internet row offered as
+    # the $142 electricity payment, and preselected, was the live box's case).
+    others = [(bill_keys(b), series_keys.get(b.series_id) if b.series_id else None) for b in session.exec(select(Bill).where(Bill.active == True, Bill.id != bill.id)).all()]  # noqa: E712
+    mine, mine_series = bill_keys(bill), series_keys.get(bill.series_id) if bill.series_id else None
     rows = session.exec(select(Transaction, Account).join(Account, Account.id == Transaction.account_id).where(
         Transaction.date >= payment.due_date - timedelta(days=10), Transaction.date <= payment.due_date + timedelta(days=30),
         Transaction.amount > 0, Transaction.is_transfer == False, Transaction.pending == False)).all()  # noqa: E712
@@ -256,9 +267,13 @@ def payment_candidates(session: Session, payment: Payment, bill: Bill, limit: in
     for t, a in rows:
         if t.id in used or abs(t.amount - bill.amount) > tolerance:
             continue
-        found.append((abs(t.amount - bill.amount), abs((t.date - payment.due_date).days), t, a))
-    found.sort(key=lambda x: (round(x[0], 2), x[1]))
-    return [{"id": t.id, "date": t.date.isoformat(), "merchant": t.merchant, "amount": t.amount, "account": a.name, "source": f"transaction:{t.id}"} for _, _, t, a in found[:limit]]
+        key = merchant_key(t.merchant)
+        named = _looks_like(mine, mine_series, key)
+        if not named and (abs(t.amount - bill.amount) > unnamed_tolerance or any(_looks_like(k, s, key) for k, s in others)):
+            continue
+        found.append((0 if named else 1, abs(t.amount - bill.amount), abs((t.date - payment.due_date).days), t, a))
+    found.sort(key=lambda x: (x[0], round(x[1], 2), x[2]))
+    return [{"id": t.id, "date": t.date.isoformat(), "merchant": t.merchant, "amount": t.amount, "account": a.name, "source": f"transaction:{t.id}", "named": rank == 0} for rank, _, _, t, a in found[:limit]]
 
 
 PAST_DUE_DAYS = 90  # a period with no payment seen waits on the page this long; older ones are the credit record's

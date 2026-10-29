@@ -96,5 +96,5 @@ def week_recap(session: Session, today: date) -> dict[str, Any]:
     usual = snap["usual_pace"]["per_day"] * 7
     spent = sum(t.amount for t in rows)
     top = sorted(by_cat.items(), key=lambda kv: -kv[1])[:3]
-    text = f"This week: ${spent:,.0f} out, against a usual week of ${usual:,.0f}. " + ("Most went to " + ", ".join(f"{c} (${v:,.0f})" for c, v in top) + ". " if top else "") + f"Safe to spend now: ${snap['safe_to_spend']['amount']:,.0f}."
+    text = f"This week: ${spent:,.0f} out, against a usual week of ${usual:,.0f}. " + ("Most went to " + ", ".join(f"{c} (${v:,.0f})" for c, v in top) + ". " if top else "") + f"Safe to spend now: {'-' if snap['safe_to_spend']['amount'] < 0 else ''}${abs(snap['safe_to_spend']['amount']):,.0f}."
     return {"from": (start + timedelta(days=1)).isoformat(), "to": today.isoformat(), "spent": _money(spent), "usual_week": _money(usual), "top": [{"category": c, "spent": _money(v)} for c, v in top], "text": text}

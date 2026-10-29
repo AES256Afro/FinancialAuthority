@@ -253,7 +253,7 @@ def copy_now(session: Session) -> dict[str, Any]:
     except Exception as error:
         if partial is not None:
             partial.unlink(missing_ok=True)
-        c["last_error"] = f"{type(error).__name__}: {error}"[:300]
+        c["last_error"] = (str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}")[:300]  # a ValueError is already a sentence
         set_setting(session, SETTING, c)
         raise
 

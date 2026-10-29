@@ -6,6 +6,7 @@ import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { ConfirmButton } from "../components/ConfirmButton";
 import { DateMoves } from "../components/DateMoves";
+import { PaidQuestions, type PastDueRow } from "../components/PaidQuestions";
 import { PlannedPayments } from "../components/PlannedPayments";
 import { Empty, Failed, Loading, Said, Show } from "../components/State";
 import { isoDay, money, monthDay, ordinal, parseIso, parseMoney, shortDate } from "../format";
@@ -308,6 +309,8 @@ export function Bills({ onChanged }: { onChanged: () => void }) {
   const { data, reload } = state;
   const { data: accounts } = useApi<{ accounts: AccountRow[] }>("/api/v1/accounts");
   const choices = usePaidFromChoices(data);
+  // Bills with no payment seen, to answer here: Today's "Pay X; it was due" opens this page.
+  const needs = useApi<{ past_due: PastDueRow[] }>("/api/v1/needs-you", { live: true });
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
   const [cadence, setCadence] = useState("monthly");
@@ -365,6 +368,9 @@ export function Bills({ onChanged }: { onChanged: () => void }) {
           )}
         </div>
       )}
+      <section id="paid" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <PaidQuestions state={needs} onAnswered={changed} here="bills" />
+      </section>
       <BillStrip />
       <Show
         state={state}

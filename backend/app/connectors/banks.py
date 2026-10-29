@@ -48,6 +48,94 @@ TELLER_CATEGORIES = {
 PLAID_KINDS = {"depository": "checking", "credit": "card", "loan": "loan", "investment": "investment", "brokerage": "investment"}
 SAVINGS_SUBTYPES = {"savings", "money market", "money_market", "cd", "certificate_of_deposit", "hsa"}
 
+# What a vendor's answer may be, and what of it is kept. A vendor is trusted with the bank session, not with the
+# app's memory, its clock or its tables: an answer is read under a size and a time budget, and every string
+# taken from it is one line of a bounded length, every amount a finite number a household could hold, every id
+# a short printable string, so a hostile or broken answer can neither hold the sync (and the writer lock with it)
+# nor write without bound.
+MAX_RESPONSE_BYTES = 16 * 1024 * 1024  # a page of five hundred transactions is under a megabyte
+MAX_ID_CHARS = 200
+MAX_NAME_CHARS = 120
+MAX_MERCHANT_CHARS = 200
+MAX_RAW_CHARS = 500
+MAX_AMOUNT = 1e9  # dollars; past this it is not a transaction
+
+
+class VendorAnswer(RuntimeError):
+    """An answer that cannot be taken as it is: too long, too slow, not JSON."""
+
+
+def read_bounded(response: Any, *, max_bytes: int = MAX_RESPONSE_BYTES, deadline: float | None = None) -> bytes:
+    """The body of a streamed response, read chunk by chunk, refused once it passes `max_bytes` or `deadline`
+    (a monotonic time): a body that drips a byte at a time never resets the budget the way it resets a socket's
+    read timeout, and one that never ends is never held in memory."""
+    import time
+
+    got, size = [], 0
+    for chunk in response.iter_bytes():
+        size += len(chunk)
+        if size > max_bytes:
+            raise VendorAnswer(f"the answer passed {max_bytes // (1024 * 1024)} MB and was dropped")
+        if deadline is not None and time.monotonic() > deadline:
+            raise VendorAnswer("the answer did not finish arriving in time; the next sync tries again")
+        got.append(chunk)
+    return b"".join(got)
+
+
+def clean_text(value: Any, limit: int) -> str:
+    """One line of at most `limit` characters, control characters out: a name, a merchant, a message."""
+    import re
+
+    text = "" if value is None else str(value)
+    return re.sub(r"[\x00-\x1f\x7f  ]+", " ", text).strip()[:limit]
+
+
+def clean_id(value: Any, limit: int = MAX_ID_CHARS) -> str | None:
+    """A vendor's id as the app keeps it, or None when it is not one: a short printable string with no control
+    character and no comma (a link lists its account ids joined by commas)."""
+    if value is None or isinstance(value, bool) or not isinstance(value, (str, int)):
+        return None
+    text = str(value)
+    if not text or len(text) > limit or "," in text or any(ord(c) < 32 or ord(c) == 127 for c in text):
+        return None
+    return text
+
+
+def finite_amount(value: Any) -> float | None:
+    """A money amount a row can carry, or None: finite, within the bound, from a number or a numeric string."""
+    import math
+
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(amount) or abs(amount) > MAX_AMOUNT:
+        return None
+    return amount
+
+
+def iso_day(value: Any) -> date | None:
+    """A YYYY-MM-DD date from a vendor, or None."""
+    if not isinstance(value, str) or len(value) != 10:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def hide_secrets(text: str, secrets: list[str]) -> str:
+    """A vendor's message with the app's own secrets taken out, wherever it echoed them."""
+    import re
+
+    out = text
+    for secret in sorted({s for s in secrets if s and len(s) >= 8}, key=len, reverse=True):
+        out = out.replace(secret, "[hidden]")
+    # A Plaid access token has a shape of its own; any the vendor names, ours or not, is taken out too.
+    return re.sub(r"access-(?:sandbox|development|production)-[A-Za-z0-9-]{8,}", "[hidden]", out)
+
 
 def bank_settings(session: Session, provider: str) -> dict[str, Any]:
     """The provider's settings with secrets decrypted; empty strings where nothing is stored."""
@@ -300,6 +388,7 @@ def upsert_account(session: Session, *, provider: str, external_id: str, name: s
     with nothing written to it, and the caller reads nothing into it. `as_of` is when the bank itself last sent the
     vendor its data (Plaid refreshes on its own schedule), so the balance is dated by the bank, not by the read; a
     balance the owner typed since then stands over it."""
+    name, institution, subtype = clean_text(name, MAX_NAME_CHARS), clean_text(institution, MAX_NAME_CHARS), clean_text(subtype, 40)
     row = session.exec(select(Account).where(Account.connector == provider, Account.external_id == external_id)).first()
     if row is None and provider in LIVE_PROVIDERS:
         row = _left_by_a_link(session, institution=institution, last4=last4) or _imported_account(session, name=name, institution=institution, last4=last4)
@@ -391,6 +480,7 @@ def upsert_transaction(session: Session, *, provider: str, tx_id: str, account: 
     already holds from an import (the same amount within three days, by the same name or on the same day) is the
     same transaction: the link takes that row over instead of adding a second. A row a removed link brought is
     taken over the same way, and keeps its category and name as they were (the bank's, or the owner's)."""
+    merchant, raw_name, description, category = clean_text(merchant, MAX_MERCHANT_CHARS), clean_text(raw_name, MAX_RAW_CHARS), clean_text(description, MAX_RAW_CHARS), clean_text(category, 80)
     h = tx_hash(provider, tx_id)
     row = session.exec(select(Transaction).where(Transaction.row_hash == h)).first()
     kept = False

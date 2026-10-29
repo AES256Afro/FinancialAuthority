@@ -214,19 +214,62 @@ def self_check() -> str:
         return f"{report['free_gb']} GB free · db {report['db_mb']} MB · last transaction {report['last_transaction']} · {len(problems)} problem(s)" + (": " + "; ".join(problems) if problems else "")
 
 
+IMPORT_MAX_BYTES = 50 * 1024 * 1024  # what one dropped file may be, as the upload routes have it; past it the file is refused unread
+IMPORT_MAX_FILES = 100  # files taken in one run; the rest wait for the next, five minutes on
+
+
+def _droppable(path) -> tuple[bool, str]:
+    """Whether an entry in the drop folder is a plain file to read, and why not when it is not. Judged without
+    following it: a symlink (to anything, anywhere on the box), a FIFO (a read would wait for good), a socket or a
+    device is never opened; an entry that cannot be looked at is skipped on its own, never the run."""
+    import stat
+
+    try:
+        if path.is_symlink():
+            return False, "a link, not a file"
+        mode = path.lstat().st_mode
+    except OSError as error:
+        return False, f"could not be looked at ({type(error).__name__})"
+    if not stat.S_ISREG(mode):
+        return False, "not a plain file"
+    return True, ""
+
+
 def import_watch() -> str:
-    """Import any new file in the import folder, then re-run detection. Each file is recorded as taken the moment
-    it is, so a later failure never loses the record of the ones before it; a file that fails is said so, the
-    others still import, and it is tried again on the next run."""
+    """Import any new file in the import folder, then re-run detection. A file that fails is said so, the others
+    still import, and it is tried again on the next run. Only plain files are read (never a link, a pipe or a
+    device), none past IMPORT_MAX_BYTES, at most IMPORT_MAX_FILES a run; the record of what was taken is written
+    once a run and keeps only files still in the folder."""
     settings.ensure_dirs()
     taken: list[str] = []
     failed: list[str] = []
+    root = settings.import_root
     with session_scope() as session:
         processed = {tuple(p) for p in get_setting(session, "imports.processed", [])}
-        pdfs = [(path, (str(path.relative_to(settings.import_root)), int(path.stat().st_mtime))) for path in sorted(settings.import_root.rglob("*.pdf"))]
-        tables = [(path, (path.name, int(path.stat().st_mtime))) for path in sorted(list(settings.import_root.glob("*.csv")) + list(settings.import_root.glob("*.ofx")) + list(settings.import_root.glob("*.qfx")) + list(settings.import_root.glob("*.qbo")))]
-        for path, stamp in pdfs + tables:
+        entries = [(path, str(path.relative_to(root))) for path in sorted(root.rglob("*.pdf"))]
+        entries += [(path, path.name) for path in sorted(list(root.glob("*.csv")) + list(root.glob("*.ofx")) + list(root.glob("*.qfx")) + list(root.glob("*.qbo")))]
+        present: set[str] = set()
+        todo = []
+        for path, name in entries:
+            ok, why = _droppable(path)
+            if not ok:
+                if why != "a link, not a file":
+                    log.warning("import folder: %s skipped: %s", name, why)
+                continue
+            present.add(name)
+            try:
+                st = path.lstat()
+            except OSError:
+                continue
+            stamp = (name, int(st.st_mtime))
             if stamp in processed:
+                continue
+            todo.append((path, stamp, st.st_size))
+        processed = {p for p in processed if p[0] in present}  # a file taken out of the folder leaves the record too
+        for path, stamp, size in todo[:IMPORT_MAX_FILES]:
+            if size > IMPORT_MAX_BYTES:
+                failed.append(f"{path.name}: not imported (larger than {IMPORT_MAX_BYTES // (1024 * 1024)} MB; it was not read)")
+                processed.add(stamp)  # said once, on this run; it is not read again
                 continue
             try:
                 note = _import_pdf(session, path) if path.suffix.lower() == ".pdf" else _import_table(session, path)
@@ -237,7 +280,9 @@ def import_watch() -> str:
                 continue
             taken.append(note)
             processed.add(stamp)
-            set_setting(session, "imports.processed", sorted(processed))  # this file's record lands now, not at the end
+        set_setting(session, "imports.processed", sorted(processed))
+        if len(todo) > IMPORT_MAX_FILES:
+            taken.append(f"{len(todo) - IMPORT_MAX_FILES} more files wait for the next run")
     if taken:
         detect_recurring()
     if failed:

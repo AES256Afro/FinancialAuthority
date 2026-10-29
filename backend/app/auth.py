@@ -87,13 +87,24 @@ SHARED_PATHS = {"/api/v1/shared", "/api/v1/about", "/api/v1/appearance"}
 # ---- lockout -------------------------------------------------------------------------------
 
 
+FORWARDING_HEADERS = ("x-forwarded-for", "cf-connecting-ip", "x-real-ip", "forwarded")
+
+
 def _client_ip(request: Request) -> str:
     """The caller's address. A forwarding header is believed only from a proxy the owner named in
-    FA_TRUSTED_PROXIES (the tunnel's address), because anyone can send one."""
+    FA_TRUSTED_PROXIES (the tunnel's address), because anyone can send one.
+
+    With no proxy named, a request that carries one anyway counts as one address, "forwarded", whoever the peer
+    is: either a proxy the owner has not named sits in front (every caller then shares its address in any case),
+    or the server itself rewrote the peer from the header before the app saw it (uvicorn believes X-Forwarded-For
+    from a loopback peer by default), which would hand each wrong sign-in a fresh address and never close the
+    lockout. The sixth sweep found that from outside."""
     import ipaddress
 
     peer = request.client.host if request.client else "unknown"
     trusted = [p.strip() for p in settings.trusted_proxies.split(",") if p.strip()]
+    if not trusted:
+        return "forwarded" if any(h in request.headers for h in FORWARDING_HEADERS) else peer
     if trusted:
         try:
             address = ipaddress.ip_address(peer)

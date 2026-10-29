@@ -213,6 +213,8 @@ def teller_enroll(body: EnrollIn, session: Session = Depends(get_session), _: au
         raise HTTPException(409, "Teller is not configured: paste the application id first")
     try:
         link = teller().connect(session, body.access_token, body.enrollment_id, body.institution)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
     except crypto.DataKeyMissing as error:
         raise HTTPException(409, str(error)) from error
     result = teller().sync(session, link_id=link.id)

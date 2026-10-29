@@ -30,7 +30,7 @@ class Rule:
 
 RULES: list[Rule] = [
     # Rocket Money's own domain only: "rocketmoney-support@elsewhere" is not Rocket Money.
-    Rule("export", "export", sender=r"@(?:[\w-]+\.)*(?:rocketmoney|truebill)\.com$", subject=r"export (complete|ready)"),
+    Rule("export", "export", sender=r"@(?:[\w-]+\.)*(?:rocketmoney|truebill)\.com$", subject=r"export (is )?(complete|ready)"),
     Rule("rm-upcoming", "upcoming_bills", sender=r"@(?:[\w-]+\.)*(?:rocketmoney|truebill)\.com$", subject=r"upcoming bills"),
     Rule("rm-income", "payday", sender=r"@(?:[\w-]+\.)*(?:rocketmoney|truebill)\.com$", subject=r"received money"),
     Rule("rm-balance", "bank_alert", sender=r"@(?:[\w-]+\.)*(?:rocketmoney|truebill)\.com$", subject=r"balance alert", confidence=0.8),
@@ -120,6 +120,11 @@ def extract(kind: str, subject: str, text: str, ref: date | None = None) -> dict
     fields: dict = {}
     if kind in ("bill_due", "past_due", "statement", "installment", "price_change", "advance"):
         amount = _amount_near(blob, ("amount due", "total due", "payment due", "minimum (payment )?due", "balance due", "new balance", "total amount", "amount:", "total:", "due:"))
+        if kind == "price_change":
+            # "from $17.00 to $19.00": the new price is the one after "to", "now", "will be" or "new price", never the first amount seen.
+            new_price = re.search(r"(?:\bto|\bnow|will be|new (?:monthly |annual )?(?:price|rate)(?: of| is|:)?)\s*(?:of\s*)?\$\s?([\d,]+(?:\.\d{2})?)", blob, re.IGNORECASE)
+            if new_price:
+                amount = float(new_price.group(1).replace(",", ""))
         if amount is None:
             a = AMOUNT.search(blob)
             amount = float(a.group(1).replace(",", "")) if a else None
@@ -214,5 +219,7 @@ def excerpt_for(text: str, fields: dict, limit: int = 240) -> str:
         idx = body.find(needle)
         if idx >= 0:
             start = max(0, idx - limit // 2)
+            if start > 0 and body[start - 1] != " ":
+                start = body.find(" ", start) + 1  # start on a word, not inside one
             return body[start: start + limit].strip()
     return body[:limit]

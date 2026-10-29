@@ -84,6 +84,9 @@ def check_draft(to: str, subject: str, body: str) -> None:
         raise ValueError("the recipient must be one email address")
     if not (subject or "").strip() or not (body or "").strip():
         raise ValueError("a subject and a body are needed")
+    if any(ord(c) < 32 or c == "\x7f" for c in subject):
+        # the mail library refuses a header with a line break, but only at send time; said at the door instead
+        raise ValueError("the subject is one line")
 
 
 def create(session: Session, *, to: str, subject: str, body: str, reason: str = "", source: str = "", created_by: str = "owner", created_kind: str = "owner", account_id: int | None = None,

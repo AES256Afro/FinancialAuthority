@@ -105,7 +105,7 @@ def owed(session: Session, today: date, accounts: list[Account] | None = None) -
         accounts = session.exec(select(Account).where(Account.active == True)).all()  # noqa: E712
     debts = session.exec(select(Debt).where(Debt.active == True)).all()  # noqa: E712
     plans = session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all()  # noqa: E712
-    advances = session.exec(select(Advance).where(Advance.repaid == False)).all()  # noqa: E712
+    advances = [a for a in session.exec(select(Advance).where(Advance.repaid == False)).all() if a.repay_date >= today]  # noqa: E712 - past its repay day it was taken back, as the plan counts it (borrowing.open_advances)
     linked = {d.account_id for d in debts if d.account_id}
     by_id = {a.id: a for a in accounts}
 

@@ -12,7 +12,6 @@ from sqlmodel import Session, select
 
 from ..models import Bill, Payment, RecurringSeries, Transaction
 from .recurring import bill_keys, merchant_key
-from .snapshot import next_due
 
 LOOKBACK_DAYS = 60
 AHEAD_DAYS = 21
@@ -195,7 +194,10 @@ def payments_overview(session: Session, today: date) -> dict:
 
     def out(p: Payment) -> dict:
         b = bills.get(p.bill_id)
-        return {"bill_id": p.bill_id, "name": b.name if b else "?", "kind": b.kind if b else "bill", "due_date": p.due_date.isoformat(), "amount": p.amount, "status": p.status,
+        # A period still to come is owed at the bill's amount as it stands now (a confirmed notice or an edit changed it
+        # after the last matching run); the matched and the missed keep what they were matched or missed at.
+        amount = b.amount if (b is not None and p.status == "scheduled") else p.amount
+        return {"bill_id": p.bill_id, "name": b.name if b else "?", "kind": b.kind if b else "bill", "due_date": p.due_date.isoformat(), "amount": amount, "status": p.status,
                 "paid_date": p.paid_date.isoformat() if p.paid_date else None, "evidence": p.evidence, "autopay": b.autopay if b else False, "source": f"payment:{p.id}"}
 
     return {
