@@ -55,13 +55,18 @@ function Meter({ value, max, marks, tone, label }: { value: number; max: number;
 }
 
 function SpendGauge({ a, paydays }: { a: CoverAccount; paydays: [string, string] }) {
+  if (a.no_balance) {
+    return <div style={{ fontSize: 12, color: "var(--ink-2)" }}>What it holds is not known yet, so nothing is weighed against it. <Link to="/settings/connectors#banks" style={{ fontWeight: 700 }}>Link your bank</Link></div>;
+  }
   return (
     <>
       {(a.windows ?? []).map((w, k) => {
         if (w.start > w.end) return null; // on payday the stretch before it is empty
         const has = w.has_total;
+        const left = w.left;
+        if (has === null || left === null || w.has === null) return null; // an older server's account with no balance
         const label = k === 0 ? `Before ${shortDate(paydays[0])}` : `${shortDate(w.start)} to ${shortDate(w.end)}`;
-        const short = w.left < 0;
+        const short = left < 0;
         return (
           <div key={`${k}-${w.start}`} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <span style={{ fontWeight: 700, fontSize: 12 }}>{label}</span>
@@ -69,7 +74,7 @@ function SpendGauge({ a, paydays }: { a: CoverAccount; paydays: [string, string]
             <span className="num" style={{ fontSize: 12, color: "var(--ink-2)" }}>
               Has {money(w.has)}{w.inflow ? ` (+${money(w.inflow)} paycheck)` : ""} · Needs: bills {money(w.bills)}, everyday {money(w.everyday)}{w.buffer ? `, cushion ${money(w.buffer)}` : ""} ·{" "}
               <strong style={{ color: short ? "var(--critical-ink)" : "var(--ink)", whiteSpace: "nowrap" }}>
-                {short ? <><OctagonAlert size={13} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 3 }} />{money(Math.abs(w.left))} short</> : `${money(w.left)} to spare`}
+                {short ? <><OctagonAlert size={13} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 3 }} />{money(Math.abs(left))} short</> : `${money(left)} to spare`}
               </strong>
             </span>
           </div>
@@ -188,8 +193,8 @@ function Columns({ cover }: { cover: Cover }) {
   const rows = cover.accounts
     .filter((a) => a.role === "spend" || a.role === "card")
     .map((a) => {
-      if (a.role === "spend") return { name: a.name, w1: a.windows?.[0]?.needs ?? 0, w2: a.windows?.[1]?.needs ?? 0, has: (a.balance ?? 0) };
-      return { name: a.name, w1: a.per_window?.[0] ?? 0, w2: a.per_window?.[1] ?? 0, has: null as number | null };
+      if (a.role === "spend") return { name: a.name, w1: a.windows?.[0]?.needs ?? 0, w2: a.windows?.[1]?.needs ?? 0, has: a.no_balance ? null : (a.balance ?? 0), unknown: Boolean(a.no_balance) };
+      return { name: a.name, w1: a.per_window?.[0] ?? 0, w2: a.per_window?.[1] ?? 0, has: null as number | null, unknown: false };
     });
   // Series colours of the look in their validated order (housing blue, bills orange, card violet); the status
   // colours are never used as a series.
@@ -218,7 +223,7 @@ function Columns({ cover }: { cover: Cover }) {
         <div style={{ overflowX: "auto" }}>
           <table className="ledger">
             <thead><tr><th>Account</th>{series.map((s) => <th key={s.key} style={{ textAlign: "right" }}>{s.label}</th>)}</tr></thead>
-            <tbody>{rows.map((r) => <tr key={r.name}><td>{r.name}</td><td className="num" style={{ textAlign: "right" }}>{r.has === null ? "—" : money(r.has)}</td><td className="num" style={{ textAlign: "right" }}>{money(r.w1)}</td><td className="num" style={{ textAlign: "right" }}>{money(r.w2)}</td></tr>)}</tbody>
+            <tbody>{rows.map((r) => <tr key={r.name}><td>{r.name}</td><td className="num" style={{ textAlign: "right" }}>{r.has === null ? (r.unknown ? "no balance yet" : "—") : money(r.has)}</td><td className="num" style={{ textAlign: "right" }}>{money(r.w1)}</td><td className="num" style={{ textAlign: "right" }}>{money(r.w2)}</td></tr>)}</tbody>
           </table>
         </div>
       ) : (
@@ -274,6 +279,13 @@ export function CoverPanel({ cover, mode, onTicked }: { cover: Cover; mode: Cove
       setFailed(true);
     }
   }
+  if (coverUnknown(cover)) {
+    return (
+      <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
+        Cover weighs what each account holds against what comes out of it, and no bank has told the app a balance yet; an imported file brings transactions only. <Link to="/settings/connectors#banks" style={{ fontWeight: 700 }}>Link your bank</Link>
+      </div>
+    );
+  }
   if (mode === "sheet") {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -286,7 +298,26 @@ export function CoverPanel({ cover, mode, onTicked }: { cover: Cover; mode: Cove
   return <Gauges cover={cover} />;
 }
 
+/** Cover with nothing to measure: no account yet, or no account with a balance (an imported file brings none). The
+ * engine then counts each account from $0, so its verdicts are not shown as fact. */
+function coverUnknown(cover: Cover): string | null {
+  if (cover.accounts.length === 0) return "No account yet: link your bank or import its file";
+  // The engine marks each spending account it has no balance for; an older server is read from the balances instead.
+  const spend = cover.accounts.filter((a) => a.role === "spend");
+  if (spend.length > 0 && spend.every((a) => a.no_balance ?? a.balance === null)) return "No balance from your bank yet, so nothing to measure";
+  if (cover.accounts.every((a) => a.balance === null)) return "No balance from your bank yet, so nothing to measure";
+  return null;
+}
+
+/** The pill's tone beside coverSummary. */
+export function coverTone(cover: Cover): "crit" | "warn" | "good" {
+  if (coverUnknown(cover)) return "warn";
+  return cover.counts.crit ? "crit" : cover.counts.warn ? "warn" : "good";
+}
+
 export function coverSummary(cover: Cover): string {
+  const unknown = coverUnknown(cover);
+  if (unknown) return unknown;
   const p1 = cover.paydays[0];
   const short = cover.accounts.filter((a) => a.status === "crit").length;
   const watch = cover.accounts.filter((a) => a.status === "warn").length;

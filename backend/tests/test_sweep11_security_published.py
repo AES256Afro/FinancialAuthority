@@ -94,7 +94,7 @@ def _carry_cookie(c: httpx.Client, response: httpx.Response) -> None:
     """httpx will not send a Secure cookie back over the loopback's plain http, so the cookie the app set is carried
     by hand, as the browser behind the https tunnel would."""
     raw = response.headers.get("set-cookie", "")
-    assert raw.startswith("fa_session="), raw
+    assert raw.startswith("__Host-fa_session=" if c.headers.get("x-forwarded-proto") == "https" else "fa_session="), raw  # __Host- over https since round twelve
     c.headers["cookie"] = raw.split(";", 1)[0]
 
 

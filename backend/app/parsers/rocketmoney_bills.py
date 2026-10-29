@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from datetime import date, datetime
 
-HEADER = re.compile(r"recurring charges? coming up|upcoming bills", re.IGNORECASE)
+HEADER = re.compile(r"recurring (?:charges?|bills?|payments?)(?: (?:is|are))? coming up|upcoming (?:bills|charges|payments)|(?:bills?|charges?) (?:coming up|due) this week", re.IGNORECASE)
 DAY_LINE = re.compile(
     r"^(?:(?:Mon|Tue|Tues|Wed|Wednes|Thu|Thur|Thurs|Fri|Sat|Satur|Sun)[a-z]*,?\s+)?"
     r"((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?$",
@@ -40,9 +40,9 @@ def parse_upcoming_bills(text: str, ref: date) -> list[dict]:
     """[{name, due_date, amount}] for each charge the mail lists, in order; empty when the layout is not there."""
     lines = [re.sub(r"\s+", " ", line).strip() for line in (text or "").splitlines()]
     lines = [line for line in lines if line and not re.fullmatch(r"[\W_]+", line)]
-    start = next((i for i, line in enumerate(lines) if HEADER.search(line)), None)
-    if start is None:
-        return []
+    # The list starts after the mail's heading. A weekly mail whose body carries no heading (the subject says what it
+    # is: "This week's upcoming bills") is read from its top: the name, day, amount layout is strict enough alone.
+    start = next((i for i, line in enumerate(lines) if HEADER.search(line)), -1)
     found: list[dict] = []
     i = start + 1
     while i < len(lines):

@@ -39,7 +39,7 @@ def test_the_backup_managers_command_prints_names_sizes_and_verdicts_only(owner:
     assert all(set(p) <= point_keys for p in outputs["list"]) and outputs["list"]
     assert set(outputs["make"]) <= point_keys | {"tables", "documents"}
     status = outputs["status"]
-    assert set(status) == {"folder", "count", "bytes", "newest", "latest_age_hours", "database", "keep", "last_check"}
+    assert set(status) == {"folder", "count", "bytes", "newest", "latest_age_hours", "database", "keep", "last_check", "copy_due", "state", "state_words"}
     assert set(status["database"]) == {"bytes", "ok", "result", "tables", "transactions"}
     assert set(outputs["check"]) == {"database", "points"} and all(v == "ok" for v in outputs["check"]["points"].values())
     # The unknown command and a failure print a sentence, never a traceback with values in it.

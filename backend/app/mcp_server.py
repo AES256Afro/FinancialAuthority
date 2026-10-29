@@ -273,8 +273,10 @@ def build_server() -> MCPServer:
         max_amount: float | None = None,
         include_non_spending: bool = False,
         limit: int = 50,
+        offset: int = 0,
     ) -> dict:
-        """Find transactions, newest first.
+        """Find transactions, newest first, the id breaking a tie on one day. `total` counts every match, so a
+        caller pages with `offset`.
 
         Args:
             text: Substring of merchant, bank name, description or note.
@@ -286,6 +288,7 @@ def build_server() -> MCPServer:
             max_amount: Maximum amount.
             include_non_spending: Also include transfers, card payments, income and ignored rows.
             limit: Max rows (500).
+            offset: Rows to skip, for the next page (0 to 10,000,000).
         """
         client, redaction = _caller()
         if text and redaction == "aggregates":
@@ -294,33 +297,42 @@ def build_server() -> MCPServer:
             result = services.search_transactions(
                 session, redaction=redaction, text=text, category=category, account=account,
                 start=date.fromisoformat(start_date) if start_date else None, end=date.fromisoformat(end_date) if end_date else None,
-                min_amount=min_amount, max_amount=max_amount, include_non_spending=include_non_spending, limit=limit,
+                min_amount=min_amount, max_amount=max_amount, include_non_spending=include_non_spending, limit=limit, offset=offset,
             )
             _audit(session, client=client, client_kind="key", tool="transactions_search", args={"text": text, "category": category, "account": account}, rows=result["returned"], redaction=redaction)
             return result
 
     @_tool(server, name="recurring_list", annotations=READ_ONLY)
-    def recurring_list(include_classified: bool = True) -> dict:
+    def recurring_list(include_classified: bool = True, limit: int = 200, offset: int = 0) -> dict:
         """Recurring charges and paychecks found in the ledger: merchant, cadence, typical amount, next expected
         date, and whether the owner has confirmed what each one is (bill, subscription, income, installment, ignored).
+        Largest typical amount first, one page at a time: `total` is the whole list's length and `pending` the
+        full count still waiting for the owner.
 
         Args:
             include_classified: False lists only the series still waiting for the owner.
+            limit: Max series (500).
+            offset: Series to skip, for the next page.
         """
         from .api.registers import series_out
-        from .jobs.detect import pending_series
+        from .jobs.detect import pending_query
         from .models import RecurringSeries
+        from sqlalchemy import func
         from sqlmodel import select
 
+        limit = max(1, min(int(limit), 500))
+        offset = max(0, min(int(offset), 10_000_000))
         client, redaction = _caller()
         with session_scope() as session:
-            rows = session.exec(select(RecurringSeries).order_by(RecurringSeries.typical_amount.desc())).all() if include_classified else pending_series(session)
-            out = [series_out(s) for s in rows]
+            query = select(RecurringSeries).order_by(RecurringSeries.typical_amount.desc(), RecurringSeries.id) if include_classified else pending_query()
+            total = session.exec(select(func.count()).select_from(query.order_by(None).subquery())).one()
+            pending = total if not include_classified else session.exec(select(func.count()).select_from(pending_query().order_by(None).subquery())).one()
+            out = [series_out(s) for s in session.exec(query.offset(offset).limit(limit)).all()]
             if redaction == "aggregates":
                 for s in out:
                     s["merchant"] = "(redacted)"
             _audit(session, client=client, client_kind="key", tool="recurring_list", rows=len(out), redaction=redaction)
-            return {"series": out, "pending": len(pending_series(session))}
+            return {"series": out, "pending": pending, "total": total, "offset": offset, "limit": limit}
 
     @_tool(server, name="bills_list", annotations=READ_ONLY)
     def bills_list() -> dict:

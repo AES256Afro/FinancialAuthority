@@ -85,9 +85,13 @@ def readiness(session: Session, today: date, *, move_date: date | None = None, n
 
         typical = float(borrowing_overview(session, today).get("typical_per_period") or 0.0)
     target_buffer = max(500.0, typical)
-    buffer_now = float(safe_to_spend if safe_to_spend is not None else 0.0)
-    items.append({"key": "buffer", "label": "A safety cushion of one pay period's advances", "value": _money(buffer_now), "target": _money(target_buffer), "met": buffer_now >= target_buffer,
-                  "note": f"safe to spend until payday, against the {('typical ' + f'${typical:,.0f} advanced each period') if typical else 'minimum of $500'}", "link": "/today#goals"})
+    # No balance yet is not a cushion of $0: the item says it cannot be judged until a balance arrives.
+    buffer_now = float(safe_to_spend) if safe_to_spend is not None else None
+    items.append({"key": "buffer", "label": "A safety cushion of one pay period's advances", "value": _money(buffer_now) if buffer_now is not None else None, "target": _money(target_buffer),
+                  "met": buffer_now is not None and buffer_now >= target_buffer,
+                  "note": (f"safe to spend until payday, against the {('typical ' + f'${typical:,.0f} advanced each period') if typical else 'minimum of $500'}"
+                           if buffer_now is not None else "no bank has reported a balance yet, so the cushion cannot be judged"),
+                  "link": "/today#goals" if buffer_now is not None else "/settings/connectors#banks"})
 
     # 2. two pay periods with no advance
     since = borrowing["since_payday"]["advances"]

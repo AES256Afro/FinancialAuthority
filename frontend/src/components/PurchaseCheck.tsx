@@ -2,6 +2,7 @@
 // it would pass. The engine decides; this card asks and shows.
 import { CircleCheck, CircleHelp, OctagonAlert, TriangleAlert } from "lucide-react";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api";
 import { amountClass, money, parseMoney, shortDate } from "../format";
 import { Said } from "./State";
@@ -15,8 +16,10 @@ interface Check {
   breaks: { date: string; name: string; event_date: string; shortfall: number; already_short: number } | null;
   first_ok_date: string | null;
   low_point: { date: string; at_pace: number };
-  fits_safe_to_spend: boolean;
-  safe_to_spend: { amount: number; through: string };
+  fits_safe_to_spend: boolean | null;
+  /** No bank has reported a balance: the check cannot say yes or no, and says why (verdict "outside"). */
+  no_balance?: boolean;
+  safe_to_spend: { amount: number | null; through: string };
   not_advice: string;
   caveats?: string[];
 }
@@ -93,12 +96,15 @@ export function PurchaseCheck() {
             )}
             {r.verdict === "wait" && r.first_ok_date && <div>It fits from <strong>{shortDate(r.first_ok_date)}</strong>.</div>}
             {r.verdict === "no" && <div>It doesn't fit on any day in the next 60 days.</div>}
-            {r.verdict === "outside" && r.outside && (
+            {r.no_balance && (
+              <div>Can't tell yet: no bank has reported a balance. <Link to="/settings/connectors#banks" style={{ fontWeight: 700 }}>Link your bank</Link></div>
+            )}
+            {r.verdict === "outside" && r.outside && !r.no_balance && (
               <div className="num">
                 Up to {shortDate(r.outside.horizon)} it fits, but {r.outside.charges.length === 1 ? "a payment falls" : `${r.outside.charges.length} payments fall`} after that ({r.outside.charges.map((c) => `${money(c.amount)} on ${shortDate(c.date)}`).join(", ")}), past what the plan can see yet. Check again closer to then.
               </div>
             )}
-            <div style={{ color: "var(--muted)", fontSize: 12 }}><span className="num">Safe to spend today is {money(r.safe_to_spend.amount)} through {shortDate(r.safe_to_spend.through)}.</span> {r.not_advice}</div>
+            <div style={{ color: "var(--muted)", fontSize: 12 }}>{r.safe_to_spend.amount !== null && !r.no_balance && <span className="num">Safe to spend today is {money(r.safe_to_spend.amount)} through {shortDate(r.safe_to_spend.through)}.</span>} {r.not_advice}</div>
           </div>
         </div>
       )}

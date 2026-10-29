@@ -1,7 +1,8 @@
 // Envelopes: every obligation this paycheck pays as an envelope, with its fill level from the engine.
 import { Empty } from "../components/State";
+import { Link } from "react-router-dom";
 import { noPayday } from "../components/SafeExplain";
-import { money, shortDate } from "../format";
+import { money, moneyOr, shortDate } from "../format";
 import type { Event } from "../types";
 import type { ViewProps } from "./index";
 
@@ -40,8 +41,11 @@ export function Envelopes({ snapshot }: ViewProps) {
   // With no paycheck on file the engine's window is a frame two weeks out, not a payday: nothing is drawn as one.
   if (!w || noPayday(snapshot)) return <Empty to="/paystubs#paycheck" action="Add your paycheck">No paycheck is on file yet, so there are no envelopes to fill.</Empty>;
   const envs: Env[] = [];
-  const short = w.safe < 0;
-  envs.push({ key: "spend", name: short ? "Short" : "Spend", sub: `${shortDate(w.start)} to ${shortDate(w.end)} · yours`, amount: w.safe, target: w.safe, fill: short ? 0 : 1, tone: "safe", tag: short ? "short" : "yours" });
+  // No balance yet: what this check leaves (safe) and whether each bill is funded are unknown, never short.
+  const safe = w.safe;
+  const short = safe !== null && safe < 0;
+  if (safe === null) envs.push({ key: "spend", name: "Spend", sub: `${shortDate(w.start)} to ${shortDate(w.end)} · no balance yet`, amount: 0, target: 0, fill: 0, tone: "safe", tag: "no balance" });
+  else envs.push({ key: "spend", name: short ? "Short" : "Spend", sub: `${shortDate(w.start)} to ${shortDate(w.end)} · yours`, amount: safe, target: safe, fill: short ? 0 : 1, tone: "safe", tag: short ? "short" : "yours" });
   if (w.buffer > 0) envs.push({ key: "buffer", name: "Safety cushion", sub: "always kept", amount: w.buffer, target: w.buffer, fill: 1, tone: "buffer", tag: "full" });
   if (w.advances.total > 0) envs.push({ key: "adv", name: "Advance apps", sub: `take back on ${shortDate(w.start)}`, amount: w.advances.total, target: w.advances.total, fill: 1, tone: "debt", tag: `${w.advances.items.length} app${w.advances.items.length === 1 ? "" : "s"}` });
   const small: Event[] = [];
@@ -50,16 +54,16 @@ export function Envelopes({ snapshot }: ViewProps) {
       small.push(e);
       continue;
     }
-    envs.push({ key: e.source, name: e.name, sub: `due ${shortDate(e.date)}${e.autopay ? " · autopay" : ""}`, amount: e.amount, target: e.amount, fill: e.funded ? 1 : 0, tone: e.kind === "installment" ? "debt" : "bill", tag: e.funded ? "funded" : "not yet" });
+    envs.push({ key: e.source, name: e.name, sub: `due ${shortDate(e.date)}${e.autopay ? " · autopay" : ""}`, amount: e.amount, target: e.amount, fill: e.funded ? 1 : 0, tone: e.kind === "installment" ? "debt" : "bill", tag: e.funded === null ? "unknown" : e.funded ? "funded" : "not yet" });
   }
   if (w.bills.small.count) {
     const g = w.bills.small;
     // The engine says only whether all of them are funded, not how much: "partly" is drawn empty with the word.
-    envs.push({ key: "small", name: "Small stuff", sub: g.names.join(", "), amount: g.total, target: g.total, fill: g.all_funded ? 1 : 0, tone: "bill", tag: g.all_funded ? "funded" : "partly funded" });
+    envs.push({ key: "small", name: "Small stuff", sub: g.names.join(", "), amount: g.total, target: g.total, fill: g.all_funded ? 1 : 0, tone: "bill", tag: g.all_funded === null ? "unknown" : g.all_funded ? "funded" : "partly funded" });
   }
   for (const e of [...w.set_aside.items].sort((a, b) => b.amount - a.amount)) {
     const share = e.share ?? 1;
-    envs.push({ key: `aside-${e.source}`, name: e.name, sub: `due ${shortDate(e.date)} · kept for the next paycheck`, amount: e.kept ?? e.amount, target: e.amount, fill: e.funded ? share : 0, tone: "bill", tag: e.funded ? (share < 1 ? "half kept" : "kept") : "not yet" });
+    envs.push({ key: `aside-${e.source}`, name: e.name, sub: `due ${shortDate(e.date)} · kept for the next paycheck`, amount: e.kept ?? e.amount, target: e.amount, fill: e.funded ? share : 0, tone: "bill", tag: e.funded === null ? "unknown" : e.funded ? (share < 1 ? "half kept" : "kept") : "not yet" });
   }
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -68,9 +72,9 @@ export function Envelopes({ snapshot }: ViewProps) {
         <div style={{ fontSize: 13, color: "var(--ink-2)" }}>Every dollar from the {shortDate(w.start)} paycheck already has an envelope. How full each one is shows how much of it is already there.</div>
       </div>
       <section className="card" style={{ padding: "12px 18px", display: "flex", flexWrap: "wrap", gap: 24, alignItems: "center" }}>
-        <div><span style={{ fontSize: 12, color: "var(--ink-2)", fontWeight: 600 }}>Spend envelope</span><div className="num" style={{ fontSize: 32, fontWeight: 800, letterSpacing: "-0.02em" }}>{money(w.safe)}</div></div>
+        <div><span style={{ fontSize: 12, color: "var(--ink-2)", fontWeight: 600 }}>Spend envelope</span><div className="num" style={{ fontSize: safe === null ? 22 : 32, fontWeight: 800, letterSpacing: "-0.02em" }}>{moneyOr(safe, {}, "No balance yet")}</div></div>
         <div style={{ fontSize: 13, color: "var(--ink-2)", maxWidth: 560 }}>
-          {w.bills.items.every((e) => e.funded) ? `Everything due through ${shortDate(w.end)} is funded.` : `${w.bills.items.filter((e) => !e.funded).length} bills this paycheck pays are not yet funded.`}
+          {safe === null ? <>Which envelopes are already full is not known until a bank reports a balance. <Link to="/settings/connectors#banks" style={{ fontWeight: 700 }}>Link your bank</Link></> : w.bills.items.every((e) => e.funded) ? `Everything due through ${shortDate(w.end)} is funded.` : `${w.bills.items.filter((e) => !e.funded).length} bills this paycheck pays are not yet funded.`}
           {w.set_aside.items.length ? <> The next paycheck's envelopes already hold <span className="num">{money(w.set_aside.total)}</span>; the {shortDate(snapshot.windows[1]?.start ?? w.end)} paycheck fills the rest.</> : ""}
         </div>
         <div style={{ flexGrow: 1 }} />

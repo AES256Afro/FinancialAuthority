@@ -66,7 +66,8 @@ def build_report(session: Session, today: date, sections: list[str] | None = Non
         title = dict(SECTIONS)[key]
         if key == "summary":
             out.append(_section(key, title, snap["why"]["safe_to_spend"], kpis=[
-                {"label": "Safe to spend", "value": usd(snap["safe_to_spend"]["amount"]), "note": f"through {day(snap['safe_to_spend']['through'])}"},
+                {"label": "Safe to spend", "value": "no balance yet" if snap["safe_to_spend"]["amount"] is None else usd(snap["safe_to_spend"]["amount"]),
+                 "note": "link a bank or type what checking holds" if snap["safe_to_spend"]["amount"] is None else f"through {day(snap['safe_to_spend']['through'])}"},
                 {"label": "Next paycheck", "value": usd(snap["next_paycheck"]["amount"]), "note": day(snap["next_paycheck"]["date"])},
                 {"label": "Due before payday", "value": usd(snap["due_before_payday"]["total"]), "note": f"{len(snap['due_before_payday']['items'])} payments"},
                 {"label": "Saved", "value": usd(sv["balance"]), "note": f"rung {sv['next_rung']['n']} next" if sv["next_rung"] else "every rung reached"},
@@ -76,8 +77,9 @@ def build_report(session: Session, today: date, sections: list[str] | None = Non
             parts = [p for p in w["parts"] if p["amount"] > 0.5]
             rows = [[i["name"], day(i["date"]), p["label"], usd(i["amount"], True)] for p in parts for i in p["items"][:8] if p["key"] not in ("yours", "saving")]
             out.append(_section(key, f"The {day(w['start'])} check", snap["why"].get(f"window:{w['start']}", ""),
-                                kpis=[{"label": "Brings in", "value": usd(w["inflow"]), "note": f"{usd(w['paycheck'])} check" + (f" + {usd(w['carried_in'])} carried" if w["carried_in"] > 0 else "")},
-                                      {"label": "Yours", "value": usd(next(p["amount"] for p in w["parts"] if p["key"] == "yours")), "note": "after the parts below"}],
+                                kpis=[{"label": "Brings in", "value": "no balance yet" if w["inflow"] is None else usd(w["inflow"]),
+                                       "note": f"{usd(w['paycheck'])} check" + (f" + {usd(w['carried_in'])} carried" if (w["carried_in"] or 0) > 0 else "")},
+                                      {"label": "Yours", "value": "no balance yet" if w.get("no_balance") else usd(next(p["amount"] for p in w["parts"] if p["key"] == "yours")), "note": "after the parts below"}],
                                 bars=[{"label": p["label"], "value": p["amount"], "role": p["key"]} for p in parts],
                                 table={"columns": ["Line", "Date", "Part", "Amount"], "align": ["l", "l", "l", "r"], "rows": rows}))
         elif key == "bills_by_check" and pv:
@@ -94,7 +96,7 @@ def build_report(session: Session, today: date, sections: list[str] | None = Non
             for a in cov["accounts"]:
                 if a["role"] == "spend":
                     w1, w2 = a["windows"]
-                    rows.append([a["name"], usd(w1["needs"]), usd(w2["needs"]), usd(a["balance"]), {"good": "on track", "warn": "watch", "crit": "act"}[a["status"]]])
+                    rows.append([a["name"], usd(w1["needs"]), usd(w2["needs"]), "no balance yet" if a.get("no_balance") else usd(a["balance"]), {"good": "on track", "warn": "watch", "crit": "act"}[a["status"]]])
                 elif a["role"] == "card":
                     rows.append([a["name"], usd(sum(p["amount"] for p in a.get("payments", []) if p["date"] < cov["paydays"][0])), usd(sum(p["amount"] for p in a.get("payments", []) if cov["paydays"][0] <= p["date"] < cov["paydays"][1])), usd(a["balance"]) + " owed", {"good": "on track", "warn": "watch", "crit": "act"}[a["status"]]])
             sheet = [f"{day(r['date'])}: {r['action']}, {usd(r['amount'], True)}, so that {r['so_that']}." for r in cov["sheet"]]

@@ -4,7 +4,8 @@ import { CalendarClock } from "lucide-react";
 import { useState } from "react";
 import { api, useApi } from "../api";
 import { amountClass, money, parseMoney, shortDate } from "../format";
-import type { SinkingFund, SinkingOut } from "../types";
+import type { SinkingFund, SinkingOut, Snapshot } from "../types";
+import { noBalance } from "./SafeExplain";
 import { ConfirmButton } from "./ConfirmButton";
 import { Failed, Loading, Said, useFocusOnSaid } from "./State";
 import { StatusPill } from "./Status";
@@ -117,7 +118,8 @@ function SinkingFunds({ onGoalMade }: { onGoalMade: () => void }) {
   );
 }
 
-export function Goals({ onChanged }: { onChanged?: () => void }) {
+/** `s`, where the screen has the plan: with no balance from a bank, what the goals leave safe is not shown as a figure. */
+export function Goals({ onChanged, s }: { onChanged?: () => void; s?: Snapshot }) {
   const state = useApi<GoalsOut>("/api/v1/goals");
   const { data, reload } = state;
   const [adding, setAdding] = useState(false);
@@ -178,7 +180,7 @@ export function Goals({ onChanged }: { onChanged?: () => void }) {
     <section id="goals" className="card" style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Goals</h2>
-        {data.items.length > 0 && <span className="num" style={{ fontSize: 12, color: "var(--ink-2)" }}>{money(data.per_paycheck)} a paycheck together{data.safe_to_spend.after_goals !== undefined ? ` · leaves ${money(data.safe_to_spend.after_goals)} safe to spend` : ""}</span>}
+        {data.items.length > 0 && <span className="num" style={{ fontSize: 12, color: "var(--ink-2)" }}>{money(data.per_paycheck)} a paycheck together{data.safe_to_spend.after_goals !== undefined && !(s && noBalance(s)) ? ` · leaves ${money(data.safe_to_spend.after_goals)} safe to spend` : ""}</span>}
         <div style={{ flexGrow: 1 }} />
         <button className="btn" type="button" aria-expanded={adding} style={{ minHeight: 32, padding: "4px 10px" }} onClick={() => setAdding(!adding)}>{adding ? "Cancel" : "Add a goal"}</button>
       </div>

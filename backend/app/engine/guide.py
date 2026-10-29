@@ -99,7 +99,9 @@ def one_thing(session: Session, today: date, *, snap: dict, cover: dict | None =
         if a["date"] <= (today + timedelta(days=3)).isoformat():
             cands.append((3, {"text": f"Keep {_usd(a['amount'])} in checking for {a['name']} on {_short(a['date'])}.", "why": "The app takes it back on its own; a short account turns it into a fee.", "link": "/borrowing", "source": a["source"], "amount": a["amount"], "date": a["date"]}))
     safe = snap["safe_to_spend"]["amount"]
-    if safe < 0:
+    if safe is None:  # no balance yet: the one thing is to give the plan one, never a shortfall counted from $0
+        cands.append((2, {"text": "Link a bank or type what checking holds, so safe to spend can be worked out.", "why": "No bank has reported a balance yet; without one the plan cannot say what is safe to spend.", "link": "/settings/banks", "source": "snapshot:no_balance", "amount": None, "date": today.isoformat()}))
+    elif safe < 0:
         cands.append((1, {"text": f"Spend nothing extra until {_short(snap['next_paycheck']['date'])}: the plan is short {_usd(safe)}.", "why": "Safe to spend is below zero, so any extra purchase comes out of a bill.", "link": "/", "source": "snapshot:safe_to_spend", "amount": safe, "date": snap["safe_to_spend"]["through"]}))
     pend = snap["pending"]
     waiting = pend["confirmations"] + pend["approvals"]
@@ -128,7 +130,8 @@ def glance(session: Session, today: date, *, snap: dict, cover: dict) -> dict:
     when = "today" if days == 0 else "tomorrow" if days == 1 else f"in {days} days"
     status = "crit" if cover["counts"].get("crit") else "warn" if cover["counts"].get("warn") else "good"
     safe = snap["safe_to_spend"]
-    text = f"Safe to spend {_usd(safe['amount'])}{' below zero' if safe['amount'] < 0 else ''} through {_short(safe['through'])}. "
+    text = (f"Safe to spend {_usd(safe['amount'])}{' below zero' if safe['amount'] < 0 else ''} through {_short(safe['through'])}. " if safe["amount"] is not None
+            else "No balance yet, so safe to spend is not worked out. ")
     text += f"Payday {when}, {_usd(p['amount'])}. " if p.get("known") else "No payday on file. "
     text += thing["thing"]["text"]
     return {
@@ -168,8 +171,8 @@ def weekly_checkin(session: Session, today: date, *, snap: dict, cover: dict | N
     log = get_setting(session, "checkin.log", {}) or {}
     last = log.get(week_key(today - timedelta(days=7)))
     cash_now = snap["cash"]
-    line = f"Checking holds {_usd(cash_now)}."
-    if last and last.get("cash") is not None:
+    line = f"Checking holds {_usd(cash_now)}." if cash_now is not None else "No bank has reported what checking holds yet: link a bank or type it."
+    if cash_now is not None and last and last.get("cash") is not None:
         diff = cash_now - float(last["cash"])
         line = f"Checking holds {_usd(cash_now)}, {'up' if diff >= 0 else 'down'} {_usd(diff)} from your last check-in."
     return {

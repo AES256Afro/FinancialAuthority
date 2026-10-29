@@ -18,7 +18,8 @@ export interface Event {
   autopay: boolean;
   source: string;
   line?: "housing" | "utilities" | "debt";
-  funded?: boolean;
+  /** null on the first check when no bank has reported a balance: funded from what is unknown. */
+  funded?: boolean | null;
   share?: number;
   bill_id?: number;
   paid_from?: string;
@@ -129,22 +130,24 @@ export interface Window {
   start: string;
   end: string;
   paycheck: number;
-  carried_in: number;
-  inflow: number;
+  /** null on the first window when no bank has reported a balance (no_balance). */
+  carried_in: number | null;
+  inflow: number | null;
+  no_balance?: boolean;
   advances: { total: number; items: Event[] };
   bills: {
     total: number;
     items: Event[];
     card_parts: { balance: number; bills: number; spend: number };
     other_total: number;
-    small: { total: number; count: number; names: string[]; all_funded: boolean; under: number };
+    small: { total: number; count: number; names: string[]; all_funded: boolean | null; under: number };
     after_eight: { total: number; count: number };
   };
   set_aside: { total: number; items: Event[] };
   buffer: number;
   out: number;
   spoken_for: number;
-  safe: number;
+  safe: number | null;
 }
 
 export interface CalendarWeek {
@@ -164,7 +167,10 @@ export interface Snapshot {
   paystubs: { recent: PaystubRow[]; last: PaystubRow | null; short: PaystubRow[] };
   brief: BriefItem[];
   accounts: AccountRow[];
-  cash: number;
+  /** null when no spending account has a balance yet (no_balance). */
+  cash: number | null;
+  /** No bank has reported a balance for any spending account: the figures that start from it are null. */
+  no_balance?: boolean;
   buffer: number;
   next_paycheck: { date: string; days: number; amount: number; source: string | null; known?: boolean; cadence?: string };
   paydays?: { date: string; amount: number }[];
@@ -183,15 +189,15 @@ export interface Snapshot {
   window: { start: string; end: string; total: number; items: Event[] };
   set_aside: { total: number; items: Event[] };
   safe_to_spend: {
-    amount: number; after_goals: number; share_of_cash?: number; through: string; version: string;
-    parts?: { cash: number; due_before_payday: number; advances: number; advances_on_payday: number; buffer: number; next_window_shortfall: number };
-    steps?: { label: string; amount: number; note?: string; as_of?: string | null; items?: { name: string; amount: number; date: string; source?: string }[] }[];
-    by_account?: { id: number; name: string; kind: string; balance: number; as_of: string | null; from_bank: boolean; paycheck_lands: boolean; due: number; buffer: number; advances: number; shortfall: number; goes_out: number; safe: number; items: { name: string; amount: number; date: string }[] }[];
+    amount: number | null; after_goals: number | null; share_of_cash?: number | null; through: string; version: string; no_balance?: boolean; words?: string;
+    parts?: { cash: number | null; due_before_payday: number; advances: number; advances_on_payday: number; buffer: number; next_window_shortfall: number };
+    steps?: { label: string; amount: number | null; note?: string; as_of?: string | null; items?: { name: string; amount: number; date: string; source?: string }[] }[];
+    by_account?: { id: number; name: string; kind: string; balance: number | null; as_of: string | null; from_bank: boolean; paycheck_lands: boolean; due: number; buffer: number; advances: number; shortfall: number; goes_out: number; safe: number | null; no_balance?: boolean; items: { name: string; amount: number; date: string }[] }[];
     left_out?: { name: string; verb?: string; amount: number; why: string; owes?: boolean }[];
   };
   borrowing?: { fees_90d: number; fees_month: number; advances_90d: number; outstanding_total: number; outstanding: number };
   goals: { per_paycheck: number; items: { id: number; name: string; kind: string; target: number; funded: number; remaining: number; target_date: string | null; per_paycheck: number; on_track: boolean }[] };
-  usual_pace: { per_day: number; per_window: number; basis_days: number; transactions: number; over_safe: number };
+  usual_pace: { per_day: number; per_window: number; basis_days: number; transactions: number; over_safe: number | null };
   board: { problems: { total: number; items: PaymentRow[] }; due_7: { total: number; items: Event[] }; later: { total: number; items: Event[] }; paid: { total: number; items: PaymentRow[] } };
   debts: { id: number; name: string; kind: string; balance: number; apr: number | null; minimum: number | null; due_day: number | null; source?: string }[];
   pending: { total: number; confirmations: number; series: number; facts: number; pairs?: number; approvals: number; past_due: number };

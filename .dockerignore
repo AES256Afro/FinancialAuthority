@@ -13,3 +13,7 @@ backend/data
 *.local.md
 .env
 .env.*
+# Not part of the running app: the test suite (its own password and fixtures) and the developer scripts.
+backend/tests
+backend/scripts
+backend/imports

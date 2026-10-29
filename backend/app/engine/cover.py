@@ -125,6 +125,13 @@ def account_cover(session: Session, today: date, *, saving: dict | None = None) 
                 })
                 running = left + keep  # the buffer is still in the account; the next window keeps it again
             w1, w2 = out_w
+            if a.balance is None:
+                # No bank has reported this account's balance and none was typed: what it holds is unknown, not $0, so
+                # no shortfall is worked out from it and nothing is put on the sheet.
+                for w in out_w:
+                    w.update(has=None, has_total=None, left=None, low=None, low_on=None)
+                out_accounts.append({**base, "role": "spend", "status": "warn", "headline": "No balance yet: link the bank or type what it holds", "no_balance": True, "deposit": a.id == default_id, "pace_per_day": _money(pace), "windows": out_w})
+                continue
             if w1["left"] < 0:
                 status, headline = "crit", f"Short {_usd(w1['left'])} before {_short(p1)}; the balance runs lowest on {_short(date.fromisoformat(w1['low_on']))}"
             elif w2["left"] < 0:

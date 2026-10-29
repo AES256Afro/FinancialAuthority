@@ -488,7 +488,7 @@ interface Result {
 interface ReadinessItem {
   key: string;
   label: string;
-  value: string | number;
+  value: string | number | null; // null: not judged yet (no balance reported)
   target: string | number;
   met: boolean;
   projected?: string | null;
@@ -784,7 +784,7 @@ function WhatIf() {
             <div key={i.key} style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto", gap: 10, alignItems: "start", fontSize: 13, borderTop: "1px solid var(--surface-2)", paddingTop: 6 }}>
               <StatusPill status={i.met ? "good" : "warn"}>{i.met ? "Met" : "Not yet"}</StatusPill>
               <div style={{ minWidth: 0 }}>
-                <div><strong>{plainReadiness(i.label)}</strong> <span style={{ color: "var(--ink-2)" }}>· {typeof i.value === "number" ? money(i.value) : plainReadiness(i.value)} · target {typeof i.target === "number" ? money(i.target) : plainReadiness(i.target)}{i.projected && !i.met ? ` · on track for ${shortDate(i.projected)}` : ""}</span></div>
+                <div><strong>{plainReadiness(i.label)}</strong> <span style={{ color: "var(--ink-2)" }}>· {typeof i.value === "number" ? money(i.value) : i.value === null ? "no balance yet" : plainReadiness(i.value)} · target {typeof i.target === "number" ? money(i.target) : plainReadiness(i.target)}{i.projected && !i.met ? ` · on track for ${shortDate(i.projected)}` : ""}</span></div>
                 {plainReadiness(i.note) && <div style={{ fontSize: 12, color: "var(--muted)" }}>{plainReadiness(i.note)}</div>}
               </div>
               {i.key === "reconciled" && !i.met ? <span /> : <Link to={i.link} aria-label={`Go to: ${i.label}`} className="btn" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", minHeight: 32, padding: "2px 10px", fontSize: 12, whiteSpace: "nowrap" }}>Go →</Link>}

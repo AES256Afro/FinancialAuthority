@@ -98,6 +98,10 @@ def purchase_check(session: Session, today: date, amount: float, *, on: date | N
                 verdict = "wait"
                 break
     safe = snap["safe_to_spend"]
+    if snap.get("no_balance"):
+        # No bank has reported a balance: the line starts from an unknown, so the check cannot say yes or no. It says
+        # it cannot tell yet, and the caveat says why.
+        verdict, breaks, first_ok, after_line = "outside", None, None, []
     return {
         "as_of": today.isoformat(),
         "amount": amount,
@@ -112,7 +116,8 @@ def purchase_check(session: Session, today: date, amount: float, *, on: date | N
         "low_point": {"date": low["date"], "at_pace": low["value"]},
         "low_point_before": low_point([p for p in projection if date.fromisoformat(p["date"]) >= on] or projection),
         "caveats": snap["caveats"],
-        "fits_safe_to_spend": amount <= safe["amount"],
+        "fits_safe_to_spend": None if safe["amount"] is None else amount <= safe["amount"],
+        "no_balance": bool(snap.get("no_balance")),
         "safe_to_spend": safe,
         "horizon": horizon_end.isoformat(),
         "sources": sorted({"snapshot:projection", "snapshot:safe_to_spend", *([breaks["source"]] if breaks else [])}),

@@ -32,6 +32,10 @@ interface Row extends TransactionRow {
 }
 interface Search {
   returned: number;
+  /** Every row the filter matches; the page is `offset` to `offset + returned`, newest first. */
+  total: number;
+  offset: number;
+  limit: number;
   total_amount: number;
   transactions: Row[];
 }
@@ -341,9 +345,13 @@ function Editor({ row, onSaved, onClose, readReceipt }: { row: Row; onSaved: (id
   );
 }
 
-// The table shows a hundred rows at a time. Five hundred at once were over 8,000 elements on a phone; the rows asked
-// for stay loaded and Older and Newer move through them.
+// The table shows a hundred rows at a time, asked of the server one page at a time (offset and limit), so a long
+// ledger is paged to its end; Older and Newer move through the pages. Five hundred at once were over 8,000 elements
+// on a phone.
 const PAGE = 100;
+// Finding the row a receipt link names: the list is read this many rows at a time, up to SEEK_PAGES times.
+const SEEK = 500;
+const SEEK_PAGES = 40;
 
 interface BulkChange {
   category?: string;
@@ -363,22 +371,28 @@ export function Transactions() {
   const [tagText, setTagText] = useState("");
   const [tag, setTag] = useState("");
   const [everything, setEverything] = useState(askedOpen !== null);
-  const [limit, setLimit] = useState(askedOpen !== null && !askedAround ? 500 : 100);
   const [around, setAround] = useState<{ start: string; end: string } | null>(askedAround ? { start: shiftDay(askedAround, -3), end: shiftDay(askedAround, 14) } : null);
-  const wantOpen = useRef<number | null>(askedOpen);
-  const params = new URLSearchParams({ limit: String(limit) });
-  if (query) params.set("text", query);
-  if (tag) params.set("tag", tag);
-  if (everything) params.set("include_non_spending", "true");
+  // The row a receipt names: first found (which page it is on), then opened once that page has loaded.
+  const [seek, setSeek] = useState<number | null>(askedOpen);
+  const [focusId, setFocusId] = useState<number | null>(null);
+  const filter = new URLSearchParams();
+  if (query) filter.set("text", query);
+  if (tag) filter.set("tag", tag);
+  if (everything) filter.set("include_non_spending", "true");
   if (around) {
-    params.set("start", around.start);
-    params.set("end", around.end);
+    filter.set("start", around.start);
+    filter.set("end", around.end);
   }
+  const filterKey = filter.toString();
+  const [page, setPage] = useState(0);
+  const params = new URLSearchParams(filter);
+  params.set("limit", String(PAGE));
+  params.set("offset", String(page * PAGE));
   const path = `/api/v1/transactions/search?${params}`;
   const { data, error, reload } = useApi<Search>(path);
   const rows = data?.transactions ?? NO_ROWS;
-  const [page, setPage] = useState(0);
-  const onPage = useMemo(() => rows.slice(page * PAGE, (page + 1) * PAGE), [rows, page]);
+  const onPage = rows;
+  const total = data?.total ?? rows.length;
 
   const [selected, setSelected] = useState<Set<number>>(() => new Set());
   const [openId, setOpenId] = useState<number | null>(null);
@@ -394,13 +408,13 @@ export function Transactions() {
   const [biz, setBiz] = useState({ open: false, id: "", share: "1", other: "", line: "" });
   const businessInfo = useApi<BusinessOverview>(selected.size > 0 ? "/api/v1/business" : null);
 
-  // A new search starts with nothing selected, nothing open and nothing said.
+  // A new search starts on its first page with nothing selected, nothing open and nothing said.
   useEffect(() => {
     setSelected(new Set());
     setOpenId(null);
     setSaid(null);
     setPage(0);
-  }, [path]);
+  }, [filterKey]);
 
   const shownIds = useMemo(() => new Set(onPage.map((r) => r.id)), [onPage]);
   const categories = useMemo(() => [...new Set(rows.flatMap((r) => [r.category, ...(r.splits ?? []).map((p) => p.category)]).filter(Boolean))].sort(), [rows]);
@@ -411,25 +425,55 @@ export function Transactions() {
     if (allBox.current) allBox.current.indeterminate = someOn;
   }, [someOn, data]);
 
-  // The row a receipt belongs to opens once it has loaded.
+  // The row a receipt belongs to: read the list in the same order the pages use until the row turns up, then go to
+  // its page. The server has no look-up by id, so this reads at most SEEK * SEEK_PAGES rows.
   useEffect(() => {
-    const id = wantOpen.current;
-    if (id === null || !data) return;
-    wantOpen.current = null;
-    const at = rows.findIndex((r) => r.id === id);
-    if (at >= 0) {
-      setPage(Math.floor(at / PAGE));
-      setOpenId(id);
-      // Two frames: the row's page is drawn first when it is not the first page.
-      window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
-        const button = document.getElementById(`tx-open-${id}`);
-        button?.scrollIntoView({ block: "center" });
-        button?.focus();
-      }));
-    } else {
-      setSaid({ id: null, tone: "error", text: "The purchase that receipt belongs to is not in this list. Search for its store, or pick “Everything”." });
-    }
-  }, [data, rows]);
+    if (seek === null) return;
+    let alive = true;
+    const notHere = () => setSaid({ id: null, tone: "error", text: "The purchase that receipt belongs to is not in this list. Search for its store, or pick “Everything”." });
+    (async () => {
+      for (let k = 0; k < SEEK_PAGES; k++) {
+        const p = new URLSearchParams(filterKey);
+        p.set("limit", String(SEEK));
+        p.set("offset", String(k * SEEK));
+        const r = await api<Search>(`/api/v1/transactions/search?${p}`);
+        if (!alive) return;
+        const at = r.transactions.findIndex((t) => t.id === seek);
+        if (at >= 0) {
+          setSeek(null);
+          setPage(Math.floor((k * SEEK + at) / PAGE));
+          setFocusId(seek);
+          return;
+        }
+        if (r.returned < SEEK || (k + 1) * SEEK >= r.total) break;
+      }
+      setSeek(null);
+      notHere();
+    })().catch(() => {
+      if (alive) {
+        setSeek(null);
+        notHere();
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, [seek, filterKey]);
+
+  // Its page loaded: the row opens and takes the focus.
+  useEffect(() => {
+    const id = focusId;
+    if (id === null || !data || data.offset !== page * PAGE) return;
+    setFocusId(null);
+    if (!data.transactions.some((r) => r.id === id)) return;
+    setOpenId(id);
+    // Two frames: the row's page is drawn first.
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      const button = document.getElementById(`tx-open-${id}`);
+      button?.scrollIntoView({ block: "center" });
+      button?.focus();
+    }));
+  }, [data, focusId, page]);
 
   // Another hundred: the open editor closes and the list starts again at its top.
   const listTop = useRef<HTMLDivElement>(null);
@@ -656,11 +700,10 @@ export function Transactions() {
           <>
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
               <span>
-                {data.returned} shown{tag ? ` · tagged “${tag}”` : ""}
-                {everything ? " · everything, including transfers, card payments, income and hidden rows" : <> · spending only; transfers, card payments, income and hidden rows are left out · total <span className="num">{money(data.total_amount)}</span></>}
+                {total} {total === 1 ? "row" : "rows"}{tag ? ` · tagged “${tag}”` : ""}
+                {everything ? " · everything, including transfers, card payments, income and hidden rows" : <> · spending only; transfers, card payments, income and hidden rows are left out · these {data.returned} total <span className="num">{money(data.total_amount)}</span></>}
               </span>
               <span style={{ flexBasis: "100%" }}>Money out is a plain amount; money in says “in”, like +$40.00 in.</span>
-              {data.returned >= limit && limit < 500 && <button type="button" className="btn" onClick={() => setLimit(500)} style={SMALL}>Show up to 500</button>}
             </div>
             {(tagsSeen.length > 0 || tag) && (
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
@@ -693,7 +736,7 @@ export function Transactions() {
                 ))}
               </tbody>
             </table>
-            {rows.length > PAGE && <Pages page={page} count={rows.length} onPage={turnPage} />}
+            {total > PAGE && <Pages page={page} count={total} onPage={turnPage} />}
           </>
         )}
       </div>
@@ -701,7 +744,7 @@ export function Transactions() {
   );
 }
 
-/** Newer and Older through the rows loaded: which hundred is on screen, of how many. */
+/** Newer and Older through the server's pages: which hundred is on screen, of how many match. */
 function Pages({ page, count, onPage }: { page: number; count: number; onPage: (page: number) => void }) {
   const last = Math.ceil(count / PAGE) - 1;
   return (

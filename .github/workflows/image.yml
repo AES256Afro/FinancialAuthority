@@ -1,7 +1,11 @@
 # Tests, then publishes ghcr.io/aes256afro/financialauthority:
 #   push to main  -> :edge
 #   tag vX.Y.Z    -> :X.Y.Z and :latest   (BoxPilot's catalog pins one)
-# A pull request builds the image without pushing it.
+# A pull request runs the tests only; the image is built on main and on a tag.
+# Every action is pinned to a commit (the tag it was in a comment; Dependabot moves both), so a moved or
+# hijacked tag in someone else's repository cannot run in the job that holds the package write. Each image
+# pushed carries a signed build provenance attestation: `gh attestation verify oci://<image>@<digest>
+# --owner AES256Afro` proves it was built here, from which commit, by this workflow.
 name: image
 
 on:
@@ -21,8 +25,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           python-version: "3.12"
       - run: uv sync --frozen
@@ -40,7 +44,7 @@ jobs:
       - name: No secret in a committed file
         run: |
           ! git grep -nI -E '(FA_(PASSWORD|SESSION_SECRET|DATA_KEY)=[^$ ]{6,})|(-----BEGIN [A-Z ]*PRIVATE KEY-----$)|(fa_[A-Za-z0-9]{32,})' -- ':!*.md' ':!backend/tests/*'
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -67,13 +71,13 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
           python-version: "3.12"
       - run: uv sync --frozen
         working-directory: backend
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -86,7 +90,7 @@ jobs:
         working-directory: frontend
       - run: npx playwright test
         working-directory: frontend
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: failure()
         with:
           name: playwright-report
@@ -100,23 +104,26 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write      # the provenance signature (Sigstore, through GitHub's OIDC token)
+      attestations: write  # stored with the repository's attestations and pushed beside the image
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/login-action@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           images: ghcr.io/aes256afro/financialauthority
           tags: |
             type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
             type=semver,pattern={{version}}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-      - uses: docker/build-push-action@v7
+      - id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: docker/Dockerfile
@@ -126,17 +133,23 @@ jobs:
           build-args: VERSION=${{ github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-name: ghcr.io/aes256afro/financialauthority
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
       # The Bridge sidecar: the community image plus libfido2, which newer Bridge releases load after they update
       # themselves. Published beside the app so a catalog install runs the same thing the hand-run copy does.
       - id: bridge
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           images: ghcr.io/aes256afro/financialauthority-bridge
           tags: |
             type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
             type=semver,pattern={{version}}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-      - uses: docker/build-push-action@v7
+      - id: build-bridge
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: deploy/bridge
           push: true
@@ -144,3 +157,8 @@ jobs:
           labels: ${{ steps.bridge.outputs.labels }}
           cache-from: type=gha,scope=bridge
           cache-to: type=gha,mode=max,scope=bridge
+      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-name: ghcr.io/aes256afro/financialauthority-bridge
+          subject-digest: ${{ steps.build-bridge.outputs.digest }}
+          push-to-registry: true

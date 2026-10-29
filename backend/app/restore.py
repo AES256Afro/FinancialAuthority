@@ -106,6 +106,7 @@ def make_point(kind: str, reason: str) -> dict[str, Any]:
         meta = {"name": name, "kind": kind, "reason": reason[:200], "created_at": now.isoformat(), "bytes": partial.stat().st_size, "verified": True,
                 "tables": verdict["tables"], "transactions": verdict["transactions"], "documents": sorted(document_shas(partial))}
         path.with_suffix(".json").write_text(json.dumps(meta), encoding="utf-8")
+        path.with_suffix(".json").chmod(0o600)
         partial.replace(path)
     finally:
         for leftover in (partial, *(partial.with_name(partial.name + end) for end in ("-wal", "-shm", "-journal"))):
@@ -119,6 +120,26 @@ def make_point(kind: str, reason: str) -> dict[str, Any]:
 
 def documents_folder() -> Path:
     return Path(settings.data_dir) / DOCUMENTS
+
+
+def owner_only_files() -> int:
+    """Every restore point, its description and leftovers, and every kept document readable by the app's own user
+    alone. New ones are made that way; this brings the ones an older version left readable to anyone on the server
+    (0644, as found on an install in October 2026) into line at startup. A file another user owns, or a mount that
+    refuses the change, is left as it is. Returns how many were changed."""
+    changed = 0
+    for where in (folder(), documents_folder()):
+        if not where.is_dir():
+            continue
+        for path in where.iterdir():
+            try:
+                if path.is_symlink() or not path.is_file() or path.stat().st_mode & 0o077 == 0:
+                    continue
+                path.chmod(0o600)
+                changed += 1
+            except OSError:
+                pass
+    return changed
 
 
 def document_shas(db: Path) -> set[str]:
@@ -280,8 +301,31 @@ def status(fresh: bool = False) -> dict[str, Any]:
         last_check = json.loads(note.read_text(encoding="utf-8")) if note.exists() else None
     except ValueError:
         last_check = None
+    due = copy_due() if not points else True
+    if live.get("ok") and age_hours is not None and age_hours <= 48:
+        state, words = "good", "Protected"
+    elif live.get("ok") and not points and not due:
+        state, words = "new", "The first daily copy is not due yet"  # an install minutes old has nothing to look at
+    else:
+        state, words = "warn", "Needs a look"
     return {"folder": str(folder()), "count": len(points), "bytes": sum(p["bytes"] for p in points), "newest": newest, "latest_age_hours": age_hours,
-            "database": {"bytes": settings.db_path.stat().st_size if settings.db_path.exists() else 0, **live}, "keep": KEEP, "last_check": last_check}
+            "database": {"bytes": settings.db_path.stat().st_size if settings.db_path.exists() else 0, **live}, "keep": KEEP, "last_check": last_check,
+            "copy_due": due, "state": state, "state_words": words}
+
+
+def copy_due() -> bool:
+    """Whether a copy should be there by now: once the daily copy has had its first run (it runs within hours of the
+    start, and again every six), a missing copy is a problem; before that, on a new install, it is not."""
+    try:
+        from sqlmodel import Session, select
+
+        from .db import engine
+        from .models import JobRun
+
+        with Session(engine) as session:
+            return session.exec(select(JobRun.id).where(JobRun.name == "restore_point_daily", JobRun.finished_at != None).limit(1)).first() is not None  # noqa: E711
+    except Exception:  # noqa: BLE001 - when the job table cannot be read, say a copy is due rather than hide a gap
+        return True
 
 
 def _path(name: str) -> Path:

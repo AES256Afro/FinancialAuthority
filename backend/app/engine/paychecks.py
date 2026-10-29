@@ -75,6 +75,10 @@ def projected(snap: dict, saving: dict | None) -> list[dict]:
         parts["aside"]["amount"] = w["set_aside"]["total"]
         parts["aside"]["items"] = [_item(e) for e in w["set_aside"]["items"]]
         safe = w["safe"]
+        if safe is None:  # no balance yet: what this check leaves is unknown, so no part of it is drawn as short or free
+            out.append({"start": w["start"], "end": w["end"], "paycheck": _money(w["paycheck"]), "carried_in": None, "inflow": None, "short": None, "safe": None,
+                        "parts": _finish(parts), "actual": False, "no_balance": True})
+            continue
         keep = min(float(keeps.get(w["start"], 0.0)), max(0.0, safe))
         parts["saving"]["amount"] = keep
         parts["yours"]["amount"] = max(0.0, safe - keep)

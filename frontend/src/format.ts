@@ -9,6 +9,12 @@ export function money(value: number, opts: { sign?: boolean; cents?: boolean } =
   return `${opts.sign ? "+" : ""}$${text}`;
 }
 
+/** A figure the engine may leave null (one that starts from a balance no bank has reported yet): its number, or
+ * words in its place, never "$0". */
+export function moneyOr(value: number | null | undefined, opts: { sign?: boolean; cents?: boolean } = {}, words = "no balance yet"): string {
+  return value === null || value === undefined ? words : money(value, opts);
+}
+
 /** A transaction's amount, said one way on every screen: money out is a plain amount ("$12.50"); money in, which
  * the app keeps as a minus amount, is "+$2,240.00 in". */
 export function flow(value: number, opts: { cents?: boolean } = {}): string {

@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import auth, crypto, factors, oauth
+from . import restore as restore_points
 from .security import SecurityMiddleware
 from .api import apphealth, appearance, inputs, business, datacheck, approvals, banks, borrowing, credit, custom_reports, exports, goals, guide, homeassistant, housing, imports, moving, needsyou, people, moves, investments, ledger_rules, llm, mail, payoff, planned, plaid_webhook, privacy, projections, push, recap, registers, restore, routes, scenarios, sinking, tools, watch
 from .config import settings
@@ -74,6 +75,7 @@ async def lifespan(app: FastAPI):
         log.error(problem)
         raise RuntimeError(problem)  # a changed data key is said once, here, not found feature by feature
     _owner_only(settings.db_path)
+    restore_points.owner_only_files()
     if settings.demo:
         with session_scope() as session:
             result = seed(session)

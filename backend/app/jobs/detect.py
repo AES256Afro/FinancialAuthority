@@ -224,5 +224,28 @@ def _is_income_row(r: dict) -> bool:
     return r["amount"] < 0 and r["category"] == "Income"
 
 
+def bill_for_series(session: Session, series: RecurringSeries, name: str, amount: float) -> Bill | None:
+    """The bill already on the register that a series is, when the owner names the series as a bill: the name typed,
+    else the bank's, matched as recurring.bill_named matches it (the exact name wins, then one name starting the
+    other: "NORTHWIND POWER AUTOPAY" is the "Northwind Power" bill the mail made), at a similar amount, and not
+    already paid by another series. Naming it then links that bill rather than adding a second one beside it."""
+    from ..engine.recurring import bill_named
+
+    def near(b: Bill) -> bool:
+        return abs(float(b.amount) - float(amount)) <= max(2.0, abs(float(b.amount)) * (0.4 if b.amount_mode == "estimate" else 0.15))
+
+    free = [b for b in session.exec(select(Bill).where(Bill.active == True)).all() if b.series_id in (None, series.id) and near(b)]  # noqa: E712
+    for key in dict.fromkeys(k for k in (merchant_key(name), series.merchant_key) if k):
+        bill = bill_named(free, key, loose=True)
+        if bill is not None:
+            return bill
+    return None
+
+
+def pending_query():
+    """The series still waiting for the owner, largest first; the id breaks ties so a page never repeats or skips one."""
+    return select(RecurringSeries).where(RecurringSeries.confirmed == False, RecurringSeries.active == True).order_by(RecurringSeries.typical_amount.desc(), RecurringSeries.id)  # noqa: E712
+
+
 def pending_series(session: Session) -> list[RecurringSeries]:
-    return list(session.exec(select(RecurringSeries).where(RecurringSeries.confirmed == False, RecurringSeries.active == True).order_by(RecurringSeries.typical_amount.desc())).all())  # noqa: E712
+    return list(session.exec(pending_query()).all())

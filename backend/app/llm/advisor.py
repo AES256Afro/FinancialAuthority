@@ -50,6 +50,7 @@ def compact_plan(snap: dict, *, names: bool = True) -> dict:
 
     return {
         "as_of": snap["as_of"],
+        "no_balance": bool(snap.get("no_balance")),  # no bank has reported a balance: cash and safe to spend are null, not zero
         "cash": snap["cash"],
         "buffer": snap["buffer"],
         "accounts": [{"name": a["name"] if names else a["kind"], "kind": a["kind"], "balance": a["balance"]} for a in snap["accounts"]],

@@ -42,6 +42,10 @@ def exit_plan(session: Session, today: date) -> dict[str, Any]:
     steps: list[dict[str, Any]] = []
     prev = 0.0
     for w in windows:
+        if w["safe"] is None:  # no balance yet: what this check leaves is unknown, so no advance is sized for it
+            steps.append({"payday": w["start"], "paycheck": w["paycheck"], "left_with_no_new_advance": None, "pays_back": _money(prev * (1 + rate)), "borrow": 0.0, "fee": 0.0, "left": None})
+            prev = 0.0
+            continue
         base = float(w["safe"])  # pays back what is on file, takes nothing new
         repay = prev * (1 + rate)
         after = base - repay

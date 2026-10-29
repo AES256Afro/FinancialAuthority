@@ -1,7 +1,7 @@
 // Cover: how much each account needs, and by when. Three pictures of the same result, and the payday sheet.
 import { Link } from "react-router-dom";
 import { useApi } from "../api";
-import { COVER_MODES, CoverPanel, coverSummary, type CoverMode } from "../components/Cover";
+import { COVER_MODES, CoverPanel, coverSummary, coverTone, type CoverMode } from "../components/Cover";
 import { ModeSwitch } from "../components/ModeSwitch";
 import { Failed, Loading } from "../components/State";
 import { StatusPill } from "../components/Status";
@@ -15,7 +15,7 @@ export function CoverPage() {
   if (cover.error && !cover.data) return <Failed error={cover.error} what="Cover" onRetry={cover.reload} />;
   if (!cover.data) return <Loading what="what each account needs" />;
   const c = cover.data;
-  const worst = c.counts.crit ? "crit" : c.counts.warn ? "warn" : "good";
+  const worst = coverTone(c);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 1100 }}>
       <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>

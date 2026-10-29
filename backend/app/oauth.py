@@ -382,7 +382,7 @@ async def consent_post(request: Request, req: str = Form(""), decision: str = Fo
         response = _page("Allow access", _consent_body(data, req, await _client_name(data["client_id"])))
         with session_scope() as session:
             token = auth.start_session(session, request)
-        response.set_cookie(auth.COOKIE, token, max_age=auth.SESSION_MAX_AGE, httponly=True, samesite="lax", secure=auth.request_is_https(request), path="/")
+        auth.set_session_cookie(response, request, token)
         return response
     if principal is None or principal.kind != "owner":
         return _page("Sign in", _signin_body(req))

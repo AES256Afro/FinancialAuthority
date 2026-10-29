@@ -123,7 +123,7 @@ export function DataCheck() {
                   <span className={amountClass(d.said)}>{d.said}</span>
                 </div>
                 <span style={{ fontSize: 12, color: "var(--muted)" }}>
-                  {d.last ? `Last checked ${when(d.last.at)}.` : "Not checked yet."}{d.decided ? ` ${d.decided} you settled as different are not raised again.` : ""}
+                  {d.last ? `Last checked ${when(d.last.at)}.` : "Looked over as this page opened; the six-hourly check has not run yet."}{d.decided ? ` ${d.decided} you settled as different are not raised again.` : ""}
                 </span>
               </section>
               {d.findings.map((f) => <FindingCard key={f.key} f={f} onAnswered={(text) => { setSaid({ text, tone: "info" }); state.reload(); }} />)}

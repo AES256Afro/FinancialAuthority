@@ -2,7 +2,7 @@
 // what a check brought in, stacked by where it went. The number on top is what was yours; the dashed line is
 // what the check had to cover. The trend of the gap between them is the story.
 import { money, monthDay, shortDate } from "../format";
-import type { Check } from "../paychecks";
+import { inflowScale, shortOf, type Check } from "../paychecks";
 import { NoChecks, PartTip, Tip, useColours, useTip } from "./common";
 
 const W = 820;
@@ -17,8 +17,8 @@ export function Strips({ history, planned }: { history: Check[]; planned: Check[
   const padR = 12;
   const padT = 30;
   const padB = 34;
-  const max = Math.max(...checks.map((c) => Math.max(c.inflow, c.parts_total))) * 1.08;
-  const minShort = Math.max(...checks.map((c) => c.short), 0);
+  const max = Math.max(...checks.map((c) => Math.max(inflowScale(c), c.parts_total))) * 1.08;
+  const minShort = Math.max(...checks.map(shortOf), 0);
   const range = max + minShort;
   const y = (v: number) => padT + ((H - padT - padB) * (max - v)) / Math.max(1, range);
   const cw = (W - padL - padR) / checks.length;
@@ -55,18 +55,18 @@ export function Strips({ history, planned }: { history: Check[]; planned: Check[
                 const top = y(acc + p.amount);
                 const h = Math.max(0, y(acc) - top - (k < shown.length - 1 ? 2 : 0));
                 acc += p.amount;
-                return <rect key={p.key} x={x} y={top} width={bw} height={h} rx={k === shown.length - 1 ? 4 : 0} fill={colours[p.key]} onMouseMove={(e) => show(e, <><div style={{ fontWeight: 800, marginBottom: 4 }}>The {shortDate(c.start)} check{c.actual ? "" : " (planned)"}</div><PartTip part={p} colour={colours[p.key]} of={c.inflow} /></>)} />;
+                return <rect key={p.key} x={x} y={top} width={bw} height={h} rx={k === shown.length - 1 ? 4 : 0} fill={colours[p.key]} onMouseMove={(e) => show(e, <><div style={{ fontWeight: 800, marginBottom: 4 }}>The {shortDate(c.start)} check{c.actual ? "" : " (planned)"}</div><PartTip part={p} colour={colours[p.key]} of={c.inflow ?? undefined} /></>)} />;
               })}
-              {c.short > 0 && <rect x={x} y={y(0)} width={bw} height={y(-c.short) - y(0)} rx={3} fill="var(--critical)" onMouseMove={(e) => show(e, <div><strong>Short {money(c.short)}</strong><div>The check did not cover the days until the next one.</div></div>)} />}
-              <text className="num" x={cx(i)} y={y(Math.max(c.inflow, acc)) - 6} fontSize="10.5" fontWeight="800" textAnchor="middle" fill="var(--ink)">{c.short > 0 ? `−${money(c.short)}` : money(c.parts.find((p) => p.key === "yours")?.amount ?? 0)}</text>
+              {shortOf(c) > 0 && <rect x={x} y={y(0)} width={bw} height={y(-shortOf(c)) - y(0)} rx={3} fill="var(--critical)" onMouseMove={(e) => show(e, <div><strong>Short {money(shortOf(c))}</strong><div>The check did not cover the days until the next one.</div></div>)} />}
+              <text className="num" x={cx(i)} y={y(Math.max(inflowScale(c), acc)) - 6} fontSize="10.5" fontWeight="800" textAnchor="middle" fill="var(--ink)">{shortOf(c) > 0 ? `−${money(shortOf(c))}` : c.safe === null ? "no balance" : money(c.parts.find((p) => p.key === "yours")?.amount ?? 0)}</text>
               <text x={cx(i)} y={H - padB + 16} fontSize="10.5" textAnchor="middle" fill="var(--muted)">{monthDay(c.start)}</text>
             </g>
           );
         })}
         <line x1={padL} x2={W - padR} y1={y(0)} y2={y(0)} stroke="var(--ink-2)" />
-        <path d={line(checks.map((c) => c.inflow))} fill="none" stroke="var(--ink)" strokeWidth={2} />
+        <path d={line(checks.map(inflowScale))} fill="none" stroke="var(--ink)" strokeWidth={2} />
         <path d={line(checks.map(coverOf))} fill="none" stroke="var(--ink-2)" strokeWidth={2} strokeDasharray="5 4" />
-        {checks.map((c, i) => <circle key={`n${c.start}`} cx={cx(i)} cy={y(c.inflow)} r={3.5} fill="var(--surface)" stroke="var(--ink)" strokeWidth={2} />)}
+        {checks.map((c, i) => <circle key={`n${c.start}`} cx={cx(i)} cy={y(inflowScale(c))} r={3.5} fill="var(--surface)" stroke="var(--ink)" strokeWidth={2} />)}
       </svg>
       <Tip tip={tip} width={ref.current?.clientWidth ?? W} />
       <div style={{ fontSize: 12, color: "var(--ink-2)", display: "flex", gap: 14, flexWrap: "wrap", marginTop: 4 }}>

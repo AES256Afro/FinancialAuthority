@@ -6,7 +6,7 @@ import { amountClass, connectorWord, daysWord, money, shortDate, when } from "..
 import { palette } from "../looks";
 import { getPrefs } from "../prefs";
 import type { ViewProps } from "./index";
-import { PlanCaveats, SafeExplain, SafePill, noPayday } from "../components/SafeExplain";
+import { PlanCaveats, SafeExplain, SafePill, noPayday, safeFigure, safeShort } from "../components/SafeExplain";
 import { Failed, Loading } from "../components/State";
 import { SeverityTag } from "../components/Status";
 import { Watchlist } from "../components/Watchlist";
@@ -75,7 +75,7 @@ export function MissionControl({ snapshot }: ViewProps) {
   const mailboxes = (check.sources ?? []).filter((m) => m.kind === "mail");
   const soon = s.due_before_payday.total;
   const waiting = s.pending.total;
-  const short = s.safe_to_spend.amount < 0;
+  const short = safeShort(s);
   const unknown = noPayday(s);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -87,7 +87,7 @@ export function MissionControl({ snapshot }: ViewProps) {
       </div>
       <section className="grid grid-cols-2 xl:grid-cols-4" style={{ gap: 12 }}>
         <Tile label="Safe to spend" border={short ? "var(--critical)" : "var(--safe)"}>
-          <Big value={money(s.safe_to_spend.amount)} sub={`${unknown ? "now, counting no paycheck; bills due by" : "through"} ${shortDate(s.safe_to_spend.through)} · safety cushion ${money(s.buffer)} kept`} />
+          <Big value={safeFigure(s)} sub={`${unknown ? "now, counting no paycheck; bills due by" : "through"} ${shortDate(s.safe_to_spend.through)} · safety cushion ${money(s.buffer)} kept`} />
           {(short || unknown) && <div><SafePill s={s} /></div>}
           {unknown && <Link to="/paystubs#paycheck" style={{ fontSize: 12, fontWeight: 700 }}>Add your paycheck</Link>}
         </Tile>

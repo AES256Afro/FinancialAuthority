@@ -31,8 +31,8 @@ def record_plan(session: Session, today: date) -> dict[str, Any] | None:
     from .snapshot import finance_snapshot
 
     snap = finance_snapshot(session, today)
-    if not snap["windows"] or not snap["next_paycheck"].get("known", True):
-        return None
+    if not snap["windows"] or not snap["next_paycheck"].get("known", True) or snap.get("no_balance"):
+        return None  # no paycheck, or no balance: a plan kept from nothing would be compared against later
     w = snap["windows"][0]
     if date.fromisoformat(w["start"]) < today:
         return None  # that paycheck's days have begun; its plan is already kept
@@ -96,5 +96,5 @@ def week_recap(session: Session, today: date) -> dict[str, Any]:
     usual = snap["usual_pace"]["per_day"] * 7
     spent = sum(t.amount for t in rows)
     top = sorted(by_cat.items(), key=lambda kv: -kv[1])[:3]
-    text = f"This week: ${spent:,.0f} out, against a usual week of ${usual:,.0f}. " + ("Most went to " + ", ".join(f"{c} (${v:,.0f})" for c, v in top) + ". " if top else "") + f"Safe to spend now: {'-' if snap['safe_to_spend']['amount'] < 0 else ''}${abs(snap['safe_to_spend']['amount']):,.0f}."
+    text = f"This week: ${spent:,.0f} out, against a usual week of ${usual:,.0f}. " + ("Most went to " + ", ".join(f"{c} (${v:,.0f})" for c, v in top) + ". " if top else "") + (f"Safe to spend now: {'-' if snap['safe_to_spend']['amount'] < 0 else ''}${abs(snap['safe_to_spend']['amount']):,.0f}." if snap["safe_to_spend"]["amount"] is not None else "No balance yet, so safe to spend is not worked out.")
     return {"from": (start + timedelta(days=1)).isoformat(), "to": today.isoformat(), "spent": _money(spent), "usual_week": _money(usual), "top": [{"category": c, "spent": _money(v)} for c, v in top], "text": text}

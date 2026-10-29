@@ -7,7 +7,7 @@ import { Link } from "react-router-dom";
 import { useApi } from "./api";
 import type { Arrangement } from "./appearance";
 import { ByCheck } from "./components/ByCheck";
-import { COVER_MODES, CoverPanel, coverSummary, type CoverMode } from "./components/Cover";
+import { COVER_MODES, CoverPanel, coverSummary, coverTone, type CoverMode } from "./components/Cover";
 import { Goals } from "./components/Goals";
 import { NextStepsCard } from "./components/NextSteps";
 import { OneThing } from "./components/OneThing";
@@ -23,7 +23,7 @@ import { getPrefs } from "./prefs";
 import type { Snapshot } from "./types";
 import { MonthGrid } from "./views/MonthGrid";
 import { VIEWS, viewById } from "./views";
-import { PlanCaveats, SafeExplain, noPayday, safeTitle } from "./components/SafeExplain";
+import { PlanCaveats, SafeExplain, SafePill, SafeSentence, noBalance, noPayday, safeFigure, safeShort, safeTitle } from "./components/SafeExplain";
 
 export interface SectionDef {
   key: string;
@@ -73,15 +73,19 @@ function SafeSection({ s, mode, setMode }: { s: Snapshot; mode: string; setMode?
   const amount = s.safe_to_spend.amount;
   const head = (
     <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-      <div className="num" style={{ fontSize: mode === "hero" ? 52 : 34, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1, color: amount < 0 ? "var(--critical-ink)" : "var(--ink)" }}>{money(amount)}</div>
+      <div className="num" style={{ fontSize: noBalance(s) ? 30 : mode === "hero" ? 52 : 34, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1, color: safeShort(s) ? "var(--critical-ink)" : "var(--ink)" }}>{safeFigure(s)}</div>
       <h2 style={{ margin: 0, fontSize: 13, fontWeight: 400, color: "var(--ink-2)" }}>{safeTitle(s).replace(/^Safe/, "safe")}</h2>
-      {amount < 0 && <StatusPill status="crit">{noPayday(s) ? "Short, and no payday on file" : "Short before payday"}</StatusPill>}
-      {amount >= 0 && noPayday(s) && <StatusPill status="warn">No payday on file</StatusPill>}
+      {noBalance(s) ? <SafePill s={s} /> : <>
+        {safeShort(s) && <StatusPill status="crit">{noPayday(s) ? "Short, and no payday on file" : "Short before payday"}</StatusPill>}
+        {!safeShort(s) && noPayday(s) && <StatusPill status="warn">No payday on file</StatusPill>}
+      </>}
       <ShowAs modes={SAFE_MODES} value={mode} onChange={setMode} label="safe to spend" />
     </div>
   );
   let body: ReactNode = null;
-  if (mode === "waterfall" && parts) {
+  if (noBalance(s) || amount === null) {
+    body = <span style={{ fontSize: 13, color: "var(--ink-2)" }}><SafeSentence s={s} /></span>;
+  } else if (mode === "waterfall" && parts && parts.cash !== null) {
     const steps = [
       { label: "in checking", v: parts.cash, fill: "var(--ink)", start: 0 },
       { label: "due before payday", v: -parts.due_before_payday, fill: c.bill },
@@ -114,7 +118,7 @@ function SafeSection({ s, mode, setMode }: { s: Snapshot; mode: string; setMode?
         </div>
       </div>
     );
-  } else if (mode === "gauge" && parts) {
+  } else if (mode === "gauge" && parts && parts.cash !== null) {
     const share = s.safe_to_spend.share_of_cash ?? 0;
     body = (
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -143,7 +147,7 @@ function CoverSection({ mode, setMode }: { mode: CoverMode; setMode?: (v: string
     <Show state={cover} what="Cover">
       {(c) => (
         <Card title="Cover" link={{ to: "/cover", text: "Open Cover" }} picker={<ShowAs modes={COVER_MODES} value={mode} onChange={setMode} label="cover" />}>
-          <StatusPill status={c.counts.crit ? "crit" : c.counts.warn ? "warn" : "good"}>{coverSummary(c)}</StatusPill>
+          <StatusPill status={coverTone(c)}>{coverSummary(c)}</StatusPill>
           <CoverPanel cover={c} mode={mode} onTicked={cover.reload} />
         </Card>
       )}
@@ -260,7 +264,7 @@ export const SECTIONS: SectionDef[] = [
   { key: "debts", name: "Debts", description: "Every balance, largest first.", render: ({ snapshot }) => <DebtsSection s={snapshot} /> },
   { key: "next_steps", name: "Next steps", description: "What the app needs from you.", render: () => <NextStepsCard /> },
   { key: "purchase", name: "Should I buy this?", description: "The purchase check.", render: () => <PurchaseCheck /> },
-  { key: "goals", name: "Goals", description: "Save-up and pay-down goals.", render: () => <Goals /> },
+  { key: "goals", name: "Goals", description: "Save-up and pay-down goals.", render: ({ snapshot }) => <Goals s={snapshot} /> },
   { key: "view", name: "A whole home view", description: "One of the home views, entire.", modes: VIEW_MODES, render: ({ snapshot, showAs }) => { const V = viewById(showAs ?? "river").component; return <Suspense fallback={<div className="card" style={{ minHeight: 240 }} aria-busy="true" />}><V snapshot={snapshot} /></Suspense>; } },
 ];
 

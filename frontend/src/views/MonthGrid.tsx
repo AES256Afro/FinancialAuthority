@@ -10,7 +10,7 @@ import { inkOn } from "../paychecks";
 import { getPrefs } from "../prefs";
 import type { Event } from "../types";
 import type { ViewProps } from "./index";
-import { PlanCaveats, SafeExplain, SafePill, safeTitle } from "../components/SafeExplain";
+import { PlanCaveats, SafeExplain, SafePill, safeFigure, safeTitle } from "../components/SafeExplain";
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -125,7 +125,7 @@ export function MonthGrid({ snapshot }: ViewProps) {
       </section>
       <section style={{ display: "flex", flexWrap: "wrap", gap: 14, fontSize: 13 }}>
         <div className="card" style={{ flex: "1 1 360px", padding: "12px 16px", display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
-          <div className="num" style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.02em" }}>{money(snapshot.safe_to_spend.amount)}</div>
+          <div className="num" style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.02em" }}>{safeFigure(snapshot)}</div>
           <div style={{ flex: "1 1 200px", display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
             <strong>{safeTitle(snapshot)}.</strong>
             <SafePill s={snapshot} />

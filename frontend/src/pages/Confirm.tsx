@@ -372,8 +372,13 @@ function FactCard({ f, onDone }: { f: FactRow; onDone: (done: Done) => void }) {
           <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{f.message ? `${f.message.subject}${f.message.date ? ` · ${when(f.message.date)}` : ""} · from mail` : `${String(f.fields.attachment || "a file")} · ${f.fields.source === "upload" ? "added here" : "from the import folder"}`}{via ? ` via ${via}` : ""} · {Math.round(f.confidence * 100)}% sure</div>
         </div>
         {f.fields.amount !== undefined && <strong className="num" style={{ fontSize: 18 }}>{money(Number(f.fields.amount), { cents: true })}</strong>}
+        {f.kind === "paystub" && f.fields.net !== undefined && <strong className="num" style={{ fontSize: 18 }}>{money(Number(f.fields.net), { cents: true })} take-home{f.fields.pay_date ? `, paid ${shortDate(String(f.fields.pay_date))}` : ""}</strong>}
       </div>
-      {f.kind === "export" ? (
+      {f.kind === "export" && /^http:/i.test(String(f.fields.url ?? "")) ? (
+        <div style={{ fontSize: 13, color: "var(--ink-2)", lineHeight: 1.45 }}>
+          The link in this email is not secure (http, not https), so the app will not download from <strong style={{ color: "var(--ink)" }}>{String(f.fields.host ?? "it")}</strong>. Open the message, download the file yourself, and import it on <Link to="/settings/connectors#rocketmoney">Connections › Rocket Money</Link>; then discard this card.
+        </div>
+      ) : f.kind === "export" ? (
         <div style={{ fontSize: 13, color: "var(--ink-2)", lineHeight: 1.45 }}>
           Importing downloads the file from <strong style={{ color: "var(--ink)" }}>{String(f.fields.host ?? "the link in the email")}</strong> and adds its transactions; rows already here are not added twice, and the import can be undone on Settings › Backups. Import only if you asked Rocket Money for an export and the sender above is Rocket Money.
         </div>
@@ -401,7 +406,7 @@ function FactCard({ f, onDone }: { f: FactRow; onDone: (done: Done) => void }) {
         </div>
       )}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <button className="btn dark" type="button" disabled={busy} onClick={confirm}>{f.kind === "export" ? (busy ? "Importing…" : "Import it") : busy ? "Confirming…" : "Confirm"}</button>
+        {!(f.kind === "export" && /^http:/i.test(String(f.fields.url ?? ""))) && <button className="btn dark" type="button" disabled={busy} onClick={confirm}>{f.kind === "export" ? (busy ? "Importing…" : "Import it") : busy ? "Confirming…" : "Confirm"}</button>}
         <ConfirmButton label="Wrong, discard" question="Discard what was read from this email?" yes="Yes, discard it" no="Keep it" onConfirm={discard} />
         {f.message && <Link to={`/mail?message=${f.message.id}`} style={{ fontSize: 13, marginLeft: "auto" }}>Open the message</Link>}
       </div>
@@ -788,12 +793,13 @@ function Row({ s, onDone }: { s: SeriesRow; onDone: (done: Done) => void }) {
   );
 }
 
-// Repeating charges come thirty at a time, largest first: a first detection over years of transactions can find
-// hundreds, and every one of them at once was thousands of elements on a phone.
+// Repeating charges come thirty at a time from the server, largest first: a first detection over years of
+// transactions can find hundreds, and every one of them at once was thousands of elements on a phone. `pending` is
+// the full count, whatever page is loaded.
 const SERIES_STEP = 30;
 
 export function Confirm({ onChanged }: { onChanged: () => void }) {
-  const { data, reload, error } = useApi<{ series: SeriesRow[]; pending: number }>("/api/v1/recurring");
+  const { data, reload, error } = useApi<{ series: SeriesRow[]; pending: number }>(`/api/v1/recurring?limit=${SERIES_STEP}`);
   const facts = useApi<{ facts: FactRow[]; pending: number }>("/api/v1/facts?status=pending");
   const confirmed = useApi<{ facts: FactRow[] }>("/api/v1/facts?status=applied&limit=20");
   const pairs = useApi<PairsOut>("/api/v1/pairs");
@@ -806,7 +812,26 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
   const [looked, setLooked] = useState<{ text: string; tone: "info" | "error" } | null>(null);
   const [factSaid, setFactSaid] = useState<Done | null>(null);
   const [seriesSaid, setSeriesSaid] = useState<Done | null>(null);
-  const [seriesShown, setSeriesShown] = useState(SERIES_STEP);
+  // The pages after the first, asked for with "Show more". An answer takes its row out; the first page is asked again,
+  // and a row it now holds that a later page held too is shown once, so the next page starts where the list ends.
+  const [moreSeries, setMoreSeries] = useState<SeriesRow[]>([]);
+  const [moreBusy, setMoreBusy] = useState(false);
+  const [moreFailed, setMoreFailed] = useState(false);
+  const firstIds = new Set((data?.series ?? []).map((s) => s.id));
+  const seriesList = [...(data?.series ?? []), ...moreSeries.filter((s) => !firstIds.has(s.id))];
+  const seriesLeft = Math.max(0, (data?.pending ?? 0) - seriesList.length);
+  async function showMoreSeries() {
+    setMoreBusy(true);
+    setMoreFailed(false);
+    try {
+      const r = await api<{ series: SeriesRow[] }>(`/api/v1/recurring?limit=${SERIES_STEP}&offset=${seriesList.length}`);
+      setMoreSeries((had) => [...had.filter((s) => !firstIds.has(s.id)), ...r.series.filter((s) => !had.some((h) => h.id === s.id) && !firstIds.has(s.id))]);
+    } catch {
+      setMoreFailed(true);
+    } finally {
+      setMoreBusy(false);
+    }
+  }
   // A next step links to #approvals, #facts or #series: the jump waits until all three lists are on the page.
   useJumpToHash(data && facts.data && approvalsWaiting !== null);
   // Your own emails waiting are counted from the list below, as the tab badge does; the rest is the engine's count.
@@ -885,27 +910,29 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
       <Pairs state={pairs} onChanged={onChanged} />
       {error && !data && <Failed error={error} what="the repeating charges" onRetry={reload} />}
       {!data && !error && <Loading what="what needs you" />}
-      {data && data.series.length > 0 ? (
+      {data && seriesList.length > 0 ? (
         <section id="series" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <h2 className="lab" style={{ margin: "6px 0 0" }}>From your transactions · {data.pending}</h2>
           <DoneLine done={seriesSaid} />
-          {data.series.slice(0, seriesShown).map((s) => (
+          {seriesList.map((s) => (
             <Row
               key={s.id}
               s={s}
               onDone={(done) => {
                 setSeriesSaid(done);
+                setMoreSeries((had) => had.filter((h) => h.id !== s.id));
                 reload();
                 needs.reload();
                 onChanged();
               }}
             />
           ))}
-          {data.series.length > seriesShown && (
-            <button type="button" className="btn" style={{ alignSelf: "flex-start" }} onClick={() => setSeriesShown((n) => n + SERIES_STEP)}>
-              Show {Math.min(SERIES_STEP, data.series.length - seriesShown)} more ({data.series.length - seriesShown} not shown)
+          {seriesLeft > 0 && (
+            <button type="button" className="btn" style={{ alignSelf: "flex-start" }} disabled={moreBusy} onClick={showMoreSeries}>
+              {moreBusy ? "Loading…" : `Show ${Math.min(SERIES_STEP, seriesLeft)} more (${seriesLeft} not shown)`}
             </button>
           )}
+          {moreFailed && <Said text="Couldn't load more. Try again." tone="error" />}
         </section>
       ) : (
         <DoneLine done={seriesSaid} />

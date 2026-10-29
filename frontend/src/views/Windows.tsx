@@ -23,10 +23,13 @@ function Block({ h, bg, border, color, label }: { h: number; bg: string; border?
 }
 
 function Column({ w, index, c }: { w: Window; index: number; c: Palette }) {
-  const entering = Math.max(1, w.inflow, w.paycheck); // drawing only: the column's height is the most that comes in
+  const entering = Math.max(1, w.inflow ?? 0, w.paycheck); // drawing only: the column's height is the most that comes in
   const px = (v: number) => Math.max(6, (Math.abs(v) / entering) * STACK);
   const bills = [...w.bills.items].sort((a, b) => b.amount - a.amount);
-  const short = w.safe < 0;
+  // No balance yet: the first check's carried-in and what it leaves are null, so neither is drawn as a figure or a shortfall.
+  const carriedIn = w.carried_in;
+  const safe = w.safe;
+  const short = safe !== null && safe < 0;
   return (
     <div className="card" style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10, border: index === 0 ? "2px solid var(--ink)" : undefined }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
@@ -35,14 +38,16 @@ function Column({ w, index, c }: { w: Window; index: number; c: Palette }) {
       </div>
       <div className="num" style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.01em" }}>
         {money(w.paycheck, { sign: true })}
-        {w.carried_in > 0 && <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}> + {money(w.carried_in)} carried in</span>}
-        {w.carried_in < 0 && <span style={{ fontSize: 12, color: "var(--critical-ink)", fontWeight: 700 }}> − {money(Math.abs(w.carried_in))} already short before payday</span>}
+        {carriedIn !== null && carriedIn > 0 && <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}> + {money(carriedIn)} carried in</span>}
+        {carriedIn !== null && carriedIn < 0 && <span style={{ fontSize: 12, color: "var(--critical-ink)", fontWeight: 700 }}> − {money(Math.abs(carriedIn))} already short before payday</span>}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 2, height: STACK, justifyContent: "flex-end" }}>
-        {short ? (
-          <Block h={px(w.safe)} bg="var(--critical-soft)" border="var(--critical)" color="var(--critical-ink)" label={`Short by ${money(-w.safe)}`} />
+        {safe === null ? (
+          <Block h={24} bg={c.surface} border={c.safe} color="var(--ink-2)" label="No balance yet: what is left is unknown" />
+        ) : short ? (
+          <Block h={px(safe)} bg="var(--critical-soft)" border="var(--critical)" color="var(--critical-ink)" label={`Short by ${money(-safe)}`} />
         ) : (
-          <Block h={px(w.safe)} bg={c.safe} label={`Safe to spend ${money(w.safe)}`} />
+          <Block h={px(safe)} bg={c.safe} label={`Safe to spend ${money(safe)}`} />
         )}
         {w.buffer > 0 && <Block h={px(w.buffer)} bg={c.buffer} label={`Safety cushion ${money(w.buffer)}`} />}
         {w.set_aside.total > 0 && <Block h={px(w.set_aside.total)} bg={c.surface} border={c.bill} color="var(--ink)" label={`Kept for the next paycheck ${money(w.set_aside.total)} · ${w.set_aside.items.length} items`} />}
@@ -51,7 +56,7 @@ function Column({ w, index, c }: { w: Window; index: number; c: Palette }) {
           return <Block key={`${e.source}-${i}`} h={px(e.amount)} bg={fill} label={`${e.name} ${money(e.amount)} · ${shortDate(e.date)}`} />;
         })}
         {w.advances.total > 0 && <Block h={px(w.advances.total)} bg={c.debt} label={`Advance apps take back ${money(w.advances.total)}`} />}
-        {w.carried_in < 0 && <Block h={px(w.carried_in)} bg="var(--critical-soft)" border="var(--critical)" color="var(--critical-ink)" label={`Already short before payday ${money(Math.abs(w.carried_in))}`} />}
+        {carriedIn !== null && carriedIn < 0 && <Block h={px(carriedIn)} bg="var(--critical-soft)" border="var(--critical)" color="var(--critical-ink)" label={`Already short before payday ${money(Math.abs(carriedIn))}`} />}
       </div>
       <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{w.bills.items.length} bills{w.advances.items.length ? ` · ${w.advances.items.length} advances` : ""}{w.set_aside.items.length ? ` · ${w.set_aside.items.length} kept for the next paycheck` : ""}</div>
     </div>

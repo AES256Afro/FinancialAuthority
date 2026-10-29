@@ -120,6 +120,16 @@ Settings › People adds someone with a role: **Everything** (sees and does what
 
 Forward a store's receipt email to a connected mailbox, or add a photo or PDF on Documents. It waits on Needs you with the purchase it matches; Keep the receipt attaches it. Its last day to return and its warranty come back as reminders (Settings › Notifications sets how many days before).
 
+### 15. BoxPilot's cloud copy of the backups (round thirteen, 2026-10-29)
+
+BoxPilot mirrors its backups to the cloud bucket every night at 04:15 UTC, unencrypted, and the app's archives hold `FA_DATA_KEY` beside the database it seals. The next mirror would also carry the Bridge's vault and the key that opens it. In order:
+
+1. Done by the coding agent on 2026-10-29 at 14:29 UTC: the nightly cloud mirror schedule is switched off (BoxPilot › Backups › Schedules shows it off), so nothing more has gone up. The encrypted mirror is BoxPilot pull request #599; once it is merged and BoxPilot updated, it refuses to copy until step 2 is done.
+2. With the encrypted mirror: Backups › Off-box › Cloud bucket › Change destination; enter the bucket's keys again and an encryption passphrase of at least 12 characters. Keep the passphrase in your password manager: without it nobody, you included, can read the copies.
+3. In the bucket provider's dashboard, delete the plain copies an older mirror left: the folders `application-backups` and `machine-snapshots` beside the new `sealed` folder (the encrypted copies go only there).
+4. Decide whether to rotate what those copies held, depending on who could have read the bucket: `FA_SESSION_SECRET` and `FA_PASSWORD` from the app's BoxPilot settings (a new session secret signs everyone out); the keys sealed under `FA_DATA_KEY` at their sources, since the data key itself cannot be rotated yet (M8.5): the Plaid and Teller links (remove and link again), a Gmail app password, and any model keys.
+5. Optional, on GitHub: a tag ruleset that lets only you create `v*` tags, since a tag publishes the image the catalog pins.
+
 ## What the coding agent never asks for
 
 Passwords, second factors, bank logins, card numbers, government identifiers. Anything that must be typed into a sign-in form is typed by the owner. Values for the app's own test accounts come from the fixture, never from the owner.

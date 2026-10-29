@@ -137,6 +137,11 @@ def import_file(
         result = import_rows(session, rows, source_file=file.filename or "upload", account_name=name, institution=vendor, kind=kind, account_id=account_id, account_number=number)
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
+    if found["kind"] == "ofx":
+        from .. import services
+
+        # The statement's own balance: an owner with files only then gets a real safe to spend, not "no balance yet".
+        services.apply_statement_balances(session, text, (result.details or {}).get("account_id"))
     from ..jobs.detect import run_detection
 
     if raw.startswith(b"%PDF") and result.details.get("account_id") and result.inserted and result.details.get("import_id"):
