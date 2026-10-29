@@ -51,7 +51,7 @@ function FindingCard({ f, onAnswered }: { f: Finding; onAnswered: (text: string)
           <div key={i.source} style={{ padding: "8px 10px", borderRadius: 10, background: "var(--surface-2)", display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
             <strong style={{ fontSize: 13, overflowWrap: "anywhere" }}>{i.label}</strong>
             <span className="num" style={{ fontSize: 12, color: "var(--ink-2)", overflowWrap: "anywhere" }}>{i.detail}</span>
-            {i.link && <Link to={i.link} style={{ fontSize: 12, alignSelf: "flex-start" }}>Open</Link>}
+            {i.link && <Link to={i.link} aria-label={`Open ${i.label}`} style={{ fontSize: 12, alignSelf: "flex-start" }}>Open</Link>}
           </div>
         ))}
       </div>

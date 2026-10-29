@@ -97,7 +97,7 @@ export function Jobs() {
                       <td style={{ whiteSpace: "nowrap" }}>{every(j.every_seconds)}</td>
                       <td style={{ color: "var(--ink-2)" }}>{j.description}</td>
                       <td style={{ textAlign: "right" }}>
-                        <button className="btn" type="button" disabled={running !== null} onClick={() => run(j.name)}>{running === j.name ? "Running…" : "Run now"}</button>
+                        <button className="btn" type="button" aria-label={`Run ${jobWord(j.name)} now`} disabled={running !== null} onClick={() => run(j.name)}>{running === j.name ? "Running…" : "Run now"}</button>
                         {result?.name === j.name && <div style={{ marginTop: 4, textAlign: "left", maxWidth: 260 }}><Said text={result.text} tone={result.ok ? "info" : "error"} /></div>}
                       </td>
                     </tr>

@@ -123,7 +123,7 @@ export function ThisDevice() {
               <strong>{d.label}</strong>
               <span style={{ color: "var(--ink-2)" }}>{d.last_ok ? `last delivered ${when(d.last_ok)}` : "nothing sent yet"}{d.last_error ? ` · last try failed: ${d.last_error}` : ""}</span>
               <span style={{ marginLeft: "auto" }}>
-                <ConfirmButton label="Remove" question={`Stop notifications on ${d.label}?`} yes="Yes, remove it" no="Keep it" onConfirm={() => remove(d.id)} style={{ minHeight: 32, padding: "3px 9px" }} />
+                <ConfirmButton label="Remove" name={`Remove ${d.label}`} question={`Stop notifications on ${d.label}?`} yes="Yes, remove it" no="Keep it" onConfirm={() => remove(d.id)} style={{ minHeight: 32, padding: "3px 9px" }} />
               </span>
             </div>
           ))}

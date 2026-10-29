@@ -12,6 +12,7 @@ from __future__ import annotations
 import hmac
 import logging
 import shutil
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -27,7 +28,7 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/privacy", tags=["privacy"])
 PHRASE = "delete everything"
 KEEP_TABLES = {"web_sessions", "passkeys", "people"}
-KEEP_SETTINGS = {"auth.totp", "auth.totp.last_step"}
+KEEP_SETTINGS = {"auth.totp", "auth.totp.last_step", "crypto.canary"}  # all three are sealed under the data key the app still runs on
 
 # What the chat's model sees at each level the owner can choose on Models.
 ADVISOR_SEES = {
@@ -133,6 +134,11 @@ def erase(body: EraseIn, request: Request, session: Session = Depends(get_sessio
         if link.provider == "plaid":
             plaid.disconnect(session, api, link)
     session.commit()
+    from .. import offbox
+
+    # The folder the owner chose for the off-box copies is a setting, and the settings go with the erase: read it
+    # first, so the answer can still say where the sealed copies are.
+    offbox_folder = (offbox.config(session).get("folder") or "").strip() or settings.offbox_dir
     session.close()
     from ..connectors.teller import forget_cert_files
     from ..engine.documents import folder as documents_folder
@@ -143,6 +149,7 @@ def erase(body: EraseIn, request: Request, session: Session = Depends(get_sessio
     with one_writer():  # never beside a sync, a detection or an import: a job mid-write would put half its rows back
         with engine.begin() as connection:
             connection.execute(text("PRAGMA foreign_keys=OFF"))
+            connection.execute(text("PRAGMA secure_delete=ON"))  # a deleted row's bytes are overwritten in its page, not left in the free space
             tables = [r[0] for r in connection.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")).all()]
             for table in tables:
                 if table in KEEP_TABLES:
@@ -156,6 +163,16 @@ def erase(body: EraseIn, request: Request, session: Session = Depends(get_sessio
         engine.dispose()  # PRAGMA foreign_keys is ignored inside a transaction: new connections set it again
         with engine.connect() as connection:
             connection.execute(text("VACUUM"))  # freed pages hold the old rows until the file is rebuilt
+            # Under WAL, the rebuilt database sits in the journal until a checkpoint, and the file itself keeps every
+            # old page (names, merchants, mail) until then; the checkpoint writes the rebuilt pages over them, cuts the
+            # file to its new size and truncates the journal to nothing. A reader mid-query delays it; try a few times.
+            for _ in range(10):
+                busy, _logged, _moved = connection.execute(text("PRAGMA wal_checkpoint(TRUNCATE)")).one()
+                if not busy:
+                    break
+                time.sleep(0.5)
+            else:
+                log.warning("erase: the journal could not be truncated while another connection was reading; the old pages go at the next checkpoint")
         points = 0
         for path in folder().glob("*"):
             try:
@@ -168,7 +185,7 @@ def erase(body: EraseIn, request: Request, session: Session = Depends(get_sessio
         forget_cert_files()  # the Teller certificate written for the HTTP client goes with its encrypted copy
         bump_version()
     left = ["Your sign-in: this browser's session, your passkeys and the second step.", "The people you let in, and their sign-ins (Settings › People removes them)."]
-    if settings.offbox_dir:
-        left.append(f"Off-box copies on their own disk, at {settings.offbox_dir}: delete them there if you want them gone too.")
+    if offbox_folder:
+        left.append(f"Off-box copies on their own disk, at {offbox_folder}: delete them there if you want them gone too.")
     left.append(f"Files you put in the import folder ({settings.import_root}).")
     return {"ok": True, "rows": sum(erased.values()), "restore_points": points, "left": left}

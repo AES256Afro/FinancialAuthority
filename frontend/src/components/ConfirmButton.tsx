@@ -13,6 +13,7 @@ export function ConfirmButton({
   style,
   open,
   onCancel,
+  name,
 }: {
   label: string;
   question: string;
@@ -23,6 +24,8 @@ export function ConfirmButton({
   style?: CSSProperties;
   open?: boolean;
   onCancel?: () => void;
+  /** The button's name for a screen reader when the label alone does not say which thing ("Remove Rent"). */
+  name?: string;
 }) {
   const [asking, setAsking] = useState(false);
   const controlled = open !== undefined;
@@ -59,7 +62,7 @@ export function ConfirmButton({
     if (controlled) return error ? <span role="alert" style={{ fontSize: 12, color: "var(--critical-ink)", fontWeight: 700 }}>{error}</span> : null;
     return (
       <span style={{ display: "inline-flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
-        <button ref={trigger} type="button" className={className} style={style} onClick={() => setAsking(true)}>{label}</button>
+        <button ref={trigger} type="button" className={className} style={style} aria-label={name} onClick={() => setAsking(true)}>{label}</button>
         {error && <span role="alert" style={{ fontSize: 12, color: "var(--critical-ink)", fontWeight: 700 }}>{error}</span>}
       </span>
     );

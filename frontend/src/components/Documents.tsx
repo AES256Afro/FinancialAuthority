@@ -201,7 +201,7 @@ export function DocLine({ d, first = false, place, onRead, onRemove, extra, onCh
         <a className="btn" href={`/api/v1/documents/${d.id}/file`} download={d.filename} style={{ ...SMALL, display: "inline-flex", alignItems: "center", gap: 4, textDecoration: "none" }}>
           <Download size={14} aria-hidden="true" />Download
         </a>
-        <ConfirmButton label="Remove" style={SMALL} question={`Remove “${d.title}”? The file and its text are deleted from the app.`} yes="Yes, remove it" no="Keep it" onConfirm={() => onRemove(d)} />
+        <ConfirmButton label="Remove" name={`Remove ${d.title}`} style={SMALL} question={`Remove “${d.title}”? The file and its text are deleted from the app.`} yes="Yes, remove it" no="Keep it" onConfirm={() => onRemove(d)} />
       </div>
       {extra && <div style={{ flexBasis: "100%", minWidth: 0, paddingLeft: 28 }}>{extra}</div>}
     </li>

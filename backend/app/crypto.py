@@ -46,3 +46,36 @@ def decrypt(token: str) -> str:
 
 def is_encrypted(value: str | None) -> bool:
     return bool(value) and value.startswith(PREFIX)
+
+
+CANARY = "crypto.canary"
+CANARY_TEXT = "financialauthority"
+
+
+def data_key_problem() -> str | None:
+    """The first start with a data key seals a known word under it; every later start opens it again. A key that
+    does not open it is not the key this data was sealed with, and the app must not run on it: every stored token,
+    password and document would be unreadable, each feature failing on its own, and anything saved now would be
+    sealed under a second key. Returns the sentence to show, or None. With no data key set, there is nothing to
+    check (a developer's machine; the start already warns). The erase keeps the canary, like the owner's second
+    step, which is sealed under the same key."""
+    if not settings.data_key:
+        return None
+    from sqlmodel import Session
+
+    from .db import engine
+    from .store import get_setting, set_setting
+
+    with Session(engine) as session:
+        kept = get_setting(session, CANARY)
+        if not is_encrypted(kept):
+            set_setting(session, CANARY, encrypt(CANARY_TEXT))
+            return None
+        try:
+            if decrypt(kept) == CANARY_TEXT:
+                return None
+        except ValueError:
+            pass
+    return ("FA_DATA_KEY is not the key this data was sealed with: the stored tokens, passwords, the second step and the documents would not open, "
+            "and anything saved now would be sealed under a different key. Put the key back (BoxPilot: the app's settings; Docker Compose: the .env file). "
+            "To start over under this key instead, move the data folder away first.")

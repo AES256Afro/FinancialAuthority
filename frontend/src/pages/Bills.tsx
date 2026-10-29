@@ -247,8 +247,8 @@ function usePaidFromChoices(data: BillsOut | null): PaidFromChoice[] {
 function Actions({ b, e }: { b: Bill; e: Editor }) {
   return (
     <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap", alignItems: "flex-start", justifyContent: "flex-end" }}>
-      <button className="btn dark" type="button" disabled={!e.dirty || e.busy} onClick={e.save}>{e.busy ? "Saving…" : "Save"}</button>
-      <ConfirmButton label="Remove" question={`Take ${b.name} off your bills list?`} yes="Yes, remove it" no="Keep it" onConfirm={e.remove} />
+      <button className="btn dark" type="button" aria-label={`Save ${b.name}`} disabled={!e.dirty || e.busy} onClick={e.save}>{e.busy ? "Saving…" : "Save"}</button>
+      <ConfirmButton label="Remove" name={`Remove ${b.name}`} question={`Take ${b.name} off your bills list?`} yes="Yes, remove it" no="Keep it" onConfirm={e.remove} />
     </span>
   );
 }

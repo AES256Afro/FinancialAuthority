@@ -189,6 +189,7 @@ function InvoiceCard({ inv, lines, onRemoved }: { inv: Invoice; lines: TaxLine[]
           {inv.status === "draft" && (
             <ConfirmButton
               label="Remove"
+              name={`Remove ${name}`}
               question={`Remove ${name}? A draft is gone for good.`}
               yes="Yes, remove it"
               style={SMALL}

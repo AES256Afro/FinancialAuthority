@@ -205,10 +205,15 @@ def findings(session: Session, today: date) -> list[dict[str, Any]]:
 def same_email_twice(session: Session, today: date) -> int:
     """The same email kept in two mailboxes (or a forward of it) yields its items once: the later copy's items are set
     aside with the reason. Certain, so done on its own and logged."""
-    refs = session.exec(select(MessageRef).where(MessageRef.message_id != "")).all()
+    from sqlalchemy import func
+
+    # Only the ids seen more than once are read back as rows: every reference of a five-year mailbox was loaded here
+    # on each run (a hundred thousand rows, over a hundred megabytes) to find the handful kept twice.
+    doubled = list(session.exec(select(MessageRef.message_id).where(MessageRef.message_id != "").group_by(MessageRef.message_id).having(func.count(MessageRef.id) > 1)).all())
     by_mid: dict[str, list[MessageRef]] = defaultdict(list)
-    for r in refs:
-        by_mid[r.message_id].append(r)
+    for k in range(0, len(doubled), 500):
+        for r in session.exec(select(MessageRef).where(MessageRef.message_id.in_(doubled[k:k + 500]))).all():  # type: ignore[attr-defined]
+            by_mid[r.message_id].append(r)
     aside = 0
     for copies in by_mid.values():
         if len(copies) < 2:

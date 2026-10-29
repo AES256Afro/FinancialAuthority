@@ -236,9 +236,9 @@ export function Appearance() {
                       <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>{a.name}{on ? <span style={{ color: "var(--safe-ink)", fontWeight: 700 }}> · in use</span> : null}</h3>
                       <span style={{ fontSize: 12, color: "var(--ink-2)" }}>{a.description}</span>
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: "auto" }}>
-                        {!on && <button type="button" className="btn dark" style={{ minHeight: 32, padding: "4px 10px" }} onClick={() => save("home", { active: a.id }, `${a.name} is your home now.`)}>Use</button>}
-                        <button type="button" className="btn" style={{ minHeight: 32, padding: "4px 10px" }} onClick={() => (isMine ? setEditing(a) : copy(a))}>{isMine ? "Edit" : "Copy and change"}</button>
-                        {isMine && <ConfirmButton label="Remove" question={`Remove ${a.name}?`} yes="Yes, remove it" no="Keep it" onConfirm={() => save("home", { arrangements: mine.filter((m) => m.id !== a.id), active: on ? "paycheck-first" : ap.active }, `${a.name} removed.`)} style={{ minHeight: 32, padding: "4px 10px" }} />}
+                        {!on && <button type="button" className="btn dark" style={{ minHeight: 32, padding: "4px 10px" }} aria-label={`Use ${a.name}`} onClick={() => save("home", { active: a.id }, `${a.name} is your home now.`)}>Use</button>}
+                        <button type="button" className="btn" style={{ minHeight: 32, padding: "4px 10px" }} aria-label={`${isMine ? "Edit" : "Copy and change"} ${a.name}`} onClick={() => (isMine ? setEditing(a) : copy(a))}>{isMine ? "Edit" : "Copy and change"}</button>
+                        {isMine && <ConfirmButton label="Remove" name={`Remove ${a.name}`} question={`Remove ${a.name}?`} yes="Yes, remove it" no="Keep it" onConfirm={() => save("home", { arrangements: mine.filter((m) => m.id !== a.id), active: on ? "paycheck-first" : ap.active }, `${a.name} removed.`)} style={{ minHeight: 32, padding: "4px 10px" }} />}
                       </div>
                     </div>
                   </div>

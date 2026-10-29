@@ -191,7 +191,7 @@ function TripList({ t }: { t: TripsOut }) {
                   <td style={{ textAlign: "right", whiteSpace: "nowrap", color: x.cents === null ? "var(--muted)" : undefined }}>{x.cents === null ? "not known yet" : `${x.cents}¢`}</td>
                   <td className="num" style={{ textAlign: "right", whiteSpace: "nowrap", fontWeight: 800 }}>{money(x.amount, { cents: true })}</td>
                   <td style={{ textAlign: "right" }}>
-                    <ConfirmButton label="Remove" question="Remove this trip?" yes="Yes, remove it" style={{ minHeight: 32, padding: "4px 10px", fontSize: 12 }} onConfirm={() => api(`/api/v1/business/trips/${x.id}`, { method: "DELETE" })} />
+                    <ConfirmButton label="Remove" name={`Remove the trip on ${dayWithYear(x.day)}`} question="Remove this trip?" yes="Yes, remove it" style={{ minHeight: 32, padding: "4px 10px", fontSize: 12 }} onConfirm={() => api(`/api/v1/business/trips/${x.id}`, { method: "DELETE" })} />
                   </td>
                 </tr>
               ))}

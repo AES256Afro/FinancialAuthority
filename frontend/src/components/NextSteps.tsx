@@ -7,7 +7,7 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { api, useApi } from "../api";
 import { amountClass } from "../format";
-import { Failed, Loading, Said } from "./State";
+import { Failed, Loading, Said, useFocusOnSaid } from "./State";
 import { SeverityTag } from "./Status";
 
 export interface Step {
@@ -63,6 +63,7 @@ const ANSWER: { id: "done" | "not_useful" | "wrong"; word: string; Icon: typeof 
 export function NextStepsCard() {
   const steps = useNextSteps();
   const [said, setSaid] = useState<{ text: string; tone: "info" | "error" } | null>(null);
+  const saidRef = useFocusOnSaid(said);
   async function answer(s: Step, reply: string) {
     try {
       const r = await api<{ said: string }>("/api/v1/suggestions/answer", { method: "POST", body: JSON.stringify({ key: s.id, answer: reply, kind: s.kind }) });
@@ -111,7 +112,7 @@ export function NextStepsCard() {
           ))}
         </div>
       )}
-      <Said text={said?.text ?? null} tone={said?.tone} />
+      <div ref={saidRef} tabIndex={-1}><Said text={said?.text ?? null} tone={said?.tone} /></div>
     </section>
   );
 }

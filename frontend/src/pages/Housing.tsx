@@ -545,7 +545,7 @@ function ChargeRow({ c, h, ctx }: { c: HomeCharge; h: HomeRow; ctx: Ctx }) {
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "flex-start" }}>
         {c.amount === null && !asking && <button type="button" className="btn dark" style={SMALL} onClick={() => setAsking(true)}>Add the amount</button>}
         <button type="button" className="btn" style={SMALL} onClick={() => setEditing(true)}>Edit</button>
-        <ConfirmButton label="Remove" style={SMALL} question={`Remove ${c.name}? It stops counting in your bills.`} yes="Yes, remove it" no="Keep it" onConfirm={remove} />
+        <ConfirmButton label="Remove" name={`Remove ${c.name}`} style={SMALL} question={`Remove ${c.name}? It stops counting in your bills.`} yes="Yes, remove it" no="Keep it" onConfirm={remove} />
       </div>
       {asking && c.amount === null && (
         <form onSubmit={addAmount} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
@@ -937,7 +937,7 @@ function UtilityItem({ u, ctx }: { u: UtilityRow; ctx: Ctx }) {
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "flex-start" }}>
         <button type="button" className="btn" style={SMALL} onClick={() => { setEditing(true); setSaid(null); }}>{own && u.amount === null && !u.moves_with_you ? "Add the amount" : "Edit"}</button>
         <button type="button" className="btn" style={SMALL} aria-expanded={docs} onClick={() => setDocs(!docs)}>{docs ? "Hide its documents" : "Its documents"}</button>
-        <ConfirmButton label="Remove" style={SMALL} question={`Remove ${u.what}? Its bill stops counting.`} yes="Yes, remove it" no="Keep it" onConfirm={remove} />
+        <ConfirmButton label="Remove" name={`Remove ${u.what}`} style={SMALL} question={`Remove ${u.what}? Its bill stops counting.`} yes="Yes, remove it" no="Keep it" onConfirm={remove} />
       </div>
       {docs && (
         <div style={{ borderLeft: "3px solid var(--surface-2)", paddingLeft: 10 }}>

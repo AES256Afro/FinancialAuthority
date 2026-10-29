@@ -120,6 +120,7 @@ def save_document(session: Session, raw: bytes, *, filename: str, title: str = "
     path = folder() / f"{digest}.bin"
     if not path.exists():
         path.write_bytes(_seal(raw))
+        path.chmod(0o600)  # sealed, and the app's user only
     pages, read_with = read_pages_with(raw, ext)
     if period and not re.fullmatch(r"\d{4}-\d{2}", period):
         raise ValueError("A month is written YYYY-MM")

@@ -315,7 +315,7 @@ function ReceiptItem({ r, file, first, onChanged, onRemoved }: { r: ReceiptRow; 
         <button type="button" className={mode === "change" ? "btn dark" : "btn"} aria-expanded={mode === "change"} onClick={() => setMode(mode === "change" ? null : "change")} style={{ ...SMALL, ...ROW }}><Pencil size={13} aria-hidden="true" />Change it</button>
         <button type="button" className="btn" disabled={!file?.has_text} onClick={() => setReading(reading === null ? 1 : null)} title={file?.has_text ? "Read the text the app took from it" : "No text could be read from it (a photo or a scan). Download it to see it."} style={{ ...SMALL, ...ROW }}><BookOpen size={13} aria-hidden="true" />{reading === null ? "Read" : "Close the text"}</button>
         <a className="btn" href={`/api/v1/documents/${r.id}/file`} download={file?.filename ?? ""} style={{ ...SMALL, ...ROW, textDecoration: "none" }}><Download size={13} aria-hidden="true" />Download</a>
-        <ConfirmButton label="Remove" style={SMALL} question={`Remove the receipt from ${r.merchant || r.title}? The file, its text and its reminders are deleted from the app.`} yes="Yes, remove it" no="Keep it" onConfirm={remove} />
+        <ConfirmButton label="Remove" name={`Remove the receipt from ${r.merchant || r.title}`} style={SMALL} question={`Remove the receipt from ${r.merchant || r.title}? The file, its text and its reminders are deleted from the app.`} yes="Yes, remove it" no="Keep it" onConfirm={remove} />
       </div>
       {mode === "match" && <MatchIt r={r} onDone={done} onClose={() => setMode(null)} />}
       {mode === "change" && <ChangeReceipt r={r} onDone={done} onClose={() => setMode(null)} />}

@@ -244,6 +244,10 @@ def copy_now(session: Session) -> dict[str, Any]:
         partial = folder / f".{name}.partial"
         made = _write_copy(restore.folder() / point["name"], passphrase, partial)
         partial.replace(folder / name)
+        try:
+            (folder / name).chmod(0o600)  # sealed, and still the app's own user's to read
+        except OSError:
+            pass
         partial = None
         for old in sorted(folder.glob(f"financialauthority-*{SUFFIX}"), reverse=True)[KEEP:]:
             old.unlink(missing_ok=True)

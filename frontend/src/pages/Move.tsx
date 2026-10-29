@@ -236,7 +236,7 @@ function CostRow({ cost, h, widest, apply }: { cost: HomeCost; h: HomeRow; wides
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "flex-start" }}>
         {cost.amount === null && !asking && <button type="button" className="btn dark" style={SMALL} onClick={() => setAsking(true)}>Add the amount</button>}
         <button type="button" className="btn" style={SMALL} onClick={() => { setEditing(true); act.setNote(null); }}>{undated ? "Give it a date" : "Edit"}</button>
-        <ConfirmButton label="Remove" style={SMALL} question={`Remove ${cost.name}? It stops counting.`} yes="Yes, remove it" no="Keep it" onConfirm={remove} />
+        <ConfirmButton label="Remove" name={`Remove ${cost.name}`} style={SMALL} question={`Remove ${cost.name}? It stops counting.`} yes="Yes, remove it" no="Keep it" onConfirm={remove} />
       </div>
       {asking && cost.amount === null && (
         <form onSubmit={addAmount} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
@@ -743,7 +743,7 @@ function WhatIf() {
             {saved.items.map((s) => (
               <span key={s.id} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                 <button className="btn" type="button" onClick={() => load(s)} style={{ padding: "4px 10px", minHeight: 32 }}>{s.name} · {shortDate(s.spec.move_date)}</button>
-                <ConfirmButton label="Remove" question={`Remove the saved scenario "${s.name}"?`} yes="Yes, remove it" no="Keep it" onConfirm={() => removeSaved(s)} style={{ padding: "4px 10px", minHeight: 32, fontSize: 12 }} />
+                <ConfirmButton label="Remove" name={`Remove the saved scenario ${s.name}`} question={`Remove the saved scenario "${s.name}"?`} yes="Yes, remove it" no="Keep it" onConfirm={() => removeSaved(s)} style={{ padding: "4px 10px", minHeight: 32, fontSize: 12 }} />
               </span>
             ))}
           </div>

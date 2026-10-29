@@ -6,7 +6,7 @@ import { api, type Loaded } from "../api";
 import { localToday, money, shortDate } from "../format";
 import { ConfirmButton } from "./ConfirmButton";
 import { PurchaseChoices } from "./Documents";
-import { Said } from "./State";
+import { Said, useFocusOnSaid } from "./State";
 import { SeverityTag } from "./Status";
 
 export interface PaidCandidate { id: number; date: string; merchant: string; amount: number; account: string; source: string; named?: boolean }
@@ -65,10 +65,10 @@ function PaidCard({ p, onDone }: { p: PastDueRow; onDone: (text: string, answer:
         <input className="input" type="date" value={paidOn} max={localToday()} onChange={(e) => setPaidOn(e.target.value)} />
       </label>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
-        {p.candidates.length > 0 && <button className="btn dark" type="button" disabled={busy || choice === null} onClick={() => choice !== null && answer({ answer: "paid", transaction_id: choice })}>Paid with this one</button>}
-        <button className="btn" type="button" disabled={busy} onClick={() => answer({ answer: "paid", paid_on: paidOn || undefined })}>Paid another way</button>
-        <button className="btn" type="button" disabled={busy} onClick={() => answer({ answer: "not_yet" })}>Not paid yet</button>
-        <ConfirmButton label="This bill has stopped" question={`${p.name} has stopped? It is no longer counted from ${shortDate(p.due_date)} on.`} yes="Yes, it has stopped" no="Keep counting it" onConfirm={() => send({ answer: "stopped" })} />
+        {p.candidates.length > 0 && <button className="btn dark" type="button" disabled={busy || choice === null} aria-label={`${p.name}: paid with this one`} onClick={() => choice !== null && answer({ answer: "paid", transaction_id: choice })}>Paid with this one</button>}
+        <button className="btn" type="button" disabled={busy} aria-label={`${p.name}: paid another way`} onClick={() => answer({ answer: "paid", paid_on: paidOn || undefined })}>Paid another way</button>
+        <button className="btn" type="button" disabled={busy} aria-label={`${p.name}: not paid yet`} onClick={() => answer({ answer: "not_yet" })}>Not paid yet</button>
+        <ConfirmButton label="This bill has stopped" name={`${p.name} has stopped`} question={`${p.name} has stopped? It is no longer counted from ${shortDate(p.due_date)} on.`} yes="Yes, it has stopped" no="Keep counting it" onConfirm={() => send({ answer: "stopped" })} />
       </div>
       <Said text={error} tone="error" />
     </div>
@@ -77,13 +77,14 @@ function PaidCard({ p, onDone }: { p: PastDueRow; onDone: (text: string, answer:
 
 export function PaidQuestions({ state, onAnswered, here = "confirm" }: { state: Loaded<{ past_due: PastDueRow[] }>; onAnswered: () => void; here?: "confirm" | "bills" }) {
   const [said, setSaid] = useState<Done | null>(null);
+  const saidRef = useFocusOnSaid(said);
   const list = state.data?.past_due ?? [];
   if (list.length === 0 && !said) return null;
   return (
     <>
       <h2 className="lab" style={{ margin: "6px 0 0" }}>{PAST_DUE_WORDS}: is it paid? · {list.length}</h2>
       {said && (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
+        <div ref={saidRef} tabIndex={-1} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
           <Said text={said.text} tone={said.tone} />
           {said.to && said.link && <Link to={said.to} style={{ fontSize: 12, fontWeight: 700 }}>{said.link}</Link>}
         </div>

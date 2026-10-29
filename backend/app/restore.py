@@ -80,6 +80,7 @@ def _copy(src: Path, dst: Path) -> None:
     finally:
         target.close()
         source.close()
+    dst.chmod(0o600)  # the copy holds the household: the app's user only, like the database itself
 
 
 def make_point(kind: str, reason: str) -> dict[str, Any]:
