@@ -31,10 +31,15 @@ def build_brief(snap: dict) -> list[dict]:
         nxt = before.get("next_check") or {}
         check_word = {"end": "the end-of-month check", "mid": "the 15th check"}.get(nxt.get("position", ""), "the next check")
         waits = f" {money(nxt['total'])} waits for {check_word} on {when(nxt['start'])}" + (f": {', '.join(t['name'] for t in nxt['top'][:2])}." if nxt.get("top") else ".") if nxt.get("total") else ""
-        taps = [e["name"] for e in before["items"] if not e["autopay"] and not e.get("via_card")]
+        manual = [e for e in before["items"] if not e["autopay"] and not e.get("via_card")]
+        unnamed = [e["name"] for e in manual if str(e.get("source") or "").startswith("series:")]
+        to_pay = [e["name"] for e in manual if not str(e.get("source") or "").startswith("series:")]
+        # Which tap: a charge the ledger found is named on Needs you; a bill not on autopay is paid by hand.
+        taps = ([f"{', '.join(unnamed)}: name {'it' if len(unnamed) == 1 else 'them'} on Needs you."] if unnamed else []) + \
+               ([f"{', '.join(to_pay)} {'is' if len(to_pay) == 1 else 'are'} not on autopay: pay {'it' if len(to_pay) == 1 else 'them'} yourself, or turn on autopay on Bills."] if to_pay else [])
         items.append({
-            "severity": "warning" if snap["cash"] - before["total"] < snap["buffer"] else "info",
-            "text": f"{money(before['total'])} clears before payday: {names}.{waits}" + (f" {', '.join(taps)} needs a tap." if taps else ""),
+            "severity": "warning" if snap["cash"] is None or snap["cash"] - before["total"] < snap["buffer"] else "info",  # no balance: nothing says it is covered
+            "text": f"{money(before['total'])} clears before payday: {names}.{waits}" + "".join(f" {t}" for t in taps),
             "link": "/bills",
         })
     if pay["amount"]:
@@ -92,5 +97,8 @@ def build_brief(snap: dict) -> list[dict]:
         behind = [g["name"] for g in goals["items"] if not g["on_track"]]
         items.append({"severity": "warning" if behind else "info", "text": f"Goals take {money(goals['per_paycheck'])} of this paycheck" + (f"; {', '.join(behind)} {'is' if len(behind) == 1 else 'are'} behind." if behind else ", all on track."), "link": "/today"})
     safe = snap["safe_to_spend"]
+    if safe["amount"] is None:  # no balance to count from: say what is missing, never a shortfall built on $0
+        items.append({"severity": "warning", "text": "No bank has reported a balance yet, so safe to spend is not worked out: link a bank or type what checking holds.", "link": "/settings/banks"})
+        return items
     items.append({"severity": "critical" if safe["amount"] < 0 else "info", "text": (f"Short by {money(-safe['amount'])} through {when(safe['through'])} after bills and set-asides." if safe["amount"] < 0 else f"Safe to spend {money(safe['amount'])} through {when(safe['through'])}." + (f" After goals, {money(safe['after_goals'])}." if goals["per_paycheck"] > 0 else "")), "link": "/"})
     return items

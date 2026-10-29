@@ -19,10 +19,17 @@ def firstrun(session: Session) -> dict:
     has_data = session.exec(select(Transaction.id).limit(1)).first() is not None or session.exec(select(Account.id).where(Account.active == True, Account.connector != "manual").limit(1)).first() is not None  # noqa: E712
     bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
     unnamed = session.exec(select(RecurringSeries.id).where(RecurringSeries.active == True, RecurringSeries.confirmed == False).limit(1)).first() is not None  # noqa: E712
-    assigned = bool(bills) and all((b.paid_from or "due") in ("mid", "end") for b in bills)
+    # Which check pays each bill is decided in the form the owner's cadence offers: a semi-monthly earner picks the
+    # 15th or the end-of-month check; a weekly, biweekly or monthly one is offered only "the check before it is due",
+    # which every bill has, so the step ticks once there is a paycheck and a bill (it could never tick before).
+    cadences = {i.cadence or "biweekly" for i in session.exec(select(Income).where(Income.active == True)).all()}  # noqa: E712
+    if "semimonthly" in cadences:
+        assigned = bool(bills) and all((b.paid_from or "due") in ("mid", "end") for b in bills)
+    else:
+        assigned = bool(bills) and bool(cadences)
     picked = session.get(Setting, "appearance") is not None  # a choice saved, not the default
     steps = [
-        {"id": "paid", "title": "When are you paid?", "text": "The cadence and the usual amount of each check. Two taps; your paystubs fill it in once they arrive.", "done": has_income or "paid" in marked, "link": "/paystubs"},
+        {"id": "paid", "title": "When are you paid?", "text": "The cadence and the usual amount of each check. Two taps; your paystubs fill it in once they arrive.", "done": has_income or "paid" in marked, "link": "/paystubs#paycheck"},
         {"id": "data", "title": "Where does the money come from?", "text": "Connect a bank, or drop a CSV or a Rocket Money export. Either is fine; both is better.", "done": has_data or "data" in marked, "link": "/settings/connectors"},
         {"id": "bills", "title": "Name the bills it found", "text": "One list: keep what is a bill, drop what is not. Nothing is counted until it has a name.", "done": (bool(bills) and not unnamed) or "bills" in marked, "link": "/confirm"},
         {"id": "checks", "title": "Which check pays which bill?", "text": "Say which paycheck carries each bill, so each check knows its load.", "done": assigned or "checks" in marked, "link": "/bills"},

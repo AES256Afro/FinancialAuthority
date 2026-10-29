@@ -4,11 +4,11 @@ import { Link } from "react-router-dom";
 import { ByCheck } from "../components/ByCheck";
 import { RiverChart } from "../components/RiverChart";
 import { Watchlist } from "../components/Watchlist";
-import { amountClass, daysWord, money, shortDate } from "../format";
+import { amountClass, daysWord, money, moneyOr, shortDate } from "../format";
 import { getPrefs } from "../prefs";
 import type { Window } from "../types";
 import type { ViewProps } from "./index";
-import { PlanCaveats, SafeExplain, SafePill, SafeSentence, noPayday, safeTitle } from "../components/SafeExplain";
+import { PlanCaveats, SafeExplain, SafePill, SafeSentence, cashFigure, noBalance, noPayday, safeFigure, safeTitle } from "../components/SafeExplain";
 
 function Tile({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
@@ -36,19 +36,23 @@ function Line({ label, bar, figure, last, top }: { label: ReactNode; bar: ReactN
 // short), what leaves, and what that check leaves. The lines add up to the bottom line, which is the engine's
 // figure for that check (safe to spend, above, is what checking holds until payday: a different figure).
 function ThisPaycheck({ w }: { w: Window }) {
-  const scale = Math.max(1, w.inflow, w.paycheck); // drawing only: the widest bar is the most that comes in
+  const scale = Math.max(1, w.inflow ?? 0, w.paycheck); // drawing only: the widest bar is the most that comes in
   const widthFor = (v: number) => `${Math.max(2, Math.min(100, (Math.abs(v) / scale) * 100))}%`;
-  const short = w.safe < 0;
+  // No balance yet: what checking carries in and what this check leaves are null, so neither is drawn as a figure.
+  const carriedIn = w.carried_in;
+  const safe = w.safe;
+  const short = safe !== null && safe < 0;
   const muted = { color: "var(--muted)" };
   return (
     <>
       <Line label="Paycheck lands" bar={<div className="bar" style={{ width: widthFor(w.paycheck), background: "var(--paycheck)" }} />} figure={<strong className="num" style={{ textAlign: "right" }}>{money(w.paycheck, { sign: true })}</strong>} />
-      {w.carried_in > 0 && <Line label={<>Carried in from checking <span style={muted}>· after what is due before payday and the safety cushion</span></>} bar={<div className="bar" style={{ width: widthFor(w.carried_in), background: "var(--paycheck)", opacity: 0.55 }} />} figure={<span className="num" style={{ textAlign: "right" }}>{money(w.carried_in, { sign: true })}</span>} />}
-      {w.carried_in < 0 && <Line label={<strong style={{ color: "var(--critical-ink)" }}><OctagonAlert size={13} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 4 }} />Checking is already short before payday</strong>} bar={<div className="bar" style={{ width: widthFor(w.carried_in), background: "var(--critical-soft)", border: "2px solid var(--critical)", boxSizing: "border-box" }} />} figure={<span className="num" style={{ textAlign: "right", color: "var(--critical-ink)" }}>{money(w.carried_in)}</span>} />}
+      {carriedIn === null && <Line label={<>Carried in from checking <span style={muted}>· no bank has reported a balance yet</span></>} bar={<div />} figure={<span style={{ textAlign: "right", color: "var(--ink-2)" }}>no balance yet</span>} />}
+      {carriedIn !== null && carriedIn > 0 && <Line label={<>Carried in from checking <span style={muted}>· after what is due before payday and the safety cushion</span></>} bar={<div className="bar" style={{ width: widthFor(carriedIn), background: "var(--paycheck)", opacity: 0.55 }} />} figure={<span className="num" style={{ textAlign: "right" }}>{money(carriedIn, { sign: true })}</span>} />}
+      {carriedIn !== null && carriedIn < 0 && <Line label={<strong style={{ color: "var(--critical-ink)" }}><OctagonAlert size={13} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 4 }} />Checking is already short before payday</strong>} bar={<div className="bar" style={{ width: widthFor(carriedIn), background: "var(--critical-soft)", border: "2px solid var(--critical)", boxSizing: "border-box" }} />} figure={<span className="num" style={{ textAlign: "right", color: "var(--critical-ink)" }}>{money(carriedIn)}</span>} />}
       {w.advances.total > 0 && <Line label={<>Advance apps take back <span style={muted}>· {w.advances.items.length} {w.advances.items.length === 1 ? "app" : "apps"}</span></>} bar={<div className="bar" style={{ width: widthFor(w.advances.total), background: "var(--debt)" }} />} figure={<span className="num" style={{ textAlign: "right" }}>{money(-w.advances.total)}</span>} />}
       <Line label={<>Bills {shortDate(w.start)} to {shortDate(w.end)} <span style={muted}>· {w.bills.items.length} bills</span></>} bar={<div className="bar" style={{ width: widthFor(w.bills.total), background: "var(--bill)" }} />} figure={<span className="num" style={{ textAlign: "right" }}>{money(-w.bills.total)}</span>} />
       <Line label={<>Kept for next paycheck's bills <span style={muted}>· {w.set_aside.items.length} items</span></>} bar={<div className="bar" style={{ width: widthFor(w.set_aside.total), background: "var(--surface)", border: "2px solid var(--bill)", boxSizing: "border-box" }} />} figure={<span className="num" style={{ textAlign: "right" }}>{money(-w.set_aside.total)}</span>} />
-      <Line top last label={<strong>{short ? <><OctagonAlert size={14} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 4, color: "var(--critical-ink)" }} />Short from the {shortDate(w.start)} check</> : `Left from the ${shortDate(w.start)} check`}</strong>} bar={<div className="bar" style={{ width: widthFor(w.safe), background: short ? "var(--critical)" : "var(--safe)" }} />} figure={<strong className="num" style={{ textAlign: "right", fontSize: 16, color: short ? "var(--critical-ink)" : undefined }}>{money(w.safe)}</strong>} />
+      <Line top last label={<strong>{short ? <><OctagonAlert size={14} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 4, color: "var(--critical-ink)" }} />Short from the {shortDate(w.start)} check</> : `Left from the ${shortDate(w.start)} check`}</strong>} bar={safe === null ? <div /> : <div className="bar" style={{ width: widthFor(safe), background: short ? "var(--critical)" : "var(--safe)" }} />} figure={<strong className="num" style={{ textAlign: "right", fontSize: safe === null ? 13 : 16, color: short ? "var(--critical-ink)" : undefined }}>{moneyOr(safe)}</strong>} />
       <div style={{ fontSize: 12, color: "var(--ink-2)", paddingTop: 6 }}>What this check leaves through {shortDate(w.end)}, before everyday spending. Safe to spend, at the top, is a different figure: what checking holds until payday.</div>
     </>
   );
@@ -66,13 +70,13 @@ export function River({ snapshot }: ViewProps) {
         <div className="card" style={{ flex: "1 1 420px", padding: "18px 22px", display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ fontSize: 13, color: "var(--ink-2)", fontWeight: 600 }}>{safeTitle(s)}</div>
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-            <div className="num" style={{ fontSize: 52, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1 }}>{money(s.safe_to_spend.amount)}</div>
+            <div className="num" style={{ fontSize: noBalance(s) ? 30 : 52, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1 }}>{safeFigure(s)}</div>
             <SafePill s={s} />
           </div>
           <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
             <SafeSentence s={s} />
             {s.usual_pace.per_day > 0 && (
-              <span className="num"> You usually spend {money(s.usual_pace.per_day)} a day, about {money(s.usual_pace.per_window)} between paychecks{s.usual_pace.over_safe > 0 ? `, which is ${money(s.usual_pace.over_safe)} more than is safe` : ""}.</span>
+              <span className="num"> You usually spend {money(s.usual_pace.per_day)} a day, about {money(s.usual_pace.per_window)} between paychecks{s.usual_pace.over_safe !== null && s.usual_pace.over_safe > 0 ? `, which is ${money(s.usual_pace.over_safe)} more than is safe` : ""}.</span>
             )}
           </div>
           <PlanCaveats s={s} />
@@ -89,7 +93,7 @@ export function River({ snapshot }: ViewProps) {
                 : "Nothing before payday"
           }
         />
-        <Tile label="In checking now" value={money(s.cash)} sub={s.savings ? `savings of ${money(s.savings)} kept apart` : `${spendingAccounts} account${spendingAccounts === 1 ? "" : "s"}`} />
+        <Tile label="In checking now" value={cashFigure(s)} sub={s.savings ? `savings of ${money(s.savings)} kept apart` : `${spendingAccounts} account${spendingAccounts === 1 ? "" : "s"}`} />
         <Link to="/confirm" style={{ textDecoration: "none", color: "inherit", display: "contents" }}>
           <Tile label="Needs you" value={String(s.pending.total)} sub={`${s.pending.confirmations} to confirm, ${s.pending.approvals} to approve`} />
         </Link>

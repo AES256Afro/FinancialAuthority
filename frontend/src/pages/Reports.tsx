@@ -120,7 +120,12 @@ export function Reports() {
       {!data && !error && <Loading what="the report" />}
       {stale && <span role="status" style={{ fontSize: 13, color: "var(--ink-2)" }}>Loading the last {months} months by {by}… the figures below are the ones before.</span>}
       {error && data && !loading && <Failed error={error} what="the new report" onRetry={reload} />}
-      {data && (
+      {data && data.groups.length === 0 && data.totals.income === 0 && data.totals.spent === 0 && (
+        <section className="card" style={{ padding: 16, fontSize: 13, color: "var(--ink-2)" }}>
+          No spending or income in the last {months} months yet. Reports are drawn from your transactions: <Link to="/settings/connectors#import" style={{ fontWeight: 700 }}>import your bank's file</Link> or <Link to="/settings/connectors#banks" style={{ fontWeight: 700 }}>link the bank</Link>, and the months fill in here.
+        </section>
+      )}
+      {data && !(data.groups.length === 0 && data.totals.income === 0 && data.totals.spent === 0) && (
         <div aria-busy={stale} style={{ display: "flex", flexDirection: "column", gap: 14, opacity: stale ? 0.5 : 1, transition: "opacity .15s" }}>
           <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 8 }}>
             <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "baseline" }}>

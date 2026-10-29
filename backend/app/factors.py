@@ -268,7 +268,7 @@ def login_second(body: SecondIn, request: Request, response: Response, session: 
 
 
 def _set_cookie(response: Response, request: Request, token: str) -> None:
-    response.set_cookie(auth.COOKIE, token, max_age=auth.SESSION_MAX_AGE, httponly=True, samesite="lax", secure=auth.request_is_https(request), path="/")
+    auth.set_session_cookie(response, request, token)
 
 
 # ---- passkeys ---------------------------------------------------------------------------------------------------

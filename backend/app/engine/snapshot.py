@@ -307,6 +307,7 @@ def _finance_snapshot(session: Session, today: date) -> dict:
             for a in accounts
         ],
         "cash": _money(cash),
+        "no_balance": False,
         "cash_all": _money(cash_all),
         "savings": _money(cash_all - cash),
         "buffer": _money(buffer),
@@ -344,11 +345,62 @@ def _finance_snapshot(session: Session, today: date) -> dict:
         "projection_words": PATH_WORDS,
         "not_advice": "Computed by the engine from the registers above. Not financial advice.",
     }
+    _no_balance(snap, accounts)
     snap["brief"] = build_brief(snap)
     from .explain import why_all
 
     snap["why"] = why_all(snap)
     return snap
+
+
+NO_BALANCE_WORDS = "No bank has reported a balance yet: link a bank or type what checking holds."
+
+
+def _no_balance(snap: dict, accounts: list) -> None:
+    """An account no bank has reported a balance for, and the owner has not typed one into, holds an unknown amount,
+    not $0. When no account the plan spends from has a balance, every figure that starts from the balance (cash, safe
+    to spend, the first window's carried-in and what it leaves, the weekly lows) is None and the snapshot says what is
+    missing, so no screen, brief or model states a shortfall built on nothing. When some have one, those are counted
+    and the others are named."""
+    from .projection import is_spendable
+
+    counted = [a for a in accounts if is_spendable(a) and a.kind != "card"]
+    missing = [a for a in counted if a.balance is None]
+    none = not counted or len(missing) == len(counted)
+    snap["no_balance"] = none
+    if not none:
+        if missing:
+            names = ", ".join(a.name for a in missing)
+            many = len(missing) != 1
+            snap["caveats"].append(f"No balance has been reported for {names}, so {'they are' if many else 'it is'} counted as holding nothing; link the bank or type what {'they hold' if many else 'it holds'}.")
+            for r in snap["safe_to_spend"]["by_account"]:
+                if any(a.id == r["id"] for a in missing):
+                    r["no_balance"] = True
+            for st in snap["safe_to_spend"]["steps"]:
+                if any(st["label"] == f"In {a.name}" for a in missing):
+                    st["note"] = "no balance reported yet, counted as nothing"
+        return
+    snap["caveats"].insert(0, NO_BALANCE_WORDS)
+    snap["cash"] = None
+    safe = snap["safe_to_spend"]
+    safe.update(amount=None, after_goals=None, share_of_cash=None, no_balance=True, words=NO_BALANCE_WORDS)
+    safe["parts"]["cash"] = None
+    for r in safe["by_account"]:
+        r.update(balance=None, safe=None, no_balance=True)
+    for st in safe["steps"]:
+        if st["label"].startswith("In ") and "items" not in st:
+            st.update(amount=None, note="no balance reported yet")
+    snap["usual_pace"]["over_safe"] = None
+    if "left" in snap["payday"]:
+        snap["payday"]["left"] = None
+    if snap["windows"]:
+        w = snap["windows"][0]
+        w.update(carried_in=None, inflow=None, safe=None, no_balance=True)
+        for e in w["bills"]["items"] + w["set_aside"]["items"]:
+            e["funded"] = None  # funded from what? the balance is unknown
+        w["bills"]["small"]["all_funded"] = None
+    for wk in snap["calendar"]["weeks"]:
+        wk.update(low=None, low_date=None)
 
 
 def _explain_safe(session: Session, accounts: list, before: list[dict], advances_due: list[dict], next_payday: date, *, buffer: float, advances_before: float,

@@ -106,7 +106,7 @@ export function Paystubs() {
 
       <section className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_420px]" style={{ gap: 16, alignItems: "start" }}>
         <div className="card" style={{ padding: "16px 20px" }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 8, flexWrap: "wrap" }}><h2 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Last {strip.length} paychecks, net</h2><span style={{ fontSize: 12, color: "var(--muted)" }}>pick a date below to open that stub</span></div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 8, flexWrap: "wrap" }}><h2 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>{strip.length === 1 ? "The last paycheck, net" : `Last ${strip.length} paychecks, net`}</h2><span style={{ fontSize: 12, color: "var(--muted)" }}>pick a date below to open that stub</span></div>
           <svg viewBox="0 0 640 170" width="100%" style={{ display: "block", height: "auto" }} role="img" aria-label="Net pay for the last paychecks">
             <line x1={40} y1={140} x2={620} y2={140} stroke={c.buffer} strokeWidth={1.5} />
             {strip.map((p, i) => {

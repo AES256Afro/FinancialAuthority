@@ -55,11 +55,13 @@ def job_checks(session: Session, specs: dict[str, Any], words: dict[str, str] | 
     return {"key": "jobs", "label": "Jobs", "state": "crit", "note": f"failing: {', '.join(sorted(failing))}"}
 
 
-def checks_from_report(report: dict[str, Any], backup_age_hours: float | None, jobs_part: dict[str, Any], now: datetime) -> list[dict[str, Any]]:
+def checks_from_report(report: dict[str, Any], backup_age_hours: float | None, jobs_part: dict[str, Any], now: datetime, *, copy_due: bool = True) -> list[dict[str, Any]]:
     """Every part, good, warn or crit, with a short note in plain words, from the self-check's report."""
     free = float(report.get("free_gb") or 0.0)
     out = [{"key": "disk", "label": "Disk space", "state": "crit" if free < 2 else "warn" if free < 5 else "good", "note": f"{free:,.1f} GB free"}]
-    if backup_age_hours is None:
+    if backup_age_hours is None and not copy_due:
+        out.append({"key": "backups", "label": "Restore points", "state": "good", "note": "the first daily copy is not due yet"})  # a new install
+    elif backup_age_hours is None:
         out.append({"key": "backups", "label": "Restore points", "state": "crit", "note": "no restore point yet"})
     else:
         out.append({"key": "backups", "label": "Restore points", "state": "crit" if backup_age_hours > 48 else "warn" if backup_age_hours > 30 else "good",

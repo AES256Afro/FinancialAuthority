@@ -176,10 +176,12 @@ def self_check() -> str:
         from .. import restore
 
         backup_age: float | None = None
+        copy_due = True
         try:
             backups = restore.status(fresh=True)
             backup_age = backups["latest_age_hours"]
-            if backups["latest_age_hours"] is None or backups["latest_age_hours"] > 48:
+            copy_due = backups.get("copy_due", True)
+            if (backups["latest_age_hours"] is None and copy_due) or (backups["latest_age_hours"] or 0) > 48:
                 problems.append("no restore point in the last two days")
             if not backups["database"]["ok"]:
                 problems.append(f"the database did not pass its check: {backups['database']['result']}")
@@ -208,7 +210,7 @@ def self_check() -> str:
         # The hour's sample of every part, for the health strips and for telling the phone (app_watch).
         from ..engine import apphealth
 
-        checks = apphealth.checks_from_report(report, backup_age, apphealth.job_checks(session, jobs.specs), now)
+        checks = apphealth.checks_from_report(report, backup_age, apphealth.job_checks(session, jobs.specs), now, copy_due=copy_due)
         checks.append(apphealth.datacheck_part(get_setting(session, "datacheck.last", None)))
         apphealth.record(session, report, checks, backup_age, utcnow())
         return f"{report['free_gb']} GB free · db {report['db_mb']} MB · last transaction {report['last_transaction']} · {len(problems)} problem(s)" + (": " + "; ".join(problems) if problems else "")
@@ -321,6 +323,10 @@ def _import_table(session, path) -> str:  # noqa: ANN001 - a Session and a Path
             rows = parsed["rows"]
             name = f"{parsed['vendor']} {parsed['account_type'] or 'account'}".strip() if parsed["vendor"] else path.stem
             result = import_rows(session, rows, source_file=path.name, account_name=name, institution=parsed["vendor"], account_number=parsed["account_id"], via="folder") if rows else None
+            if result is not None:
+                from ..services import apply_statement_balances
+
+                apply_statement_balances(session, text, (result.details or {}).get("account_id"))  # the statement's own balance: files alone then give a real safe to spend
         elif found["kind"] == "bills":
             result = import_bills(session, parse_bills_rows(text, found["mapping"]), source_file=path.name, today=_today())
         else:

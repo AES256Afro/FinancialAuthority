@@ -2,7 +2,7 @@
 import { amountClass, money, shortDate } from "../format";
 import type { Event } from "../types";
 import type { ViewProps } from "./index";
-import { PlanCaveats, SafeExplain, noPayday } from "../components/SafeExplain";
+import { PlanCaveats, SafeExplain, noPayday, safeFigure, safeShort } from "../components/SafeExplain";
 import { SeverityTag, StatusPill } from "../components/Status";
 
 const SOURCE_WORDS: Record<string, string> = {
@@ -75,7 +75,7 @@ export function BillBoard({ snapshot }: ViewProps) {
   const paid = board.paid.items;
   const problems = board.problems.items;
   const fundingOf = (e: Event): Funding => (e.funded === false ? "not_yet" : "funded");
-  const short = snapshot.safe_to_spend.amount < 0;
+  const short = safeShort(snapshot);
   // With no paycheck on file the window is a frame two weeks out, not a paycheck: the columns say so.
   const unknown = noPayday(snapshot);
   return (
@@ -85,7 +85,7 @@ export function BillBoard({ snapshot }: ViewProps) {
         <div style={{ fontSize: 13, color: "var(--ink-2)" }}>Every bill is a card that moves right as it gets paid. A card that stops moving is the problem.</div>
         <div style={{ flexGrow: 1 }} />
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: "var(--surface)", border: "1px solid var(--hairline)", borderRadius: 999, padding: "6px 14px" }}>
-          <strong className="num" style={{ color: short ? "var(--critical-ink)" : undefined }}>{money(snapshot.safe_to_spend.amount)}</strong>
+          <strong className="num" style={{ color: short ? "var(--critical-ink)" : undefined }}>{safeFigure(snapshot)}</strong>
           <span style={{ fontSize: 12, color: "var(--ink-2)" }}>safe to spend</span>
           {short && <StatusPill status="crit">Short before payday</StatusPill>}
         </div>

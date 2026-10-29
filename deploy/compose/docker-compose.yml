@@ -28,8 +28,14 @@ services:
       FA_BRIDGE_CONTAINER: financialauthority-bridge
     extra_hosts:
       - host.docker.internal:host-gateway
+    # The app needs no capability and writes only its mounted folders and /tmp (the OCR's scratch files), so the
+    # rest of the container is read-only and every capability is dropped.
     security_opt:
       - no-new-privileges:true
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs:
+      - /tmp
   bridge:
     # Proton Mail Bridge, optional. The app's Connectors page walks through the one sign-in, step by step.
     # Sign in once:  docker compose run --rm bridge init
@@ -44,3 +50,6 @@ services:
     profiles: ["bridge"]
     volumes:
       - ./bridge:/root
+    # The Bridge's IMAP and SMTP take the vault password; nothing publishes them, so only the app reaches them.
+    security_opt:
+      - no-new-privileges:true

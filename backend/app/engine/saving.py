@@ -97,15 +97,15 @@ def saving_plan(session: Session, today: date, *, snap: dict | None = None) -> d
     # What each check truly leaves: the window's own figure less the everyday pace over its days.
     def left_of(w: dict) -> float:
         days = (date.fromisoformat(w["end"]) - date.fromisoformat(w["start"])).days + 1
-        return w["safe"] - pace_day * days
+        return None if w["safe"] is None else w["safe"] - pace_day * days  # no balance yet: unknown, not short
 
     lefts = [left_of(w) for w in windows]
     share = cfg["share"]
     used = share if share is not None else SUGGESTED
-    per_check = [{"date": w["start"], "left": _money(lefts[k]), "keep": _money(max(0.0, lefts[k]) * used / 100.0)} for k, w in enumerate(windows)]
+    per_check = [{"date": w["start"], "left": None if lefts[k] is None else _money(lefts[k]), "keep": 0.0 if lefts[k] is None else _money(max(0.0, lefts[k]) * used / 100.0)} for k, w in enumerate(windows)]
     asides = [{"start": w["start"], "set_aside": w["set_aside"]["total"]} for w in windows]
     pay = snap.get("payday") or {}
-    if pay.get("landed"):
+    if pay.get("landed") and pay.get("left") is not None:
         # Today's check has posted, so the windows start at the next one; what today's check keeps and leaves are
         # the snapshot's own figures for it, and the payday moves still have them.
         left = float(pay["left"]) - pace_day * ((date.fromisoformat(pay["end"]) - today).days + 1)
@@ -139,7 +139,7 @@ def saving_plan(session: Session, today: date, *, snap: dict | None = None) -> d
         bal = balance
         steady = lefts[1:3] if len(lefts) >= 3 else lefts[:1]
         for i, d in enumerate(checks):
-            left = lefts[0] if i == 0 else steady[(i - 1) % len(steady)]
+            left = (lefts[0] if i == 0 else steady[(i - 1) % len(steady)]) or 0.0  # an unknown (no balance yet) saves nothing
             freed = sum(r["per_check"] for r in roll if date.fromisoformat(r["last_payment"]) < d)
             bal += max(0.0, left) * pct / 100.0 + freed * (1.0 if with_rollover else pct / 100.0)
             for k, t in enumerate(targets):
@@ -160,7 +160,7 @@ def saving_plan(session: Session, today: date, *, snap: dict | None = None) -> d
     by_share = []
     for pct in SHARES:
         e = simulate(pct, cfg["rollover"])
-        avg = sum(max(0.0, x) for x in lefts[1:3] or lefts[:1]) / max(len(lefts[1:3] or lefts[:1]), 1) * pct / 100.0
+        avg = sum(max(0.0, x or 0.0) for x in lefts[1:3] or lefts[:1]) / max(len(lefts[1:3] or lefts[:1]), 1) * pct / 100.0
         by_share.append({"share": pct, "per_check": _money(avg), "etas": e})
     return {
         "as_of": today.isoformat(), "balance": _money(balance), "accounts": [{"id": a.id, "name": a.name, "balance": a.balance, "source": f"account:{a.id}"} for a in saves],

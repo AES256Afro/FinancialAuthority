@@ -103,6 +103,13 @@ function nearestCheck(data: DemoData, amount: number, installments: string | nul
   return data.checks[key] ?? data.checks["0:0"];
 }
 
+/** limit and offset as the server reads them: limit from 1 to 500, offset from 0. */
+function paging(params: URLSearchParams, fallback: number): { limit: number; offset: number } {
+  const limit = Math.min(500, Math.max(1, Math.floor(Number(params.get("limit") ?? fallback)) || fallback));
+  const offset = Math.max(0, Math.floor(Number(params.get("offset") ?? 0)) || 0);
+  return { limit, offset };
+}
+
 async function get(path: string): Promise<Response> {
   const data = await load();
   const exact = data.responses[`GET ${path}`];
@@ -112,9 +119,18 @@ async function get(path: string): Promise<Response> {
     const all = data.responses["GET /api/v1/transactions/search?limit=500"] as { transactions: Record<string, unknown>[] };
     const text = (params.get("text") ?? "").toLowerCase();
     const category = params.get("category");
-    const limit = Number(params.get("limit") ?? 50);
-    const rows = all.transactions.filter((t) => (!text || includes(t.merchant, text) || includes(t.description, text) || includes(t.note, text)) && (!category || t.category === category)).slice(0, limit);
-    return json({ returned: rows.length, total_amount: Math.round(rows.reduce((s, t) => s + Number(t.amount), 0) * 100) / 100, transactions: rows });
+    const { limit, offset } = paging(params, 50);
+    const matched = all.transactions.filter((t) => (!text || includes(t.merchant, text) || includes(t.description, text) || includes(t.note, text)) && (!category || t.category === category));
+    // A page of the recorded rows: an offset past them is an empty page, and the total is what was recorded.
+    const rows = matched.slice(offset, offset + limit);
+    return json({ returned: rows.length, total: matched.length, offset, limit, total_amount: Math.round(rows.reduce((s, t) => s + Number(t.amount), 0) * 100) / 100, transactions: rows });
+  }
+  if (base === "/api/v1/recurring") {
+    const recorded = data.responses["GET /api/v1/recurring"] as { series: unknown[]; pending: number; total?: number } | undefined;
+    if (recorded) {
+      const { limit, offset } = paging(params, 200);
+      return json({ ...recorded, series: recorded.series.slice(offset, offset + limit), pending: recorded.pending, total: recorded.total ?? recorded.series.length, offset, limit });
+    }
   }
   if (base === "/api/v1/mail/messages") {
     const all = data.responses["GET /api/v1/mail/messages?limit=200"] as { messages: Record<string, unknown>[] };

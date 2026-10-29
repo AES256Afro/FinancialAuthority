@@ -12,6 +12,8 @@ const data = {
     "GET /api/v1/housing": { homes: [] },
     "GET /api/v1/taxes": { year: 2026 },
     "GET /api/v1/mail/messages?limit=200": { messages: [{ id: 1, account: "Proton", folder: "INBOX", sender: "billing@example-water.test", sender_name: "Example Water", subject: "Your bill is ready", snippet: "Amount due $64.00 by 11/02/2026.", has_attachments: true, attachment_names: "statement.pdf", kind: "bill_due" }] },
+    "GET /api/v1/transactions/search?limit=500": { transactions: Array.from({ length: 7 }, (_, i) => ({ id: 100 - i, merchant: `Example Shop ${i}`, amount: 10 + i, category: "Shopping" })) },
+    "GET /api/v1/recurring": { series: Array.from({ length: 5 }, (_, i) => ({ id: i + 1, merchant: `Example ${i}` })), pending: 5 },
     "GET /api/v1/facts?status=pending": { facts: [{ id: 9, kind: "bill_due", message: { id: 1 } }, { id: 10, kind: "document_terms", message: null }] },
   },
   checks: {},
@@ -52,6 +54,17 @@ describe("demoFetch", () => {
   it("still acknowledges a plain write, and gives a recorded page back where the screen shows it", async () => {
     expect(await (await demoFetch("/api/v1/bills/3", { method: "DELETE" })).json()).toEqual({ ok: true });
     expect(await (await demoFetch("/api/v1/housing/3", { method: "PUT", body: "{}" })).json()).toEqual({ homes: [] });
+  });
+
+  it("pages the recorded transactions and repeating charges, with the whole count", async () => {
+    const page = await (await demoFetch("/api/v1/transactions/search?limit=3&offset=3")).json();
+    expect(page.transactions.map((t: { id: number }) => t.id)).toEqual([97, 96, 95]);
+    expect([page.total, page.offset, page.limit, page.returned]).toEqual([7, 3, 3, 3]);
+    const past = await (await demoFetch("/api/v1/transactions/search?limit=100&offset=900")).json();
+    expect([past.returned, past.total]).toEqual([0, 7]);
+    const series = await (await demoFetch("/api/v1/recurring?limit=2&offset=4")).json();
+    expect(series.series.map((s: { id: number }) => s.id)).toEqual([5]);
+    expect([series.pending, series.total, series.offset]).toEqual([5, 5, 4]);
   });
 
   it("gives the recorded report for any choice of rows, period or year", async () => {

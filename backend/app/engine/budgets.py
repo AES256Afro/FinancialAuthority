@@ -86,8 +86,12 @@ def budget_plan(session: Session, today: date) -> dict[str, Any]:
     suggestions = sorted(((c, v / windows_in_recent) for c, v in recent.items() if c not in budgeted and windows_in_recent and v / windows_in_recent >= 10), key=lambda kv: -kv[1])[:8]
     from .snapshot import finance_snapshot
 
-    safe = float(finance_snapshot(session, today)["safe_to_spend"]["amount"])
+    amount = finance_snapshot(session, today)["safe_to_spend"]["amount"]
     left_total = sum(max(0.0, i["left"]) for i in items)
+    if amount is None:  # no balance yet: whether the budgets fit is unknown, never "more than is safe"
+        safe = None
+    else:
+        safe = float(amount)
     return {
         "as_of": today.isoformat(),
         "span": {"start": start.isoformat(), "end": end.isoformat(), "next_payday": next_payday.isoformat(), "known": span["known"], "days_total": days_total, "days_gone": days_gone, "days_left": max(0, days_total - days_gone)},
@@ -95,9 +99,9 @@ def budget_plan(session: Session, today: date) -> dict[str, Any]:
         "totals": {"allowed": _money(sum(i["allowed"] for i in items)), "spent": _money(sum(i["spent"] for i in items)), "left": _money(sum(i["left"] for i in items)), "left_unspent": _money(left_total)},
         "unbudgeted": {"spent": _money(sum(v for _, v in others)), "top": [{"category": c, "spent": _money(v)} for c, v in others[:6]]},
         "suggestions": [{"category": c, "per_paycheck": _money(v)} for c, v in suggestions],
-        "safe_to_spend": _money(safe),
-        "fits": left_total <= safe + 0.005,
-        "fit_note": None if left_total <= safe + 0.005 else f"Together the budgets leave ${left_total:,.2f} to spend, ${left_total - safe:,.2f} more than is safe before payday.",
+        "safe_to_spend": None if safe is None else _money(safe),
+        "fits": None if safe is None else left_total <= safe + 0.005,
+        "fit_note": None if safe is None or left_total <= safe + 0.005 else f"Together the budgets leave ${left_total:,.2f} to spend, ${left_total - safe:,.2f} more than is safe before payday.",
         "not_advice": "Computed by the app from your transactions and the amounts you set. Not financial advice.",
     }
 

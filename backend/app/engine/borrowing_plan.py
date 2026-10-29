@@ -125,7 +125,7 @@ def borrowing_plan(session: Session, today: date) -> dict[str, Any]:
         snap = finance_snapshot(session, today)
         windows = snap.get("windows") or []
         per_day = float((snap.get("usual_pace") or {}).get("per_day") or 0.0)
-        if windows:
+        if windows and not snap.get("no_balance"):  # no balance yet: no room is worked out from nothing
             left = []
             for w in windows:
                 days = (date.fromisoformat(w["end"]) - date.fromisoformat(w["start"])).days + 1 if w.get("end") else 14

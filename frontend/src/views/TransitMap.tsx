@@ -6,7 +6,7 @@ import { palette } from "../looks";
 import { getPrefs } from "../prefs";
 import type { Event } from "../types";
 import type { ViewProps } from "./index";
-import { SafeExplain } from "../components/SafeExplain";
+import { SafeExplain, safeFigure, safeShort } from "../components/SafeExplain";
 import { StatusPill } from "../components/Status";
 
 const W = 1120;
@@ -37,7 +37,7 @@ export function TransitMap({ snapshot }: ViewProps) {
   const byLine = (id: string) => stations.filter((e) => lineOf(e) === id);
   const next = stations.find((e) => dayOf(e.date) >= dayOf(snapshot.as_of));
   const biggest = [...stations].sort((a, b) => b.amount - a.amount)[0];
-  const short = snapshot.safe_to_spend.amount < 0;
+  const short = safeShort(snapshot);
   const ticks = [0, 7, 14, 21, 28].map((d) => {
     const dt = new Date(start);
     dt.setDate(start.getDate() + d);
@@ -58,7 +58,7 @@ export function TransitMap({ snapshot }: ViewProps) {
         {/* Safe to spend sits above the map, never on it, so it cannot cover a payday's label. */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <span className="lab">Safe to spend</span>
-          <strong className="num" style={{ fontSize: 20, color: short ? "var(--critical-ink)" : undefined }}>{money(snapshot.safe_to_spend.amount)}</strong>
+          <strong className="num" style={{ fontSize: 20, color: short ? "var(--critical-ink)" : undefined }}>{safeFigure(snapshot)}</strong>
           {short && <StatusPill status="crit">Short before payday</StatusPill>}
           <button type="button" className="btn" aria-pressed={list} onClick={() => setList((v) => !v)} style={{ marginLeft: "auto", minHeight: 32, padding: "4px 10px" }}>{list ? "Show the map" : "Show as a list"}</button>
         </div>

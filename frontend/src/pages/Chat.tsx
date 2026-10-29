@@ -7,6 +7,7 @@ import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { streamChat, type ChatTurn } from "../chat";
 import { ConfirmButton } from "../components/ConfirmButton";
+import { cashFigure, noBalance, safeFigure, safeShort } from "../components/SafeExplain";
 import { Failed, Loading, Said } from "../components/State";
 import { money, shortDate, when } from "../format";
 import type { ReviewRun, Snapshot } from "../types";
@@ -49,14 +50,14 @@ function EngineTable({ s }: { s: Snapshot }) {
   return (
     <section className="card" style={{ padding: "12px 14px" }}>
       <h2 className="lab" style={{ margin: "0 0 6px" }}>The app's figures · as of {shortDate(s.as_of)}</h2>
-      <Row label="Cash to spend (checking)" value={money(s.cash)} />
+      <Row label="Cash to spend (checking)" value={cashFigure(s)} />
       <Row label={`Due before payday (${s.due_before_payday.items.length})`} value={money(s.due_before_payday.total)} tone="var(--bill-ink)" />
       <Row label={s.next_paycheck.known === false ? "Payday (none on file)" : `Payday ${shortDate(s.next_paycheck.date)}`} value={money(s.next_paycheck.amount)} tone="var(--paycheck-ink)" />
       <Row label={`Advance apps take back (${s.advances.items.length})`} value={money(s.advances.total)} tone="var(--debt-ink)" />
       <Row label={`Bills this paycheck pays (${s.window.items.length})`} value={money(s.window.total)} tone="var(--bill-ink)" />
       <Row label="Kept for the next paycheck's bills" value={money(s.set_aside.total)} />
       <Row label={<><Link to="/glossary#buffer">Safety cushion</Link> (buffer)</>} value={money(s.buffer)} />
-      <Row label={`Safe to spend through ${shortDate(s.safe_to_spend.through)}`} value={money(s.safe_to_spend.amount)} tone={s.safe_to_spend.amount < 0 ? "var(--critical-ink)" : "var(--safe-ink)"} />
+      <Row label={`Safe to spend through ${shortDate(s.safe_to_spend.through)}`} value={safeFigure(s)} tone={noBalance(s) ? undefined : safeShort(s) ? "var(--critical-ink)" : "var(--safe-ink)"} />
       {s.usual_pace.per_day > 0 && <Row label="Usual pace, a day" value={money(s.usual_pace.per_day)} />}
       <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>{s.not_advice}</div>
     </section>

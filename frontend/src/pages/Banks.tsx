@@ -281,7 +281,7 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
         <div style={{ border: "1px solid var(--hairline)", borderRadius: 12, padding: 12, display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800 }}>Plaid</h3>
-            {p?.configured ? <StatusPill status="good">Ready · {p.environment}</StatusPill> : <span style={{ fontSize: 12, color: "var(--ink-2)", fontWeight: 700 }}>not set up</span>}
+            {p?.configured && p.keys && p.keys.result !== "ok" ? <StatusPill status="warn">Keys refused</StatusPill> : p?.configured ? <StatusPill status="good">Ready · {p.environment}</StatusPill> : <span style={{ fontSize: 12, color: "var(--ink-2)", fontWeight: 700 }}>not set up</span>}
           </div>
           <Where id="plaid" fill={{ redirect: data?.public_url?.startsWith("https://") ? `${data.public_url.replace(/\/$/, "")}/settings/connectors` : "(needs the app's https address first: Settings › Setting up › Reach it from anywhere)" }} />
           {p?.keys && (
@@ -303,6 +303,7 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
             <button className="btn" type="button" disabled={!p?.configured || busy !== null} style={highlight(wanted.connect === "plaid")} onClick={() => connectPlaid()}>{busy === "plaid-connect" ? "Opening…" : "Connect a bank through Plaid"}</button>
             <button className="btn" type="button" disabled={!p?.configured || busy !== null} onClick={() => connectPlaid(undefined, "investments")}>Connect a 401(k) or brokerage</button>
           </div>
+          {!p?.configured && <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Connect opens once the client id and secret are saved here.</div>}
           {said("plaid")}
         </div>
         <div style={{ border: "1px solid var(--hairline)", borderRadius: 12, padding: 12, display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
@@ -325,6 +326,7 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
             <button className="btn dark" type="button" disabled={busy !== null} onClick={saveTeller}>{busy === "teller-save" ? "Saving…" : "Save"}</button>
             <button className="btn" type="button" disabled={!t?.configured || busy !== null} style={highlight(wanted.connect === "teller")} onClick={() => connectTeller()}>{busy === "teller-connect" ? "Opening…" : "Connect a bank through Teller"}</button>
           </div>
+          {!t?.configured && <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Connect opens once the application id, certificate and private key are saved here.</div>}
           {said("teller")}
         </div>
       </div>

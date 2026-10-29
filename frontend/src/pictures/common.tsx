@@ -1,7 +1,7 @@
 // What every paycheck picture shares: the hover tip, the legend (always present for two or more parts), the
 // table twin, and a picker for which check to draw. The pictures draw the engine's figures and nothing else.
 import { useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { money, shortDate } from "../format";
+import { money, moneyOr, shortDate } from "../format";
 import { getPrefs } from "../prefs";
 import { partColours, type Check, type Part, type PartKey } from "../paychecks";
 
@@ -77,9 +77,9 @@ export function TableTwin({ checks, label = "Check" }: { checks: { title: string
           {checks.map(({ title, check }) => (
             <tr key={title}>
               <td style={{ whiteSpace: "nowrap" }}>{title}</td>
-              <td className="num" style={{ textAlign: "right" }}>{money(check.inflow)}</td>
+              <td className="num" style={{ textAlign: "right" }}>{moneyOr(check.inflow)}</td>
               {keys.map((k) => <td key={k} className="num" style={{ textAlign: "right" }}>{money(check.parts.find((p) => p.key === k)?.amount ?? 0)}</td>)}
-              <td className="num" style={{ textAlign: "right", color: check.short ? "var(--critical-ink)" : "inherit", fontWeight: check.short ? 800 : undefined }}>{check.short ? money(check.short) : "—"}</td>
+              <td className="num" style={{ textAlign: "right", color: check.short ? "var(--critical-ink)" : "inherit", fontWeight: check.short ? 800 : undefined }}>{check.short ? money(check.short) : check.short === null ? "no balance yet" : "—"}</td>
             </tr>
           ))}
         </tbody>

@@ -24,6 +24,9 @@ def why_safe(snap: dict) -> str:
     p = s["parts"]
     payday = snap["next_paycheck"]["date"]
     n = len(snap["due_before_payday"]["items"])
+    if s["amount"] is None:
+        return (f"No bank has reported a balance for checking yet, so safe to spend is not worked out. Before payday on {_short(payday)}, {_usd(p['due_before_payday'])} leaves for {_count(n, 'payment')}"
+                f" and {_usd(p['buffer'])} stays as your buffer. Link a bank or type what checking holds.")
     text = f"You have {_usd(p['cash'])} in checking. Before payday on {_short(payday)}, {_usd(p['due_before_payday'])} leaves for {_count(n, 'payment')}"
     if p["advances"]:
         text += f", and {_usd(p['advances'])} goes back to the advance apps"
@@ -56,7 +59,9 @@ def why_due_before(snap: dict) -> str:
 def why_window(w: dict) -> str:
     start = w["start"]
     text = f"The {_short(start)} check brings {_usd(w['paycheck'])}"
-    if w["carried_in"] > 0:
+    if w["carried_in"] is None:
+        text += ". No bank has reported a balance yet, so what is carried in and what is left are not worked out"
+    elif w["carried_in"] > 0:
         text += f" and {_usd(w['carried_in'])} carried in"
     elif w["carried_in"] < 0:
         text += f", less {_usd(w['carried_in'])} the account is already short"
@@ -68,7 +73,10 @@ def why_window(w: dict) -> str:
         text += f", and {_usd(w['set_aside']['total'])} is set aside for the window after"
     if w.get("buffer"):
         text += f"; {_usd(w['buffer'])} stays as the buffer"
-    text += f". {_usd(w['safe'])} is {'left' if w['safe'] >= 0 else 'missing'} through {_short(w['end'])}, before everyday spending."
+    if w["safe"] is not None:
+        text += f". {_usd(w['safe'])} is {'left' if w['safe'] >= 0 else 'missing'} through {_short(w['end'])}, before everyday spending."
+    else:
+        text += "."
     return text
 
 

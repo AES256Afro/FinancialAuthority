@@ -28,7 +28,12 @@ from .models import ApiKey, utcnow
 
 log = logging.getLogger("fa.auth")
 
-COOKIE = "fa_session"
+COOKIE = "fa_session"  # over plain http (inside the tailnet), where a __Host- cookie cannot be set
+# Over https the cookie is __Host-: the browser takes it only from this exact host, Secure, at path /, so a page on
+# a sibling subdomain (the demo, anything else under the same registrable domain) cannot plant one for the parent
+# domain, and the plain name is never read there. Before this, a sibling's `fa_session` for the parent domain was
+# sent beside the owner's and read in its place.
+HOST_COOKIE = "__Host-fa_session"
 SESSION_MAX_AGE = 30 * 24 * 3600
 CSRF_HEADER = "x-requested-with"
 CSRF_VALUE = "FinancialAuthority"
@@ -281,7 +286,7 @@ def session_row(request: Request, session: Session):  # noqa: ANN201
     """The signed-in session this request's cookie names, if it is still open."""
     from .models import WebSession
 
-    raw = request.cookies.get(COOKIE)
+    raw = request.cookies.get(cookie_name(request))
     if not raw:
         return None
     try:
@@ -411,20 +416,21 @@ def login(body: LoginIn, request: Request, response: Response, session: Session 
         return {"ok": False, "second_step": "code", "ticket": ticket_for(person)}
     clear_failures(ip, body.username)
     if person is not None:
-        token = start_session(session, request, person)
-        response.set_cookie(COOKIE, token, max_age=SESSION_MAX_AGE, httponly=True, samesite="lax", secure=request_is_https(request), path="/")
+        set_session_cookie(response, request, start_session(session, request, person))
         return {"ok": True, "user": person.username, "kind": "person", "role": person.role}
-    token = start_session(session, request)
-    response.set_cookie(
-        COOKIE,
-        token,
-        max_age=SESSION_MAX_AGE,
-        httponly=True,
-        samesite="lax",
-        secure=request_is_https(request),
-        path="/",
-    )
+    set_session_cookie(response, request, start_session(session, request))
     return {"ok": True, "user": settings.username}
+
+
+def cookie_name(request: Request) -> str:
+    """The session cookie's name for this request: __Host- over https, plain over http."""
+    return HOST_COOKIE if request_is_https(request) else COOKIE
+
+
+def set_session_cookie(response: Response, request: Request, token: str) -> None:
+    """Every sign-in path (password, second step, passkey, join, the OAuth consent page) sets the cookie here."""
+    https = request_is_https(request)
+    response.set_cookie(HOST_COOKIE if https else COOKIE, token, max_age=SESSION_MAX_AGE, httponly=True, samesite="lax", secure=https, path="/")
 
 
 def request_is_https(request: Request) -> bool:
@@ -437,12 +443,18 @@ def request_is_https(request: Request) -> bool:
 
 @router.post("/logout")
 def logout(request: Request, response: Response, session: Session = Depends(get_session)) -> dict:
+    # The app's header, as on every other write: without it a form posted from any page signed the owner out (the
+    # browser takes the cookie's deletion from a top-level answer even when it sent no cookie with the post).
+    if request.headers.get(CSRF_HEADER, "") != CSRF_VALUE:
+        raise HTTPException(403, "Missing the request header the app sends")
     row = session_row(request, session)
     if row is not None:
         row.revoked_at = utcnow()
         session.add(row)
         session.commit()
     response.delete_cookie(COOKIE, path="/")
+    if request_is_https(request):
+        response.delete_cookie(HOST_COOKIE, path="/", secure=True, httponly=True, samesite="lax")
     return {"ok": True}
 
 
@@ -586,6 +598,5 @@ def join(body: JoinIn, request: Request, response: Response, session: Session = 
         raise HTTPException(400, "This invitation has expired or was used already. Ask the person who sent it for a new one.")
     services.audit(session, client=person.display_name or person.username, client_kind="person", tool="joined", rows=0)
     clear_failures(ip)
-    token = start_session(session, request, person)
-    response.set_cookie(COOKIE, token, max_age=SESSION_MAX_AGE, httponly=True, samesite="lax", secure=request_is_https(request), path="/")
+    set_session_cookie(response, request, start_session(session, request, person))
     return {"ok": True, "user": person.username, "role": person.role}

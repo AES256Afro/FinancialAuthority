@@ -31,8 +31,8 @@ function Ladder({ s, etas }: { s: SavingData; etas: (string | null)[] }) {
             <div style={{ position: "relative", width: `${width}%`, height: 26, borderRadius: 7, background: "var(--surface-2)", overflow: "hidden", outline: here ? "2px solid var(--ink)" : "none", outlineOffset: 1 }} role="img" aria-label={`${Math.round(r.progress * 100)}% of ${money(r.target)}`}>
               <div style={{ position: "absolute", inset: "0 auto 0 0", width: `${Math.round(r.progress * 100)}%`, background: c.saving }} />
             </div>
-            <div className="num" style={{ fontSize: 12, textAlign: "right", color: r.reached ? "var(--safe-ink)" : "var(--ink-2)", fontWeight: here ? 800 : 600, minWidth: 0, overflowWrap: "anywhere" }}>
-              {r.reached ? "reached" : eta ? (here ? shortDate(eta) : monthYear(eta)) : "not within six years"}
+            <div className="num" style={{ fontSize: 12, textAlign: "right", color: r.reached && r.target > 0 ? "var(--safe-ink)" : "var(--ink-2)", fontWeight: here ? 800 : 600, minWidth: 0, overflowWrap: "anywhere" }}>
+              {r.target === 0 ? "sized once bills are in" : r.reached ? "reached" : eta ? (here ? shortDate(eta) : monthYear(eta)) : "not within six years"}
             </div>
           </div>
         );

@@ -2,8 +2,8 @@
 // its bills. Every band is the engine's figure; the ribbon only draws it.
 import { OctagonAlert } from "lucide-react";
 import { useState } from "react";
-import { money, shortDate } from "../format";
-import { inkOn, type Check, type Part, type PartKey } from "../paychecks";
+import { money, moneyOr, shortDate } from "../format";
+import { inflowScale, inkOn, shortOf, type Check, type Part, type PartKey } from "../paychecks";
 import { CheckPicker, NoChecks, PartTip, Tip, useColours, useTip } from "./common";
 
 const W = 820;
@@ -21,7 +21,7 @@ export function Ribbon({ checks, initial = 0 }: { checks: Check[]; initial?: num
   const c = checks[i];
   if (!c) return <NoChecks />;
   const parts = c.parts.filter((p) => p.amount > 0.5);
-  const total = Math.max(c.inflow, parts.reduce((t, p) => t + p.amount, 0));
+  const total = Math.max(inflowScale(c), parts.reduce((t, p) => t + p.amount, 0));
   const H = 300;
   const padT = 26;
   const gap = 6;
@@ -31,7 +31,7 @@ export function Ribbon({ checks, initial = 0 }: { checks: Check[]; initial?: num
   const x0 = 0;
   const x1 = open ? 330 : W - 250;
   const x2 = W - 230;
-  const srcH = c.inflow * scale;
+  const srcH = (c.inflow ?? parts.reduce((t, p) => t + p.amount, 0)) * scale; // no balance yet: the source is what the parts take
   const srcY = padT + (H - padT - 10 - srcH) / 2;
   let ySrc = srcY;
   let yT = padT;
@@ -65,15 +65,15 @@ export function Ribbon({ checks, initial = 0 }: { checks: Check[]; initial?: num
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <CheckPicker checks={checks} value={i} onChange={(n) => { setI(n); setOpen(null); }} />
       <div ref={ref} style={{ position: "relative", overflowX: "auto" }} onMouseLeave={hide}>
-        <svg viewBox={`0 0 ${W} ${svgH}`} width="100%" role="img" aria-label={`${money(c.inflow)} into ${parts.map((p) => `${p.label} ${money(p.amount)}`).join(", ")}`} style={{ display: "block", maxWidth: 980, minWidth: 560, height: "auto" }}>
+        <svg viewBox={`0 0 ${W} ${svgH}`} width="100%" role="img" aria-label={`${moneyOr(c.inflow, {}, `${money(c.paycheck)} check, no balance yet,`)} into ${parts.map((p) => `${p.label} ${money(p.amount)}`).join(", ")}`} style={{ display: "block", maxWidth: 980, minWidth: 560, height: "auto" }}>
           <rect x={x0} y={srcY} width={nodeW} height={Math.max(2, srcH)} rx={3} fill="var(--ink)" />
-          <text className="num" x={x0 + nodeW + 6} y={srcY - 8} fontSize="12" fontWeight="800" fill="var(--ink)">{money(c.paycheck)} check{c.carried_in > 0 ? ` + ${money(c.carried_in)} carried in` : ""}{c.borrowed ? ` + ${money(c.borrowed)} borrowed` : ""}</text>
+          <text className="num" x={x0 + nodeW + 6} y={srcY - 8} fontSize="12" fontWeight="800" fill="var(--ink)">{money(c.paycheck)} check{c.carried_in !== null && c.carried_in > 0 ? ` + ${money(c.carried_in)} carried in` : c.carried_in === null ? " · no balance yet" : ""}{c.borrowed ? ` + ${money(c.borrowed)} borrowed` : ""}</text>
           {nodes.map(({ p, h, ySrc: ys, yT: yt }) => {
             const colour = colours[p.key];
             const dim = open && open !== p.key;
             return (
               <g key={p.key} style={{ cursor: p.items.length ? "pointer" : "default" }} opacity={dim ? 0.35 : 1}
-                onMouseMove={(e) => show(e, <PartTip part={p} colour={colour} of={c.inflow} />)}
+                onMouseMove={(e) => show(e, <PartTip part={p} colour={colour} of={c.inflow ?? undefined} />)}
                 onClick={() => p.items.length && setOpen(open === p.key ? null : p.key)}>
                 <path d={band(x0 + nodeW, ys, x1, yt, Math.min(h, Math.max(2, srcY + srcH - ys)))} fill={colour} opacity={0.45} />
                 <rect x={x1} y={yt} width={nodeW} height={h} rx={3} fill={colour} />
@@ -100,7 +100,7 @@ export function Ribbon({ checks, initial = 0 }: { checks: Check[]; initial?: num
             <span className="sw" style={{ background: colours[p.key], margin: 0 }} />{p.label} <strong className="num">{money(p.amount)}</strong>
           </button>
         ))}
-        {c.short > 0 && <strong style={{ color: "var(--critical-ink)", display: "inline-flex", alignItems: "center", gap: 4 }}><OctagonAlert size={14} aria-hidden="true" />Short <span className="num">{money(c.short)}</span></strong>}
+        {shortOf(c) > 0 && <strong style={{ color: "var(--critical-ink)", display: "inline-flex", alignItems: "center", gap: 4 }}><OctagonAlert size={14} aria-hidden="true" />Short <span className="num">{money(shortOf(c))}</span></strong>}
       </div>
       <div style={{ fontSize: 11, color: "var(--muted)" }}>Tap a part, or its button above, to split it into its bills. The wider the band, the more dollars.</div>
     </div>

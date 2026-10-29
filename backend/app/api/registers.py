@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from .inputs import In
 from .. import auth
 from ..db import get_session
-from ..jobs.detect import pending_series, run_detection
+from ..jobs.detect import bill_for_series, pending_query, pending_series, run_detection
 from ..llm.reviewer import mark_pending
 from ..models import Bill, Income, InstallmentPlan, RecurringSeries
 from .routes import today, under_writer
@@ -37,10 +38,20 @@ def bill_out(b: Bill) -> dict:
 
 
 @router.get("/recurring")
-def list_recurring(include_classified: bool = False, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
-    pending = pending_series(session)
-    rows = session.exec(select(RecurringSeries).order_by(RecurringSeries.typical_amount.desc())).all() if include_classified else pending
-    return {"series": [series_out(s) for s in rows], "pending": len(pending)}
+def list_recurring(
+    include_classified: bool = False,
+    limit: int = Query(200, ge=1, le=500),
+    offset: int = Query(0, ge=0, le=10_000_000),
+    session: Session = Depends(get_session),
+    _: auth.Principal = Depends(auth.require_read),
+) -> dict:
+    # A page of the list, largest first with the id breaking ties; `pending` stays the full count of series waiting for
+    # the owner and `total` is the full length of the list being paged (all series with include_classified).
+    query = select(RecurringSeries).order_by(RecurringSeries.typical_amount.desc(), RecurringSeries.id) if include_classified else pending_query()
+    total = session.exec(select(func.count()).select_from(query.order_by(None).subquery())).one()
+    pending = total if not include_classified else session.exec(select(func.count()).select_from(pending_query().order_by(None).subquery())).one()
+    rows = session.exec(query.offset(offset).limit(limit)).all()
+    return {"series": [series_out(s) for s in rows], "pending": pending, "total": total, "offset": offset, "limit": limit}
 
 
 @router.post("/recurring/detect")
@@ -100,7 +111,16 @@ def classify(series_id: int, body: ClassifyIn, session: Session = Depends(get_se
     name = (body.name or series.merchant).strip()
     amount = body.amount if body.amount is not None else series.typical_amount
     created: dict = {}
-    if body.kind in ("bill", "subscription"):
+    existing = bill_for_series(session, series, name, amount) if body.kind in ("bill", "subscription") else None
+    if existing is not None:
+        # A bill of this name is on the register already (made from the mail, or typed): the charge is its payment.
+        existing.series_id = series.id
+        if (existing.cadence or "monthly") != "monthly" and existing.anchor_date is None and series.next_expected:
+            existing.anchor_date = series.next_expected
+        session.add(existing)
+        session.flush()
+        created = {"bill": bill_out(existing), "linked": True}
+    elif body.kind in ("bill", "subscription"):
         due_day = max(1, min(31, int(body.due_day or series.next_expected.day)))
         cadence = series.cadence if series.cadence in ("weekly", "biweekly", "monthly", "quarterly", "semiannual", "yearly") else "monthly"
         from ..jobs.detect import account_for_series
@@ -129,7 +149,7 @@ def classify(series_id: int, body: ClassifyIn, session: Session = Depends(get_se
         session.add(plan)
         session.flush()
         created = {"installment_plan": {"id": plan.id, "merchant": plan.merchant, "installment": plan.installment, "remaining": plan.remaining, "next_date": plan.next_date.isoformat()}}
-    series.kind = body.kind
+    series.kind = existing.kind if existing is not None else body.kind
     series.confirmed = True
     session.add(series)
     session.commit()

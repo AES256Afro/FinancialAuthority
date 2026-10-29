@@ -5,7 +5,7 @@
 import { OctagonAlert } from "lucide-react";
 import { Link } from "react-router-dom";
 import { money, shortDate } from "../format";
-import { noPayday } from "./SafeExplain";
+import { cashFigure, noBalance, noPayday } from "./SafeExplain";
 import { palette } from "../looks";
 import { inkOn } from "../paychecks";
 import { getPrefs } from "../prefs";
@@ -63,7 +63,7 @@ export function ByCheck({ s }: { s: Snapshot }) {
   const beforeParts: Part[] = [
     ...groups.map((g) => ({ label: g.label.toLowerCase(), amount: g.total, fill: g.key === "planned" ? c.paycheck : g.key === "advance" ? c.later : g.key === "installment" ? c.debt : c.bill })),
     { label: "safety cushion", amount: s.buffer, fill: c.buffer },
-    { label: "safe to spend", amount: Math.max(0, s.safe_to_spend.amount), fill: c.safe },
+    { label: "safe to spend", amount: s.safe_to_spend.amount === null ? 0 : Math.max(0, s.safe_to_spend.amount), fill: c.safe },
   ];
   const beforeItems = before.items.filter((e) => !e.via_card);
   return (
@@ -76,10 +76,10 @@ export function ByCheck({ s }: { s: Snapshot }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
           <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>{noPayday(s) ? "Now" : "Before your next paycheck"}</h3>
-          <span style={{ fontSize: 12, color: "var(--ink-2)" }}>{noPayday(s) ? "bills due by" : "through"} {shortDate(s.safe_to_spend.through)} · from <span className="num">{money(s.cash)}</span> in checking</span>
-          <span className="num" style={{ marginLeft: "auto", fontWeight: 800 }}>{money(before.total)} due · {money(s.safe_to_spend.amount)} safe</span>
+          <span style={{ fontSize: 12, color: "var(--ink-2)" }}>{noPayday(s) ? "bills due by" : "through"} {shortDate(s.safe_to_spend.through)} · from <span className="num">{cashFigure(s)}</span> in checking</span>
+          <span className="num" style={{ marginLeft: "auto", fontWeight: 800 }}>{money(before.total)} due · {noBalance(s) || s.safe_to_spend.amount === null ? "no balance yet" : `${money(s.safe_to_spend.amount)} safe`}</span>
         </div>
-        <Bar parts={beforeParts} total={Math.max(s.cash, before.total + s.buffer)} />
+        <Bar parts={beforeParts} total={s.cash === null ? before.total + s.buffer : Math.max(s.cash, before.total + s.buffer)} />
         <Lines items={beforeItems} c={c} />
         {s.on_card && s.on_card.total > 0 && <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Charged to the card, paid when you pay the card{s.on_card.paid_on ? ` on ${shortDate(s.on_card.paid_on)}` : ""}: <span className="num">{money(s.on_card.total)}</span> ({s.on_card.items.map((e) => e.name).slice(0, 4).join(", ")}).</div>}
       </div>
@@ -87,31 +87,35 @@ export function ByCheck({ s }: { s: Snapshot }) {
       {/* With no paycheck on file the engine's windows are a frame, not checks: none is drawn as a check. */}
       {noPayday(s) && <div style={{ fontSize: 13, color: "var(--ink-2)", borderTop: "1px solid var(--surface-2)", paddingTop: 10 }}>No paycheck is on file yet, so there is no check to split. <Link to="/paystubs#paycheck" style={{ fontWeight: 700 }}>Add your paycheck</Link></div>}
       {!noPayday(s) && s.windows.slice(0, 3).map((w) => {
+        // No balance yet: the first check's carried-in and what it leaves are unknown (null), never short.
+        const carriedIn = w.carried_in;
+        const shortIn = carriedIn !== null && carriedIn < 0 && !noBalance(s) ? -carriedIn : 0;
+        const safe = w.safe;
         const carried = w.bills.card_parts.balance;
         const rode = w.bills.card_parts.bills;
         const spend = w.bills.card_parts.spend;
         const parts: Part[] = [
-          { label: "already short before payday", amount: Math.abs(Math.min(0, w.carried_in)), fill: "var(--critical-soft)", border: "2px solid var(--critical)", ink: "var(--critical-ink)", title: `Checking is already short before this check lands: ${money(Math.abs(Math.min(0, w.carried_in)))}` },
+          { label: "already short before payday", amount: shortIn, fill: "var(--critical-soft)", border: "2px solid var(--critical)", ink: "var(--critical-ink)", title: `Checking is already short before this check lands: ${money(shortIn)}` },
           { label: "advance apps", amount: w.advances.total, fill: c.later },
           { label: "card balance", amount: carried, fill: c.debt, title: `Card balance carried into this check: ${money(carried)}` },
           { label: "bills on the card", amount: rode, fill: "var(--debt-soft)", border: `2px solid ${c.debt}`, ink: "var(--debt-ink)", title: `Bills charged to the card before this check pays it: ${money(rode)}` },
           { label: "usual card spend", amount: spend, fill: c.surface, border: `2px dashed ${c.debt}`, ink: "var(--debt-ink)", title: `Everyday spending expected on the card until this check pays it: ${money(spend)}` },
           { label: "bills", amount: w.bills.other_total, fill: c.bill },
           { label: "kept for the next paycheck", amount: w.set_aside.total, fill: c.buffer },
-          { label: "left", amount: Math.max(0, w.safe), fill: c.safe },
+          { label: "left", amount: safe === null ? 0 : Math.max(0, safe), fill: c.safe },
         ];
         const inflow = w.inflow;
         return (
           <div key={w.start} style={{ display: "flex", flexDirection: "column", gap: 6, borderTop: "1px solid var(--surface-2)", paddingTop: 10 }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
               <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>The {shortDate(w.start)} check</h3>
-              <span style={{ fontSize: 12, color: "var(--ink-2)" }}><span className="num">{money(w.paycheck)} lands{w.carried_in > 0 ? ` + ${money(w.carried_in)} carried in` : ""}</span>{w.carried_in < 0 && <strong className="num" style={{ color: "var(--critical-ink)" }}> − {money(Math.abs(w.carried_in))} already short before payday</strong>} · pays through {shortDate(w.end)}</span>
-              <span className="num" style={{ marginLeft: "auto", fontWeight: 800, display: "inline-flex", alignItems: "center", gap: 4, color: w.safe < 0 ? "var(--critical-ink)" : "inherit" }}>
+              <span style={{ fontSize: 12, color: "var(--ink-2)" }}><span className="num">{money(w.paycheck)} lands{carriedIn !== null && carriedIn > 0 ? ` + ${money(carriedIn)} carried in` : ""}</span>{shortIn > 0 && <strong className="num" style={{ color: "var(--critical-ink)" }}> − {money(shortIn)} already short before payday</strong>} · pays through {shortDate(w.end)}</span>
+              <span className="num" style={{ marginLeft: "auto", fontWeight: 800, display: "inline-flex", alignItems: "center", gap: 4, color: safe !== null && safe < 0 ? "var(--critical-ink)" : "inherit" }}>
                 {money(w.out)} out ·{" "}
-                {w.safe < 0 ? <><OctagonAlert size={14} aria-hidden="true" />Short {money(-w.safe)}</> : `${money(w.safe)} left`}
+                {safe === null ? "no balance yet" : safe < 0 ? <><OctagonAlert size={14} aria-hidden="true" />Short {money(-safe)}</> : `${money(safe)} left`}
               </span>
             </div>
-            <Bar parts={parts} total={Math.max(inflow, parts.reduce((t, p) => t + p.amount, 0))} />
+            <Bar parts={parts} total={Math.max(inflow ?? 0, parts.reduce((t, p) => t + p.amount, 0))} />
             <Lines items={w.bills.items} c={c} />
           </div>
         );

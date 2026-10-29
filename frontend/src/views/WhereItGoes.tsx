@@ -2,7 +2,7 @@
 // cushion and what is yours.
 import { Empty } from "../components/State";
 import { noPayday } from "../components/SafeExplain";
-import { amountClass, money, shortDate } from "../format";
+import { amountClass, money, moneyOr, shortDate } from "../format";
 import { getPrefs } from "../prefs";
 import { palette } from "../looks";
 import { inkOn } from "../paychecks";
@@ -25,8 +25,11 @@ export function WhereItGoes({ snapshot }: ViewProps) {
   // With no paycheck on file the engine's window is a frame two weeks out, not a payday: nothing is drawn as one.
   if (!w || noPayday(snapshot)) return <Empty to="/paystubs#paycheck" action="Add your paycheck">No paycheck is on file yet, so there is no paycheck to follow.</Empty>;
   const entering = w.inflow;
-  const short = w.safe < 0;
-  const behind = w.carried_in < 0 ? Math.abs(w.carried_in) : 0; // checking is already short before payday
+  // No balance yet: what checking carries in and what this check leaves are null; neither is drawn, and nothing is short.
+  const safe = w.safe;
+  const carriedIn = w.carried_in;
+  const short = safe !== null && safe < 0;
+  const behind = carriedIn !== null && carriedIn < 0 ? Math.abs(carriedIn) : 0; // checking is already short before payday
   // Text on a fill is dark or white by the fill; the short blocks are the soft red with dark red words.
   const groups = [
     { id: "behind", label: `Already short ${money(behind)}`, sub: "before payday", amount: behind, fill: "var(--critical-soft)", stroke: "var(--critical)", text: "var(--critical-ink)" },
@@ -34,7 +37,7 @@ export function WhereItGoes({ snapshot }: ViewProps) {
     { id: "bills", label: `Bills ${money(w.bills.total)}`, sub: `${shortDate(w.start)} to ${shortDate(w.end)}`, amount: w.bills.total, fill: c.bill, text: inkOn(c.bill) },
     { id: "aside", label: `Set aside ${money(w.set_aside.total)}`, sub: "for the next paycheck", amount: w.set_aside.total, fill: c.surface, stroke: c.bill, text: c.ink },
     { id: "buffer", label: `Safety cushion ${money(w.buffer)}`, amount: w.buffer, fill: c.buffer, text: inkOn(c.buffer) },
-    { id: "safe", label: short ? `Short ${money(-w.safe)}` : "Safe to spend", sub: short ? undefined : money(w.safe), amount: Math.abs(w.safe), fill: short ? "var(--critical-soft)" : c.safe, stroke: short ? "var(--critical)" : undefined, text: short ? "var(--critical-ink)" : inkOn(c.safe) },
+    { id: "safe", label: safe !== null && safe < 0 ? `Short ${money(-safe)}` : "Safe to spend", sub: short ? undefined : moneyOr(safe), amount: safe === null ? 0 : Math.abs(safe), fill: short ? "var(--critical-soft)" : c.safe, stroke: short ? "var(--critical)" : undefined, text: short ? "var(--critical-ink)" : inkOn(c.safe) },
   ].filter((g) => g.amount > 0);
   const scale = USABLE / Math.max(1, groups.reduce((s, g) => s + g.amount, 0));
   let ySrc = TOP;
@@ -83,7 +86,7 @@ export function WhereItGoes({ snapshot }: ViewProps) {
           <svg viewBox={`0 0 ${W} 500`} width="100%" style={{ display: "block", height: "auto", minWidth: 640 }} role="img" aria-label="Flow of the paycheck into advance apps, bills, what is kept for the next paycheck, the safety cushion and safe to spend">
             <rect x={40} y={TOP} width={150} height={srcHeight} rx={6} fill={c.paycheck} />
             <text x={115} y={TOP + srcHeight / 2 - 4} textAnchor="middle" fill={inkOn(c.paycheck)} fontSize={15} fontWeight={800}>Paycheck</text>
-            <text className="num" x={115} y={TOP + srcHeight / 2 + 16} textAnchor="middle" fill={inkOn(c.paycheck)} fontSize={13} fontWeight={700}>{money(w.paycheck)}{w.carried_in > 0 ? ` + ${money(w.carried_in)}` : ""}</text>
+            <text className="num" x={115} y={TOP + srcHeight / 2 + 16} textAnchor="middle" fill={inkOn(c.paycheck)} fontSize={13} fontWeight={700}>{money(w.paycheck)}{carriedIn !== null && carriedIn > 0 ? ` + ${money(carriedIn)}` : ""}</text>
             {placed.map((g) => (
               <path key={`r-${g.id}`} d={ribbon(190, g.ySrc, g.h, 420, g.yMid, g.h)} fill={g.stroke ?? g.fill} fillOpacity={g.id === "aside" ? 0.14 : g.id === "buffer" ? 0.6 : 0.3} />
             ))}
@@ -108,11 +111,11 @@ export function WhereItGoes({ snapshot }: ViewProps) {
           {placed.map((g) => (
             <div key={g.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "6px 0", borderTop: "1px solid var(--surface-2)", fontSize: 13 }}>
               <span><span className="sw" style={{ background: g.fill, border: g.stroke ? `1.5px solid ${g.stroke}` : undefined, boxSizing: "border-box" }} />{g.label.replace(/ −?\$[\d,]+$/, "")}{g.id === "aside" ? " for the next paycheck" : g.id === "behind" ? " before payday" : ""}</span>
-              <strong className="num">{money(g.id === "safe" ? w.safe : g.id === "behind" ? w.carried_in : g.amount)}</strong>
+              <strong className="num">{moneyOr(g.id === "safe" ? safe : g.id === "behind" ? carriedIn : g.amount)}</strong>
             </div>
           ))}
           <div className="num" style={{ marginTop: 8, padding: "12px 14px", borderRadius: 10, background: "var(--surface-2)", fontSize: 12, color: "var(--ink-2)" }}>
-            {behind > 0 ? `Checking is already ${money(behind)} short before payday, so ${money(w.paycheck)} comes in and ${money(entering)} is left to use; ${money(w.spoken_for)} already has somewhere to go.` : entering > 0 ? `${money(entering)} comes in with this paycheck; ${money(w.spoken_for)} of it already has somewhere to go.` : ""} The next paycheck starts with {money(w.set_aside.total)} kept for it.
+            {entering === null ? `No bank has reported a balance yet, so what this paycheck leaves is not known; ${money(w.spoken_for)} of it already has somewhere to go.` : behind > 0 ? `Checking is already ${money(behind)} short before payday, so ${money(w.paycheck)} comes in and ${money(entering)} is left to use; ${money(w.spoken_for)} already has somewhere to go.` : entering > 0 ? `${money(entering)} comes in with this paycheck; ${money(w.spoken_for)} of it already has somewhere to go.` : ""} The next paycheck starts with {money(w.set_aside.total)} kept for it.
           </div>
         </div>
       </section>

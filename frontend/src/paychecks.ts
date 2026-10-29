@@ -27,16 +27,29 @@ export interface Check {
   start: string;
   end: string;
   paycheck: number;
-  carried_in: number;
+  /** The four below are null on the first check when no bank has reported a balance (no_balance). */
+  carried_in: number | null;
   borrowed?: number;
-  inflow: number;
-  short: number;
-  safe: number;
+  inflow: number | null;
+  short: number | null;
+  safe: number | null;
+  no_balance?: boolean;
   parts: Part[];
   parts_total: number;
   cover_total: number;
   actual: boolean;
   partial?: boolean;
+}
+
+/** What a check falls short by, for drawing and for the "short" words: a check with no balance yet (null) is
+ * unknown, never drawn short. */
+export function shortOf(c: Check): number {
+  return c.short ?? 0;
+}
+
+/** The most that comes into a check, for a drawing's scale only: with no balance yet, the paycheck alone. */
+export function inflowScale(c: Check): number {
+  return c.inflow ?? c.paycheck;
 }
 
 export interface Month {

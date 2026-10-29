@@ -360,6 +360,7 @@ export function Outlook() {
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 12, color: "var(--ink-2)" }}>
               {d.investments.scenarios.map((s) => <span key={s.id} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span className="sw" style={{ background: TONE[s.id], margin: 0 }} />{s.word}, {pct(s.rate)} a year</span>)}
             </div>
+            {!(d.investments.now === 0 && d.investments.per_paycheck === 0) && (
             <div style={{ overflowX: "auto" }}>
               <table className="ledger">
                 <thead><tr><th>After</th>{d.investments.scenarios.map((s) => <th key={s.id} style={{ textAlign: "right" }}>{s.word} ({pct(s.rate)})</th>)}<th style={{ textAlign: "right" }}>Put in by then</th></tr></thead>
@@ -389,6 +390,7 @@ export function Outlook() {
                 </tbody>
               </table>
             </div>
+            )}
           </section>
 
           <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -400,12 +402,16 @@ export function Outlook() {
                 , earning {pct(d.savings.apy)}
               </span>
             </div>
+            {d.savings.now === 0 && d.savings.per_paycheck === 0 ? (
+              <div style={{ fontSize: 13, color: "var(--muted)" }}>Nothing to carry forward yet: no savings account is on file and nothing goes in each paycheck. Choose a share to keep on <Link to="/saving">Saving</Link>, or link the bank that holds your savings.</div>
+            ) : (<>
             <SavingsLine months={d.savings.months} />
             <div style={{ display: "flex", gap: 18, flexWrap: "wrap", fontSize: 13 }}>
               {d.savings.milestones.map((m) => (
                 <div key={m.months}><div className="lab">{m.months} months</div><div className="num" style={{ fontWeight: 800, fontSize: 16 }}>{money(m.balance)}</div><div className="num" style={{ fontSize: 11, color: "var(--muted)" }}>{money(m.interest)} of it interest</div></div>
               ))}
             </div>
+            </>)}
           </section>
 
           {/* The pictures come first; the question "where does it do the most?" follows them. */}

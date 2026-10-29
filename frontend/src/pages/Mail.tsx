@@ -167,6 +167,7 @@ export function Mail() {
                     );
                   })}
                   <div style={{ fontSize: 12, color: "var(--muted)" }}>
+                    {f.status === "rejected" && f.kind === "export" && !f.fields.url && <>Not imported: the app found no download link in it. Download the export from Rocket Money and import it on <Link to="/settings/connectors#rocketmoney">Connections › Rocket Money</Link>. </>}
                     Read by {readBy(f.produced_by)}.{f.applied_to ? ` Used on ${APPLIED_TO[f.applied_to.split(":")[0]] ?? "the app's records"}.` : ""}
                     {f.status === "pending" && <> <Link to="/confirm">Answer it on Needs you</Link></>}
                   </div>

@@ -6,11 +6,13 @@ import { when } from "../format";
 import { ConfirmButton } from "../components/ConfirmButton";
 import { DrillCard, OffboxCard, RecoveryKit } from "../components/Offbox";
 import { Failed, Loading, Said, useWidth } from "../components/State";
-import { StatusPill } from "../components/Status";
+import { SeverityTag, StatusPill } from "../components/Status";
 import { ownerName, roleOf, type MePerson } from "../types-people";
 
 interface Point { name: string; kind: string; reason: string; created_at: string; bytes: number; verified: boolean; transactions: number | null }
-interface Status { count: number; bytes: number; latest_age_hours: number | null; database: { ok: boolean; result: string; bytes: number }; keep: Record<string, number>; last_check: { at: string; by: string; database: string; points_ok: boolean } | null }
+interface Status { count: number; bytes: number; latest_age_hours: number | null; database: { ok: boolean; result: string; bytes: number }; keep: Record<string, number>; last_check: { at: string; by: string; database: string; points_ok: boolean } | null;
+  /** The server's word on the copies: "new" is an install whose first daily copy is not due yet, nothing to fix. */
+  copy_due?: boolean; state?: "good" | "new" | "warn"; state_words?: string }
 interface Batch { id: number; kind: string; source_file: string; via: string; account: string | null; inserted: number; duplicates: number; merged: number; summary: string; status: string; created_at: string; undone_at: string | null; restore_point: string | null }
 
 const KIND_WORD: Record<string, string> = { import: "Before an import", daily: "Daily", manual: "By hand", "before-restore": "Before a put-back", offbox: "For the off-box copy" };
@@ -53,6 +55,14 @@ function Line({ points }: { points: Point[] }) {
     </svg>
     </div>
   );
+}
+
+// The server says how the copies stand; an older server without `state` is read the old way.
+function BackupState({ s }: { s: Status }) {
+  const state = s.state ?? (s.database.ok && s.latest_age_hours !== null && s.latest_age_hours <= 48 ? "good" : "warn");
+  const words = s.state_words ?? (state === "good" ? "Protected" : "Needs a look");
+  if (state === "new") return <SeverityTag severity="info" word={words} />;
+  return <StatusPill status={state}>{words}</StatusPill>;
 }
 
 export function Backups({ me = null }: { me?: MePerson | null }) {
@@ -118,9 +128,7 @@ export function Backups({ me = null }: { me?: MePerson | null }) {
         {!points.data && !points.error && <Loading what="the copies" card={false} />}
         {s && (
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", fontSize: 14 }}>
-            {s.database.ok && s.latest_age_hours !== null && s.latest_age_hours <= 48
-              ? <StatusPill status="good">Protected</StatusPill>
-              : <StatusPill status="warn">Needs a look</StatusPill>}
+            <BackupState s={s} />
             <span style={{ color: "var(--ink-2)", flex: "1 1 300px" }}>
               {s.count} {s.count === 1 ? "copy" : "copies"}, {size(s.bytes)} in all{s.latest_age_hours !== null ? `; the newest is ${s.latest_age_hours < 1 ? "under an hour" : `${Math.round(s.latest_age_hours)} hours`} old` : "; none yet"}.
               The database {s.database.ok ? "passes its check" : `did not pass its check (${s.database.result})`}.

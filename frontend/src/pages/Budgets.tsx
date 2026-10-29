@@ -311,7 +311,7 @@ export function Budgets() {
                   <strong className="num" style={{ marginLeft: "auto" }}>{money(plan.unbudgeted.spent)} this paycheck so far</strong>
                 </div>
                 {plan.unbudgeted.top.length === 0 ? (
-                  <div style={{ fontSize: 13, color: "var(--ink-2)" }}>Every purchase this paycheck so far falls under a budget.</div>
+                  <div style={{ fontSize: 13, color: "var(--ink-2)" }}>{plan.unbudgeted.spent === 0 && plan.items.length === 0 ? "No purchases this paycheck so far." : "Every purchase this paycheck so far falls under a budget."}</div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {plan.unbudgeted.top.map((u) => (

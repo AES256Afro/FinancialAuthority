@@ -9,6 +9,8 @@ import { amountClass, money, monthDay, parseIso, shortDate } from "../format";
 import { palette } from "../looks";
 import type { LookId } from "../looks";
 import type { Snapshot } from "../types";
+import { Link } from "react-router-dom";
+import { noBalance } from "./SafeExplain";
 
 interface Props {
   snapshot: Snapshot;
@@ -18,7 +20,20 @@ interface Props {
 const WIDE = 1120;
 const TOP = 20;
 
+/** The river starts from what checking holds; with no balance from a bank there is no starting point, so it is not
+ * drawn from a made-up zero. */
 export function RiverChart({ snapshot, look }: Props) {
+  if (noBalance(snapshot)) {
+    return (
+      <div style={{ fontSize: 13, color: "var(--ink-2)", padding: "8px 0" }}>
+        The river starts from what checking holds, and no bank has told the app that yet. <Link to="/settings/connectors#banks" style={{ fontWeight: 700 }}>Link your bank</Link> and the next 60 days are drawn here, day by day.
+      </div>
+    );
+  }
+  return <RiverDrawn snapshot={snapshot} look={look} />;
+}
+
+function RiverDrawn({ snapshot, look }: Props) {
   const c = palette(look);
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(WIDE);

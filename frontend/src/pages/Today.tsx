@@ -6,7 +6,7 @@ import { Fragment, useEffect, type ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { PurchaseCheck } from "../components/PurchaseCheck";
 import { Goals } from "../components/Goals";
-import { CoverPanel, coverSummary } from "../components/Cover";
+import { CoverPanel, coverSummary, coverTone } from "../components/Cover";
 import { OneThing, placeName } from "../components/OneThing";
 import { Show } from "../components/State";
 import { SeverityTag, StatusPill, Why } from "../components/Status";
@@ -19,7 +19,7 @@ import { NextStepsCard } from "../components/NextSteps";
 import { Watchlist, WorthALook } from "../components/Watchlist";
 import { amountClass, money, shortDate, when } from "../format";
 import type { Snapshot } from "../types";
-import { PlanCaveats, SafeExplain, SafePill, SafeSentence, safeTitle } from "../components/SafeExplain";
+import { noBalance, PlanCaveats, SafeExplain, safeFigure, SafePill, SafeSentence, safeTitle } from "../components/SafeExplain";
 import { BankShows } from "../components/BankShows";
 
 const TITLE = { margin: 0, fontSize: 14, fontWeight: 700 } as const;
@@ -93,7 +93,7 @@ export function Today({ snapshot }: { snapshot: Snapshot }) {
     <section className="card" aria-labelledby="safe-title" style={{ padding: "18px 18px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
       <h2 id="safe-title" style={{ margin: 0, fontSize: 13, color: "var(--ink-2)", fontWeight: 700 }}>{safeTitle(s)}</h2>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <div className="num" style={{ fontSize: 54, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1 }}>{money(s.safe_to_spend.amount)}</div>
+        <div className="num" style={{ fontSize: noBalance(s) ? 30 : 54, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1 }}>{safeFigure(s)}</div>
         <SafePill s={s} />
       </div>
       <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
@@ -137,7 +137,7 @@ export function Today({ snapshot }: { snapshot: Snapshot }) {
         <section id="cover" className="card" style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <h2 style={TITLE}>Cover</h2>
-            <StatusPill status={c.counts.crit ? "crit" : c.counts.warn ? "warn" : "good"}>{coverSummary(c)}</StatusPill>
+            <StatusPill status={coverTone(c)}>{coverSummary(c)}</StatusPill>
             <Link to="/cover" style={{ marginLeft: "auto", fontSize: 13, minHeight: 32, display: "inline-flex", alignItems: "center" }}>Open Cover</Link>
           </div>
           <CoverPanel cover={c} mode="gauges" onTicked={cover.reload} />
@@ -171,7 +171,7 @@ export function Today({ snapshot }: { snapshot: Snapshot }) {
     ) },
     { key: "purchase", label: "Can I buy this?", more: true, node: <PurchaseCheck /> },
     { key: "watch", label: "Watchlist", more: true, node: <Watchlist /> },
-    { key: "goals", label: "Goals", more: true, node: <Goals /> },
+    { key: "goals", label: "Goals", more: true, node: <Goals s={s} /> },
     { key: "cash", label: "Cash today", more: true, node: (
     <section className="card" style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
       <h2 style={TITLE}>Cash today</h2>

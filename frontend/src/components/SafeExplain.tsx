@@ -3,7 +3,7 @@
 import { ChevronRight, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { amountClass, money, shortDate, when } from "../format";
+import { amountClass, money, moneyOr, shortDate, when } from "../format";
 import type { Snapshot } from "../types";
 import { StatusPill } from "./Status";
 
@@ -13,6 +13,31 @@ export function noPayday(s: Snapshot): boolean {
   return s.next_paycheck.known === false;
 }
 
+/** No spending account has a balance yet (none linked, or only imported files with no balance in them): the engine
+ * then says so with `no_balance` and leaves cash, safe to spend and the first check's figures null, so no screen may
+ * show a figure. An older server without the flag is read from its accounts instead. */
+export function noBalance(s: Snapshot): boolean {
+  if (typeof s.no_balance === "boolean") return s.no_balance;
+  if (s.safe_to_spend.amount === null || s.cash === null) return true;
+  if (!s.fresh) return false;
+  return !s.fresh.accounts.some((a) => (a.kind === "checking" || a.kind === "cash") && a.balance !== null && a.balance !== undefined);
+}
+
+/** Safe to spend as it is shown: the engine's figure, or words when there is no balance to count from. */
+export function safeFigure(s: Snapshot): string {
+  return noBalance(s) || s.safe_to_spend.amount === null ? "No balance yet" : money(s.safe_to_spend.amount);
+}
+
+/** What checking holds as it is shown: the engine's figure, or words when no bank has said. */
+export function cashFigure(s: Snapshot): string {
+  return noBalance(s) || s.cash === null ? "No balance yet" : money(s.cash);
+}
+
+/** Safe to spend is a real figure below zero: never true when there is no balance to count from. */
+export function safeShort(s: Snapshot): boolean {
+  return !noBalance(s) && s.safe_to_spend.amount !== null && s.safe_to_spend.amount < 0;
+}
+
 /** The heading over safe to spend: "Safe to spend through Tue Oct 27", or "Safe to spend now" with no payday. */
 export function safeTitle(s: Snapshot): string {
   return noPayday(s) ? "Safe to spend now" : `Safe to spend through ${shortDate(s.safe_to_spend.through)}`;
@@ -20,7 +45,8 @@ export function safeTitle(s: Snapshot): string {
 
 /** The pill beside the figure, always an icon and a word. */
 export function SafePill({ s }: { s: Snapshot }) {
-  const short = s.safe_to_spend.amount < 0;
+  if (noBalance(s)) return <StatusPill status="warn">No balance from your bank yet</StatusPill>;
+  const short = safeShort(s);
   if (noPayday(s)) return <StatusPill status={short ? "crit" : "warn"}>{short ? "Short, and no payday on file" : "No payday on file"}</StatusPill>;
   return <StatusPill status={short ? "crit" : "good"}>{short ? "Short before payday" : "Bills covered"}</StatusPill>;
 }
@@ -28,6 +54,9 @@ export function SafePill({ s }: { s: Snapshot }) {
 /** The sentence under the figure: what it is and what is already taken off. */
 export function SafeSentence({ s }: { s: Snapshot }) {
   const cushion = <><span className="num">{money(s.buffer)}</span> <Link to="/glossary#buffer">safety cushion</Link></>;
+  if (noBalance(s)) {
+    return <>Not a figure yet: no bank has told the app what checking holds, so there is nothing to count from. An imported file brings transactions, not a balance. Link the bank and this shows what you can spend after the bills and your {cushion}. <Link to="/settings/connectors#banks" style={{ fontWeight: 700 }}>Link your bank</Link></>;
+  }
   if (noPayday(s)) {
     return <>No payday on file, so this counts no paycheck: it is what checking holds after the bills due by {shortDate(s.safe_to_spend.through)} and your {cushion}. <Link to="/paystubs#paycheck" style={{ fontWeight: 700 }}>Add your paycheck</Link></>;
   }
@@ -52,7 +81,7 @@ export function PlanCaveats({ s }: { s: Snapshot }) {
 export function SafeExplain({ s, open = false }: { s: Snapshot; open?: boolean }) {
   const [isOpen, setOpen] = useState(open);
   const safe = s.safe_to_spend;
-  if (!safe.steps) return null;
+  if (!safe.steps || noBalance(s)) return null;
   const several = (safe.by_account ?? []).length > 1;
   return (
     <details open={open} onToggle={(e) => setOpen(e.currentTarget.open)} style={{ fontSize: 13 }}>
@@ -76,12 +105,12 @@ export function SafeExplain({ s, open = false }: { s: Snapshot; open?: boolean }
                       <div className="num" style={{ fontSize: 11, color: "var(--muted)" }}>{st.items.slice(0, 4).map((i) => `${i.name} ${money(i.amount, { cents: true })} on ${shortDate(i.date)}`).join(" · ")}{st.items.length > 4 ? ` · and ${st.items.length - 4} more` : ""}</div>
                     )}
                   </td>
-                  <td className="num" style={{ textAlign: "right", whiteSpace: "nowrap", verticalAlign: "top" }}>{st.amount < 0 ? "− " : ""}{money(Math.abs(st.amount), { cents: true })}</td>
+                  <td className="num" style={{ textAlign: "right", whiteSpace: "nowrap", verticalAlign: "top" }}>{st.amount === null ? "no balance yet" : `${st.amount < 0 ? "− " : ""}${money(Math.abs(st.amount), { cents: true })}`}</td>
                 </tr>
               ))}
               <tr>
                 <td><strong>{safeTitle(s)}</strong></td>
-                <td className="num" style={{ textAlign: "right", fontWeight: 800, whiteSpace: "nowrap" }}>{money(safe.amount, { cents: true })}</td>
+                <td className="num" style={{ textAlign: "right", fontWeight: 800, whiteSpace: "nowrap" }}>{moneyOr(safe.amount, { cents: true })}</td>
               </tr>
             </tbody>
           </table>
@@ -96,9 +125,9 @@ export function SafeExplain({ s, open = false }: { s: Snapshot; open?: boolean }
                   {(safe.by_account ?? []).map((a) => (
                     <tr key={a.id}>
                       <td>{a.name}{a.paycheck_lands ? <div style={{ fontSize: 11, color: "var(--muted)" }}>the paycheck lands here; it keeps the safety cushion</div> : null}</td>
-                      <td className="num" style={{ textAlign: "right", whiteSpace: "nowrap" }}>{money(a.balance, { cents: true })}</td>
+                      <td className="num" style={{ textAlign: "right", whiteSpace: "nowrap" }}>{a.no_balance ? "no balance yet" : moneyOr(a.balance, { cents: true })}</td>
                       <td className="num" style={{ textAlign: "right", whiteSpace: "nowrap" }}>{money(a.goes_out, { cents: true })}</td>
-                      <td className="num" style={{ textAlign: "right", fontWeight: 800, whiteSpace: "nowrap" }}>{money(a.safe, { cents: true })}</td>
+                      <td className="num" style={{ textAlign: "right", fontWeight: 800, whiteSpace: "nowrap" }}>{moneyOr(a.safe, { cents: true })}</td>
                     </tr>
                   ))}
                 </tbody>

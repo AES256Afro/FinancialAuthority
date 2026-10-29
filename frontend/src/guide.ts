@@ -13,16 +13,17 @@ export interface CoverItem {
 export interface CoverWindow {
   start: string;
   end: string;
-  has: number;
+  /** has, has_total, left, low and low_on are null on an account no bank has reported a balance for (no_balance). */
+  has: number | null;
   inflow: number;
-  has_total: number;
+  has_total: number | null;
   needs: number;
   bills: number;
   everyday: number;
   buffer: number;
-  left: number;
-  low: number;
-  low_on: string;
+  left: number | null;
+  low: number | null;
+  low_on: string | null;
   items: CoverItem[];
 }
 
@@ -48,6 +49,8 @@ export interface CoverAccount {
   role: "spend" | "card" | "save" | "other";
   status: Status;
   headline: string;
+  /** A spending account no bank has reported a balance for and none was typed: what it holds is unknown, not $0. */
+  no_balance?: boolean;
   deposit?: boolean;
   pace_per_day?: number;
   windows?: CoverWindow[];

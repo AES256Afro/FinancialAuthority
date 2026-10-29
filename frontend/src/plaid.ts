@@ -12,7 +12,12 @@ export function loadScript(src: string): Promise<void> {
       el.src = src;
       el.async = true;
       el.onload = () => resolve();
-      el.onerror = () => reject(new Error(`Could not load ${src}`));
+      el.onerror = () => {
+        // Not kept: a press after the connection comes back tries again.
+        delete scripts[src];
+        el.remove();
+        reject(new Error(`Could not reach ${new URL(src).hostname} to open its sign-in window. Check this device is online (an ad or tracker blocker can stop it too), then try again.`));
+      };
       document.head.appendChild(el);
     });
   }
