@@ -12,7 +12,7 @@ settings:
   base:
     BUNDLE_PREFIX: com.example.financialauthority
     DEVELOPMENT_TEAM: ""
-    SWIFT_VERSION: "5.10"
+    SWIFT_VERSION: "6.0"
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     CODE_SIGN_STYLE: Automatic
@@ -20,8 +20,11 @@ targets:
   FinancialAuthority:
     type: application
     platform: iOS
+    scheme:
+      testTargets: [FAUITests, FAWidgetTests]
     sources:
-      - App
+      - path: App
+        excludes: ["*.plist", "*.entitlements"]
       - Shared
     settings:
       base:
@@ -44,6 +47,7 @@ targets:
         AppIdentifierPrefix: $(AppIdentifierPrefix)
         FASharedKeychainGroup: $(BUNDLE_PREFIX).shared
         FAAppGroup: group.$(BUNDLE_PREFIX)
+        NSAppTransportSecurity: {NSAllowsLocalNetworking: true}  # plain http only to this computer (a dev server seen from the Simulator)
     entitlements:
       path: App/App.entitlements
       properties:
@@ -56,7 +60,8 @@ targets:
     type: app-extension
     platform: iOS
     sources:
-      - Widgets
+      - path: Widgets
+        excludes: ["*.plist", "*.entitlements"]
       - Shared
     settings:
       base:
@@ -70,6 +75,7 @@ targets:
         AppIdentifierPrefix: $(AppIdentifierPrefix)
         FASharedKeychainGroup: $(BUNDLE_PREFIX).shared
         FAAppGroup: group.$(BUNDLE_PREFIX)
+        NSAppTransportSecurity: {NSAllowsLocalNetworking: true}  # plain http only to this computer (a dev server seen from the Simulator)
     entitlements:
       path: Widgets/Widgets.entitlements
       properties:
@@ -79,7 +85,8 @@ targets:
     type: application
     platform: watchOS
     sources:
-      - Watch
+      - path: Watch
+        excludes: ["*.plist", "*.entitlements"]
       - Shared
     settings:
       base:
@@ -93,6 +100,7 @@ targets:
         AppIdentifierPrefix: $(AppIdentifierPrefix)
         FASharedKeychainGroup: $(BUNDLE_PREFIX).watch.shared
         FAAppGroup: group.$(BUNDLE_PREFIX).watch
+        NSAppTransportSecurity: {NSAllowsLocalNetworking: true}  # plain http only to this computer (a dev server seen from the Simulator)
     entitlements:
       path: Watch/Watch.entitlements
       properties:
@@ -104,7 +112,8 @@ targets:
     type: app-extension
     platform: watchOS
     sources:
-      - Widgets
+      - path: Widgets
+        excludes: ["*.plist", "*.entitlements"]
       - Shared
     settings:
       base:
@@ -118,8 +127,35 @@ targets:
         AppIdentifierPrefix: $(AppIdentifierPrefix)
         FASharedKeychainGroup: $(BUNDLE_PREFIX).watch.shared
         FAAppGroup: group.$(BUNDLE_PREFIX).watch
+        NSAppTransportSecurity: {NSAllowsLocalNetworking: true}  # plain http only to this computer (a dev server seen from the Simulator)
     entitlements:
       path: WatchWidgets/WatchWidgets.entitlements
       properties:
         com.apple.security.application-groups: [group.$(BUNDLE_PREFIX).watch]
         keychain-access-groups: [$(AppIdentifierPrefix)$(BUNDLE_PREFIX).watch.shared]
+  FAUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - UITests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_PREFIX).uitests
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: FinancialAuthority
+  FAWidgetTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - WidgetTests
+      - Widgets/GlanceWidget.swift
+      - Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_PREFIX).widgettests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/FinancialAuthority.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/FinancialAuthority
+        BUNDLE_LOADER: $(TEST_HOST)
+    dependencies:
+      - target: FinancialAuthority
