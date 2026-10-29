@@ -66,6 +66,9 @@ def _mail_facts(session: Session, today: date) -> dict:
     alert_rows = session.exec(select(ExtractedFact).where(ExtractedFact.kind == "bank_alert", ExtractedFact.created_at >= since).order_by(ExtractedFact.created_at.desc()).limit(20)).all()
     ids = [f.message_ref_id for f in [*pending_rows, *alert_rows] if f.message_ref_id]
     refs = {r.id: r for r in session.exec(select(MessageRef).where(MessageRef.id.in_(ids))).all()} if ids else {}
+    # An alert from a sender the trust check found forged (mail/trust.py) never reaches the brief: a message is data, and a
+    # forged "you are overdrawn" is the bait, not a fact about the account.
+    alert_rows = [f for f in alert_rows if not (f.message_ref_id in refs and refs[f.message_ref_id].trust == "crit")]
 
     def out(f: ExtractedFact) -> dict:
         r = refs.get(f.message_ref_id)
@@ -153,15 +156,19 @@ def _finance_snapshot(session: Session, today: date) -> dict:
     planned_rows = planned_events(session, today)
     pace = usual_pace(session, today, {b.name for b in bills})
     by_id = {a.id: a for a in accounts}
+    # The events reach the day before the sixth payday: the fourth window's set-aside is the fifth window's bills. The fixed
+    # seventy-five days stopped short of it when the next payday was more than a few days out, and for a monthly check left
+    # the third and fourth windows with no bills at all (sweep 10).
+    horizon_days = max(HORIZON_DAYS, (paydays[min(5, len(paydays) - 1)] - today).days)
     assembled = assemble(bills=bills, plans=plans, advances=advances, today=today, accounts=by_id, paydays=paydays, card_mode=card_mode, debts=debts, planned=planned_to_cards(session, today),
-                         extra=pending_installment_events(pending_streams, today, plans=plans) + planned_rows, card_pace_by_account=pace["per_day_by_account"], paid=paid, pay_days=schedule["pay_days"],
-                         late=late, checks_by_day=schedule["semimonthly"])
+                         extra=pending_installment_events(pending_streams, today, horizon_days=horizon_days, plans=plans) + planned_rows, card_pace_by_account=pace["per_day_by_account"], paid=paid, pay_days=schedule["pay_days"],
+                         late=late, checks_by_day=schedule["semimonthly"], horizon_days=horizon_days)
     events, display_events, card_bills, payoffs = assembled["math"], assembled["display"], assembled["card_bills"], assembled["payoffs"]
     windows_split = split_windows(events, today, next_payday, following_payday, paydays[2])
     shown = split_windows(display_events, today, next_payday, following_payday, paydays[2])
     before, window, next_window, advances_due = shown["before"], shown["window"], shown["next_window"], windows_split["advances_due"]
     first_payoff = payoffs[0] if payoffs else None
-    on_card = [e for e in card_bills if today <= e["date"] < (first_payoff["date"] if first_payoff else today + timedelta(days=HORIZON_DAYS))]
+    on_card = [e for e in card_bills if today <= e["date"] < (first_payoff["date"] if first_payoff else today + timedelta(days=horizon_days))]
 
     due_before = sum(e["amount"] for e in windows_split["before"])  # what leaves checking; a bill riding the card is listed but not summed here
     window_total = sum(e["amount"] for e in windows_split["window"])
@@ -490,14 +497,15 @@ def _in_flight(session: Session, today: date) -> dict:
     names = {a.id: a.name for a in session.exec(select(Account)).all()}
     since = datetime.combine(today - timedelta(days=7), datetime.min.time(), tzinfo=timezone.utc)  # the injected day, never the wall clock
     alerts = session.exec(select(ExtractedFact).where(ExtractedFact.kind == "bank_alert", ExtractedFact.created_at >= since)).all()
+    forged = set(session.exec(select(MessageRef.id).where(MessageRef.id.in_([f.message_ref_id for f in alerts if f.message_ref_id]), MessageRef.trust == "crit")).all()) if alerts else set()  # type: ignore[union-attr]
     seen = []
     for f in alerts:
         try:
             fields = json.loads(f.fields or "{}")
         except ValueError:
             continue
-        if fields.get("alert") != "purchase" or not isinstance(fields.get("amount"), (int, float)):
-            continue
+        if fields.get("alert") != "purchase" or not isinstance(fields.get("amount"), (int, float)) or f.message_ref_id in forged:
+            continue  # a purchase a forged alert told of is no purchase
         when = date.fromisoformat(str(fields.get("message_date") or f.created_at.date().isoformat())[:10])
         amount = float(fields["amount"])
         posted = session.exec(select(Transaction.id).where(Transaction.amount >= amount - 0.01, Transaction.amount <= amount + 0.01, Transaction.date >= when - timedelta(days=1), Transaction.date <= when + timedelta(days=6)).limit(1)).first()

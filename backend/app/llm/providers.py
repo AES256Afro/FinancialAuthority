@@ -19,7 +19,19 @@ ANTHROPIC_MODELS = ["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5", 
 ANTHROPIC_VERSION = "2023-06-01"
 
 
-def plain_error(who: str, status: int, detail: str, model: str) -> str:
+def plain_text(detail: str, hide: tuple[str, ...] = ()) -> str:
+    """A provider's words fit to show: tags out (an error page is HTML), one line, and the app's own key taken out
+    wherever the provider echoed it."""
+    import re
+
+    text = re.sub(r"<[^>]{0,200}>", " ", detail or "")
+    text = re.sub(r"[\x00-\x1f\x7f\s]+", " ", text).strip()
+    for secret in sorted({s for s in hide if s and len(s) >= 8}, key=len, reverse=True):
+        text = text.replace(secret, "[key]")
+    return text
+
+
+def plain_error(who: str, status: int, detail: str, model: str, hide: tuple[str, ...] = ()) -> str:
     """A provider's error in words the owner can act on, with the provider's own message kept at the end."""
     message = detail
     try:
@@ -29,6 +41,7 @@ def plain_error(who: str, status: int, detail: str, model: str) -> str:
         kind = err.get("type", "") if isinstance(err, dict) else ""
     except (ValueError, AttributeError):
         kind = ""
+    message, kind = plain_text(str(message), hide), plain_text(str(kind), hide)[:40]
     low = f"{kind} {message}".lower()
     if status == 404 or kind == "not_found_error" or ("model" in low and ("not found" in low or "does not exist" in low)):
         return f'{who} has no model called "{model}". Tap Find models and pick one from the list.'
@@ -42,6 +55,7 @@ def plain_error(who: str, status: int, detail: str, model: str) -> str:
 TIMEOUT = httpx.Timeout(120.0, connect=10.0)
 MAX_STREAM_BYTES = 2_000_000  # an answer is a few kilobytes; a stream past this is cut, whatever the server sends
 MAX_ERROR_BYTES = 600
+STREAM_SECONDS = 600.0  # one answer, first byte to last: a server that keeps the stream open with comments never holds a chat or a review past this
 
 
 class StreamTooLong(RuntimeError):
@@ -49,12 +63,18 @@ class StreamTooLong(RuntimeError):
 
 
 async def _lines(response: httpx.Response) -> AsyncIterator[str]:
-    """The event lines of a streamed answer, up to MAX_STREAM_BYTES; past that the stream is dropped."""
-    seen = 0
+    """The event lines of a streamed answer, up to MAX_STREAM_BYTES and STREAM_SECONDS; past either the stream is
+    dropped. The socket's read timeout starts over at every byte, so a trickle of keep-alive comments would
+    otherwise hold the request for as long as the server liked."""
+    import time
+
+    seen, started = 0, time.monotonic()
     async for line in response.aiter_lines():
         seen += len(line) + 1
         if seen > MAX_STREAM_BYTES:
             raise StreamTooLong(f"the answer passed {MAX_STREAM_BYTES // 1_000_000} MB and was cut off")
+        if time.monotonic() - started > STREAM_SECONDS:
+            raise StreamTooLong(f"the answer did not finish in {int(STREAM_SECONDS // 60)} minutes and was cut off")
         yield line
 
 
@@ -167,7 +187,7 @@ class OpenAICompatible(Provider):
                 async with client.stream("POST", f"{self.base_url}/chat/completions", headers=self.headers(), json=body) as response:
                     if response.status_code >= 400:
                         detail = await _head(response)
-                        yield Event("error", message=plain_error(self.base_url, response.status_code, detail, self.model))
+                        yield Event("error", message=plain_error(self.base_url, response.status_code, detail, self.model, hide=(self.api_key,)))
                         return
                     async for line in _lines(response):
                         if not line.startswith("data:"):
@@ -195,7 +215,7 @@ class OpenAICompatible(Provider):
                                 if fn.get("arguments"):
                                     slot["arguments"] += fn["arguments"]
             except httpx.HTTPError as error:
-                yield Event("error", message=f"{self.base_url}: {type(error).__name__}: {error}")
+                yield Event("error", message=plain_text(f"{self.base_url}: {type(error).__name__}: {error}", (self.api_key,)))
                 return
             except StreamTooLong as error:
                 yield Event("error", message=f"{self.base_url}: {error}")
@@ -303,7 +323,7 @@ class Anthropic(Provider):
                 async with client.stream("POST", f"{self.base_url}/v1/messages", headers=self.headers(), json=body) as response:
                     if response.status_code >= 400:
                         detail = await _head(response)
-                        yield Event("error", message=plain_error("Anthropic", response.status_code, detail, self.model))
+                        yield Event("error", message=plain_error("Anthropic", response.status_code, detail, self.model, hide=(self.api_key,)))
                         return
                     async for line in _lines(response):
                         if not line.startswith("data:"):
@@ -327,10 +347,10 @@ class Anthropic(Provider):
                         elif kind == "message_delta":
                             output_tokens = int((event.get("usage") or {}).get("output_tokens", output_tokens))
                         elif kind == "error":
-                            yield Event("error", message=str((event.get("error") or {}).get("message", "error")))
+                            yield Event("error", message=plain_text(str((event.get("error") or {}).get("message", "error")), (self.api_key,))[:300])
                             return
             except httpx.HTTPError as error:
-                yield Event("error", message=f"Anthropic: {type(error).__name__}: {error}")
+                yield Event("error", message=plain_text(f"Anthropic: {type(error).__name__}: {error}", (self.api_key,)))
                 return
             except StreamTooLong as error:
                 yield Event("error", message=f"Anthropic: {error}")

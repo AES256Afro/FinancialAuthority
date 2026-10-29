@@ -34,7 +34,9 @@ def _money(v: float) -> float:
 
 def part_of(e: dict) -> str:
     kind = e.get("kind")
-    if kind == "card_payment" or (e.get("planned") and e.get("kind") == "card_payment"):
+    # A bill filed under Credit Card Payment is the card's payment (it stands in for the card's own reservation): the
+    # past checks draw that payment in the card band, so the coming ones do too (sweep 10).
+    if kind == "card_payment" or (e.get("planned") and e.get("kind") == "card_payment") or (e.get("category") or "").strip().lower() == "credit card payment":
         return "card"
     if kind in ("installment", "advance"):
         return "later"

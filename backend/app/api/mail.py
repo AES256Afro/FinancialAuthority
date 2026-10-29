@@ -17,7 +17,7 @@ from ..connectors.mail import MailConnector, account_password, folder_list, safe
 from ..db import get_session
 from ..engine.recurring import merchant_key
 from ..mail.box import box_untrusted
-from ..mail.imap import parse_message
+from ..mail.imap import check_credential, parse_message
 from ..models import Account, Bill, ExtractedFact, InstallmentPlan, MailAccount, MessageRef, utcnow
 from .routes import today
 
@@ -47,6 +47,15 @@ def mailbox_host(kind: str, host: str) -> str:
 
 def mail_connector() -> MailConnector:
     return CONNECTORS["mail"]  # type: ignore[return-value]
+
+
+def _credential(value: str, what: str) -> str:
+    """A username or a password goes into the IMAP sign-in line: one with a line break is refused at the door (the
+    client refuses it again before anything is sent)."""
+    try:
+        return check_credential(value, what)
+    except ValueError as error:
+        raise HTTPException(400, str(error).capitalize()) from error
 
 
 def _folders(value: str | None) -> str:
@@ -103,6 +112,8 @@ def create_account(body: MailAccountIn, session: Session = Depends(get_session),
     preset = PRESETS[kind]
     if not body.username or not body.password:
         raise HTTPException(400, "A mailbox needs a username and a password")
+    _credential(body.username, "username")
+    _credential(body.password, "password")
     host = mailbox_host(kind, body.host or preset["host"])
     if not host:
         raise HTTPException(400, "An IMAP host is needed")
@@ -136,6 +147,8 @@ def update_account(account_id: int, body: MailAccountIn, session: Session = Depe
     if moved and not changes.get("password"):
         raise HTTPException(400, "Changing where this mailbox connects needs its password again: type it with the change.")
     for field, value in changes.items():
+        if field in ("username", "password"):
+            _credential(value, field)
         if field == "password":
             account.password_enc = crypto.encrypt(value)
         elif field == "kind" and value not in PRESETS:
@@ -185,7 +198,7 @@ def test_mailbox(body: TestIn, session: Session = Depends(get_session), _: auth.
     else:
         preset = PRESETS.get(body.kind or "imap", PRESETS["imap"])
         host, port = mailbox_host(body.kind or "imap", body.host or preset["host"]), body.port or preset["port"]
-        username, password = body.username or "", body.password or ""
+        username, password = _credential(body.username or "", "username"), _credential(body.password or "", "password")
         use_ssl = body.use_ssl if body.use_ssl is not None else preset["use_ssl"]
         starttls = body.starttls if body.starttls is not None else preset["starttls"]
     try:

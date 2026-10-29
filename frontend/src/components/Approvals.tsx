@@ -65,7 +65,7 @@ export function Approvals({ onChanged, onCount }: { onChanged?: () => void; onCo
     setNote(null);
     try {
       const r = await api<ApprovalRow>(`/api/v1/approvals/${a.id}/${action}`, { method: "POST", body: JSON.stringify({ allow_always: Boolean(always[a.id]) }) });
-      setNote(r.status === "sent" ? { text: `Sent to ${r.to}.`, tone: "info" } : r.status === "failed" ? { text: `Not sent: ${r.error}`, tone: "error" } : r.status === "denied" ? { text: "Denied. Nothing was sent.", tone: "info" } : { text: `Now ${STATUS_WORD[r.status] ?? r.status}.`, tone: "info" });
+      setNote(r.status === "sent" ? { text: `Sent to ${r.to}.`, tone: "info" } : r.status === "failed" ? { text: `Not sent: ${r.error}. Once that is fixed, queue it again from where it came.`, tone: "error" } : r.status === "denied" ? { text: "Denied. Nothing was sent.", tone: "info" } : { text: `Now ${STATUS_WORD[r.status] ?? r.status}.`, tone: "info" });
       state.reload();
       onChanged?.();
     } catch (e) {

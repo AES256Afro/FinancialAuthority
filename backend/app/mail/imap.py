@@ -9,7 +9,9 @@ from __future__ import annotations
 import email
 import imaplib
 import re
+import socket
 import ssl
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email import policy
@@ -18,6 +20,26 @@ from email.utils import getaddresses, parsedate_to_datetime
 from html.parser import HTMLParser
 
 BATCH = 150
+# One command's budget. The socket timeout starts over at every byte, so a server that drips an answer a byte at a
+# time would otherwise hold a fetch, the sync and the writer lock for as long as it liked; past this, the
+# connection is cut and the command fails.
+COMMAND_SECONDS = 120
+# The largest literal (a message's body) that is read: Gmail and Proton cap a message well below this, and the
+# reader keeps far less. A server announcing more is refused before a byte of it is read.
+MAX_LITERAL = 64 * 1024 * 1024
+
+
+def check_credential(value: str, what: str) -> str:
+    """A username or password goes into the LOGIN line; one holding a control character could end it and start a
+    command of its own (STORE, EXPUNGE) on a read-only connection, so it never reaches the wire."""
+    if any(ord(c) < 32 or c == "\x7f" for c in value or ""):
+        raise ValueError(f"the {what} cannot hold a line break or another control character")
+    return value
+
+
+def quoted(value: str) -> str:
+    """An IMAP quoted string: imaplib quotes the password but sends the username as typed."""
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 @dataclass
@@ -159,17 +181,53 @@ class ImapClient:
         return context
 
     def connect(self) -> None:
+        check_credential(self.username, "username")
+        check_credential(self.password, "password")
         if self.use_ssl:
             self.conn = imaplib.IMAP4_SSL(self.host, self.port, ssl_context=self._context(), timeout=self.timeout)
         else:
             self.conn = imaplib.IMAP4(self.host, self.port, timeout=self.timeout)
             if self.starttls:
-                self.conn.starttls(self._context())
-        self.conn.login(self.username, self.password)
+                self._timed(self.conn.starttls, self._context())
+        conn = self.conn
+        plain_read = conn.read
+
+        def read(size: int) -> bytes:
+            if size > MAX_LITERAL:
+                raise imaplib.IMAP4.abort(f"the server sent a literal of {size} bytes; at most {MAX_LITERAL} are read")
+            return plain_read(size)
+
+        conn.read = read  # type: ignore[method-assign]
+        self._timed(conn.login, quoted(self.username), self.password)
+
+    def _timed(self, fn, *args):  # noqa: ANN001, ANN202 - one imaplib call under the command budget
+        """Run one command; past COMMAND_SECONDS the socket is cut, so a server that answers a byte at a time cannot
+        hold the caller (the socket timeout alone starts over at every byte)."""
+        conn = self.conn
+        expired: list[bool] = []
+
+        def cut() -> None:
+            expired.append(True)
+            try:
+                conn.sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+        timer = threading.Timer(COMMAND_SECONDS, cut)
+        timer.daemon = True
+        timer.start()
+        try:
+            return fn(*args)
+        except Exception as error:
+            if expired:
+                raise TimeoutError(f"the mail server took more than {COMMAND_SECONDS} seconds to answer one command") from error
+            raise
+        finally:
+            timer.cancel()
 
     def folders(self) -> list[str]:
         assert self.conn
-        status, rows = self.conn.list()
+        status, rows = self._timed(self.conn.list)
         out = []
         for row in rows or []:
             if not row:
@@ -186,7 +244,7 @@ class ImapClient:
         # backslash could end the EXAMINE command and start another (STORE, EXPUNGE): such a name never reaches the wire.
         if not folder or any(ord(c) < 32 or c == "\x7f" or c in '"\\' for c in folder):
             raise ValueError("a folder name cannot hold a control character, a quote or a backslash")
-        status, data = self.conn.select(f'"{folder}"', readonly=True)
+        status, data = self._timed(self.conn.select, f'"{folder}"', True)
         if status != "OK":
             raise RuntimeError(f"cannot open {folder}")
         exists = int(data[0] or 0) if data and data[0] else 0
@@ -202,7 +260,7 @@ class ImapClient:
     def new_uids(self, since_uid: int) -> list[int]:
         """Every message after `since_uid`, oldest first; the caller picks the batch it reads."""
         assert self.conn
-        status, data = self.conn.uid("search", None, f"UID {since_uid + 1}:*")
+        status, data = self._timed(self.conn.uid, "search", None, f"UID {int(since_uid) + 1}:*")
         if status != "OK" or not data or not data[0]:
             return []
         return [u for u in (int(x) for x in data[0].split()) if u > since_uid]
@@ -219,7 +277,7 @@ class ImapClient:
     def fetch_headers(self, uid: int) -> bytes:
         """Only the message's headers, read-only (PEEK): enough to judge who sent it."""
         assert self.conn
-        status, data = self.conn.uid("fetch", str(uid), "(BODY.PEEK[HEADER])")
+        status, data = self._timed(self.conn.uid, "fetch", str(int(uid)), "(BODY.PEEK[HEADER])")
         if status != "OK" or not data:
             raise RuntimeError(f"cannot fetch the headers of uid {uid}")
         for item in data:
@@ -229,7 +287,7 @@ class ImapClient:
 
     def fetch_raw(self, uid: int) -> bytes:
         assert self.conn
-        status, data = self.conn.uid("fetch", str(uid), "(BODY.PEEK[])")
+        status, data = self._timed(self.conn.uid, "fetch", str(int(uid)), "(BODY.PEEK[])")
         if status != "OK" or not data:
             raise RuntimeError(f"cannot fetch uid {uid}")
         for item in data:
@@ -240,7 +298,7 @@ class ImapClient:
     def close(self) -> None:
         if self.conn is not None:
             try:
-                self.conn.logout()
+                self._timed(self.conn.logout)
             except Exception:  # noqa: BLE001
                 pass
             self.conn = None

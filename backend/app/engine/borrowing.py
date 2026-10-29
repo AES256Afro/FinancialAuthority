@@ -258,10 +258,17 @@ def ensure_borrowing_rules(session: Session) -> int:
     return changed
 
 
-def owed_advances(session: Session) -> list[dict]:
+def open_advances(session: Session, today: date) -> list[Advance]:
+    """The advances still to be taken back: not repaid, and their repay day not yet passed. Past that day the app took it
+    back and the balance already lacks it (so the plan never counts it again); the register's row waits for sync_borrowing
+    to retire it, and until then Debts, Borrowing, the watchlist and Next steps said it was still out (sweep 10)."""
+    return [a for a in session.exec(select(Advance).where(Advance.repaid == False).order_by(Advance.repay_date, Advance.id)).all() if a.repay_date >= today]  # noqa: E712
+
+
+def owed_advances(session: Session, today: date) -> list[dict]:
     """The advances owed back, from the advances register: the one source the snapshot's "Advance apps take back",
     Debts and Accounts count, so Borrowing says the same. Each owes its amount and its fee, on its repay date."""
-    rows = session.exec(select(Advance).where(Advance.repaid == False).order_by(Advance.repay_date, Advance.id)).all()  # noqa: E712
+    rows = open_advances(session, today)
     return [{"provider": a.provider, "amount": _money(a.amount + a.fee), "advanced": _money(a.amount), "fee": _money(a.fee), "taken_on": a.taken_on, "repay_date": a.repay_date,
              "repaid": False, "source": f"advance:{a.id}", "sources": [f"advance:{a.id}"]} for a in rows]
 
@@ -293,7 +300,7 @@ def borrowing_summary(session: Session, today: date) -> dict:
     all_pairs = _with_register(session, paired["pairs"])  # the register's advances the ledger does not show count too
     since = today - timedelta(days=WINDOW_DAYS)
     fees = sum(p["fee"] for p in all_pairs if p["taken_on"] >= since) + sum(t["amount"] for t in paired["tips"] if t["date"] >= since)
-    outstanding = owed_advances(session)
+    outstanding = owed_advances(session, today)
     last_payday = previous_payday(pay[0], pay[1].cadence or "biweekly", today, income_days(pay[1])) if pay else None
     since_payday = [p for p in all_pairs if last_payday and p["taken_on"] >= last_payday and p["taken_on"] <= today]
     return {
@@ -421,7 +428,7 @@ def borrowing_overview(session: Session, today: date) -> dict:
     advanced = sum(p["amount"] for p in pairs)
     # What is owed back comes from the advances register, as the snapshot, Debts and Accounts count it; the ledger
     # pairs give the fees, the cycle and the history.
-    outstanding = owed_advances(session)
+    outstanding = owed_advances(session, today)
     owed_by_provider: dict[str, float] = {}
     for p in outstanding:
         owed_by_provider[p["provider"]] = owed_by_provider.get(p["provider"], 0.0) + p["amount"]
@@ -744,19 +751,26 @@ CLAIM_MATCH_DAYS = 10  # a bank row of the same amount this close to the owner's
 def mark_installment_paid(session: Session, plan: InstallmentPlan, on: date, today: date) -> str:
     """The owner says the next payment is made (the bank has not shown it yet, or it went by a card the app does not
     see). It counts at once; when the bank's own row arrives, that row stands in its place, never as a second one."""
-    import json
-
     from ..store import get_setting, set_setting
 
     if on > today:
         raise ValueError("A payment is marked on or after the day it was made")
-    sched = sorted(json.loads(plan.schedule or "[]"), key=lambda e: e["date"])
-    upcoming = sched[len(sched) - plan.remaining:] if sched and plan.remaining else []
+    from .borrowing_plan import _upcoming
+
+    upcoming = _upcoming(plan, today)  # the lender's schedule, else the installment from next_date: the same payments the plan page counts as left
     if not upcoming:
         raise ValueError("Nothing is left to pay on this plan")
     claims = {k: list(v) for k, v in (get_setting(session, OWNER_PAID, {}) or {}).items()}
     claims.setdefault(str(plan.id), []).append({"on": on.isoformat(), "amount": upcoming[0]["amount"]})
     set_setting(session, OWNER_PAID, claims)
+    if not (plan.schedule and plan.schedule != "[]"):
+        # A plan known only by its installment and next date ticks at once; the bank's row of that amount near the day
+        # the owner named takes the claim's place in refresh_plan_progress instead of counting a second payment.
+        plan.remaining = max(0, plan.remaining - 1)
+        plan.next_date = plan.next_date + timedelta(days=plan.cadence_days or 14)
+        plan.active = plan.remaining > 0
+        session.add(plan)
+        session.commit()
     refresh_plan_progress(session, today)
     session.refresh(plan)
     left = plan.remaining
@@ -787,14 +801,24 @@ def refresh_plan_progress(session: Session, today: date) -> int:
     # A plan known only by its installment and next date: each payment of that amount to the lender from five days
     # before the next date on ticks one off and moves the next date on by the plan's cadence. A payment counts once.
     used_ids: set[int] = set()
+    claims_changed = False
     for p in unscheduled:
         lender = plan_provider(p)  # a plan named after the bank's text ("AFFIRM PAYMENT") is still Affirm's
         pays = sorted((t for t in rows if abs(float(t.amount) - p.installment) <= 0.05 and provider_of(_text(t), INSTALLMENT_PROVIDERS) == lender), key=lambda t: t.date)
+        mine = claims.get(str(p.id), [])
         moved = False
         for t in pays:
+            if t.id in used_ids or t.date > today:
+                continue
+            claim = next((c for c in mine if abs(float(c["amount"]) - float(t.amount)) <= 0.05 and abs((t.date - date.fromisoformat(c["on"])).days) <= CLAIM_MATCH_DAYS), None)
+            if claim is not None:
+                mine.remove(claim)  # the bank's row stands in the owner's word's place: the plan already ticked for it
+                claims_changed = True
+                used_ids.add(t.id)
+                continue
             if p.remaining <= 0:
                 break
-            if t.id in used_ids or t.date < p.next_date - timedelta(days=5) or t.date > today:
+            if t.date < p.next_date - timedelta(days=5):
                 continue
             used_ids.add(t.id)
             p.remaining -= 1
@@ -804,6 +828,10 @@ def refresh_plan_progress(session: Session, today: date) -> int:
             p.active = p.remaining > 0
             session.add(p)
             changed += 1
+    if claims_changed:
+        from ..store import set_setting
+
+        set_setting(session, OWNER_PAID, {k: v for k, v in claims.items() if v})
     paid_to = {}
     for t in rows:
         provider = provider_of(_text(t), INSTALLMENT_PROVIDERS)

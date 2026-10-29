@@ -60,6 +60,8 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [into, setInto] = useState<string>("new");
+  // Which column is which, when the app's guess is wrong or it found none: sent with the import as its mapping.
+  const [columns, setColumns] = useState<Record<string, string>>({});
   const [last, setLast] = useState<{ id: number; summary: string } | null>(null);
   const [done, setDone] = useState<string | null>(null);
   // The last thing done was reading an Affirm statement, so its result links to Borrowing.
@@ -70,6 +72,7 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
   async function look(f: File, as: string = kind) {
     setFile(f);
     setPreview(null);
+    setColumns({});
     setError(null);
     setDone(null);
     setBusy(true);
@@ -135,6 +138,7 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
       body.append("kind", kind);
       body.append("sign", sign);
       if (into !== "new") body.append("account_id", into);
+      if (Object.keys(columns).length > 0) body.append("mapping", JSON.stringify(columns));
       const r = await api<{ summary: string; inserted: number; import_id: number | null }>("/api/v1/imports/file", { method: "POST", body });
       const summary = `${file.name}: ${r.summary}`;
       onDone?.(summary);
@@ -162,10 +166,17 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
   }
 
   const affirm = preview !== null && isAffirm(preview);
+  // The columns as the import will read them: the app's guess, with any the owner picked over it.
+  const picked: Record<string, string | null> = { ...preview?.mapping, ...columns };
+  const columnsOk = preview?.kind !== "csv" || Boolean(picked.date && (picked.amount || picked.debit || picked.credit));
+  const importable = preview !== null && (preview.ready || (preview.kind === "csv" && columnsOk));
   const needsName = preview !== null && preview.kind !== "bills" && !affirm && into === "new" && !account.trim();
   // One amount column: its sign says which way the money went, and the choice below can flip it. Separate money-out
   // and money-in columns say it themselves.
-  const oneColumn = preview?.kind === "csv" && Boolean(preview.mapping?.amount) && !(preview.mapping?.debit && preview.mapping?.credit);
+  const oneColumn = preview?.kind === "csv" && Boolean(picked.amount) && !(picked.debit && picked.credit);
+  const COLUMN_WORDS: [string, string][] = oneColumn || !(picked.debit || picked.credit)
+    ? [["date", "Date"], ["amount", "Amount"], ["description", "Description"]]
+    : [["date", "Date"], ["debit", "Money out"], ["credit", "Money in"], ["description", "Description"]];
   // The sample comes back read with the sign the file seemed to use (positive is money out); a different choice
   // shows it the other way round, for the preview only. The import reads the file again with the choice.
   const flip = oneColumn && preview?.sign !== undefined && sign !== preview.sign ? -1 : 1;
@@ -194,11 +205,27 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
               <span style={{ color: "var(--ink-2)" }}> · date in <code>{preview.mapping.date ?? "?"}</code>, amount in <code>{preview.mapping.amount ?? `${preview.mapping.debit ?? "?"} / ${preview.mapping.credit ?? "?"}`}</code>, description in <code>{preview.mapping.description ?? "?"}</code></span>
             )}
           </div>
-          {!preview.ready && !affirm && (
+          {!preview.ready && !affirm && !(preview.kind === "csv" && columnsOk) && (
             <div role="alert" style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 13, color: "var(--critical-ink)", fontWeight: 700 }}>
               <OctagonAlert size={14} aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }} />
-              <span>{preview.kind === "statement" ? "No line with a date, words and an amount was found in this statement; it cannot be imported as it is. A CSV of the same months from the bank's website will work." : "No date and amount columns were found; this file cannot be imported as it is."}</span>
+              <span>{preview.kind === "statement" ? "No line with a date, words and an amount was found in this statement; it cannot be imported as it is. A CSV of the same months from the bank's website will work." : "No date and amount columns were found. Pick them below, and the import reads the file that way."}</span>
             </div>
+          )}
+          {preview.kind === "csv" && (preview.columns?.length ?? 0) > 0 && (
+            <details open={!preview.ready} style={{ fontSize: 13 }}>
+              <summary style={{ cursor: "pointer", minHeight: 32, display: "flex", alignItems: "center", fontWeight: 700 }}>Which column is which</summary>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(140px, 100%), 1fr))", gap: 8, paddingTop: 6 }}>
+                {COLUMN_WORDS.map(([key, word]) => (
+                  <label key={key} style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">{word}</span>
+                    <select className="input" value={picked[key] ?? ""} onChange={(e) => setColumns({ ...columns, [key]: e.target.value })}>
+                      <option value="">{preview.mapping?.[key] ? "(the app's guess)" : "(none found)"}</option>
+                      {preview.columns?.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </label>
+                ))}
+              </div>
+              {Object.keys(columns).length > 0 && <span style={{ display: "block", paddingTop: 6, fontSize: 12, color: "var(--ink-2)" }}>The rows above show the app's own reading; the import reads the file with the columns picked here.</span>}
+            </details>
           )}
           {preview.kind === "bills" && preview.sample.length > 0 && (
             <div style={{ overflowX: "auto" }}>
@@ -303,7 +330,7 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
           )}
           {!affirm && (
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <button className="btn dark" type="button" disabled={busy || !preview.ready || needsName} onClick={run}>{busy ? "Importing…" : preview.kind === "bills" ? "Put these bills on your bills list" : "Import these rows"}</button>
+            <button className="btn dark" type="button" disabled={busy || !importable || needsName} onClick={run}>{busy ? "Importing…" : preview.kind === "bills" ? "Put these bills on your bills list" : "Import these rows"}</button>
             {needsName && <span style={{ fontSize: 13, fontWeight: 700, color: "var(--ink)" }}>Name the account first.</span>}
             <span style={{ fontSize: 12, color: "var(--ink-2)", flex: "1 1 260px" }}>{preview.kind === "bills" ? "A bill with the same name is updated, not doubled; a row without a due day is skipped. A copy of everything is kept first, and the import can be undone." : "A row the account already holds, from an earlier file, a bank link or an export, is not added again. A copy of everything is kept first, and the import can be undone."}</span>
           </div>

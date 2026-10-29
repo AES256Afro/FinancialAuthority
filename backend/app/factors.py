@@ -359,8 +359,9 @@ def passkey_login_options(request: Request, session: Session = Depends(get_sessi
     from webauthn.helpers import base64url_to_bytes
     from webauthn.helpers.structs import PublicKeyCredentialDescriptor, UserVerificationRequirement
 
-    if auth._locked("passkey:" + auth._client_ip(request)):
-        # The same count as the sign-in itself: an address that failed its passkeys is not handed more challenges.
+    ip = auth._client_ip(request)
+    if auth._locked(ip) or auth._locked("passkey:" + ip):
+        # Under the sign-in lockout: an address that failed its passwords or its passkeys is not handed more challenges.
         raise HTTPException(429, "Too many failed passkey sign-ins. Wait, then try again.")
     rp = _rp_or_none(request)
     keys = session.exec(select(Passkey).where(Passkey.rp_id == rp[0])).all() if rp else []
@@ -376,7 +377,7 @@ def passkey_login(body: PasskeyIn, request: Request, response: Response, session
     from webauthn.helpers import base64url_to_bytes
 
     ip = "passkey:" + auth._client_ip(request)
-    if auth._locked(ip):
+    if auth._locked(auth._client_ip(request)) or auth._locked(ip):
         raise HTTPException(429, "Too many failed passkey sign-ins. Wait, then try again.")
     challenge, rp_id = _recall(body.key, "login")
     _rp_id, origin = _rp(request)

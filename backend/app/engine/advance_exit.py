@@ -12,9 +12,8 @@ import math
 from datetime import date
 from typing import Any
 
-from sqlmodel import Session, select
+from sqlmodel import Session
 
-from ..models import Advance
 from .payoff import advance_costs
 from .snapshot import finance_snapshot
 
@@ -30,7 +29,9 @@ def exit_plan(session: Session, today: date) -> dict[str, Any]:
     taken = sum(c["taken"] for c in costs)
     fees = sum(c["fees"] for c in costs)
     rate = fees / taken if taken else 0.0  # fee per dollar per paycheck, from the last ninety days
-    open_now = session.exec(select(Advance).where(Advance.repaid == False)).all()  # noqa: E712
+    from .borrowing import open_advances
+
+    open_now = open_advances(session, today)  # one past its repay day was taken back already, as the windows count it
     owed = _money(sum(a.amount + a.fee for a in open_now))
     if not open_now and not taken:
         return {"as_of": today.isoformat(), "state": "none", "steps": [], "providers": [],

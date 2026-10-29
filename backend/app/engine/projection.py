@@ -46,6 +46,7 @@ PATH_WORDS = {
 LARGE_BILL = 500.0  # a bill at or over this is set aside by halves across two paychecks
 WINDOW_DAYS = 14
 HORIZON_DAYS = 75
+INSTALLMENT_LATE_DAYS = 4  # an installment due this many days ago with nothing posted is still in the account (as payments.AFTER_DAYS for a bill)
 
 
 def _money(v: float) -> float:
@@ -136,21 +137,31 @@ def build_events(bills: list[Bill], plans: list[InstallmentPlan], advances: list
             if paid and (b.id, d) in paid:
                 continue
             events.append({**base, "date": d, "window_date": window_date(d, paid_from, pay_days)})
+    # An installment whose day passed in the last few days with no payment posted (refresh_plan_progress moves the plan
+    # on when one does) is still in the account, so it is counted today and marked late, as an unposted bill is (sweep 10).
+    late_since = today - timedelta(days=INSTALLMENT_LATE_DAYS)
+
+    def placed(d: date) -> dict:
+        return {"date": today, "window_date": today, "late": True, "due": d.isoformat(), "note": f"due {d:%a %b} {d.day}, not out of the account yet"} if d < today else {"date": d, "window_date": d}
+
     for p in plans:
         payer = (accounts or {}).get(getattr(p, "pay_from_account_id", None)) if getattr(p, "pay_from_account_id", None) else None
         plan_kind = "card" if payer is not None and payer.kind == "card" else "cash"
         schedule = _schedule_of(p)
         if schedule:
-            upcoming = [s for s in schedule if date.fromisoformat(s["date"]) >= today][-max(0, p.remaining):] if p.remaining else []
-            for i, s in enumerate(upcoming):
+            unpaid = schedule[len(schedule) - p.remaining:] if p.remaining else []  # the last `remaining` of the lender's dates are the ones still to pay
+            for i, s in enumerate(unpaid):
                 when = date.fromisoformat(s["date"])
+                if when < late_since:
+                    continue
                 if when > today + timedelta(days=max(90, horizon_days)):
                     break
-                events.append({"date": when, "window_date": when, "name": f"{p.merchant or p.provider} {p.count - len(upcoming) + i + 1} of {p.count}", "amount": _money(s["amount"]), "kind": "installment", "autopay": True, "source": f"plan:{p.id}", "line": "debt", "interest": s.get("interest", 0.0), "from_kind": plan_kind, "from_account_id": getattr(p, "pay_from_account_id", None)})
+                events.append({**placed(when), "name": f"{p.merchant or p.provider} {p.count - len(unpaid) + i + 1} of {p.count}", "amount": _money(s["amount"]), "kind": "installment", "autopay": True, "source": f"plan:{p.id}", "line": "debt", "interest": s.get("interest", 0.0), "from_kind": plan_kind, "from_account_id": getattr(p, "pay_from_account_id", None)})
             continue
         d, left = p.next_date, p.remaining
         while left > 0 and d <= today + timedelta(days=max(90, horizon_days)):
-            events.append({"date": d, "window_date": d, "name": f"{p.merchant} {p.count - left + 1} of {p.count}", "amount": _money(p.installment), "kind": "installment", "autopay": True, "source": f"plan:{p.id}", "line": "debt", "from_kind": plan_kind, "from_account_id": getattr(p, "pay_from_account_id", None)})
+            if d >= late_since:
+                events.append({**placed(d), "name": f"{p.merchant} {p.count - left + 1} of {p.count}", "amount": _money(p.installment), "kind": "installment", "autopay": True, "source": f"plan:{p.id}", "line": "debt", "from_kind": plan_kind, "from_account_id": getattr(p, "pay_from_account_id", None)})
             d, left = d + timedelta(days=p.cadence_days), left - 1
     for a in advances:
         if a.repay_date < today:

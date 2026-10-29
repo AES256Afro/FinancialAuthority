@@ -9,8 +9,10 @@ the data directory, readable by the app alone, only when a call is made.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import time
 from collections.abc import Callable
 from datetime import date
 from pathlib import Path
@@ -23,12 +25,33 @@ from .. import crypto
 from ..config import settings
 from ..jobs.writing import one_writer
 from ..models import BankLink, Transaction
-from .banks import SAVINGS_SUBTYPES, SEEN, TELLER_CATEGORIES, bank_settings, duplicate_of, finish_link, link_token, remove_transaction, upsert_account, upsert_transaction
+from .banks import (
+    MAX_NAME_CHARS,
+    MAX_RESPONSE_BYTES,
+    SAVINGS_SUBTYPES,
+    SEEN,
+    TELLER_CATEGORIES,
+    VendorAnswer,
+    bank_settings,
+    clean_id,
+    clean_text,
+    duplicate_of,
+    finish_link,
+    finite_amount,
+    hide_secrets,
+    iso_day,
+    link_token,
+    read_bounded,
+    remove_transaction,
+    upsert_account,
+    upsert_transaction,
+)
 from .base import Connector, SyncResult
 
 log = logging.getLogger("fa.teller")
 
 BASE = "https://api.teller.io"
+REQUEST_SECONDS = 120.0  # one call, from the request to the last byte of the answer, whatever the socket allows
 LINK_NOTES = "fa_link_notes"  # session.info: what a link sync has to say beyond its counts
 # Teller reports a purchase as a negative amount; the ledger keeps money out positive.
 DEBITS_NEGATIVE = True
@@ -103,24 +126,39 @@ class TellerClient:
         from ..usage import note
 
         note("teller", path.split("?")[0])
-        with self.client(access_token) as client:
-            response = client.get(path, params=params)
-        if response.status_code >= 400:
-            try:
-                err = response.json().get("error") or {}
-            except ValueError:
-                err = {}
-            raise TellerError(str(err.get("code") or response.status_code), str(err.get("message") or response.text[:200] or "Teller refused the request"))
-        return response.json()
+        hidden = [access_token]  # what Teller might echo back and must never land in a record
+        try:
+            with self.client(access_token) as client, client.stream("GET", path, params=params) as response:
+                status = response.status_code
+                raw = read_bounded(response, max_bytes=MAX_RESPONSE_BYTES, deadline=time.monotonic() + REQUEST_SECONDS)
+        except VendorAnswer as error:
+            raise TellerError("BAD_RESPONSE", str(error)) from error
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            data = None
+        if status >= 400:
+            err = data.get("error") if isinstance(data, dict) and isinstance(data.get("error"), dict) else {}
+            message = clean_text(err.get("message") or "Teller refused the request", 300)  # the body itself (HTML, a stack trace) stays out
+            raise TellerError(clean_text(err.get("code") or status, 80), hide_secrets(message, hidden))
+        if data is None:
+            raise TellerError("BAD_RESPONSE", f"{status}: not JSON")
+        return data
 
     def accounts(self, access_token: str) -> list[dict[str, Any]]:
-        return list(self.get(access_token, "/accounts"))
+        return _objects(self.get(access_token, "/accounts"))
 
     def balances(self, access_token: str, account_id: str) -> dict[str, Any]:
-        return dict(self.get(access_token, f"/accounts/{account_id}/balances"))
+        got = self.get(access_token, f"/accounts/{account_id}/balances")
+        return got if isinstance(got, dict) else {}
 
     def transactions(self, access_token: str, account_id: str, count: int = 500) -> list[dict[str, Any]]:
-        return list(self.get(access_token, f"/accounts/{account_id}/transactions", {"count": count}))
+        return _objects(self.get(access_token, f"/accounts/{account_id}/transactions", {"count": count}))
+
+
+def _objects(data: Any) -> list[dict[str, Any]]:
+    """The objects of a list answer; an answer of another shape is an empty list, not a crash."""
+    return [row for row in data if isinstance(row, dict)] if isinstance(data, list) else []
 
 
 def account_kind(teller_type: str, subtype: str) -> str:
@@ -195,7 +233,13 @@ class TellerConnector(Connector):
                     ok = False
                     if isinstance(error, TellerError) and error.code in ("enrollment.disconnected", "401", "unauthorized"):
                         link.needs_login = True
-                    message = str(error) if isinstance(error, TellerError) else f"{type(error).__name__}: {error}"
+                    if isinstance(error, TellerError):
+                        message = str(error)
+                    elif isinstance(error, httpx.HTTPError):
+                        # The network, not the bank: a timeout, a refused connection, a dropped reply. The next sync tries again.
+                        message = f"Teller could not be reached ({type(error).__name__.replace('Error', '').lower() or 'network'}); the next sync tries again"
+                    else:
+                        message = f"{type(error).__name__}: {error}"
                     finish_link(session, link, ok=False, error=message[:300])
                     notes.append(f"{link.institution}: {message[:120]}")
         flush(session)
@@ -209,50 +253,68 @@ class TellerConnector(Connector):
         # Fetch everything first, then write in one short transaction: the database is never locked while the app
         # waits on the network.
         fetched = []
+        unreadable = 0  # accounts and rows the answer carried that are not ones: no id, no amount, no date
         for a in api.accounts(token):
+            account_id = clean_id(a.get("id"))
+            if account_id is None:
+                unreadable += 1
+                continue
             if link.external_id and a.get("enrollment_id") and a["enrollment_id"] != link.external_id:
                 continue
-            fetched.append((a, api.balances(token, a["id"]), api.transactions(token, a["id"])))
+            fetched.append(({**a, "id": account_id}, api.balances(token, account_id), api.transactions(token, account_id)))
+        left_out_names: list[str] = []  # said once per sync, not once per account
         for a, balances, txs in fetched:
-            institution = str((a.get("institution") or {}).get("name") or link.institution)
+            institution = clean_text((a.get("institution") or {}).get("name") if isinstance(a.get("institution"), dict) else "", MAX_NAME_CHARS) or link.institution
             kind = account_kind(str(a.get("type") or ""), str(a.get("subtype") or ""))
             # What can be spent is the available balance (pending charges already out); a card owes its ledger.
-            available, ledger = balances.get("available"), balances.get("ledger")
-            chosen = available if (kind in ("checking", "savings", "cash") and available not in (None, "")) else ledger
-            balance = float(chosen) if chosen not in (None, "") else None
+            available, ledger = finite_amount(balances.get("available")), finite_amount(balances.get("ledger"))
+            balance = available if (kind in ("checking", "savings", "cash") and available is not None) else ledger
             if kind == "card" and balance is not None:
                 balance = -balance  # Teller gives what a card owes as negative; a card in credit stays a credit
             ids.append(a["id"])
-            name = str(a.get("name") or "Account")
-            if duplicate_of(session, link=link, external_id=a["id"], institution=institution, last4=str(a.get("last_four") or "")) is not None:
+            name = clean_text(a.get("name") or "Account", MAX_NAME_CHARS) or "Account"
+            last4 = clean_text(a.get("last_four") or "", 8)
+            if duplicate_of(session, link=link, external_id=a["id"], institution=institution, last4=last4) is not None:
                 # The same account is read through another link to this bank: it stays with that one.
-                session.info.setdefault(LINK_NOTES, []).append(f"{name} is already read through your other {institution or 'bank'} link, so this link leaves it out; remove one of the two links")
+                left_out_names.append(name)
                 continue
-            account = upsert_account(session, provider="teller", external_id=a["id"], name=name, institution=institution, kind=kind, balance=balance, last4=str(a.get("last_four") or ""))
+            account = upsert_account(session, provider="teller", external_id=a["id"], name=name, institution=institution, kind=kind, balance=balance, last4=last4)
             if not account.active:
                 continue  # an account the owner removed gets no balance and no rows
             for tx in txs:
+                tx_id, raw, when = clean_id(tx.get("id")), finite_amount(tx.get("amount")), iso_day(tx.get("date"))
+                if tx_id is None or raw is None or when is None:
+                    unreadable += 1  # a row without an id, an amount or a day is not a transaction; it is left out and said so
+                    continue
                 pending = str(tx.get("status") or "posted") == "pending"  # the same id posts later; the row is updated in place
-                raw = float(tx["amount"])
                 amount = -raw if DEBITS_NEGATIVE else raw
-                details = tx.get("details") or {}
-                counterparty = (details.get("counterparty") or {}).get("name")
+                details = tx.get("details") if isinstance(tx.get("details"), dict) else {}
+                counterparty = (details.get("counterparty") or {}).get("name") if isinstance(details.get("counterparty"), dict) else None
                 new = upsert_transaction(
-                    session, provider="teller", tx_id=tx["id"], account=account, when=date.fromisoformat(tx["date"]), amount=amount,
+                    session, provider="teller", tx_id=tx_id, account=account, when=when, amount=amount,
                     merchant=str(counterparty or tx.get("description") or ""), raw_name=str(tx.get("description") or ""), category=category_for(tx), pending=pending,
                 )
                 inserted, updated = inserted + int(new), updated + int(not new)
             # A pending charge the bank has dropped (a hold released, an authorisation that never posted) is gone
             # from what it sends; it leaves the ledger too, or it would stay off the balance for good.
-            sent = {str(tx["id"]) for tx in txs}
+            sent = {str(tx.get("id")) for tx in txs}
             for row in session.exec(select(Transaction).where(Transaction.account_id == account.id, Transaction.source == "teller", Transaction.pending == True)).all():  # noqa: E712
                 if row.source_ref not in sent:
                     remove_transaction(session, "teller", row.source_ref)
+        if left_out_names:
+            from .plaid import left_out_note
+
+            session.info.setdefault(LINK_NOTES, []).append(f"{left_out_note(left_out_names)} already read through your other {institution or 'bank'} link, so this link leaves {'it' if len(left_out_names) == 1 else 'them'} out; remove one of the two links")
+        if unreadable:
+            session.info.setdefault(LINK_NOTES, []).append(f"{unreadable} {'row' if unreadable == 1 else 'rows'} Teller sent could not be read (no id, amount or day) and were left out")
         link.needs_login = False
         session.commit()
         return inserted, updated, ids
 
     def connect(self, session: Session, access_token: str, enrollment_id: str, institution: str) -> BankLink:
+        if clean_id(enrollment_id) is None or clean_id(access_token, 500) is None:
+            raise ValueError("That is not a Teller enrollment")
+        institution = clean_text(institution, MAX_NAME_CHARS)
         link = session.exec(select(BankLink).where(BankLink.provider == "teller", BankLink.external_id == enrollment_id)).first()
         if link is None:
             link = BankLink(provider="teller", external_id=enrollment_id, institution=institution)

@@ -7,7 +7,7 @@ from datetime import date
 
 from sqlmodel import Session, select
 
-from ..models import Advance, Bill, Debt, InstallmentPlan, RecurringSeries
+from ..models import Bill, Debt, InstallmentPlan, RecurringSeries
 from .brief import when
 from .reports import spending_summary
 from .snapshot import finance_snapshot
@@ -25,7 +25,9 @@ def watchlist(session: Session, today: date) -> dict:
     snap = finance_snapshot(session, today)
     items: list[dict] = []
 
-    advances = session.exec(select(Advance).where(Advance.repaid == False)).all()  # noqa: E712
+    from .borrowing import open_advances
+
+    advances = open_advances(session, today)  # one past its repay day was taken back already; the plan holds nothing back for it
     if advances:
         total = round(sum(a.amount + a.fee for a in advances), 2)
         items.append({
@@ -38,7 +40,7 @@ def watchlist(session: Session, today: date) -> dict:
     if borrowing.get("fees_90d", 0) > 0:
         items.append({
             "kind": "borrowing", "severity": "critical" if borrowing.get("since_payday", {}).get("advances") else "warning",
-            "text": f"No new advances: borrowing cost {borrowing['fees_90d']:,.2f} in fees in the last 90 days" + (f", and {borrowing['since_payday']['advances']} already taken since payday" if borrowing.get("since_payday", {}).get("advances") else "") + ".",
+            "text": f"No new advances: borrowing cost ${borrowing['fees_90d']:,.2f} in fees in the last 90 days" + (f", and {borrowing['since_payday']['advances']} already taken since payday" if borrowing.get("since_payday", {}).get("advances") else "") + ".",
             "amount": borrowing["fees_90d"], "sources": ["ledger:borrowing"], "link": "/borrowing",
         })
 
@@ -56,7 +58,7 @@ def watchlist(session: Session, today: date) -> dict:
         w = bad_weeks[0]
         items.append({
             "kind": "buffer", "severity": "critical" if w["low"] < -snap["buffer"] else "warning",
-            "text": f"Nothing optional until after {when(w['low_date'])}: at the usual pace the week of {when(w['start'])} dips {-w['low']:,.2f} under the buffer.",
+            "text": f"Nothing optional until after {when(w['low_date'])}: at the usual pace the week of {when(w['start'])} dips ${-w['low']:,.2f} under the buffer.",
             "amount": round(-w["low"], 2), "sources": ["snapshot:projection"], "link": "/?view=month",
         })
 

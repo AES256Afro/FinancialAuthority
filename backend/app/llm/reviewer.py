@@ -111,7 +111,9 @@ def parse_notes(text: str, allowed: set[float]) -> list[dict]:
         a_type = action.get("type") if action.get("type") in ACTIONS else "none"
         clean: dict[str, Any] = {"type": a_type}
         if a_type in ("rule", "ask"):
-            clean["text"] = (str(action.get("text", "")).strip() or str(n["text"]).strip())[:MAX_ACTION_CHARS]
+            # One line: a proposed rule lands in the advisor's prompt as one bullet under the owner's rules, and a
+            # line break inside it could draw a second paragraph that reads as something other than a rule.
+            clean["text"] = " ".join((str(action.get("text", "")).strip() or str(n["text"]).strip()).split())[:MAX_ACTION_CHARS]
         if a_type == "buffer":
             # A buffer is a whole number of dollars that makes sense; a model's "nan", a negative or a billion is no proposal.
             try:

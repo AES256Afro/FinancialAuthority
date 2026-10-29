@@ -185,15 +185,21 @@ FEED_LIMIT = 60  # requests an hour, per address
 
 @router.get("/api/calendar/{token}.ics", include_in_schema=False)
 def feed(token: str, request: Request, session: Session = Depends(get_session)) -> Response:
-    key = "feed:" + _hash(token)[:16]
+    # Per address: the forwarded one behind a proxy the owner named, else the peer (or, with a forwarding header
+    # and no proxy named, one shared count). Counted by the token instead, every wrong guess opened a fresh count,
+    # so a guesser behind the tunnel was never slowed and the table grew with every try.
+    key = "feed:" + auth._client_ip(request)
     now = time.time()
     recent = [t for t in _hits.get(key, []) if now - t < 3600]
     if len(recent) >= FEED_LIMIT:
         raise HTTPException(429, "Too many requests")
     _hits[key] = [*recent, now]
-    if len(_hits) > 5000:  # strangers' guesses never grow the table without end
+    if len(_hits) > 5000:  # strangers never grow the table without end: the quiet go first, then the oldest
         for k in [k for k, v in _hits.items() if not v or now - v[-1] > 3600]:
             _hits.pop(k, None)
+        if len(_hits) > 5000:
+            for k in sorted(_hits, key=lambda k: _hits[k][-1])[: len(_hits) - 5000]:
+                _hits.pop(k, None)
     feed_cfg = get_setting(session, FEED_KEY, {}) or {}
     if not feed_cfg.get("hash") or len(token) < 30 or not secrets.compare_digest(_hash(token), feed_cfg["hash"]):
         raise HTTPException(404, "Not found")

@@ -310,11 +310,14 @@ def call_off_move(session: Session, home: Home, today: date) -> list[str]:
 
 
 def notice(home: Home, today: date) -> dict[str, Any] | None:
-    """The written notice the lease needs before moving out: by when, and whether it is given."""
-    if not home.ends_on or not home.notice_days:
+    """The written notice the lease needs before moving out: by when, and whether it is given. With no move-out
+    date, the lease term's end is the day to leave by (the same day lease_word names), so the form to mark the
+    notice given is there whenever a give-by day can be named."""
+    end = home.ends_on or (home.lease_ends_on if home.lease_ends_on and home.lease_ends_on >= today else None)
+    if not end or not home.notice_days:
         return None
     # A day early: leases count the notice day differently, and a day early holds under either count.
-    by = home.ends_on - timedelta(days=home.notice_days + 1)
+    by = end - timedelta(days=home.notice_days + 1)
     if home.notice_given_on:
         return {"by": by.isoformat(), "given_on": home.notice_given_on.isoformat(), "status": "good", "word": f"Notice given on {home.notice_given_on:%a %b} {home.notice_given_on.day}"}
     left = (by - today).days

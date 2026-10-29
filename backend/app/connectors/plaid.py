@@ -9,7 +9,9 @@ run takes only what changed; `/accounts/get` for balances.
 
 from __future__ import annotations
 
+import json
 import logging
+import time
 from collections.abc import Callable
 from datetime import date, datetime, timezone
 from typing import Any
@@ -20,15 +22,48 @@ from sqlmodel import Session, select
 from .. import crypto
 from ..jobs.writing import one_writer
 from ..models import BankLink, Transaction
-from .banks import (HANDED_OVER, PLAID_CATEGORIES, PLAID_DETAILED, PLAID_KINDS, SAVINGS_SUBTYPES, SEEN, bank_settings, duplicate_of, finish_link, link_token, remove_transaction, tx_hash,
-                    upsert_account, upsert_holding, upsert_transaction)
+from .banks import (
+    HANDED_OVER,
+    MAX_NAME_CHARS,
+    MAX_RESPONSE_BYTES,
+    PLAID_CATEGORIES,
+    PLAID_DETAILED,
+    PLAID_KINDS,
+    SAVINGS_SUBTYPES,
+    SEEN,
+    VendorAnswer,
+    bank_settings,
+    clean_id,
+    clean_text,
+    duplicate_of,
+    finish_link,
+    finite_amount,
+    hide_secrets,
+    iso_day,
+    link_token,
+    read_bounded,
+    remove_transaction,
+    tx_hash,
+    upsert_account,
+    upsert_holding,
+    upsert_transaction,
+)
 from .base import Connector, SyncResult
 
 log = logging.getLogger("fa.plaid")
 
 HOSTS = {"sandbox": "https://sandbox.plaid.com", "production": "https://production.plaid.com"}
+def left_out_note(names: list[str]) -> str:
+    """'Checking is' or 'Checking, Savings and Credit Card are'."""
+    if len(names) == 1:
+        return f"{names[0]} is"
+    return f"{', '.join(names[:-1])} and {names[-1]} are"
+
+
 LINK_NOTES = "fa_link_notes"  # session.info: what a link sync has to say beyond its counts
 PLAID_VERSION = "2020-09-14"
+REQUEST_SECONDS = 120.0  # one call, from the request to the last byte of the answer, whatever the socket allows
+MAX_CURSOR_CHARS = 2000  # Plaid's cursors are a few hundred characters
 ClientFactory = Callable[[], httpx.Client]
 
 
@@ -57,14 +92,24 @@ class PlaidClient:
         if self.environment != "sandbox":
             note("plaid", path)
         payload = {"client_id": self.client_id, "secret": self.secret, **body}
-        with self.client_factory() as client:
-            response = client.post(f"{self.host}{path}", json=payload, headers={"Content-Type": "application/json", "Plaid-Version": PLAID_VERSION})
+        # What Plaid might echo back and must never land in a record: the secret and the tokens this call carries.
+        hidden = [self.secret] + [str(v) for k, v in body.items() if k in ("access_token", "public_token") and v]
         try:
-            data = response.json()
+            with self.client_factory() as client:
+                with client.stream("POST", f"{self.host}{path}", json=payload, headers={"Content-Type": "application/json", "Plaid-Version": PLAID_VERSION}) as response:
+                    status = response.status_code
+                    raw = read_bounded(response, max_bytes=MAX_RESPONSE_BYTES, deadline=time.monotonic() + REQUEST_SECONDS)
+        except VendorAnswer as error:
+            raise PlaidError("BAD_RESPONSE", str(error)) from error
+        try:
+            data = json.loads(raw)
         except ValueError as error:
-            raise PlaidError("BAD_RESPONSE", f"{response.status_code}: {response.text[:200]}") from error
-        if response.status_code >= 400 or data.get("error_code"):
-            raise PlaidError(str(data.get("error_code") or response.status_code), str(data.get("display_message") or data.get("error_message") or "Plaid refused the request"))
+            raise PlaidError("BAD_RESPONSE", f"{status}: not JSON ({hide_secrets(clean_text(raw[:120].decode('utf-8', 'replace'), 120), hidden)})") from error
+        if not isinstance(data, dict):
+            raise PlaidError("BAD_RESPONSE", f"{status}: not an object")
+        if status >= 400 or data.get("error_code"):
+            message = clean_text(data.get("display_message") or data.get("error_message") or "Plaid refused the request", 300)
+            raise PlaidError(clean_text(data.get("error_code") or status, 80), hide_secrets(message, hidden))
         return data
 
     def check_keys(self) -> dict[str, str]:
@@ -124,7 +169,10 @@ class PlaidClient:
 
     def exchange(self, public_token: str) -> tuple[str, str]:
         data = self.post("/item/public_token/exchange", {"public_token": public_token})
-        return str(data["access_token"]), str(data["item_id"])
+        token, item = clean_id(data.get("access_token"), 500), clean_id(data.get("item_id"))
+        if not token or not item:
+            raise PlaidError("BAD_RESPONSE", "the exchange answered without a usable access token and item id")
+        return token, item
 
     def accounts(self, access_token: str) -> dict[str, Any]:
         return self.post("/accounts/get", {"access_token": access_token})
@@ -132,10 +180,11 @@ class PlaidClient:
     def bank_updated(self, access_token: str) -> datetime | None:
         """When Plaid last got new data from the bank for this item, on Plaid's own schedule; None when it does not say."""
         try:
-            status = self.post("/item/get", {"access_token": access_token}).get("status") or {}
+            status = self.post("/item/get", {"access_token": access_token}).get("status")
         except (PlaidError, httpx.HTTPError):
             return None
-        raw = str((status.get("transactions") or {}).get("last_successful_update") or "")
+        transactions = status.get("transactions") if isinstance(status, dict) else None
+        raw = clean_text((transactions or {}).get("last_successful_update") if isinstance(transactions, dict) else "", 40)
         try:
             return datetime.fromisoformat(raw.replace("Z", "+00:00")) if raw else None
         except ValueError:
@@ -181,8 +230,14 @@ def security_kind(sec: dict[str, Any]) -> str:
     return {"equity": "equity", "etf": "etf", "mutual fund": "mutual fund", "fixed income": "fixed income", "cash": "cash", "derivative": "derivative", "cryptocurrency": "cryptocurrency", "loan": "fixed income"}.get(kind, "other")
 
 
+def _rows(page: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    """The objects under `key` of a sync page; anything else the vendor put there is not a row."""
+    rows = page.get(key)
+    return [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
+
+
 def category_for(tx: dict[str, Any]) -> str:
-    pfc = tx.get("personal_finance_category") or {}
+    pfc = tx.get("personal_finance_category") if isinstance(tx.get("personal_finance_category"), dict) else {}
     detailed, primary = str(pfc.get("detailed") or ""), str(pfc.get("primary") or "")
     if detailed in PLAID_DETAILED:
         return PLAID_DETAILED[detailed]
@@ -285,6 +340,8 @@ class PlaidConnector(Connector):
                     page = api.sync_page(token, cursor)
                     pages.append(page)
                     cursor = str(page.get("next_cursor") or cursor)
+                    if len(cursor) > MAX_CURSOR_CHARS:
+                        raise PlaidError("BAD_RESPONSE", "the sync cursor is longer than any Plaid sends")
                     if not page.get("has_more"):
                         break
                 break
@@ -294,62 +351,82 @@ class PlaidConnector(Connector):
         holdings = None
         if any(account_kind(str(a.get("type") or ""), a.get("subtype")) == "investment" for a in got.get("accounts", [])):
             holdings = self.fetch_holdings(api, token)
-        institution = link.institution or str((got.get("item") or {}).get("institution_name") or "")
+        institution = clean_text(link.institution or (got.get("item") or {}).get("institution_name") or "", MAX_NAME_CHARS)
         accounts = {}
         listed: list[str] = []
         left_out = False
-        for a in got.get("accounts", []):
-            balances = a.get("balances") or {}
-            current = balances.get("current")
-            available = balances.get("available")
-            kind = account_kind(str(a.get("type") or ""), a.get("subtype"))
+        left_out_names: list[str] = []  # said once per sync, not once per account
+        unreadable = 0  # accounts and rows the answer carried that are not ones: no id, no amount, no date
+        for a in got.get("accounts", []) if isinstance(got.get("accounts"), list) else []:
+            account_id = clean_id(a.get("account_id")) if isinstance(a, dict) else None
+            if account_id is None:
+                unreadable += 1
+                continue
+            balances = a.get("balances") if isinstance(a.get("balances"), dict) else {}
+            current = finite_amount(balances.get("current"))
+            available = finite_amount(balances.get("available"))
+            kind = account_kind(str(a.get("type") or ""), a.get("subtype") if isinstance(a.get("subtype"), str) else None)
             # What can be spent is the available balance (holds and pending debits already out); a card owes its current balance.
             balance = available if (kind in ("checking", "savings", "cash") and available is not None) else current
-            limit = balances.get("limit")
-            name = str(a.get("name") or a.get("official_name") or "Account")
-            listed.append(a["account_id"])
-            if duplicate_of(session, link=link, external_id=a["account_id"], institution=institution, last4=str(a.get("mask") or "")) is not None:
+            limit = finite_amount(balances.get("limit"))
+            name = clean_text(a.get("name") or a.get("official_name") or "Account", MAX_NAME_CHARS) or "Account"
+            a = {**a, "account_id": account_id, "mask": clean_text(a.get("mask") or "", 8)}
+            listed.append(account_id)
+            if duplicate_of(session, link=link, external_id=account_id, institution=institution, last4=str(a.get("mask") or "")) is not None:
                 # The same account is read through another link to this bank: it stays with that one. Its rows are
                 # not read, so the cursor stays where it was, for this link to read them once the other is removed.
                 left_out = True
-                session.info.setdefault(LINK_NOTES, []).append(f"{name} is already read through your other {institution or 'bank'} link, so this link leaves it out; remove one of the two links")
+                left_out_names.append(name)
                 continue
             account = upsert_account(
                 session, provider="plaid", external_id=a["account_id"], name=name, institution=institution,
-                kind=kind, balance=float(balance) if balance is not None else None, last4=str(a.get("mask") or ""),
-                subtype=investment_subtype(a.get("subtype")) if kind == "investment" else "", credit_limit=float(limit) if (limit is not None and kind == "card") else None,
+                kind=kind, balance=balance, last4=str(a.get("mask") or ""),
+                subtype=investment_subtype(a.get("subtype") if isinstance(a.get("subtype"), str) else None) if kind == "investment" else "", credit_limit=limit if (limit is not None and kind == "card") else None,
                 as_of=bank_as_of,
             )
             if account.active:
-                accounts[a["account_id"]] = account  # an account the owner removed gets no balance, holdings or rows
+                accounts[account_id] = account  # an account the owner removed gets no balance, holdings or rows
         if holdings is not None:
             self.write_holdings(session, holdings, accounts)
         inserted = updated = removed = 0
         # Every page's new and changed rows first, then every removal: a pending row's removal can come a page
         # before the posted row that replaces it, and what is kept with the pending row must move, not vanish.
         for page in pages:
-            for tx in page.get("added", []) + page.get("modified", []):
-                account = accounts.get(tx["account_id"])
+            for tx in _rows(page, "added") + _rows(page, "modified"):
+                tx_id, account_id, amount = clean_id(tx.get("transaction_id")), clean_id(tx.get("account_id")), finite_amount(tx.get("amount"))
+                pending = bool(tx.get("pending"))
+                day = iso_day(tx.get("date"))
+                when = (iso_day(tx.get("authorized_date")) or day) if pending else day
+                if tx_id is None or account_id is None or amount is None or when is None or day is None:
+                    unreadable += 1  # a row without an id, an amount or a day is not a transaction; it is left out and said so
+                    continue
+                account = accounts.get(account_id)
                 if account is None:
                     continue
-                pending = bool(tx.get("pending"))
                 new = upsert_transaction(
-                    session, provider="plaid", tx_id=tx["transaction_id"], account=account, when=date.fromisoformat(tx.get("authorized_date") or tx["date"]) if pending else date.fromisoformat(tx["date"]), amount=float(tx["amount"]),
+                    session, provider="plaid", tx_id=tx_id, account=account, when=when, amount=amount,
                     merchant=str(tx.get("merchant_name") or tx.get("name") or ""), raw_name=str(tx.get("name") or ""), category=category_for(tx),
-                    posted=None if pending else date.fromisoformat(tx["date"]), pending=pending,
+                    posted=None if pending else day, pending=pending,
                 )
                 inserted, updated = inserted + int(new), updated + int(not new)
                 # A pending charge is kept, marked pending, so it shows minutes after the purchase; the checking
                 # balance Plaid reports already has it taken off. When it posts, Plaid sends a new row that names
                 # the pending one, and the pending row goes: never counted twice. Its receipt, split, note,
                 # category and tags move to the posted row.
-                if not pending and tx.get("pending_transaction_id"):
+                earlier = clean_id(tx.get("pending_transaction_id")) if not pending else None
+                if earlier:
                     session.flush()
-                    posted = session.exec(select(Transaction).where(Transaction.row_hash == tx_hash("plaid", str(tx["transaction_id"])))).first()
-                    removed += int(remove_transaction(session, "plaid", str(tx["pending_transaction_id"]), replaced_by=posted))
+                    posted = session.exec(select(Transaction).where(Transaction.row_hash == tx_hash("plaid", tx_id))).first()
+                    removed += int(remove_transaction(session, "plaid", earlier, replaced_by=posted))
         for page in pages:
-            for tx in page.get("removed", []):
-                removed += int(remove_transaction(session, "plaid", tx["transaction_id"]))
+            for tx in _rows(page, "removed"):
+                tx_id = clean_id(tx.get("transaction_id"))
+                if tx_id:
+                    removed += int(remove_transaction(session, "plaid", tx_id))
+        if unreadable:
+            session.info.setdefault(LINK_NOTES, []).append(f"{unreadable} {'row' if unreadable == 1 else 'rows'} Plaid sent could not be read (no id, amount or day) and were left out")
+        if left_out_names:
+            session.info.setdefault(LINK_NOTES, []).append(f"{left_out_note(left_out_names)} already read through your other {institution or 'bank'} link, so this link leaves {'it' if len(left_out_names) == 1 else 'them'} out; remove one of the two links")
         if not left_out:
             link.cursor = cursor
         link.needs_login = False
@@ -390,18 +467,19 @@ class PlaidConnector(Connector):
 
     def write_holdings(self, session: Session, got: dict, accounts: dict[str, Any]) -> int:
         """Every position in the item's investment accounts."""
-        securities = {str(s.get("security_id")): s for s in got.get("securities", [])}
+        securities = {str(s.get("security_id")): s for s in _rows(got, "securities")}
         count = 0
-        for h in got.get("holdings", []):
+        for h in _rows(got, "holdings"):
             account = accounts.get(h.get("account_id"))
-            if account is None or account.kind != "investment":
+            security_id = clean_id(h.get("security_id"))
+            if account is None or account.kind != "investment" or security_id is None:
                 continue
-            sec = securities.get(str(h.get("security_id")), {})
-            as_of_raw = h.get("institution_price_as_of")
-            as_of = datetime.combine(date.fromisoformat(as_of_raw), datetime.min.time(), tzinfo=timezone.utc) if as_of_raw else None
+            sec = securities.get(security_id, {})
+            as_of_day = iso_day(h.get("institution_price_as_of"))
+            as_of = datetime.combine(as_of_day, datetime.min.time(), tzinfo=timezone.utc) if as_of_day else None
             upsert_holding(
-                session, account=account, external_id=str(h.get("security_id")), name=str(sec.get("name") or sec.get("ticker_symbol") or "Holding"), ticker=str(sec.get("ticker_symbol") or ""),
-                kind=security_kind(sec), quantity=h.get("quantity"), price=h.get("institution_price"), value=h.get("institution_value"), cost_basis=h.get("cost_basis"), as_of=as_of,
+                session, account=account, external_id=security_id, name=clean_text(sec.get("name") or sec.get("ticker_symbol") or "Holding", MAX_NAME_CHARS) or "Holding", ticker=clean_text(sec.get("ticker_symbol") or "", 20),
+                kind=security_kind(sec), quantity=finite_amount(h.get("quantity")), price=finite_amount(h.get("institution_price")), value=finite_amount(h.get("institution_value")), cost_basis=finite_amount(h.get("cost_basis")), as_of=as_of,
             )
             count += 1
         return count
@@ -409,6 +487,7 @@ class PlaidConnector(Connector):
     def connect(self, session: Session, api: PlaidClient, public_token: str, institution: str) -> BankLink:
         access_token, item_id = api.exchange(public_token)
         link = session.exec(select(BankLink).where(BankLink.provider == "plaid", BankLink.external_id == item_id)).first()
+        institution = clean_text(institution, MAX_NAME_CHARS)
         if link is None:
             link = BankLink(provider="plaid", external_id=item_id, institution=institution, environment=api.environment)
         link.institution = institution or link.institution

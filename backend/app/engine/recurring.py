@@ -41,10 +41,16 @@ def bill_keys(bill) -> list[str]:  # noqa: ANN001 - a Bill
 
 
 def bill_named(bills, key: str, *, loose: bool = False):  # noqa: ANN001, ANN201
-    """The bill this name means: the same name (or who it is paid to), or, loosely, one that starts the other."""
+    """The bill this name means: the same name (or who it is paid to), or, loosely, one that starts the other.
+    The exact name wins over every loose one: "Music" is the bill named Music, not "Music (two)" listed before it."""
+    for b in bills:
+        if key in bill_keys(b):
+            return b
+    if not loose or not key:
+        return None
     for b in bills:
         for k in bill_keys(b):
-            if k == key or (loose and key and (k.startswith(key) or key.startswith(k))):
+            if k.startswith(key) or key.startswith(k):
                 return b
     return None
 
