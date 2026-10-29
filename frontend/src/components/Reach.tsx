@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { DEMO } from "../demo/shim";
-import { when } from "../format";
+import { amountClass, when } from "../format";
 import { ConfirmButton } from "./ConfirmButton";
 import { Failed, Loading, Said } from "./State";
 
@@ -203,7 +203,7 @@ export function ShortcutRecipe() {
   return (
     <section className="card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
       <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>Ask Siri, or glance at a widget or your watch</h2>
-      {g.data && <div style={{ fontSize: 13, padding: "8px 10px", borderRadius: 8, background: "var(--surface-2)" }}>“{g.data.text}”</div>}
+      {g.data && <div className={amountClass(g.data.text)} style={{ fontSize: 13, padding: "8px 10px", borderRadius: 8, background: "var(--surface-2)" }}>“{g.data.text}”</div>}
       <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, display: "flex", flexDirection: "column", gap: 4 }}>
         <li>On <Link to="/settings/clients">Apps and keys</Link>, make a key that can only read (the choice it starts with). Copy it.</li>
         <li>In the Shortcuts app, make a new shortcut and add <strong>Get Contents of URL</strong>. Set the URL to the address below; under Headers add <code>Authorization</code> with the value <code>Bearer</code>, a space, and the key.</li>

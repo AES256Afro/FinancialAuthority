@@ -137,7 +137,7 @@ def test_sync_files_borrowing_retires_the_fake_bill_and_queues_streams(owner: Te
     brief = owner.get("/api/v1/snapshot").json()["brief"]
     assert any("Borrowing cost" in b["text"] for b in brief) and any("taken since payday" in b["text"] for b in brief)
     steps = {s["id"]: s for s in owner.get("/api/v1/next_steps").json()["steps"]}
-    assert steps["borrowing"]["link"] == "/borrowing"
+    assert steps["borrowing"]["link"] == "/borrowing#cycle"
     watch = owner.get("/api/v1/watchlist").json()["items"]
     assert any(i["kind"] == "borrowing" and i["severity"] == "critical" for i in watch)
 

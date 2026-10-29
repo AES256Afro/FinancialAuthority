@@ -25,7 +25,7 @@ enum Keychain {
         SecItemDelete(base() as CFDictionary)
         var add = base()
         add[kSecValueData as String] = data
-        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly  // never carried to another device by a backup
         SecItemAdd(add as CFDictionary, nil)
     }
 

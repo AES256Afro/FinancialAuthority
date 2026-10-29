@@ -13,7 +13,7 @@ from sqlmodel import Session, select
 
 from .. import auth, crypto
 from ..connectors import CONNECTORS
-from ..connectors.mail import MailConnector, account_password, test_account
+from ..connectors.mail import MailConnector, account_password, folder_list, safe_folder, test_account
 from ..db import get_session
 from ..engine.recurring import merchant_key
 from ..mail.box import box_untrusted
@@ -47,6 +47,15 @@ def mailbox_host(kind: str, host: str) -> str:
 
 def mail_connector() -> MailConnector:
     return CONNECTORS["mail"]  # type: ignore[return-value]
+
+
+def _folders(value: str | None) -> str:
+    """The folders setting as it is kept: each name checked, since it goes into an IMAP command line as it is."""
+    try:
+        names = folder_list(value or "")
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    return ",".join(names) or "INBOX"
 
 
 def account_out(a: MailAccount) -> dict:
@@ -104,7 +113,7 @@ def create_account(body: MailAccountIn, session: Session = Depends(get_session),
     account = MailAccount(
         label=body.label or kind.title(), kind=kind, host=host, port=body.port or preset["port"], username=body.username, password_enc=enc,
         use_ssl=body.use_ssl if body.use_ssl is not None else preset["use_ssl"], starttls=body.starttls if body.starttls is not None else preset["starttls"],
-        folders=body.folders or "INBOX", active=body.active if body.active is not None else True,
+        folders=_folders(body.folders), active=body.active if body.active is not None else True,
         smtp_host=body.smtp_host if body.smtp_host is not None else preset["smtp_host"], smtp_port=body.smtp_port if body.smtp_port is not None else preset["smtp_port"],
         smtp_ssl=body.smtp_ssl if body.smtp_ssl is not None else preset["smtp_ssl"], smtp_starttls=body.smtp_starttls if body.smtp_starttls is not None else preset["smtp_starttls"],
     )
@@ -133,6 +142,8 @@ def update_account(account_id: int, body: MailAccountIn, session: Session = Depe
             raise HTTPException(400, "kind must be proton, gmail or imap")
         elif field == "host":
             account.host = mailbox_host(body.kind or account.kind, value)
+        elif field == "folders":
+            account.folders = _folders(value)
         else:
             setattr(account, field, value)
     session.add(account)
@@ -222,6 +233,8 @@ def fetch_parsed(session: Session, message_id: int):  # noqa: ANN201
     account = session.get(MailAccount, ref.account_id)
     if account is None or not account.active:
         raise HTTPException(409, "That mailbox is no longer connected")
+    if not safe_folder(ref.folder):
+        raise HTTPException(400, "This message's folder name cannot be opened safely; set the mailbox's folders again")
     client = mail_connector().client_factory(account.host, account.port, account.username, account_password(account), account.use_ssl, account.starttls)
     try:
         client.connect()
@@ -531,19 +544,23 @@ def _apply_receipt(session: Session, fact: ExtractedFact, ref: MessageRef | None
 
 @router.post("/facts/{fact_id}/confirm")
 def confirm_fact(fact_id: int, body: ConfirmIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_scope("confirm"))) -> dict:
-    fact = session.get(ExtractedFact, fact_id)
-    if fact is None:
-        raise HTTPException(404, "No such fact")
-    if fact.status != "pending":
-        raise HTTPException(409, f"This one was {fact.status} already; nothing changed.")
-    ref = session.get(MessageRef, fact.message_ref_id) if fact.message_ref_id else None
-    applied = apply_fact(session, fact, ref, body, owner=principal.full) if body.apply else ""
-    fact.status = "applied" if applied else "confirmed"
-    fact.applied_to = applied
-    fact.resolved_at = utcnow()
-    session.add(fact)
-    session.commit()
-    session.refresh(fact)
+    from ..jobs.writing import one_writer
+
+    with one_writer():  # one confirmation at a time, and never beside a detection or a sync writing the same registers
+        fact = session.get(ExtractedFact, fact_id)
+        if fact is None:
+            raise HTTPException(404, "No such fact")
+        session.refresh(fact)
+        if fact.status != "pending":
+            raise HTTPException(409, f"This one was {fact.status} already; nothing changed.")
+        ref = session.get(MessageRef, fact.message_ref_id) if fact.message_ref_id else None
+        applied = apply_fact(session, fact, ref, body, owner=principal.full) if body.apply else ""
+        fact.status = "applied" if applied else "confirmed"
+        fact.applied_to = applied
+        fact.resolved_at = utcnow()
+        session.add(fact)
+        session.commit()
+        session.refresh(fact)
     if applied:
         from ..llm.reviewer import mark_pending
 
@@ -559,13 +576,17 @@ def confirm_fact(fact_id: int, body: ConfirmIn, session: Session = Depends(get_s
 
 @router.post("/facts/{fact_id}/reject")
 def reject_fact(fact_id: int, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_scope("confirm"))) -> dict:
-    fact = session.get(ExtractedFact, fact_id)
-    if fact is None:
-        raise HTTPException(404, "No such fact")
-    if fact.status != "pending":
-        raise HTTPException(409, f"This one was {fact.status} already; nothing changed.")
-    fact.status = "rejected"
-    fact.resolved_at = utcnow()
-    session.add(fact)
-    session.commit()
+    from ..jobs.writing import one_writer
+
+    with one_writer():
+        fact = session.get(ExtractedFact, fact_id)
+        if fact is None:
+            raise HTTPException(404, "No such fact")
+        session.refresh(fact)
+        if fact.status != "pending":
+            raise HTTPException(409, f"This one was {fact.status} already; nothing changed.")
+        fact.status = "rejected"
+        fact.resolved_at = utcnow()
+        session.add(fact)
+        session.commit()
     return {"ok": True}

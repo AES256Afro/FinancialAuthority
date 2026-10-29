@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { money } from "../format";
 import type { Check } from "../paychecks";
-import { CheckPicker, PartTip, Tip, useColours, useTip } from "./common";
+import { CheckPicker, NoChecks, PartTip, Tip, useColours, useTip } from "./common";
 
 const W = 820;
 const H = 270;
@@ -13,7 +13,7 @@ export function Waterfall({ checks, initial = 0 }: { checks: Check[]; initial?: 
   const [i, setI] = useState(Math.min(initial, checks.length - 1));
   const { ref, tip, show, hide } = useTip();
   const c = checks[i];
-  if (!c) return null;
+  if (!c) return <NoChecks />;
   const steps = c.parts.filter((p) => p.key !== "yours" && p.amount > 0.5);
   const yours = c.parts.find((p) => p.key === "yours");
   const end = c.short > 0 ? -c.short : yours?.amount ?? 0;
@@ -39,11 +39,11 @@ export function Waterfall({ checks, initial = 0 }: { checks: Check[]; initial?: 
           {ticks.map((t) => (
             <g key={t}>
               <line x1={padL} x2={W - 10} y1={y(t)} y2={y(t)} stroke="var(--hairline)" />
-              <text x={padL - 6} y={y(t) + 4} fontSize="10.5" textAnchor="end" fill="var(--muted)">{money(t)}</text>
+              <text className="num" x={padL - 6} y={y(t) + 4} fontSize="10.5" textAnchor="end" fill="var(--muted)">{money(t)}</text>
             </g>
           ))}
           <rect x={x(0)} y={y(c.inflow)} width={bw} height={y(0) - y(c.inflow)} rx={4} fill="var(--ink)" />
-          <text x={x(0) + bw / 2} y={y(c.inflow) - 6} fontSize="11" fontWeight="800" textAnchor="middle" fill="var(--ink)">{money(c.inflow)}</text>
+          <text className="num" x={x(0) + bw / 2} y={y(c.inflow) - 6} fontSize="11" fontWeight="800" textAnchor="middle" fill="var(--ink)">{money(c.inflow)}</text>
           <text x={x(0) + bw / 2} y={H - padB + 16} fontSize="11" textAnchor="middle" fill="var(--ink-2)">{c.carried_in > 0 ? "check + carried" : "the check"}</text>
           {steps.map((p, k) => {
             const top = level;
@@ -54,7 +54,7 @@ export function Waterfall({ checks, initial = 0 }: { checks: Check[]; initial?: 
               <g key={p.key} onMouseMove={(e) => show(e, <PartTip part={p} colour={colours[p.key]} of={c.inflow} />)}>
                 <line x1={xi - (cw - bw)} x2={xi} y1={y(top)} y2={y(top)} stroke="var(--muted)" strokeDasharray="3 3" />
                 <rect x={xi} y={y(top)} width={bw} height={Math.max(1, y(bottom) - y(top))} rx={4} fill={colours[p.key]} />
-                <text x={xi + bw / 2} y={y(top) - 6} fontSize="11" fontWeight="800" textAnchor="middle" fill="var(--ink)">−{money(p.amount)}</text>
+                <text className="num" x={xi + bw / 2} y={y(top) - 6} fontSize="11" fontWeight="800" textAnchor="middle" fill="var(--ink)">−{money(p.amount)}</text>
                 <text x={xi + bw / 2} y={H - padB + 16} fontSize="11" textAnchor="middle" fill="var(--ink-2)">{p.label.length > 14 ? `${p.label.slice(0, 13)}…` : p.label}</text>
               </g>
             );
@@ -66,7 +66,7 @@ export function Waterfall({ checks, initial = 0 }: { checks: Check[]; initial?: 
               <g onMouseMove={(e) => yours && show(e, end < 0 ? <div><strong>Short {money(-end)}</strong><div>The check does not cover the days until the next one.</div></div> : <PartTip part={yours} colour={colours.yours} of={c.inflow} />)}>
                 <line x1={xi - (cw - bw)} x2={xi} y1={y(level)} y2={y(level)} stroke="var(--muted)" strokeDasharray="3 3" />
                 <rect x={xi} y={y(Math.max(0, end))} width={bw} height={Math.max(1, Math.abs(y(end) - y(0)))} rx={4} fill={fill} />
-                <text x={xi + bw / 2} y={y(Math.max(0, end)) - 6} fontSize="12" fontWeight="800" textAnchor="middle" fill={end < 0 ? "var(--critical-ink)" : "var(--ink)"}>{end < 0 ? `short ${money(-end)}` : money(end)}</text>
+                <text className="num" x={xi + bw / 2} y={y(Math.max(0, end)) - 6} fontSize="12" fontWeight="800" textAnchor="middle" fill={end < 0 ? "var(--critical-ink)" : "var(--ink)"}>{end < 0 ? `short ${money(-end)}` : money(end)}</text>
                 <text x={xi + bw / 2} y={H - padB + 16} fontSize="11" fontWeight="800" textAnchor="middle" fill="var(--ink)">{end < 0 ? "short" : "yours"}</text>
               </g>
             );

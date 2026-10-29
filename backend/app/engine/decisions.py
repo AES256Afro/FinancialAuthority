@@ -128,7 +128,9 @@ def _low_finder(session: Session, today: date):
     biller asks. The low point is judged over whole pay periods only, up to the last payday inside the sixty days:
     a charge pushed past that payday is kept on the day before it (see projection._moved_dates), so a move never
     looks better by pushing a charge out of view."""
-    accounts = session.exec(select(Account).where(Account.active == True)).all()  # noqa: E712
+    from .projection import household_accounts
+
+    accounts = household_accounts(session)  # as the snapshot takes them: a second person's own account is not the plan's
     cash, _all_cash = cash_of(accounts)
     buffer = float(get_setting(session, "buffer", 200.0))
     incomes = session.exec(select(Income).where(Income.active == True)).all()  # noqa: E712

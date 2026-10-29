@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { AdvanceExit } from "../components/AdvanceExit";
 import { BorrowingPlan } from "../components/BorrowingPlan";
-import { Failed, Loading, Said, useWidth } from "../components/State";
+import { Failed, Loading, Said, useJumpToHash, useWidth } from "../components/State";
 import { SeverityTag, StatusPill } from "../components/Status";
 import { money, monthDay, shortDate } from "../format";
 import { palette } from "../looks";
@@ -86,8 +86,10 @@ function CycleChart({ cycle }: { cycle: Cycle[] }) {
   const max = Math.max(1, ...cycle.map((x) => Math.max(x.advanced, x.repaid_on_payday)));
   const slot = cycle.length ? (w - 40) / cycle.length : w;
   const top = narrow ? 120 : 100;
+  const nothing = cycle.every((x) => x.advanced === 0 && x.repaid_on_payday === 0);
   return (
     <div ref={box} style={{ width: "100%", maxWidth: 820 }}>
+    {nothing && <div style={{ fontSize: 13, color: "var(--ink-2)", paddingBottom: 6 }}>No advance was taken before any of these {cycle.length} paydays, so the picture is empty. One taken later shows here, with what it costs.</div>}
     <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h} role="img" aria-label="Advances taken before each payday and repaid on it, with the fee" style={{ display: "block", maxWidth: "100%" }}>
       {cycle.map((x, i) => {
         const left = 20 + i * slot;
@@ -221,6 +223,7 @@ export function Borrowing() {
   const [saving, setSaving] = useState(false);
   const [cardsNote, setCardsNote] = useState<{ text: string; tone: "info" | "error" } | null>(null);
   const [cycleTable, setCycleTable] = useState(false);
+  useJumpToHash(data);
   if (error && !data) return <Failed error={error} what="borrowing" onRetry={reload} />;
   if (!data) return <Loading what="borrowing" />;
   const d = data;
@@ -249,7 +252,7 @@ export function Borrowing() {
       <BorrowingPlan />
 
       {d.cycle.length > 0 && (
-        <section className="card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 8 }}>
+        <section id="cycle" className="card" style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
             <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>The cycle, payday by payday</h2>
             <span style={{ fontSize: 12, color: "var(--muted)" }}>what was advanced before each payday and taken back on it</span>

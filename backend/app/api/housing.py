@@ -16,7 +16,7 @@ from ..db import get_session
 from ..engine import documents as docs
 from ..engine import housing as hs
 from ..models import Bill, Document, Home, HomeCharge, HomeCost, Utility
-from .routes import today
+from .routes import today, under_writer
 
 router = APIRouter(prefix="/api/v1", tags=["housing"])
 
@@ -60,6 +60,7 @@ def _apply_home(home: Home, body: HomeIn) -> None:
 
 
 @router.post("/housing")
+@under_writer
 def add_home(body: HomeIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     home = Home(name=body.name)
     _apply_home(home, body)
@@ -71,6 +72,7 @@ def add_home(body: HomeIn, session: Session = Depends(get_session), _: auth.Prin
 
 
 @router.put("/housing/{home_id}")
+@under_writer
 def change_home(home_id: int, body: HomeIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     home = session.get(Home, home_id)
     if home is None or not home.active:
@@ -87,6 +89,7 @@ def change_home(home_id: int, body: HomeIn, session: Session = Depends(get_sessi
 
 
 @router.delete("/housing/{home_id}")
+@under_writer
 def remove_home(home_id: int, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     home = session.get(Home, home_id)
     if home is None:
@@ -108,6 +111,7 @@ class NoticeIn(BaseModel):
 
 
 @router.post("/housing/{home_id}/notice")
+@under_writer
 def notice_given(home_id: int, body: NoticeIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     home = session.get(Home, home_id)
     if home is None or not home.active:
@@ -126,6 +130,7 @@ class AdoptIn(BaseModel):
 
 
 @router.post("/housing/adopt")
+@under_writer
 def adopt(body: AdoptIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     bill = session.get(Bill, body.bill_id)
     if bill is None or not bill.active or bill.home_id:
@@ -165,6 +170,7 @@ def _apply_charge(c: HomeCharge, body: ChargeIn) -> None:
 
 
 @router.post("/housing/{home_id}/charges")
+@under_writer
 def add_charge(home_id: int, body: ChargeIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     home = session.get(Home, home_id)
     if home is None:
@@ -178,6 +184,7 @@ def add_charge(home_id: int, body: ChargeIn, session: Session = Depends(get_sess
 
 
 @router.put("/housing/charges/{charge_id}")
+@under_writer
 def change_charge(charge_id: int, body: ChargeIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     c = session.get(HomeCharge, charge_id)
     if c is None:
@@ -190,6 +197,7 @@ def change_charge(charge_id: int, body: ChargeIn, session: Session = Depends(get
 
 
 @router.delete("/housing/charges/{charge_id}")
+@under_writer
 def remove_charge(charge_id: int, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     c = session.get(HomeCharge, charge_id)
     if c is None:
@@ -226,6 +234,7 @@ def _apply_cost(c: HomeCost, body: CostIn) -> None:
 
 
 @router.post("/housing/{home_id}/costs")
+@under_writer
 def add_cost(home_id: int, body: CostIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     home = session.get(Home, home_id)
     if home is None:
@@ -239,6 +248,7 @@ def add_cost(home_id: int, body: CostIn, session: Session = Depends(get_session)
 
 
 @router.put("/housing/costs/{cost_id}")
+@under_writer
 def change_cost(cost_id: int, body: CostIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     c = session.get(HomeCost, cost_id)
     if c is None:
@@ -251,6 +261,7 @@ def change_cost(cost_id: int, body: CostIn, session: Session = Depends(get_sessi
 
 
 @router.delete("/housing/costs/{cost_id}")
+@under_writer
 def remove_cost(cost_id: int, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     c = session.get(HomeCost, cost_id)
     if c is None:
@@ -330,6 +341,7 @@ def list_utilities(session: Session = Depends(get_session), _: auth.Principal = 
 
 
 @router.post("/utilities")
+@under_writer
 def add_utility(body: UtilityIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     u = Utility()
     _apply_utility(u, body, session)
@@ -340,6 +352,7 @@ def add_utility(body: UtilityIn, session: Session = Depends(get_session), _: aut
 
 
 @router.put("/utilities/{utility_id}")
+@under_writer
 def change_utility(utility_id: int, body: UtilityIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     u = session.get(Utility, utility_id)
     if u is None:
@@ -352,6 +365,7 @@ def change_utility(utility_id: int, body: UtilityIn, session: Session = Depends(
 
 
 @router.delete("/utilities/{utility_id}")
+@under_writer
 def remove_utility(utility_id: int, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     u = session.get(Utility, utility_id)
     if u is None:

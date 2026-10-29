@@ -25,6 +25,19 @@ export function onWrite(fn: () => void): () => void {
   return () => window.removeEventListener(WROTE, fn);
 }
 
+// A session that ends while a screen is open (signed out elsewhere, expired): the next answer is a 401, and every
+// screen would otherwise keep showing what it last loaded with a "not signed in" note under it. The app is told, so
+// it asks who is signed in again and shows the sign-in page. Sign-in's own calls answer 401 for a wrong password,
+// so they are not a sign that the session ended.
+const SIGNED_OUT = "fa-signed-out";
+const SIGN_IN_CALL = /^\/api\/auth\/(me|login|join|passkeys\/login)(\/|$)/;
+
+/** Calls `fn` when a call answers 401 mid-session. Returns the way to stop listening. */
+export function onSignedOut(fn: () => void): () => void {
+  window.addEventListener(SIGNED_OUT, fn);
+  return () => window.removeEventListener(SIGNED_OUT, fn);
+}
+
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const writes = Boolean(init.method && init.method.toUpperCase() !== "GET");
   if (writes) shared.clear(); // a write makes every answer stale
@@ -45,6 +58,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     } catch {
       // not JSON
     }
+    if (response.status === 401 && !DEMO && !SIGN_IN_CALL.test(path.split("?")[0])) window.dispatchEvent(new Event(SIGNED_OUT));
     throw new ApiError(response.status, detail);
   }
   if (writes && !READ_ONLY_POST.test(path.split("?")[0])) {

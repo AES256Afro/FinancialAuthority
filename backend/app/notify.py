@@ -41,6 +41,7 @@ def push_state(session: Session) -> dict[str, Any]:
 
 def save_push(session: Session, values: dict[str, Any]) -> None:
     s = push_settings(session)
+    was = (s.get("url") or "").strip().rstrip("/")
     for key in ("kind", "url", "topic"):
         if values.get(key) is not None:
             s[key] = str(values[key]).strip()
@@ -51,7 +52,8 @@ def save_push(session: Session, values: dict[str, Any]) -> None:
     token = values.get("token")
     if token is not None and str(token).strip():
         s["token_enc"] = crypto.encrypt(str(token).strip())
-    elif token == "":
+    elif token == "" or (s.get("url") or "").strip().rstrip("/") != was:
+        # The token is sent as a bearer to the address on file and nowhere else: a new address needs it typed again.
         s["token_enc"] = ""
     set_setting(session, "push", s)
 
@@ -101,6 +103,20 @@ def _note(ok: bool, detail: str) -> None:
         log.warning("could not keep the push result: %s", type(error).__name__)
 
 
+def _header(value: str, limit: int = 200) -> str:
+    """A value fit for an HTTP header: one line, no control characters, and encoded (RFC 2047, as ntfy reads it)
+    when it holds a character outside ASCII, since a header cannot carry one as it is."""
+    import re
+    from email.header import Header
+
+    one = re.sub(r"[\x00-\x1f\x7f]+", " ", value or "").strip()[:limit]
+    try:
+        one.encode("ascii")
+        return one
+    except UnicodeEncodeError:
+        return Header(one, "utf-8").encode(maxlinelen=10_000).replace("\n", "")
+
+
 def _send_channel(session: Session, title: str, body: str, *, priority: str = "default", link: str | None = None, tags: list[str] | None = None, client: httpx.Client | None = None) -> dict[str, Any]:
     s = push_settings(session)
     if s["kind"] == "off" or not s["url"]:
@@ -112,9 +128,9 @@ def _send_channel(session: Session, title: str, body: str, *, priority: str = "d
     try:
         with client or httpx.Client(timeout=httpx.Timeout(15.0, connect=5.0)) as c:
             if s["kind"] == "ntfy":
-                headers = {"Title": title, "Priority": priority}
+                headers = {"Title": _header(title), "Priority": _header(priority, 20)}
                 if tags:
-                    headers["Tags"] = ",".join(tags)
+                    headers["Tags"] = _header(",".join(tags), 100)
                 if link:
                     headers["Click"] = link
                 if token:
@@ -132,6 +148,9 @@ def _send_channel(session: Session, title: str, body: str, *, priority: str = "d
     except httpx.HTTPError as error:
         log.warning("push failed: %s", error)
         return {"ok": False, "status": 0, "detail": f"{type(error).__name__}: {error}"[:200]}
+    except Exception as error:  # noqa: BLE001 - a push that cannot be built or sent is reported, never raised into a job or a tool call
+        log.warning("push failed: %s", type(error).__name__)
+        return {"ok": False, "status": 0, "detail": f"{type(error).__name__}"[:200]}
 
 
 def brief_text(brief: list[dict]) -> str:

@@ -36,10 +36,11 @@ def shared_view(session: Session, today: date, person_id: int | None = None) -> 
 
     from .cover import _deposit_account
     from .payments import paid_periods
-    from .projection import is_spendable
+    from .projection import household_accounts, is_spendable
 
-    # A bill with no paying account is paid, as the plan pays it, from the account the paycheck lands in.
-    every = {a.id: a for a in session.exec(select(Account).where(Account.active == True)).all()}  # noqa: E712
+    # A bill with no paying account is paid, as the plan pays it, from the account the paycheck lands in (one of the
+    # owner's or shared accounts, as the plan takes them; never a second person's own).
+    every = {a.id: a for a in household_accounts(session)}
     deposit = _deposit_account(session, every, [a for a in every.values() if is_spendable(a) and a.kind != "card"])
     paid = paid_periods(session, today)  # paid already, early or today: not still coming
     end = today + timedelta(days=31)

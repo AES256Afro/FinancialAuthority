@@ -6,7 +6,7 @@ import { CircleCheck, CircleDashed, OctagonAlert, TriangleAlert } from "lucide-r
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
-import { shortDate, when } from "../format";
+import { amountClass, shortDate, when } from "../format";
 import { Said, Show } from "./State";
 import { SeverityTag } from "./Status";
 
@@ -51,7 +51,7 @@ export function AppHealth() {
               <h2 id="health-title" style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>How the app has been, the last {h.days.length} days</h2>
               <div style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 14, fontWeight: 700, color: h.open.length ? "var(--ink)" : "var(--safe-ink)" }}>
                 {h.open.length === 0 ? <CircleCheck size={16} aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }} /> : <TriangleAlert size={16} aria-hidden="true" style={{ flexShrink: 0, marginTop: 2, color: "var(--warning-ink)" }} />}
-                <span>{h.said}</span>
+                <span className={amountClass(h.said)}>{h.said}</span>
               </div>
             </div>
 

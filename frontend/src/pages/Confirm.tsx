@@ -9,9 +9,9 @@ import { api, useApi, type ApiError, type Loaded } from "../api";
 import { Approvals } from "../components/Approvals";
 import { ConfirmButton } from "../components/ConfirmButton";
 import { PurchaseChoices, dayWord } from "../components/Documents";
-import { Empty, Failed, Loading, Said } from "../components/State";
+import { Empty, Failed, Loading, Said, useJumpToHash } from "../components/State";
 import { SeverityTag } from "../components/Status";
-import { localToday, money, ordinal, parseMoney, shortDate, when } from "../format";
+import { amountClass, localToday, money, ordinal, parseMoney, shortDate, when } from "../format";
 import type { DocumentTermsFields, FactRow, PairRow, PairSide, PairsOut, SeriesRow, Snapshot } from "../types";
 import type { FactWithCandidates, ReceiptFields } from "../types-receipts";
 
@@ -119,7 +119,7 @@ function DataCheckLine() {
   return (
     <div className="card" style={{ padding: "10px 14px", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 13 }}>
       <SeverityTag severity={crit ? "critical" : "warning"} word="Data check" />
-      <span style={{ flex: "1 1 220px", minWidth: 0 }}>{check.data?.said}</span>
+      <span className={amountClass(check.data?.said)} style={{ flex: "1 1 220px", minWidth: 0 }}>{check.data?.said}</span>
       <Link to="/data-check" className="btn" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Open the data check</Link>
     </div>
   );
@@ -833,6 +833,8 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
   const [looked, setLooked] = useState<{ text: string; tone: "info" | "error" } | null>(null);
   const [factSaid, setFactSaid] = useState<Done | null>(null);
   const [seriesSaid, setSeriesSaid] = useState<Done | null>(null);
+  // A next step links to #approvals, #facts or #series: the jump waits until all three lists are on the page.
+  useJumpToHash(data && facts.data && approvalsWaiting !== null);
   // Your own emails waiting are counted from the list below, as the tab badge does; the rest is the engine's count.
   const total = snap.data && approvalsWaiting !== null ? snap.data.pending.confirmations + approvalsWaiting : null;
 
@@ -876,7 +878,7 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
       <Approvals onChanged={onChanged} onCount={setApprovalsWaiting} />
       {facts.error && !facts.data && <Failed error={facts.error} what="what was read from your mail and documents" onRetry={facts.reload} />}
       {facts.data && facts.data.facts.length > 0 && (
-        <>
+        <section id="facts" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <h2 className="lab" style={{ margin: 0 }}>From your mail and documents · {facts.data.pending}</h2>
           <Together state={needs} onAnswered={factAnswered} onSaid={(text) => setFactSaid({ text })} />
           {facts.data.facts.map((f) =>
@@ -900,30 +902,36 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
               />
             ),
           )}
-        </>
+        </section>
       )}
       <DoneLine done={factSaid} />
       <PaidQuestions state={needs} onAnswered={onChanged} />
       <Pairs state={pairs} onChanged={onChanged} />
       {error && !data && <Failed error={error} what="the repeating charges" onRetry={reload} />}
       {!data && !error && <Loading what="what needs you" />}
-      {data && data.series.length > 0 && <h2 className="lab" style={{ margin: "6px 0 0" }}>From your transactions · {data.pending}</h2>}
-      <DoneLine done={seriesSaid} />
+      {data && data.series.length > 0 ? (
+        <section id="series" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <h2 className="lab" style={{ margin: "6px 0 0" }}>From your transactions · {data.pending}</h2>
+          <DoneLine done={seriesSaid} />
+          {data.series.map((s) => (
+            <Row
+              key={s.id}
+              s={s}
+              onDone={(done) => {
+                setSeriesSaid(done);
+                reload();
+                needs.reload();
+                onChanged();
+              }}
+            />
+          ))}
+        </section>
+      ) : (
+        <DoneLine done={seriesSaid} />
+      )}
       {data && data.series.length === 0 && facts.data && facts.data.facts.length === 0 && needs.data && needs.data.past_due.length === 0 && pairs.data && pairs.data.waiting.length === 0 && approvalsWaiting === 0 && (
         <Empty to="/today" action="Back to Today">Nothing needs you. No email is waiting for your OK, every repeating charge in your transactions has a name, the mail has nothing new, every bill has a payment seen or an answer from you, and no money between your accounts is waiting for a yes or no.</Empty>
       )}
-      {data?.series.map((s) => (
-        <Row
-          key={s.id}
-          s={s}
-          onDone={(done) => {
-            setSeriesSaid(done);
-            reload();
-            needs.reload();
-            onChanged();
-          }}
-        />
-      ))}
     </div>
   );
 }

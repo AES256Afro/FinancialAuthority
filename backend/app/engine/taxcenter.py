@@ -56,7 +56,9 @@ def tax_year(session: Session, today: date, year: int | None = None) -> dict[str
     dates.sort(key=lambda d: d["due"])
     upcoming = [d for d in dates if d["due"] >= today.isoformat()]
 
-    standard = (R.STANDARD_DEDUCTION.get(year) or R.STANDARD_DEDUCTION[max(R.STANDARD_DEDUCTION)]).get(status)
+    # A year past the table keeps the latest figure until the new one is published; a year before it has none on file.
+    known = R.STANDARD_DEDUCTION.get(year) or (R.STANDARD_DEDUCTION[max(R.STANDARD_DEDUCTION)] if year > max(R.STANDARD_DEDUCTION) else {})
+    standard = known.get(status)
     totals = tax_totals(session, today, year)
     itemizable = round(sum(c["total"] for c in totals["categories"] if c["name"] in ITEMIZABLE), 2)
     categories = [{**c, "itemizable": c["name"] in ITEMIZABLE} for c in totals["categories"]]

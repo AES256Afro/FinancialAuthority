@@ -13,6 +13,10 @@ on:
   schedule:
     - cron: "0 6 * * 1"  # weekly: the audit runs again and :edge is rebuilt on any base-image fix
 
+# The token can read the repository and nothing more; the publish job alone adds the package write it needs.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest

@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { Failed, Loading, Said } from "../components/State";
 import { StatusPill } from "../components/Status";
-import { money, shortDate } from "../format";
+import { amountClass, money, shortDate } from "../format";
 import type { CheckIn as CheckInData } from "../guide";
 
 function Q({ n, title, children }: { n: number; title: string; children: ReactNode }) {
@@ -70,7 +70,7 @@ export function CheckIn() {
         <span style={{ fontSize: 13, color: "var(--muted)" }}>{d.week}</span>
         {d.done && <StatusPill status="good">Done this week</StatusPill>}
       </div>
-      <div style={{ fontSize: 14 }}>{d.line}</div>
+      <div className={amountClass(d.line)} style={{ fontSize: 14 }}>{d.line}</div>
 
       <Q n={1} title="Anything unexpected this week?">
         {d.unexpected.length === 0 ? <div style={{ fontSize: 13, color: "var(--ink-2)" }}>Nothing outside your bills.</div> : d.unexpected.map((t) => (

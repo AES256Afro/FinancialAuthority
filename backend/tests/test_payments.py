@@ -46,7 +46,7 @@ def test_snapshot_carries_payments_funded_lines_and_a_brief():
     assert all(e["line"] in ("housing", "utilities", "debt") for e in snap["calendar"]["events"] if e["kind"] != "paycheck")
     rent = next(e for e in snap["calendar"]["events"] if e["name"] == "Rent")
     assert rent["line"] == "housing"
-    assert snap["pending"]["past_due"] == 0
+    assert snap["pending"]["past_due"] == 1  # the car loan's Aug 28 period, with no payment seen: the badge counts what the Needs-you page asks about
     brief = snap["brief"]
     assert brief and brief[0]["severity"] in ("info", "warning", "critical")
     texts = " ".join(b["text"] for b in brief)

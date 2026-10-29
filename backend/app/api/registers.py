@@ -13,7 +13,7 @@ from ..db import get_session
 from ..jobs.detect import pending_series, run_detection
 from ..llm.reviewer import mark_pending
 from ..models import Bill, Income, InstallmentPlan, RecurringSeries
-from .routes import today
+from .routes import today, under_writer
 
 router = APIRouter(prefix="/api/v1", tags=["registers"])
 
@@ -38,14 +38,13 @@ def bill_out(b: Bill) -> dict:
 
 @router.get("/recurring")
 def list_recurring(include_classified: bool = False, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
-    if include_classified:
-        rows = session.exec(select(RecurringSeries).order_by(RecurringSeries.typical_amount.desc())).all()
-    else:
-        rows = pending_series(session)
-    return {"series": [series_out(s) for s in rows], "pending": len(pending_series(session))}
+    pending = pending_series(session)
+    rows = session.exec(select(RecurringSeries).order_by(RecurringSeries.typical_amount.desc())).all() if include_classified else pending
+    return {"series": [series_out(s) for s in rows], "pending": len(pending)}
 
 
 @router.post("/recurring/detect")
+@under_writer
 def detect_now(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     return run_detection(session, today())
 
@@ -74,14 +73,8 @@ def list_payments(session: Session = Depends(get_session), _: auth.Principal = D
     return payments_overview(session, today())
 
 
-@router.post("/payments/match")
-def match_now(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
-    from ..engine.payments import match_payments
-
-    return match_payments(session, today())
-
-
 @router.post("/recurring/{series_id}/classify")
+@under_writer
 def classify(series_id: int, body: ClassifyIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_scope("confirm"))) -> dict:
     series = session.get(RecurringSeries, series_id)
     if series is None:
@@ -197,16 +190,40 @@ CLEARABLE = {"pay_from_account_id", "anchor_date"}  # sent as null, these clear;
 CADENCES = ("weekly", "biweekly", "monthly", "quarterly", "semiannual", "yearly")
 
 
+def _check_money(body: BillIn) -> None:
+    """A bill's figures are money that leaves: never below zero, never past what a bill could be."""
+    if body.amount is not None and not 0 <= body.amount <= 1_000_000:
+        raise HTTPException(400, "amount is dollars, from 0 to 1,000,000")
+    if body.late_fee is not None and not 0 <= body.late_fee <= 10_000:
+        raise HTTPException(400, "late_fee is dollars, from 0 to 10,000")
+    if body.grace_days is not None and not 0 <= body.grace_days <= 90:
+        raise HTTPException(400, "grace_days is 0 to 90")
+
+
+def _check_payer(session: Session, account_id: int) -> None:
+    from ..models import Account
+
+    account = session.get(Account, int(account_id))
+    if account is None or not account.active:
+        raise HTTPException(400, "That account is not on file")
+
+
 @router.post("/bills")
+@under_writer
 def create_bill(body: BillIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     if not body.name or body.amount is None or body.due_day is None:
         raise HTTPException(400, "A bill needs a name, an amount and a due day")
+    _check_money(body)
     if body.paid_from:
         _check_paid_from(session, body.paid_from)
+    if body.kind is not None and body.kind not in ("bill", "subscription"):
+        raise HTTPException(400, "kind must be bill or subscription")
     if body.cadence and body.cadence not in CADENCES:
         raise HTTPException(400, f"cadence is one of {', '.join(CADENCES)}")
+    if body.pay_from_account_id is not None:
+        _check_payer(session, body.pay_from_account_id)
     bill = Bill(name=body.name, kind=body.kind or "bill", amount=body.amount, amount_mode=body.amount_mode or "fixed", due_day=max(1, min(31, body.due_day)), paid_from=body.paid_from or "due",
-                cadence=body.cadence or "monthly", anchor_date=body.anchor_date,
+                cadence=body.cadence or "monthly", anchor_date=body.anchor_date, pay_from_account_id=body.pay_from_account_id,
                 autopay=bool(body.autopay), movable=body.movable if body.movable is not None else True, grace_days=body.grace_days or 0, late_fee=body.late_fee or 0.0, category=body.category or "", created_on=today())
     _need_anchor(session, bill)
     session.add(bill)
@@ -217,23 +234,21 @@ def create_bill(body: BillIn, session: Session = Depends(get_session), _: auth.P
 
 
 @router.put("/bills/{bill_id}")
+@under_writer
 def update_bill(bill_id: int, body: BillIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     bill = session.get(Bill, bill_id)
     if bill is None:
         raise HTTPException(404, "No such bill")
     rematch = False
     sent = body.model_dump(exclude_unset=True)
+    _check_money(body)
     # A field left out stays as it is. A field sent empty stays too, except the two that can be cleared: the paying
     # account (back to checking, so the bill no longer rides a card) and the next due date.
     for field, value in sent.items():
         if value is None and field not in CLEARABLE:
             continue
         if field == "pay_from_account_id" and value is not None:
-            from ..models import Account
-
-            account = session.get(Account, int(value))
-            if account is None or not account.active:
-                raise HTTPException(400, "That account is not on file")
+            _check_payer(session, value)
         if field == "due_day":
             value = max(1, min(31, int(value)))
             rematch = rematch or value != bill.due_day
@@ -255,8 +270,11 @@ def update_bill(bill_id: int, body: BillIn, session: Session = Depends(get_sessi
         from ..engine.payments import match_payments
         from ..models import Payment
 
+        # Only the periods nothing settled are rebuilt: one matched to a bank row, or marked paid by the owner, keeps
+        # its match and its mark; the new dates place the rest.
         for p in session.exec(select(Payment).where(Payment.bill_id == bill.id)).all():
-            session.delete(p)
+            if p.status in ("scheduled", "late", "past_due", "missed"):
+                session.delete(p)
         session.flush()
         match_payments(session, today())
     session.commit()
@@ -315,6 +333,7 @@ def _new_income(session: Session, *, name: str, cadence: str, expected_net: floa
 
 
 @router.post("/incomes")
+@under_writer
 def create_income(body: NewIncomeIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     """Add a paycheck by hand, so the plan counts real pay on a real payday instead of a placeholder."""
     try:
@@ -337,6 +356,7 @@ class FromPaystubIn(BaseModel):
 
 
 @router.post("/incomes/from-paystub/{paystub_id}")
+@under_writer
 def income_from_paystub(paystub_id: int, body: FromPaystubIn | None = None, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     """Use a confirmed paystub as the paycheck: its take-home pay, and its pay date stepped by the cadence to the
     next payday that is today or later."""
@@ -371,6 +391,7 @@ class IncomeIn(BaseModel):
 
 
 @router.put("/incomes/{income_id}")
+@under_writer
 def update_income(income_id: int, body: IncomeIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     income = session.get(Income, income_id)
     if income is None:
@@ -381,6 +402,13 @@ def update_income(income_id: int, body: IncomeIn, session: Session = Depends(get
         raise HTTPException(400, 'pay_days is "" (the 15th and the last day) or "1,15" (the 1st and the 15th)')
     if body.pay_day is not None and not 1 <= body.pay_day <= 31:
         raise HTTPException(400, "pay_day is a day of the month, 1 to 31; 31 is the last day of every month")
+    if body.cadence is not None and body.cadence not in PAY_CADENCES:
+        # An unknown cadence would make every detection run fail when it steps this paycheck to its next payday.
+        raise HTTPException(400, "How often it comes is one of: every week, every two weeks, twice a month, monthly (weekly, biweekly, semimonthly, monthly).")
+    for field in ("expected_net", "expected_net_end"):
+        value = getattr(body, field)
+        if value is not None and not 0 < value <= 1_000_000:
+            raise HTTPException(400, "Type the take-home pay, what lands in the account, like 1850 or 1850.25.")
     for field, value in body.model_dump(exclude_unset=True).items():
         if value is not None:
             setattr(income, field, value)
@@ -416,6 +444,7 @@ class PairDecisionIn(BaseModel):
 
 
 @router.post("/pairs/{pair_id}")
+@under_writer
 def decide_pair(pair_id: int, body: PairDecisionIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_scope("confirm"))) -> dict:
     from .. import services
     from ..engine.pairs import decide
@@ -446,6 +475,7 @@ class BudgetIn(BaseModel):
 
 
 @router.put("/budgets/{category}")
+@under_writer
 def put_budget(category: str, body: BudgetIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     from ..engine.budgets import budget_plan, save_budget
 
@@ -457,6 +487,7 @@ def put_budget(category: str, body: BudgetIn, session: Session = Depends(get_ses
 
 
 @router.delete("/budgets/{category}")
+@under_writer
 def delete_budget(category: str, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     from ..engine.budgets import budget_plan
     from ..models import CategoryBudget
@@ -481,6 +512,7 @@ class TxEditIn(BaseModel):
 
 
 @router.patch("/transactions/{tx_id}")
+@under_writer
 def edit_transaction(tx_id: int, body: TxEditIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     from ..engine.edits import tags_of, update
 
@@ -504,6 +536,7 @@ class SplitIn(BaseModel):
 
 
 @router.put("/transactions/{tx_id}/split")
+@under_writer
 def split_transaction(tx_id: int, body: SplitIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     from ..engine.edits import set_splits
 
@@ -525,6 +558,7 @@ class BulkIn(BaseModel):
 
 
 @router.post("/transactions/bulk")
+@under_writer
 def bulk_edit(body: BulkIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     from .. import services
     from ..engine.edits import bulk
@@ -576,11 +610,13 @@ class AssetIn(BaseModel):
 
 
 @router.post("/assets")
+@under_writer
 def add_asset(body: AssetIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     return _save_asset(None, body, session)
 
 
 @router.put("/assets/{asset_id}")
+@under_writer
 def update_asset(asset_id: int, body: AssetIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     from ..models import OtherAsset
 
@@ -601,6 +637,7 @@ def _save_asset(asset_id: int | None, body: AssetIn, session: Session) -> dict:
 
 
 @router.delete("/assets/{asset_id}")
+@under_writer
 def remove_asset(asset_id: int, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     from ..engine.assets import assets_overview
     from ..models import OtherAsset

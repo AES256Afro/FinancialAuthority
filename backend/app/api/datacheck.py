@@ -9,7 +9,7 @@ from sqlmodel import Session
 from .. import auth, services
 from ..db import get_session
 from ..engine import datacheck
-from .routes import today
+from .routes import today, under_writer
 
 router = APIRouter(prefix="/api/v1/data-check", tags=["data check"])
 
@@ -20,6 +20,7 @@ def get_check(session: Session = Depends(get_session), _: auth.Principal = Depen
 
 
 @router.post("/run")
+@under_writer
 def run_check(session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     from ..engine.borrowing import sync_borrowing
 
@@ -35,6 +36,7 @@ class AnswerIn(BaseModel):
 
 
 @router.post("/answer")
+@under_writer
 def answer(body: AnswerIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     """Settle one finding. Only an answer the finding offers now is accepted, so nothing else can be changed here."""
     try:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 from collections.abc import Iterator
 from contextlib import contextmanager
 
@@ -34,13 +35,35 @@ INDEXES = (
 )
 
 
-def ensure_indexes() -> None:
-    from sqlalchemy import text
+def ensure_indexes() -> list[str]:
+    """The named indexes above, and every index a model declares (`Field(index=True)`). `create_all` makes a
+    table's indexes only with the table, so one declared later never reached an older database; here each is
+    created when missing. One that cannot be made (a unique index over rows that already repeat) is logged and
+    skipped: an index is never a reason the app does not start."""
+    import logging
 
+    from sqlalchemy import inspect, text
+
+    made: list[str] = []
     with engine.begin() as connection:
         for ddl in INDEXES:
             connection.execute(text(ddl))
+        inspector = inspect(connection)
+        tables = set(inspector.get_table_names())
+        for table in SQLModel.metadata.sorted_tables:
+            if table.name not in tables:
+                continue
+            present = {i["name"] for i in inspector.get_indexes(table.name)}
+            for index in table.indexes:
+                if index.name in present:
+                    continue
+                try:
+                    index.create(connection)
+                    made.append(str(index.name))
+                except Exception as error:  # noqa: BLE001 - the rows it covers are still there; only the lookup is slower
+                    logging.getLogger("fa.db").warning("index %s was not made: %s", index.name, error)
         connection.execute(text("PRAGMA optimize"))
+    return made
 
 
 def init_db() -> None:
@@ -147,11 +170,22 @@ def add_missing_columns() -> list[str]:
                     continue
                 ddl = f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {column.type.compile(engine.dialect)}'
                 default = column.default.arg if column.default is not None and not callable(column.default.arg) else None
+                kind = str(column.type).upper()
                 if default is not None:
                     literal = "1" if default is True else "0" if default is False else repr(default) if isinstance(default, str) else str(default)
                     ddl += f" DEFAULT {literal}"
                 elif not column.nullable:
-                    ddl += " DEFAULT ''" if "CHAR" in str(column.type).upper() or "TEXT" in str(column.type).upper() else " DEFAULT 0"
+                    # A date or a datetime column must hold a date the rows can be read back with: the moment of this
+                    # upgrade (SQLite's CURRENT_TIMESTAMP is not allowed on an added column). A 0 there would make
+                    # every read of the table fail.
+                    if "DATETIME" in kind or "TIMESTAMP" in kind:
+                        ddl += f" DEFAULT {dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%d %H:%M:%S')!r}"
+                    elif "DATE" in kind:
+                        ddl += f" DEFAULT {dt.datetime.now(dt.timezone.utc).strftime('%Y-%m-%d')!r}"
+                    elif "CHAR" in kind or "TEXT" in kind:
+                        ddl += " DEFAULT ''"
+                    else:
+                        ddl += " DEFAULT 0"
                 connection.execute(text(ddl))
                 added.append(f"{table.name}.{column.name}")
     return added

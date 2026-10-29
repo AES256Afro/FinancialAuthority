@@ -1,9 +1,10 @@
 // Loading, failed and empty: the same three states on every screen, each saying what happened and what to do.
 // A failure always has a Try again; an empty list always says how to fill it.
 import { Inbox, Loader, OctagonAlert } from "lucide-react";
-import { useLayoutEffect, useState, type ReactNode, type RefObject } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useLayoutEffect, useState, type ReactNode, type RefObject } from "react";
+import { Link, useLocation } from "react-router-dom";
 import type { ApiError, Loaded } from "../api";
+import { DEMO } from "../demo/shim";
 
 const box = { padding: 14, display: "flex", alignItems: "flex-start", gap: 10, fontSize: 13 } as const;
 
@@ -18,6 +19,8 @@ export function Loading({ what = "this", card = true }: { what?: string; card?: 
 
 export function Failed({ error, what = "this", onRetry, card = true }: { error: ApiError | Error | string; what?: string; onRetry?: () => void; card?: boolean }) {
   const message = typeof error === "string" ? error : error.message;
+  // In the static demo a screen the capture did not record is not a failure: a plain line says so, with no Try again.
+  if (DEMO && message.startsWith("Not part of the demo")) return <Empty card={card}>{message} Your own FinancialAuthority shows {what} here.</Empty>;
   return (
     <div role="alert" className={card ? "card" : undefined} style={{ ...box, background: "var(--critical-soft)", color: "var(--critical-ink)", flexWrap: "wrap" }}>
       <OctagonAlert size={16} aria-hidden="true" style={{ flexShrink: 0, marginTop: 1 }} />
@@ -60,6 +63,24 @@ export function useWidth(box: RefObject<HTMLElement | null>, start = 720): numbe
     return () => ro.disconnect();
   }, [box]);
   return width;
+}
+
+/** Lands on the part of the page a link named (#id): scrolls it into view once `ready` is there, and puts focus on
+ * its first control, so a next step's tap ends on the exact button and the keyboard starts there too. */
+export function useJumpToHash(ready: unknown = true): void {
+  const { hash } = useLocation();
+  useEffect(() => {
+    if (!hash || !ready) return;
+    const el = document.getElementById(hash.slice(1));
+    if (!el) return;
+    el.scrollIntoView({ block: "start" });
+    const control = el.querySelector<HTMLElement>("button, a[href], input:not([type=hidden]), select, textarea, summary, [tabindex]");
+    if (control) control.focus({ preventScroll: true });
+    else {
+      if (!el.hasAttribute("tabindex")) el.tabIndex = -1;
+      el.focus({ preventScroll: true });
+    }
+  }, [hash, ready]);
 }
 
 /** A save's outcome, next to the button that caused it. */

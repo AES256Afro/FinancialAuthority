@@ -62,10 +62,14 @@ def parse_loan_confirmation(text: str, ref: date | None = None) -> dict | None:
     if loan_id:
         fields["loan_id"] = loan_id.group(1).upper()
     paid = round(sum(s["amount"] for s in schedule), 2)
-    fields.setdefault("total", paid)
+    stated = fields.get("total")
+    if stated is None and "loan_amount" in fields and "finance_charge" in fields:
+        stated = round(fields["loan_amount"] + fields["finance_charge"], 2)  # the total unlabelled: what was borrowed plus what it costs
+    fields.setdefault("total", stated if stated is not None else paid)
     fields["schedule_total"] = paid
     sane = abs(paid - fields["total"]) <= 1.0 and (fields.get("finance_charge", 0.0) <= fields["total"])
-    fields["confidence"] = 0.95 if sane and "loan_id" in fields else 0.8 if sane else 0.5
+    # With no stated total to check the schedule against, a lost entry would pass unseen: never the top confidence.
+    fields["confidence"] = 0.95 if sane and "loan_id" in fields and stated is not None else 0.8 if sane else 0.5
     return fields
 
 

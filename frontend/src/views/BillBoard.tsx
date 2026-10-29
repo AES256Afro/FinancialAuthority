@@ -1,6 +1,6 @@
 // Bill board: every bill period is a card that moves right as it is paid. A card that stops moving is the problem.
-import { amountClass, money, parseIso, shortDate } from "../format";
-import type { Event, PaymentRow } from "../types";
+import { amountClass, money, shortDate } from "../format";
+import type { Event } from "../types";
 import type { ViewProps } from "./index";
 import { PlanCaveats, SafeExplain, noPayday } from "../components/SafeExplain";
 import { SeverityTag, StatusPill } from "../components/Status";
@@ -65,17 +65,15 @@ function Column({ title, total, bg, children, empty }: { title: string; total: n
 }
 
 export function BillBoard({ snapshot }: ViewProps) {
-  const today = parseIso(snapshot.as_of);
-  const soon = new Date(today);
-  soon.setDate(today.getDate() + 7);
   const w = snapshot.windows[0];
-  const upcoming: Event[] = [...snapshot.due_before_payday.items, ...(w?.bills.items ?? [])];
-  const due7 = upcoming.filter((e) => parseIso(e.date) <= soon);
-  const later = upcoming.filter((e) => parseIso(e.date) > soon);
-  const nextWindow = w?.set_aside.items ?? [];
-  const paid = snapshot.payments.paid.slice(-10).reverse();
-  const problems: PaymentRow[] = [...snapshot.payments.past_due, ...snapshot.payments.late];
+  // The columns are the engine's (snapshot.board): the same rows its totals add up, so a bill late before payday
+  // sits in one column, not two.
   const board = snapshot.board;
+  const due7 = board.due_7.items;
+  const later = board.later.items;
+  const nextWindow = w?.set_aside.items ?? [];
+  const paid = board.paid.items;
+  const problems = board.problems.items;
   const fundingOf = (e: Event): Funding => (e.funded === false ? "not_yet" : "funded");
   const short = snapshot.safe_to_spend.amount < 0;
   // With no paycheck on file the window is a frame two weeks out, not a paycheck: the columns say so.

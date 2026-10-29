@@ -195,9 +195,9 @@ function OrderColumn({ way, kind, scale, cheapest }: { way: PayoffWay; kind: "av
           <div key={d.source} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, flexWrap: "wrap" }}>
               <strong style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={d.name}>{d.name}</strong>
-              <span className="num" style={{ color: "var(--ink-2)" }}>{d.paid_on ? `paid off ${monthYear(d.paid_on)}` : "not paid off within 50 years"} · {money(d.interest)} interest</span>
+              <span className="num" style={{ color: "var(--ink-2)" }}>{d.paid_on ? `paid off ${monthYear(d.paid_on)} · ${money(d.interest ?? 0)} interest` : "not paid off within 50 years: the balance grows"}</span>
             </div>
-            <div role="img" aria-label={`${d.name}: ${d.paid_on ? `paid off ${monthYear(d.paid_on)}` : "not paid off within 50 years"}, ${money(d.interest)} in interest`} style={{ position: "relative", height: 12, background: "var(--surface-2)", borderRadius: 4, overflow: "hidden" }}>
+            <div role="img" aria-label={`${d.name}: ${d.paid_on ? `paid off ${monthYear(d.paid_on)}, ${money(d.interest ?? 0)} in interest` : "not paid off within 50 years, the balance grows"}`} style={{ position: "relative", height: 12, background: "var(--surface-2)", borderRadius: 4, overflow: "hidden" }}>
               <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: d.paid_on ? `${scale.share(d.paid_on) * 100}%` : "100%", background: d.paid_on ? "var(--debt)" : NOT_GONE, borderRadius: 4 }} />
               {scale.ticks.map((t) => <div key={t.year} style={{ position: "absolute", left: `${t.at * 100}%`, top: 0, bottom: 0, width: 1, background: "var(--surface)" }} />)}
             </div>
@@ -208,7 +208,11 @@ function OrderColumn({ way, kind, scale, cheapest }: { way: PayoffWay; kind: "av
       <div style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 13 }}>
         <div className="num" style={{ fontSize: 17, fontWeight: 800 }}>{way.debt_free ? `Debt-free ${monthYear(way.debt_free)}` : "Not debt-free within 50 years"}</div>
         {way.months !== null && <div className="num" style={{ color: "var(--ink-2)" }}>in {way.months} {way.months === 1 ? "month" : "months"}</div>}
-        <div className="num">Interest along the way: <strong>{money(way.interest)}</strong></div>
+        {way.interest !== null ? (
+          <div className="num">Interest along the way: <strong>{money(way.interest)}</strong></div>
+        ) : (
+          <div>The minimum does not cover the interest, so the balance grows; there is no interest figure to show.</div>
+        )}
         {way.interest_saved !== null && way.interest_saved !== undefined ? (
           <div className="num" style={{ color: "var(--ink-2)" }}>{money(way.interest_saved)} less interest than paying only the minimums</div>
         ) : (
@@ -222,10 +226,10 @@ function OrderColumn({ way, kind, scale, cheapest }: { way: PayoffWay; kind: "av
 // The interest each way on one scale: only the minimums, then the two orders with the extra.
 function InterestBars({ p }: { p: PayoffOut }) {
   const rows = [
-    { label: "Only the minimums", value: p.minimums_only.interest },
-    { label: WAY_WORD.avalanche.title, value: p.avalanche.interest },
-    { label: WAY_WORD.snowball.title, value: p.snowball.interest },
-  ];
+    { label: "Only the minimums", value: p.minimums_only.interest ?? 0 },
+    { label: WAY_WORD.avalanche.title, value: p.avalanche.interest ?? 0 },
+    { label: WAY_WORD.snowball.title, value: p.snowball.interest ?? 0 },
+  ]; // a way that never finishes has no interest figure and draws as nothing
   const scale = Math.max(1, ...rows.map((r) => r.value));
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, maxWidth: 560 }}>
@@ -556,7 +560,7 @@ function Payoff({ changed }: { changed: number }) {
               {same && <div style={{ fontSize: 13 }}>Both orders cost the same interest here.</div>}
               <InterestBars p={p} />
               <div className="num" style={{ fontSize: 13, color: "var(--ink-2)" }}>
-                Paying only the minimums: {p.minimums_only.debt_free ? `debt-free ${monthYear(p.minimums_only.debt_free)}${p.minimums_only.months !== null ? `, in ${p.minimums_only.months} months` : ""}` : "not debt-free within 50 years"}, with {money(p.minimums_only.interest)} in interest.
+                Paying only the minimums: {p.minimums_only.debt_free ? `debt-free ${monthYear(p.minimums_only.debt_free)}${p.minimums_only.months !== null ? `, in ${p.minimums_only.months} months` : ""}, with ${money(p.minimums_only.interest ?? 0)} in interest.` : "not debt-free within 50 years; the minimum does not cover the interest, so the balance grows."}
               </div>
               {assumed.length > 0 && (
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 6, fontSize: 12, color: "var(--ink-2)", background: "var(--surface-2)", borderRadius: 10, padding: "8px 10px" }}>

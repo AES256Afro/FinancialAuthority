@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { useApi } from "./api";
+import { onSignedOut, useApi } from "./api";
 import { loadAppearance } from "./appearance";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Shell } from "./components/Shell";
@@ -9,6 +9,7 @@ import { Home } from "./pages/Home";
 import { SignIn } from "./pages/SignIn";
 import { Today } from "./pages/Today";
 import { localToday } from "./format";
+import { clearDeviceState } from "./session";
 import type { Snapshot } from "./types";
 import { roleOf, type MePerson } from "./types-people";
 
@@ -94,6 +95,16 @@ export default function App() {
     const timer = window.setInterval(check, 60_000);
     return () => window.clearInterval(timer);
   }, [asOf, reloadPlan]);
+
+  // No session (signed out elsewhere, or expired on a shared computer): what this browser kept about the person goes
+  // before the sign-in page shows, so the next person to sign in here does not inherit it.
+  const signedOut = Boolean(me.error && me.error.status === 401);
+  useEffect(() => {
+    if (signedOut) clearDeviceState();
+  }, [signedOut]);
+  // A 401 from any screen mid-session: ask who is signed in again, which shows the sign-in page.
+  const askMe = me.reload;
+  useEffect(() => onSignedOut(askMe), [askMe]);
 
   if (joining) return <Suspense fallback={<Loading text="Opening…" />}><Join /></Suspense>;
   if (me.loading) return <Loading text="Opening…" />;

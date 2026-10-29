@@ -56,6 +56,16 @@ def _end_due(home: Home) -> date | None:
     return home.ends_on - timedelta(days=1) if home.ends_on else None
 
 
+def _first_due(home: Home) -> date | None:
+    """The first regular payment: the home's due day on or after the day it is first due (as entered, else the
+    move-in), which is the first date its rent bill comes due. Moving in on the 17th with rent due on the 1st, it
+    is the 1st of the next month, not the 17th."""
+    from .projection import next_due
+
+    start = home.first_due or home.starts_on
+    return next_due(max(1, min(31, home.due_day or 1)), start) if start else None
+
+
 def _today(today: date | None) -> date:
     """The owner's day (the routes pass theirs), never the server's: a bill added on a US evening is today's."""
     if today is not None:
@@ -331,6 +341,15 @@ def _charge_out(c: HomeCharge) -> dict[str, Any]:
             "starts_on": c.starts_on.isoformat() if c.starts_on else None, "ends_on": c.ends_on.isoformat() if c.ends_on else None, "note": c.note, "known": c.amount is not None, "bill_id": c.bill_id}
 
 
+def _comes_back(c: HomeCost) -> float:
+    """What a cost gives back: its refundable parts when it is itemised (the page draws it that way), else the whole
+    cost when it is marked refundable; never both, which would count a deposit twice."""
+    parts = json.loads(c.parts or "[]")
+    if parts:
+        return sum(float(p.get("amount") or 0) for p in parts if p.get("refundable"))
+    return float(c.amount or 0.0) if c.refundable else 0.0
+
+
 def _cost_out(c: HomeCost) -> dict[str, Any]:
     return {"id": c.id, "name": c.name, "amount": c.amount, "due_on": c.due_on.isoformat() if c.due_on else None, "refundable": c.refundable, "parts": json.loads(c.parts or "[]"),
             "paid": c.paid, "known": c.amount is not None, "note": c.note, "bill_id": c.bill_id, "counted": bool(c.bill_id) and c.amount is not None and not c.paid}
@@ -360,10 +379,11 @@ def home_out(session: Session, home: Home, today: date) -> dict[str, Any]:
     state = "upcoming" if home.starts_on and home.starts_on > today else "ended" if home.ends_on and home.ends_on <= today else "current"
     missing = [c.name for c in charges if c.amount is None] + [_what(u) for u in utilities if u.amount is None and u.billed in ("direct", "submetered") and not u.moves_with_you]
     costs_known = [c for c in costs if c.amount is not None and not c.paid]
+    first_due = _first_due(home)
     return {
         "id": home.id, "name": home.name, "kind": home.kind, "payee": home.payee, "state": state,
         "starts_on": home.starts_on.isoformat() if home.starts_on else None, "ends_on": home.ends_on.isoformat() if home.ends_on else None,
-        "first_due": (home.first_due or home.starts_on).isoformat() if (home.first_due or home.starts_on) else None, "next_due": next_due,
+        "first_due": first_due.isoformat() if first_due else None, "next_due": next_due,
         "first_due_entered": home.first_due.isoformat() if home.first_due else None,  # as typed: None when the first payment is the move-in day
         "lease_ends_on": home.lease_ends_on.isoformat() if home.lease_ends_on else None, "lease_word": lease_word(home, today),
         "notice_given_on": home.notice_given_on.isoformat() if home.notice_given_on else None,
@@ -376,7 +396,7 @@ def home_out(session: Session, home: Home, today: date) -> dict[str, Any]:
         "costs_paid_before": _money(sum(c.amount for c in costs if c.paid and c.amount)),
         "costs_undated": [c.name for c in costs_known if c.due_on is None],
         "costs_counted": _money(sum(c.amount for c in costs_known if c.due_on is not None)),
-        "refundable_in_costs": _money(sum(c.amount for c in costs_known if c.refundable) + sum(float(p.get("amount") or 0) for c in costs_known for p in json.loads(c.parts or "[]") if p.get("refundable"))),
+        "refundable_in_costs": _money(sum(_comes_back(c) for c in costs_known)),
         "utilities": [utility_out(u) for u in utilities],
         "documents": [{"id": d.id, "title": d.title, "kind": d.kind, "pages": d.pages, "uploaded_at": d.uploaded_at.isoformat()} for d in docs],
         "bill_id": home.bill_id, "source": f"home:{home.id}",

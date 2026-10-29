@@ -22,7 +22,7 @@ from typing import Any
 
 from sqlmodel import Session, select
 
-from ..models import Account, Advance, Bill, Debt, ExtractedFact, Home, InstallmentPlan, MessageRef, Payment, Transaction
+from ..models import Account, Advance, Bill, Debt, ExtractedFact, Home, InstallmentPlan, MessageRef, Payment, RecurringSeries, Transaction, TransactionPair
 
 GROUP_WORDS = {
     "bill_due": "Bills from your mail", "past_due": "Past-due notices", "paystub": "Paystubs", "statement": "Statements", "installment": "Pay-later plans",
@@ -261,6 +261,16 @@ def payment_candidates(session: Session, payment: Payment, bill: Bill, limit: in
     return [{"id": t.id, "date": t.date.isoformat(), "merchant": t.merchant, "amount": t.amount, "account": a.name, "source": f"transaction:{t.id}"} for _, _, t, a in found[:limit]]
 
 
+PAST_DUE_DAYS = 90  # a period with no payment seen waits on the page this long; older ones are the credit record's
+
+
+def past_due_waiting(session: Session, today: date) -> list[Payment]:
+    """The past-due periods the page asks about, oldest first. The snapshot's badge counts this same list, so the
+    badge and the page's own count agree (the payments register shows a shorter span)."""
+    bills = set(session.exec(select(Bill.id).where(Bill.active == True)).all())  # noqa: E712
+    return [p for p in session.exec(select(Payment).where(Payment.status == "past_due", Payment.due_date >= today - timedelta(days=PAST_DUE_DAYS)).order_by(Payment.due_date)).all() if p.bill_id in bills]
+
+
 def triage(session: Session, today: date) -> dict[str, Any]:
     from ..api.mail import list_facts_rows
 
@@ -282,19 +292,21 @@ def triage(session: Session, today: date) -> dict[str, Any]:
 
     bills = {b.id: b for b in session.exec(select(Bill).where(Bill.active == True)).all()}  # noqa: E712
     past = []
-    for p in session.exec(select(Payment).where(Payment.status == "past_due", Payment.due_date >= today - timedelta(days=90)).order_by(Payment.due_date)).all():
-        b = bills.get(p.bill_id)
-        if b is None:
-            continue
+    for p in past_due_waiting(session, today):
+        b = bills[p.bill_id]
         past.append({"payment_id": p.id, "bill_id": b.id, "name": b.name, "amount": p.amount, "due_date": p.due_date.isoformat(), "days_late": (today - p.due_date).days,
                      "autopay": b.autopay, "candidates": payment_candidates(session, p, b), "source": f"payment:{p.id}"})
     read = sum(g["count"] for g in out_groups)
-    total = read + len(past)
-    parts = ([f"{read} from your mail and documents"] if read else []) + ([f"{len(past)} bill{'s' if len(past) != 1 else ''} with no payment seen"] if past else [])
+    # The page also lists the recurring charges to name and the pairs to settle: the count says so, as the badge does.
+    series = len(session.exec(select(RecurringSeries.id).where(RecurringSeries.confirmed == False, RecurringSeries.active == True)).all())  # noqa: E712
+    pairs = len(session.exec(select(TransactionPair.id).where(TransactionPair.status == "pending")).all())
+    total = read + len(past) + series + pairs
+    parts = (([f"{read} from your mail and documents"] if read else []) + ([f"{len(past)} bill{'s' if len(past) != 1 else ''} with no payment seen"] if past else [])
+             + ([f"{series} recurring charge{'s' if series != 1 else ''} to name"] if series else []) + ([f"{pairs} pair{'s' if pairs != 1 else ''} of rows to settle"] if pairs else []))
     return {
-        "as_of": today.isoformat(), "groups": out_groups, "past_due": past, "total": total,
+        "as_of": today.isoformat(), "groups": out_groups, "past_due": past, "total": total, "series": series, "pairs": pairs,
         "word": ("Nothing from your mail, documents or bills waits." if total == 0 else
-                 f"{total} {'thing waits' if total == 1 else 'things wait'} here: {' and '.join(parts)}."),
+                 f"{total} {'thing waits' if total == 1 else 'things wait'} here: {', '.join(parts[:-1]) + ' and ' + parts[-1] if len(parts) > 1 else parts[0]}."),
     }
 
 

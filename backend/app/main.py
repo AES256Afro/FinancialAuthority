@@ -47,6 +47,10 @@ FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings.ensure_dirs()
+    problem = auth.open_install_problem()
+    if problem:
+        log.error(problem)
+        raise RuntimeError(problem)  # an installed copy never runs open; the log says what to set
     init_db()
     if settings.demo:
         with session_scope() as session:
@@ -72,10 +76,22 @@ async def lifespan(app: FastAPI):
     jobs.stop()
 
 
+def cors_origins(raw: list[str]) -> list[str]:
+    """The other origins allowed to call the API with the owner's cookie: named ones only. A wildcard is dropped,
+    because with credentials Starlette answers it with whatever origin asked, which is every site on the web
+    reading the API as the owner."""
+    named = [o.strip() for o in raw if o.strip()]
+    kept = [o for o in named if o != "*"]
+    if len(kept) != len(named):
+        log.warning("FA_CORS_ORIGINS holds a wildcard; it is ignored, since the API answers with the owner's cookie. Name each origin instead.")
+    return kept
+
+
 _docs = {} if not auth.auth_enabled() else {"docs_url": None, "redoc_url": None, "openapi_url": None}
 app = FastAPI(title="FinancialAuthority", version=__version__, lifespan=lifespan, **_docs)
-if settings.cors_origins:
-    app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+_cors = cors_origins(settings.cors_origins)
+if _cors:
+    app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 from starlette.middleware.gzip import GZipMiddleware  # noqa: E402
 
 app.add_middleware(GZipMiddleware, minimum_size=1024)

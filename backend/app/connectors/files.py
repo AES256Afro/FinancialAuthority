@@ -96,10 +96,20 @@ def parse_date(value: str | None) -> date | None:
         return None
 
 
+def _table(text: str) -> tuple[list[str], list[dict]]:
+    """A CSV's column names and rows. A field past the reader's limit (128 KB, far beyond any bank's) is refused
+    with ValueError rather than left to crash the caller."""
+    try:
+        reader = csv.DictReader(io.StringIO(text))
+        columns = [c for c in (reader.fieldnames or []) if c is not None]
+        return columns, list(reader)
+    except csv.Error as error:
+        raise ValueError("A field in the file is longer than any bank's export carries; check that it is a CSV") from error
+
+
 def sniff_csv(text: str) -> dict[str, Any]:
     """Which column is which, and the first rows as they would land."""
-    reader = csv.DictReader(io.StringIO(text))
-    columns = [c for c in (reader.fieldnames or []) if c is not None]
+    columns, rows = _table(text)
     mapping = {
         "date": _pick(columns, DATE_KEYS), "amount": _pick(columns, AMOUNT_KEYS), "debit": _pick(columns, DEBIT_KEYS), "credit": _pick(columns, CREDIT_KEYS),
         "description": _pick(columns, DESC_KEYS), "category": _pick(columns, CATEGORY_KEYS), "account": _pick(columns, ACCOUNT_KEYS),
@@ -108,7 +118,6 @@ def sniff_csv(text: str) -> dict[str, Any]:
         mapping["debit"] = mapping["credit"] = None
     posted = _pick(columns, POSTED_KEYS)
     mapping["posted"] = posted if posted and posted != mapping["date"] else None
-    rows = list(reader)
     sign = "bank"
     if mapping["amount"] and not (mapping["debit"] and mapping["credit"]):
         inflows = [parse_amount(r.get(mapping["amount"])) for r in rows if INFLOW_WORDS.search(str(r.get(mapping["description"] or "", "")))]
@@ -144,9 +153,8 @@ def parse_csv_rows(text: str, mapping: dict | None = None, sign: str | None = No
     sniffed = sniff_csv(text)
     mapping = {**sniffed["mapping"], **{k: v for k, v in (mapping or {}).items() if v}}
     sign = sign or sniffed["sign"]
-    reader = csv.DictReader(io.StringIO(text))
     out = []
-    for raw in reader:
+    for raw in _table(text)[1]:
         row = to_row(raw, mapping, sign)
         if row:
             out.append(row)
@@ -354,11 +362,10 @@ def _import_rows(session: Session, rows: list[dict], *, source_file: str, accoun
 
 
 def sniff_holdings_csv(text: str) -> dict[str, Any]:
-    reader = csv.DictReader(io.StringIO(text))
-    columns = [c for c in (reader.fieldnames or []) if c is not None]
+    columns, raw_rows = _table(text)
     mapping = {"symbol": _pick(columns, HOLDING_SYMBOL), "name": _pick(columns, HOLDING_NAME), "quantity": _pick(columns, HOLDING_QTY), "price": _pick(columns, HOLDING_PRICE), "value": _pick(columns, HOLDING_VALUE), "kind": _pick(columns, ("asset class", "type", "security type", "kind"))}
     rows = []
-    for raw in reader:
+    for raw in raw_rows:
         value = parse_amount(raw.get(mapping["value"] or "", ""))
         name = str(raw.get(mapping["name"] or "", "") or "").strip()
         symbol = str(raw.get(mapping["symbol"] or "", "") or "").strip().upper()
@@ -399,8 +406,7 @@ def _cadence_word(value: str) -> str:
 def sniff_bills_csv(text: str) -> dict[str, Any]:
     """A list of bills rather than of transactions: a name and an amount, plus how often or when. The tell is a
     frequency or due-day column, or a next-due column with no plain date column, which no bank export has."""
-    reader = csv.DictReader(io.StringIO(text))
-    columns = [c for c in (reader.fieldnames or []) if c is not None]
+    columns = _table(text)[0]
     mapping = {
         "name": _pick(columns, BILL_NAME_KEYS), "amount": _pick(columns, BILL_AMOUNT_KEYS), "due_day": _pick(columns, BILL_DUE_DAY_KEYS),
         "next_date": _pick(columns, BILL_NEXT_KEYS), "cadence": _pick(columns, BILL_CADENCE_KEYS), "autopay": _pick(columns, BILL_AUTOPAY_KEYS), "category": _pick(columns, BILL_CATEGORY_KEYS),
@@ -416,7 +422,7 @@ def sniff_bills_csv(text: str) -> dict[str, Any]:
 def parse_bills_rows(text: str, mapping: dict | None = None) -> list[dict]:
     m = mapping or sniff_bills_csv(text)["mapping"]
     rows: list[dict] = []
-    for raw in csv.DictReader(io.StringIO(text)):
+    for raw in _table(text)[1]:
         name = str(raw.get(m.get("name") or "", "") or "").strip()
         amount = parse_amount(raw.get(m.get("amount") or "", "")) if m.get("amount") else None
         if not name or amount is None:

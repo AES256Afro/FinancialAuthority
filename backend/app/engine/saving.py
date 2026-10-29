@@ -71,7 +71,9 @@ def saving_plan(session: Session, today: date, *, snap: dict | None = None) -> d
     if snap is None:
         snap = finance_snapshot(session, today)
     cfg = settings_of(session)
-    accounts = session.exec(select(Account).where(Account.active == True)).all()  # noqa: E712
+    from .projection import household_accounts
+
+    accounts = household_accounts(session)  # the owner's and the shared savings; a second person's own is theirs
     saves = [a for a in accounts if a.kind in CASH_KINDS and not is_spendable(a)]
     balance = sum(float(a.balance or 0.0) for a in saves)
     windows = snap["windows"]

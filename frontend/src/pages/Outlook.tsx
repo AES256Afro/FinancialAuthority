@@ -1,11 +1,11 @@
 // Outlook: savings and investments carried forward from today's balances and the contributions on record,
 // at rates you set as assumptions. Three scenarios, nominal and in today's dollars, a retirement line when
 // you name the year. The engine computed every number; a rate is a guess, and the page says so.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { TriangleAlert } from "lucide-react";
 import { api, useApi } from "../api";
-import { Failed, Loading, Said } from "../components/State";
+import { Failed, Loading, Said, useWidth } from "../components/State";
 import { amountClass, money, parseMoney } from "../format";
 
 interface YearRow {
@@ -39,17 +39,21 @@ const TONE: Record<Scenario["id"], string> = { low: "var(--debt)", mid: "var(--p
 const pct = (r: number) => `${(r * 100).toFixed(r * 100 % 1 === 0 ? 0 : 1)}%`;
 
 function Chart({ scenarios, retireIn, real, now }: { scenarios: Scenario[]; retireIn: number | null; real: boolean; now: number }) {
-  const w = 680;
-  const h = 260;
-  const pad = { l: 56, r: 70, t: 14, b: 28 };
+  // Drawn one unit per pixel of the box it sits in, so the labels stay readable on a phone.
+  const box = useRef<HTMLDivElement>(null);
+  const w = Math.max(300, Math.min(760, useWidth(box, 680)));
+  const narrow = w < 460;
+  const h = narrow ? 220 : 260;
+  const pad = { l: narrow ? 44 : 56, r: narrow ? 62 : 70, t: 14, b: 28 };
   const horizon = scenarios[0]?.years.length ?? 1;
   const max = Math.max(1, ...scenarios.flatMap((s) => s.years.map((y) => (real ? y.real : y.balance))));
   const x = (year: number) => pad.l + ((w - pad.l - pad.r) * year) / horizon;
   const y = (v: number) => pad.t + (h - pad.t - pad.b) * (1 - v / max);
   const ticks = [0.25, 0.5, 0.75, 1].map((f) => f * max);
-  const yearTicks = [0, ...[5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60].filter((t) => t <= horizon)];
+  const yearTicks = [0, ...[5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60].filter((t) => t <= horizon && (!narrow || t % 10 === 0))];
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} width="100%" role="img" aria-label="Investment balance by year, three scenarios" style={{ display: "block", maxWidth: 760 }}>
+    <div ref={box} style={{ width: "100%", maxWidth: 760 }}>
+    <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h} role="img" aria-label="Investment balance by year, three scenarios" style={{ display: "block", maxWidth: "100%" }}>
       {ticks.map((t) => (
         <g key={t}>
           <line x1={pad.l} x2={w - pad.r} y1={y(t)} y2={y(t)} stroke="var(--hairline)" />
@@ -78,20 +82,23 @@ function Chart({ scenarios, retireIn, real, now }: { scenarios: Scenario[]; reti
       })}
       <line x1={pad.l} x2={w - pad.r} y1={y(0)} y2={y(0)} stroke="var(--ink-2)" />
     </svg>
+    </div>
   );
 }
 
 function SavingsLine({ months }: { months: { month: string; balance: number }[] }) {
-  const w = 680;
+  const box = useRef<HTMLDivElement>(null);
+  const w = Math.max(300, Math.min(760, useWidth(box, 680)));
   const h = 120;
-  const pad = { l: 56, r: 70, t: 10, b: 22 };
+  const pad = { l: w < 460 ? 44 : 56, r: w < 460 ? 62 : 70, t: 10, b: 22 };
   const max = Math.max(1, ...months.map((m) => m.balance));
   const x = (i: number) => pad.l + ((w - pad.l - pad.r) * i) / (months.length - 1);
   const y = (v: number) => pad.t + (h - pad.t - pad.b) * (1 - v / max);
   const d = months.map((m, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(m.balance).toFixed(1)}`).join(" ");
   const last = months[months.length - 1];
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} width="100%" role="img" aria-label="Savings balance by month" style={{ display: "block", maxWidth: 760 }}>
+    <div ref={box} style={{ width: "100%", maxWidth: 760 }}>
+    <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h} role="img" aria-label="Savings balance by month" style={{ display: "block", maxWidth: "100%" }}>
       <title>{`${money(months[0].balance)} now to ${money(last.balance)} in ${months.length - 1} months`}</title>
       <path d={`${d} L${x(months.length - 1).toFixed(1)},${y(0)} L${pad.l},${y(0)} Z`} fill="var(--safe-soft)" />
       <path d={d} fill="none" stroke="var(--safe)" strokeWidth={2} />
@@ -100,6 +107,7 @@ function SavingsLine({ months }: { months: { month: string; balance: number }[] 
       <text x={x(months.length - 1) + 8} y={y(last.balance) + 4} fontSize={11} fontWeight={700} fill="var(--ink-2)" className="num">{money(last.balance)}</text>
       <line x1={pad.l} x2={w - pad.r} y1={y(0)} y2={y(0)} stroke="var(--ink-2)" />
     </svg>
+    </div>
   );
 }
 
@@ -150,7 +158,7 @@ function WhereToPut({ retireIn }: { retireIn: number | null }) {
   const [typo, setTypo] = useState<string | null>(null);
   const query = asked.mode === "percent" ? `percent=${encodeURIComponent(asked.percent || "0")}&basis=${asked.basis}` : `amount=${encodeURIComponent(asked.amount || "0")}`;
   const { data, error, reload } = useApi<Where>(`/api/v1/projections/where?${query}&years=${asked.years}&scenario=${asked.scenario}`);
-  const best = data?.options[0]?.after_tax ?? 1;
+  const best = data?.options[0]?.after_tax || 1; // an amount of 0 keeps a best of 0: a bar of 0 / 0 would be NaN wide
   return (
     <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
       <h2 className="sr-only">Where a paycheck amount does the most</h2>

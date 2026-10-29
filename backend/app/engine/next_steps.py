@@ -8,6 +8,7 @@ from datetime import date
 
 from sqlmodel import Session, select
 
+from ..clock import local_date
 from ..config import settings
 from ..models import Account, Approval, BankLink, ExtractedFact, Income, MailAccount, Paystub, RecurringSeries
 from ..store import get_setting
@@ -71,9 +72,9 @@ def next_steps(session: Session, today: date) -> dict:
 
     investments = session.exec(select(Account).where(Account.active == True, Account.kind == "investment")).all()  # noqa: E712
     if not investments:
-        steps.append(_step("invest-add", "info", "Add your 401(k), IRA or brokerage account: sign in at the vendor, or enter the balance from the last statement.", "Investing", "/investments", "investments"))
+        steps.append(_step("invest-add", "info", "Add your 401(k), IRA or brokerage account: sign in at the vendor, or enter the balance from the last statement.", "Investing", "/investments#add", "investments"))
     for a in investments:
-        age = (today - a.balance_at.date()).days if a.balance_at else None
+        age = (today - local_date(a.balance_at)).days if a.balance_at else None  # the owner's day, not UTC's
         if age is None or age > STALE_DAYS:
             what = f"{a.name} at {a.institution}" if a.institution else a.name
             if a.connector == "manual":
@@ -87,7 +88,7 @@ def next_steps(session: Session, today: date) -> dict:
 
     borrowing = borrowing_summary(session, today)
     if borrowing["fees_90d"] > 0 or borrowing["outstanding"]:
-        steps.append(_step("borrowing", "warning", f"Borrowing cost ${borrowing['fees_90d']:,.0f} in fees in the last 90 days" + (f"; {borrowing['outstanding']} advance{'s' if borrowing['outstanding'] != 1 else ''} still out" if borrowing["outstanding"] else "") + ". The cycle, its cost and the way out are laid out.", "Borrowing", "/borrowing", "borrowing"))
+        steps.append(_step("borrowing", "warning", f"Borrowing cost ${borrowing['fees_90d']:,.0f} in fees in the last 90 days" + (f"; {borrowing['outstanding']} advance{'s' if borrowing['outstanding'] != 1 else ''} still out" if borrowing["outstanding"] else "") + ". The cycle, its cost and the way out are laid out.", "Borrowing", "/borrowing#cycle", "borrowing"))
     for a in session.exec(select(Account).where(Account.active == True, Account.connector == "manual", Account.kind == "card")).all():  # noqa: E712
         steps.append(_step(f"link-card-{a.id}", "warning", f"{a.name} is on file by hand, with {'no balance' if a.balance is None else 'a typed balance'}: link it through Plaid and its balance, its payments and the Affirm charges on it count by themselves.", "Connect", "/settings/connectors?connect=plaid", f"account:{a.id}"))
     from ..models import AccountMove
@@ -142,27 +143,27 @@ def next_steps(session: Session, today: date) -> dict:
     # A rent bill not tied to a home: with no home yet, make it one; beside a home, it may be the same rent twice.
     for b in housing["rent_bills_to_adopt"][:1]:
         if not housing["homes"]:
-            steps.append(_step(f"home-adopt-{b['id']}", "info", f"Make {b['name']} your home on Housing: its fees, due day, lease end and notice then count too.", "Housing", "/housing", f"bill:{b['id']}"))
+            steps.append(_step(f"home-adopt-{b['id']}", "info", f"Make {b['name']} your home on Housing: its fees, due day, lease end and notice then count too.", "Housing", "/housing#homes", f"bill:{b['id']}"))
         else:
             said = next((w for w in housing.get("warnings", []) if w.startswith(b["name"])), None)
-            steps.append(_step(f"home-adopt-{b['id']}", "warning", said or f"{b['name']} is on your bills list as rent and is not tied to a home on Housing. If it is a home's rent, make it that home's.", "Housing", "/housing", f"bill:{b['id']}"))
+            steps.append(_step(f"home-adopt-{b['id']}", "warning", said or f"{b['name']} is on your bills list as rent and is not tied to a home on Housing. If it is a home's rent, make it that home's.", "Housing", "/housing#homes", f"bill:{b['id']}"))
 
     pending_approvals = len(session.exec(select(Approval.id).where(Approval.status == "pending", Approval.for_person_id == None)).all())  # noqa: E711
     if pending_approvals:
-        steps.append(_step("approvals", "warning", f"{pending_approvals} send{'s' if pending_approvals != 1 else ''} wait{'s' if pending_approvals == 1 else ''} for your approval; nothing goes out until you tap.", "Approve or deny", "/confirm", "approvals"))
+        steps.append(_step("approvals", "warning", f"{pending_approvals} send{'s' if pending_approvals != 1 else ''} wait{'s' if pending_approvals == 1 else ''} for your approval; nothing goes out until you tap.", "Approve or deny", "/confirm#approvals", "approvals"))
     pending_facts = len(session.exec(select(ExtractedFact.id).where(ExtractedFact.status == "pending")).all())
     if pending_facts:
-        steps.append(_step("facts", "warning", f"{pending_facts} thing{'s' if pending_facts != 1 else ''} from the mail and your documents need{'s' if pending_facts == 1 else ''} a look.", "Needs you", "/confirm", "facts"))
+        steps.append(_step("facts", "warning", f"{pending_facts} thing{'s' if pending_facts != 1 else ''} from the mail and your documents need{'s' if pending_facts == 1 else ''} a look.", "Needs you", "/confirm#facts", "facts"))
     unnamed = len(session.exec(select(RecurringSeries.id).where(RecurringSeries.active == True, RecurringSeries.confirmed == False)).all())  # noqa: E712
     if unnamed:
-        steps.append(_step("series", "warning", f"{unnamed} recurring charge{'s' if unnamed != 1 else ''} need{'s' if unnamed == 1 else ''} a name.", "Name them", "/confirm", "series"))
+        steps.append(_step("series", "warning", f"{unnamed} recurring charge{'s' if unnamed != 1 else ''} need{'s' if unnamed == 1 else ''} a name.", "Name them", "/confirm#series", "series"))
 
     models = get_setting(session, "models", {}) or {}
     if (models.get("reviewer") or {}).get("provider", "none") == "none":
-        steps.append(_step("reviewer", "info", "Choose a reviewer model for a second opinion on each paycheck.", "Models", "/settings/models", "models"))
+        steps.append(_step("reviewer", "info", "Choose a reviewer model for a second opinion on each paycheck.", "Models", "/settings/models#reviewer", "models"))
     push = get_setting(session, "push", {}) or {}
     if push.get("kind", "off") == "off":
-        steps.append(_step("push", "info", "Get the morning brief on your phone through ntfy or Gotify.", "Notifications", "/settings/notifications", "push"))
+        steps.append(_step("push", "info", "Get the morning brief on your phone through ntfy or Gotify.", "Notifications", "/settings/notifications#push", "push"))
     if not settings.public_url:
         steps.append(_step("publish", "info", "Publish the app to reach it, and let Claude reach it, from anywhere.", "How", "/settings/setup#publish", "public_url"))
     if get_setting(session, "review.pending", None) and (models.get("reviewer") or {}).get("provider", "none") != "none":

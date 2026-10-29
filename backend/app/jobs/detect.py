@@ -35,6 +35,21 @@ def _one_per_key(session: Session) -> dict[tuple, RecurringSeries]:
     return out
 
 
+def _drifted(existing: dict[tuple, RecurringSeries], key: tuple, found: dict, taken: set[int]) -> RecurringSeries | None:
+    """The series this is when its price moved over a whole dollar (15.49 to 15.99 rounds to 16, not 15): the same
+    merchant on the same cadence, within the detector's own 15% drift, not already matched this run; the confirmed
+    one first, else the oldest. Without it a price rise adds an unconfirmed twin beside the series the owner named."""
+    tolerance = max(1.0, 0.15 * float(found["typical_amount"]))
+    near = [(k, s) for k, s in existing.items() if k[0] == key[0] and k[1] == key[1] and s.id not in taken and abs(float(s.typical_amount) - float(found["typical_amount"])) <= tolerance]
+    if not near:
+        return None
+    k, series = min(near, key=lambda ks: (not ks[1].confirmed, ks[1].id or 0))
+    existing.pop(k)
+    series.typical_amount = round(float(found["typical_amount"]), 2)
+    existing[key] = series
+    return series
+
+
 def run_detection(session: Session, today: date, lookback_days: int = 400) -> dict:
     """Detection under the write lock (jobs/writing.py): a second run waits for the first and reads what it added,
     so the same series is never added twice. What the caller wrote is committed first, as the run commits anyway."""
@@ -70,6 +85,8 @@ def _run_detection(session: Session, today: date, lookback_days: int) -> dict:
     for f in found:
         key = _series_key(f)
         series = existing.get(key)
+        if series is None:
+            series = _drifted(existing, key, f, seen_ids)  # a price change, not a new series
         if series is None and f["cadence"] in ("biweekly", "semimonthly"):
             # A run first called biweekly that the day pattern now shows as semi-monthly (or the reverse) is the
             # same series: its cadence moves, and so does the paycheck that hangs off it.

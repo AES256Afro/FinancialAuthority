@@ -50,7 +50,9 @@ def send_letter(body: LetterIn, session: Session = Depends(get_session), princip
     subject = f"Notice to vacate, {plan['move']['from']}"
     try:
         row = approvals.create(session, to=body.to, subject=subject, body=body.body, reason=f"Written notice to move out, due {plan['steps'][0]['date'] if plan['steps'] else ''}",
-                               source="move:notice", created_by=principal.name, created_kind=principal.kind, for_person_id=principal.person_id if principal.kind == "person" else None)
+                               # Whose send it is: the owner's (None) or a second person's own. A key a second person made carries that
+                               # person, so the letter waits for them, exactly as a draft queued on Needs you does.
+                               source="move:notice", created_by=principal.name, created_kind=principal.kind, for_person_id=principal.person_id)
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
     services.audit(session, client=principal.name, client_kind=principal.kind, tool="move_notice_queued", rows=1)

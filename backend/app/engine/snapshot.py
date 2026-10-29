@@ -50,7 +50,7 @@ def usual_pace(session: Session, today: date, bill_names: set[str]) -> dict:
 
 
 def _money(v: float) -> float:
-    return round(float(v), 2)
+    return round(float(v), 2) + 0.0  # + 0.0 turns a negated zero (a buffer of 0 taken off) into plain 0.0, so no "-0.00" reaches a screen
 
 
 def _mail_facts(session: Session, today: date) -> dict:
@@ -101,7 +101,9 @@ def finance_snapshot(session: Session, today: date) -> dict:
 
 
 def _finance_snapshot(session: Session, today: date) -> dict:
-    accounts = session.exec(select(Account).where(Account.active == True)).all()  # noqa: E712
+    from .projection import household_accounts
+
+    accounts = household_accounts(session)  # the owner's and the shared accounts; a second person's own is theirs, not the plan's
     cash, cash_all = cash_of(accounts)  # the plan spends checking and cash; savings is kept and shown apart
     buffer = float(get_setting(session, "buffer", 200.0))
 
@@ -141,6 +143,9 @@ def _finance_snapshot(session: Session, today: date) -> dict:
     from ..models import TransactionPair
 
     pairs_waiting = len(session.exec(select(TransactionPair.id).where(TransactionPair.status == "pending")).all())
+    from .needsyou import past_due_waiting as _past_due_waiting
+
+    past_due_waiting = len(_past_due_waiting(session, today))  # the page's own list (90 days), not the register's shorter span, so badge and page agree
 
     from .planned import open_planned, planned_events, planned_out, planned_to_cards
 
@@ -323,7 +328,9 @@ def _finance_snapshot(session: Session, today: date) -> dict:
         "debts_total": everything_owed["total"],
         "debts_words": everything_owed["words"],
         "debts_cards_loans_total": _money(sum((d.balance or 0.0) for d in debts)),
-        "pending": {"total": unconfirmed + facts["pending_count"] + pairs_waiting + approvals_waiting, "confirmations": unconfirmed + facts["pending_count"] + pairs_waiting, "series": unconfirmed, "facts": facts["pending_count"], "pairs": pairs_waiting, "approvals": approvals_waiting, "past_due": len(payments["past_due"])},
+        # "confirmations" is what the Needs you page lists (the series to name, the facts, the pairs, the bills with no
+        # payment seen), so its badge and the page's own count agree.
+        "pending": {"total": unconfirmed + facts["pending_count"] + pairs_waiting + past_due_waiting + approvals_waiting, "confirmations": unconfirmed + facts["pending_count"] + pairs_waiting + past_due_waiting, "series": unconfirmed, "facts": facts["pending_count"], "pairs": pairs_waiting, "approvals": approvals_waiting, "past_due": past_due_waiting},
         "mail": facts,
         "projection": projection,
         "projection_words": PATH_WORDS,
@@ -372,12 +379,12 @@ def _explain_safe(session: Session, accounts: list, before: list[dict], advances
     steps: list[dict] = [{"label": f"In {r['name']}", "amount": r["balance"], "note": "as you read it off your bank" if r.get("told") else "as your bank reported it" if r["from_bank"] else "as entered", "as_of": r["as_of"]} for r in by_account]
     due_items = sorted((i for r in by_account for i in r["items"]), key=lambda i: i["date"])
     if due_items:
-        steps.append({"label": f"Comes out before payday ({next_payday:%b} {next_payday.day})", "amount": -_money(sum(i["amount"] for i in due_items)), "items": due_items})
+        steps.append({"label": f"Comes out before payday ({next_payday:%b} {next_payday.day})", "amount": _money(-sum(i["amount"] for i in due_items)), "items": due_items})
     if advances_before:
-        steps.append({"label": "Advances taken back before payday", "amount": -_money(advances_before)})
-    steps.append({"label": "Your buffer, kept in case", "amount": -_money(buffer), "note": "change it on Settings › Models › Your rules and goals"})
+        steps.append({"label": "Advances taken back before payday", "amount": _money(-advances_before)})
+    steps.append({"label": "Your buffer, kept in case", "amount": _money(-buffer), "note": "change it on Settings › Models › Your rules and goals"})  # a buffer of 0 is 0.0, not -0.0
     if shortfall:
-        steps.append({"label": "What the next paycheck cannot cover of its own bills", "amount": -_money(shortfall), "note": "kept now, so that check is not short"})
+        steps.append({"label": "What the next paycheck cannot cover of its own bills", "amount": _money(-shortfall), "note": "kept now, so that check is not short"})
     left_out: list[dict] = []
     savings = [a for a in accounts if a.kind == "savings" and (a.balance or 0)]
     for a in savings:
@@ -481,7 +488,7 @@ def _in_flight(session: Session, today: date) -> dict:
 
     pending = session.exec(select(Transaction).where(Transaction.pending == True, Transaction.date >= today - timedelta(days=14)).order_by(Transaction.date.desc())).all()  # noqa: E712
     names = {a.id: a.name for a in session.exec(select(Account)).all()}
-    since = datetime.now(timezone.utc) - timedelta(days=7)
+    since = datetime.combine(today - timedelta(days=7), datetime.min.time(), tzinfo=timezone.utc)  # the injected day, never the wall clock
     alerts = session.exec(select(ExtractedFact).where(ExtractedFact.kind == "bank_alert", ExtractedFact.created_at >= since)).all()
     seen = []
     for f in alerts:

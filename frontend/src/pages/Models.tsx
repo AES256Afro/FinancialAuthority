@@ -6,7 +6,7 @@ import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { money } from "../format";
 import { ConfirmButton } from "../components/ConfirmButton";
-import { Failed, Loading, Said } from "../components/State";
+import { Failed, Loading, Said, useJumpToHash } from "../components/State";
 import { Where } from "../components/Where";
 
 interface RoleConf {
@@ -111,7 +111,7 @@ function RoleCard({ role, conf, providers, defaults, onSaved }: { role: string; 
   }
 
   return (
-    <section className="card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+    <section id={role} className="card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
       <div>
         <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>{ROLE_TEXT[role].title}</h2>
         <div style={{ fontSize: 13, color: "var(--ink-2)", marginTop: 2 }}>{ROLE_TEXT[role].text}</div>
@@ -317,6 +317,7 @@ function Rules() {
 export function Models() {
   const state = useApi<ModelsOut>("/api/v1/models");
   const { data, reload, error } = state;
+  useJumpToHash(data);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 900 }}>
       <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Models</h1>

@@ -49,25 +49,53 @@ def _match_for(bill: Bill, bill_key: list[str], series_key: str | None, due: dat
     return None
 
 
+def _match_in_month(bill: Bill, bill_key: list[str], series_key: str | None, due: date, transactions: list[Transaction], used: set, today: date) -> Transaction | None:
+    """The row that paid a monthly bill's month when none sits near the due day: under the bill's own names (never
+    by amount alone), in the same calendar month, not used by another period. A bill whose due day the owner moved
+    was paid on its old day in the months before the move; a payment later in the month is still that month's."""
+    tolerance = max(2.0, bill.amount * (0.4 if bill.amount_mode == "estimate" else 0.15))
+    for t in transactions:
+        if t.id in used or t.date > today or (t.date.year, t.date.month) != (due.year, due.month):
+            continue
+        if abs(t.amount - bill.amount) <= tolerance and _looks_like(bill_key, series_key, merchant_key(t.merchant)):
+            return t
+    return None
+
+
 def match_payments(session: Session, today: date) -> dict:
     start = today - timedelta(days=LOOKBACK_DAYS)
     end = today + timedelta(days=AHEAD_DAYS)
     bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
     series_keys = {s.id: s.merchant_key for s in session.exec(select(RecurringSeries)).all()}
     transactions = session.exec(select(Transaction).where(Transaction.date >= start - timedelta(days=BEFORE_DAYS), Transaction.date <= today, Transaction.amount > 0, Transaction.pending == False)).all()  # noqa: E712
+    by_id = {t.id: t for t in transactions}
     existing = {(p.bill_id, p.due_date): p for p in session.exec(select(Payment).where(Payment.due_date >= start)).all()}
-    used = {p.transaction_id for p in existing.values() if p.transaction_id}
+    # Every transaction a period already holds, however old that period: one that paid a period now past the lookback
+    # (a long grace) must not pay the next period too once the first has left the window.
+    used = {t for t in session.exec(select(Payment.transaction_id).where(Payment.transaction_id != None)).all()}  # noqa: E711
     counts = {"paid": 0, "late": 0, "past_due": 0, "scheduled": 0}
     for bill in bills:
         bill_key = bill_keys(bill)
         series_key = series_keys.get(bill.series_id) if bill.series_id else None
+        monthly = (bill.cadence or "monthly") == "monthly"
+        paid_months = {p.due_date.strftime("%Y-%m") for (b, _), p in existing.items() if b == bill.id and p.status == "paid"}
         # A bill is looked for from the day it was added, never in the months before it existed.
         for due in _due_dates(bill, max(start, bill.created_on or start), end):
             payment = existing.get((bill.id, due))
             if payment is not None and payment.status == "paid":
+                t = by_id.get(payment.transaction_id) if payment.transaction_id else None
+                if t is not None and (payment.amount, payment.paid_date) != (t.amount, t.date):
+                    payment.amount, payment.paid_date = t.amount, t.date  # the bank changed the row after it was matched
+                    session.add(payment)
                 counts["paid"] += 1
                 continue
+            # A monthly bill is paid once a month: a period on a new due day is not owed again in a month whose period
+            # on the old day is already paid (the owner moved the day; the months before the move were paid as they were).
+            if monthly and payment is None and due.strftime("%Y-%m") in paid_months:
+                continue
             match = _match_for(bill, bill_key, series_key, due, transactions, used)
+            if match is None and monthly and due < today:
+                match = _match_in_month(bill, bill_key, series_key, due, transactions, used, today)
             if match is not None:
                 status, paid_date, tx_id, amount, evidence = "paid", match.date, match.id, match.amount, f"transaction:{match.id}"
                 used.add(match.id)

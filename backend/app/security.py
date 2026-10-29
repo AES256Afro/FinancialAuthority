@@ -16,8 +16,9 @@ MAX_JSON = 1024 * 1024  # every other body: a form or a JSON object is never nea
 UPLOAD_PREFIXES = ("/api/v1/imports", "/api/v1/borrowing/statement", "/api/v1/imports/rocketmoney", "/api/v1/documents")  # multipart files only; JSON keeps MAX_JSON
 
 APP_CSP = (
-    "default-src 'self'; script-src 'self' https://cdn.plaid.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; "
-    "connect-src 'self' https://*.plaid.com; frame-src 'self' https://cdn.plaid.com https://*.plaid.com; worker-src 'self'; manifest-src 'self'; "
+    # Scripts: the app's own, Plaid Link and Teller Connect (the two bank sign-in widgets); nothing else.
+    "default-src 'self'; script-src 'self' https://cdn.plaid.com https://cdn.teller.io; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; "
+    "connect-src 'self' https://*.plaid.com https://*.teller.io; frame-src 'self' https://cdn.plaid.com https://*.plaid.com https://teller.io https://*.teller.io; worker-src 'self'; manifest-src 'self'; "
     "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 )
 OAUTH_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; form-action 'self' https: http://localhost:* http://127.0.0.1:* financialauthority:; frame-ancestors 'none'; base-uri 'none'"
@@ -77,11 +78,16 @@ class SecurityMiddleware:
                 return
             if message["type"] == "http.response.start":
                 state["started"] = True
+                # A route that sets its own policy (the printable invoice: no script at all) keeps it; the page policy
+                # is added only where no route spoke.
+                own_csp = [(k, v) for k, v in message.get("headers", []) if k.lower() == b"content-security-policy"][:1]
                 headers = [(k, v) for k, v in message.get("headers", []) if k.lower() not in {h for h, _ in COMMON} and k.lower() != b"content-security-policy"]
                 headers += COMMON
                 if https:
                     headers.append((b"strict-transport-security", b"max-age=15552000; includeSubDomains"))
-                if path.startswith("/oauth/"):
+                if own_csp:
+                    headers += own_csp
+                elif path.startswith("/oauth/"):
                     headers.append((b"content-security-policy", OAUTH_CSP.encode()))
                 elif not path.startswith(("/api/", "/mcp", "/.well-known/")):
                     headers.append((b"content-security-policy", APP_CSP.encode()))

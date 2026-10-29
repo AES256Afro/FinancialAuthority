@@ -182,6 +182,10 @@ class ImapClient:
 
     def select_readonly(self, folder: str) -> tuple[int, int]:
         assert self.conn
+        # imaplib joins its arguments into one line with no check, so a folder name holding a line break, a quote or a
+        # backslash could end the EXAMINE command and start another (STORE, EXPUNGE): such a name never reaches the wire.
+        if not folder or any(ord(c) < 32 or c == "\x7f" or c in '"\\' for c in folder):
+            raise ValueError("a folder name cannot hold a control character, a quote or a backslash")
         status, data = self.conn.select(f'"{folder}"', readonly=True)
         if status != "OK":
             raise RuntimeError(f"cannot open {folder}")

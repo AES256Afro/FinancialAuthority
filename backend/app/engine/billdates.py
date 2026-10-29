@@ -42,15 +42,17 @@ def bill_dates(bill, start: date, end: date, *, due_day: int | None = None) -> l
 def _bill_dates(bill, start: date, end: date, *, due_day: int | None = None) -> list[date]:  # noqa: ANN001 - a Bill
     cadence = (getattr(bill, "cadence", "") or "monthly").lower()
     day = due_day if due_day is not None else getattr(bill, "due_day", 1)
+    day = max(1, min(31, int(day or 1)))  # an import may carry 0 or 32; a day outside the month is never a date
     anchor = getattr(bill, "anchor_date", None)
     out: list[date] = []
+    # The anchor is the bill's next due date as it was last known, and nothing moves it on once it has passed: it is
+    # never later than the true next date, so no date is invented before it (a quarterly bill just paid, entered
+    # with its next date three months out, is not due again today).
     if cadence in DAY_STEPS:
         step = timedelta(days=DAY_STEPS[cadence])
         d = anchor or _next_on_day(day, start)
         while d < start:
             d += step
-        while d - step >= start:
-            d -= step
         while d <= end:
             out.append(d)
             d += step
@@ -66,11 +68,6 @@ def _bill_dates(bill, start: date, end: date, *, due_day: int | None = None) -> 
             if d >= start:
                 break
             d = _add_months(d, months, day)
-        for _ in range(400):
-            back = _add_months(d, -months, day)
-            if back < start:
-                break
-            d = back
     for _ in range(400):
         if d > end:
             break

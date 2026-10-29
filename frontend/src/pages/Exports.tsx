@@ -72,15 +72,22 @@ export function Exports() {
   const key = useMemo(() => JSON.stringify(t), [t]);
   useEffect(() => {
     if (!cat.data || !t.sections.length) return;
+    // A slow answer to an older template must not land over the newer one: once the template changes again, the
+    // answer on its way is dropped.
+    let on = true;
     const timer = window.setTimeout(() => {
       api<{ html: string; css_refused: boolean }>("/api/v1/exports/preview", { method: "POST", body: JSON.stringify(t) })
         .then((r) => {
+          if (!on) return;
           setPreview(r.html);
           if (r.css_refused) say("preview", "That CSS reaches outside the page (an import, a url or a script), so it is left out.", "error");
         })
-        .catch((e) => say("preview", (e as Error).message, "error"));
+        .catch((e) => on && say("preview", (e as Error).message, "error"));
     }, 350);
-    return () => window.clearTimeout(timer);
+    return () => {
+      on = false;
+      window.clearTimeout(timer);
+    };
   }, [key, cat.data]); // eslint-disable-line react-hooks/exhaustive-deps
   if (cat.error && !cat.data) return <Failed error={cat.error} what="the export formats" onRetry={cat.reload} />;
   if (!cat.data) return <Loading what="the export formats" />;

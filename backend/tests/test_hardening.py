@@ -29,7 +29,8 @@ def test_every_surface_carries_its_headers(owner: TestClient, client: TestClient
     consent = TestClient(client.app).get("/oauth/consent?req=nope")
     csp = consent.headers.get("content-security-policy", "")
     assert "default-src 'none'" in csp and "frame-ancestors 'none'" in csp and "form-action 'self' https:" in csp
-    assert "script-src 'self' https://cdn.plaid.com" in APP_CSP and "'unsafe-eval'" not in APP_CSP and "object-src 'none'" in APP_CSP
+    assert "script-src 'self' https://cdn.plaid.com https://cdn.teller.io" in APP_CSP and "'unsafe-eval'" not in APP_CSP and "object-src 'none'" in APP_CSP
+    assert "https://*.teller.io" in APP_CSP.split("frame-src")[1].split(";")[0]  # Teller Connect opens in a frame
 
 
 def test_a_body_over_the_ceiling_is_refused_before_it_is_read(owner: TestClient):

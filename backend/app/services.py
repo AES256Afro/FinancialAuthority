@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 from datetime import date
 
@@ -91,6 +92,10 @@ def search_transactions(
 
 
 def audit(session: Session, *, client: str, client_kind: str, tool: str, args: dict | None = None, rows: int = 0, redaction: str = "full") -> None:
-    digest = hashlib.sha256(json.dumps(args or {}, sort_keys=True, default=str).encode()).hexdigest()[:16]
+    # Keyed with the session secret: an unkeyed hash of a low-entropy argument (an amount, a bill id) could be read
+    # back from the audit table by trying values; the log says which call, never what was asked.
+    from .config import settings
+
+    digest = hmac.new(settings.signing_secret().encode(), json.dumps(args or {}, sort_keys=True, default=str).encode(), hashlib.sha256).hexdigest()[:16]
     session.add(AuditEntry(client=client, client_kind=client_kind, tool=tool, args_hash=digest, rows=rows, redaction=redaction))
     session.commit()

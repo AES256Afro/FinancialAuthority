@@ -27,7 +27,9 @@ def _money(v: float) -> float:
 
 def load_inputs(session: Session, today: date, horizon_days: int = HORIZON) -> dict:
     """The snapshot's own inputs: accounts and cash, the paycheck and its paydays, the registers, the pace."""
-    accounts = session.exec(select(Account).where(Account.active == True)).all()  # noqa: E712
+    from .projection import household_accounts
+
+    accounts = household_accounts(session)  # as the snapshot takes them: a second person's own account is not the plan's
     cash, _all = cash_of(accounts)
     buffer = float(get_setting(session, "buffer", 200.0))
     incomes = session.exec(select(Income).where(Income.active == True)).all()  # noqa: E712

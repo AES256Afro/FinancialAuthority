@@ -3,10 +3,10 @@
 // it. Added by signing in at the vendor through Plaid, or by hand.
 import { Info, Minus, TrendingDown, TrendingUp } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { api, useApi } from "../api";
 import { ConfirmButton } from "../components/ConfirmButton";
-import { Failed, Loading, Said } from "../components/State";
+import { Failed, Loading, Said, useJumpToHash } from "../components/State";
 import { StatusPill } from "../components/Status";
 import { money, parseMoney, shortDate, when } from "../format";
 import { openPlaidLink } from "../plaid";
@@ -184,7 +184,10 @@ function Line({ points }: { points: { date: string; balance: number }[] }) {
 
 export function Investments() {
   const { data, reload, error } = useApi<Overview>("/api/v1/investments");
-  const [adding, setAdding] = useState(false);
+  const { hash } = useLocation();
+  // A next step links to /investments#add: the form is open on arrival, and the jump lands on its first box.
+  const [adding, setAdding] = useState(hash === "#add");
+  useJumpToHash(data);
   const [form, setForm] = useState({ name: "", institution: "", subtype: "401k", balance: "", as_of: "" });
   const [balances, setBalances] = useState<Record<number, string>>({});
   const [note, setNote] = useState<string | null>(null);
@@ -287,7 +290,7 @@ export function Investments() {
       {!d && !error && <Loading what="your investments" />}
       {note && <div className="card" role="status" style={{ padding: 10, fontSize: 13 }}>{note}</div>}
       {adding && (
-        <form onSubmit={add} className="card" style={{ padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end" }}>
+        <form id="add" onSubmit={add} className="card" style={{ padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end" }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "1 1 160px" }}><span className="lab">Name</span><input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Work 401(k)" required /></label>
           <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "1 1 160px" }}><span className="lab">Vendor</span><input className="input" list="vendors" value={form.institution} onChange={(e) => setForm({ ...form, institution: e.target.value })} placeholder="Fidelity" /><datalist id="vendors">{(d?.vendors ?? []).map((v) => <option key={v.name} value={v.name.split(" (")[0]} />)}</datalist></label>
           <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">What it is</span><select className="input" value={form.subtype} onChange={(e) => setForm({ ...form, subtype: e.target.value })}>{(d?.subtypes ?? Object.keys(SUBTYPE_WORD)).map((s) => <option key={s} value={s}>{SUBTYPE_WORD[s] ?? s}</option>)}</select></label>

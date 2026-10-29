@@ -2,6 +2,7 @@
 // The vendor's own page opens (its OAuth where it offers one); the app receives a read token and never a password.
 // An OAuth bank sends the browser back to the Connectors page; the flow resumes there with the same token.
 import { api } from "./api";
+import { PLAID_PENDING_KEY } from "./session";
 
 const scripts: Record<string, Promise<void>> = {};
 export function loadScript(src: string): Promise<void> {
@@ -48,7 +49,7 @@ interface Pending {
   linkId?: number;
 }
 
-const PENDING = "fa.plaid.pending";
+const PENDING = PLAID_PENDING_KEY;
 
 function remember(p: Pending) {
   try {

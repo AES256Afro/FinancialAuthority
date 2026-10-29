@@ -34,8 +34,9 @@ class DecideIn(BaseModel):
 
 
 def _mine(principal: auth.Principal) -> int | None:
-    """Whose sends this caller decides: the owner's (None) or a second person's own."""
-    return principal.person_id if principal.kind == "person" else None
+    """Whose sends this caller decides or queues: the owner's (None) or a second person's own. A key or a
+    connected app a second person made carries that person, so what it queues is theirs, never the owner's."""
+    return principal.person_id
 
 
 def _check_mine(row: Approval, principal: auth.Principal, *, deny: bool = False) -> None:
@@ -91,11 +92,10 @@ def edit(approval_id: int, body: EditIn, session: Session = Depends(get_session)
         approvals.check_draft(changed.get("to", row.to), changed.get("subject", row.subject), changed.get("body", row.body))
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
-    for field, value in changed.items():
-        setattr(row, field, value)
-    session.add(row)
-    session.commit()
-    session.refresh(row)
+    try:
+        row = approvals.edit_draft(session, row, changed)  # read again under the decision lock: one approved meanwhile is not rewritten
+    except ValueError as error:
+        raise HTTPException(409, str(error)) from error
     return approvals.out(row)
 
 

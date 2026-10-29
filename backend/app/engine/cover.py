@@ -51,21 +51,26 @@ def _payer_id(e: dict, accounts: dict, default_id: int | None) -> int | None:
     return default_id
 
 
-def _walk(start_balance: float, events: list[dict], pace: float, start: date, end: date, inflow: tuple[date, float] | None = None) -> tuple[float, date]:
-    """The lowest the balance goes between start and end (inclusive), and the day it gets there."""
+def _walk(start_balance: float, events: list[dict], pace: float, start: date, end: date, inflow: tuple[date, float] | None = None, pace_from_start: bool = False) -> tuple[float, date]:
+    """The lowest the balance goes between start and end (inclusive), and the day it gets there: the balance at the
+    close of each day, after that day's inflow, bills and pace. The pace is spent on every day after the start, and
+    on the start day too when `pace_from_start` (the window after payday spends on the payday itself, as its
+    `everyday` figure counts it)."""
     by_day: dict[date, float] = {}
     for e in events:
         by_day[e["date"]] = by_day.get(e["date"], 0.0) + e["amount"]
-    balance, low, low_day = start_balance, start_balance, start
+    balance = start_balance
+    low: float | None = None  # the balance before the start day's inflow is not a day in the window
+    low_day = start
     d = start
     while d <= end:
         if inflow and d == inflow[0]:
             balance += inflow[1]
-        balance -= by_day.get(d, 0.0) + (pace if d > start else 0.0)
-        if balance < low:
+        balance -= by_day.get(d, 0.0) + (pace if d > start or pace_from_start else 0.0)
+        if low is None or balance < low:
             low, low_day = balance, d
         d += timedelta(days=1)
-    return low, low_day
+    return (start_balance if low is None else low), low_day
 
 
 def account_cover(session: Session, today: date, *, saving: dict | None = None) -> dict:
@@ -110,7 +115,7 @@ def account_cover(session: Session, today: date, *, saving: dict | None = None) 
                 spend = pace * days
                 needs = sum(e["amount"] for e in items) + spend + keep
                 start_balance = running
-                low, low_day = _walk(start_balance - keep, items, pace, start, end, inflow)
+                low, low_day = _walk(start_balance - keep, items, pace, start, end, inflow, pace_from_start=k == 1)
                 left = start_balance + (inflow[1] if inflow else 0.0) - needs
                 out_w.append({
                     "start": start.isoformat(), "end": end.isoformat(), "has": _money(start_balance), "inflow": _money(inflow[1]) if inflow else 0.0, "has_total": _money(start_balance + (inflow[1] if inflow else 0.0)), "needs": _money(needs),

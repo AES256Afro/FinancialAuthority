@@ -21,6 +21,7 @@ import hmac
 import json
 import re
 import secrets
+import threading
 from datetime import timedelta
 
 from sqlmodel import Session, select
@@ -119,6 +120,26 @@ def by_invite(session: Session, token: str) -> Person | None:
     return person if expires > utcnow() else None
 
 
+# One change to a person's invitation at a time: redeeming it and replacing it (a new link, which also clears the
+# password and the passkeys) take this lock, so a join and a reset in the same instant land in one order or the
+# other, never half each. Re-entrant: the reset makes the new invitation while it holds it.
+_claim = threading.RLock()
+
+
+def claim_invite(session: Session, token: str, password_hash: str) -> Person | None:
+    """The invitation used up and the password set, in one write: the person it names, or None when it was already
+    used, expired or never existed. Two redemptions at once find it once; the second gets None."""
+    with _claim:
+        person = by_invite(session, token)
+        if person is None:
+            return None
+        person.password_hash, person.password_set_at = password_hash, utcnow()
+        person.invite_hash, person.invite_expires_at = "", None
+        session.add(person)
+        session.commit()
+        return person
+
+
 def by_username(session: Session, username: str) -> Person | None:
     person = session.exec(select(Person).where(Person.username == (username or "").strip().lower())).first()
     return person if person is not None and person.active and person.password_hash else None
@@ -152,23 +173,31 @@ def end_access(session: Session, person_id: int) -> dict:
     feed_ended = bool(feed.get("hash")) and feed.get("person_id") == person_id
     if feed_ended:
         set_setting(session, "calendar.feed", {})
+    from . import approvals as approvals_service
+
     cancelled = 0
     for row in session.exec(select(Approval).where(Approval.for_person_id == person_id, Approval.status == "pending")).all():
-        row.status, row.decided_by, row.decided_at = "denied", "access ended", utcnow()
-        session.add(row)
+        try:
+            approvals_service._claim(session, row, "denied", "access ended")  # under the decision lock: one the person approved in the same instant stays sent, never marked denied after
+        except ValueError:
+            continue
         cancelled += 1
     session.commit()
     return {"sessions": ended, "keys": keys, "devices": drop_person(session, person_id), "feed": feed_ended, "sends_cancelled": cancelled}
 
 
 def reset_sign_in(session: Session, person: Person) -> str:
-    """Everything the person signs in with is cleared, every session ended, and a new invitation made."""
-    person.password_hash, person.password_set_at = "", None
-    person.totp_enc, person.totp_pending_enc, person.totp_recovery, person.totp_last_step, person.totp_since = "", "", "[]", 0, ""
-    for key in session.exec(select(Passkey).where(Passkey.person_id == person.id)).all():
-        session.delete(key)
-    end_access(session, person.id)
-    return new_invite(session, person)
+    """Everything the person signs in with is cleared, every session ended, and a new invitation made. Under the
+    invitation lock: a join on the old link in the same instant either lands first and is undone here, or finds the
+    link gone; it can never set a password that outlives the reset."""
+    with _claim:
+        session.refresh(person)
+        person.password_hash, person.password_set_at = "", None
+        person.totp_enc, person.totp_pending_enc, person.totp_recovery, person.totp_last_step, person.totp_since = "", "", "[]", 0, ""
+        for key in session.exec(select(Passkey).where(Passkey.person_id == person.id)).all():
+            session.delete(key)
+        end_access(session, person.id)
+        return new_invite(session, person)
 
 
 def visible_account_ids(session: Session, person_id: int | None, role: str) -> set[int] | None:

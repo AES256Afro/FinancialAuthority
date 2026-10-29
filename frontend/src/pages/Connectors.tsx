@@ -1,7 +1,7 @@
 // Connectors: live banks through Plaid and Teller, the mailboxes, and the Rocket Money export in and out. All read-only.
 import { OctagonAlert } from "lucide-react";
-import { useEffect, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { useState } from "react";
+import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { when } from "../format";
 import type { MailAccountRow } from "../types";
@@ -9,7 +9,7 @@ import { Banks } from "./Banks";
 import { FileImport } from "../components/FileImport";
 import { BridgeGuide, type BridgeInfo } from "../components/BridgeGuide";
 import { ConfirmButton } from "../components/ConfirmButton";
-import { Failed, Loading, Said } from "../components/State";
+import { Failed, Loading, Said, useJumpToHash } from "../components/State";
 import { Where } from "../components/Where";
 
 interface ConnectorRow {
@@ -183,10 +183,7 @@ export function Connectors() {
   }
 
   const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ block: "start", behavior: "smooth" });
-  const { hash } = useLocation();
-  useEffect(() => {
-    if (hash) document.getElementById(hash.slice(1))?.scrollIntoView({ block: "start", behavior: "smooth" });
-  }, [hash, data]);
+  useJumpToHash(data);
   const rocket = data?.connectors.find((c) => c.id === "rocketmoney");
   const live = (accounts.data?.accounts ?? []).filter((a) => a.active);
   const sectionStyle = { padding: 16, display: "flex", flexDirection: "column", gap: 10, scrollMarginTop: 16 } as const;

@@ -10,6 +10,7 @@ from .. import auth
 from ..db import get_session
 from ..engine.rules import apply_to_ledger, create_rule, load_rules, rule_out
 from ..models import Rule
+from .routes import under_writer
 
 router = APIRouter(prefix="/api/v1/ledger/rules", tags=["ledger"])
 
@@ -27,6 +28,7 @@ def list_rules(session: Session = Depends(get_session), _: auth.Principal = Depe
 
 
 @router.post("")
+@under_writer
 def make_rule(body: RuleIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     try:
         rule, changed = create_rule(session, kind=body.kind, pattern=body.pattern, value=body.value, match_field=body.match_field)
@@ -36,11 +38,13 @@ def make_rule(body: RuleIn, session: Session = Depends(get_session), _: auth.Pri
 
 
 @router.post("/apply")
+@under_writer
 def reapply(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     return {"changed": apply_to_ledger(session)}
 
 
 @router.delete("/{rule_id}")
+@under_writer
 def remove_rule(rule_id: int, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     rule = session.get(Rule, rule_id)
     if rule is None:

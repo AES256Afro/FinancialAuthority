@@ -128,7 +128,7 @@ export function PlannedPayments({ onChanged }: { onChanged?: () => void }) {
         <button className="btn dark" type="submit" disabled={busy || !amount}>{busy ? "Counting…" : "Count it"}</button>
         {note && <Said text={note.text} tone={note.tone} />}
       </form>
-      {settled.length > 0 && <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Went through: {settled.map((p) => `${p.name} ${money(p.amount)} on ${shortDate(p.date)}`).join(" · ")}</div>}
+      {settled.length > 0 && <div className="num" style={{ fontSize: 12, color: "var(--ink-2)" }}>Went through: {settled.map((p) => `${p.name} ${money(p.amount)} on ${shortDate(p.date)}`).join(" · ")}</div>}
     </section>
   );
 }

@@ -54,7 +54,8 @@ def parse_upcoming_bills(text: str, ref: date) -> list[dict]:
             name = lines[i]
             due = _day(day.group(1), day.group(2), day.group(3), ref)
             value = float(amount.group(1).replace(",", ""))
-            if due is not None and 0 < value <= MAX_AMOUNT and 2 <= len(name) <= 80 and not DAY_LINE.match(name) and not AMOUNT_LINE.match(name):
+            # The heading is never a charge's name (a name line lost in the mail's text would hand it the heading).
+            if due is not None and 0 < value <= MAX_AMOUNT and 2 <= len(name) <= 80 and not DAY_LINE.match(name) and not AMOUNT_LINE.match(name) and not HEADER.search(name):
                 found.append({"name": name, "due_date": due, "amount": round(value, 2)})
             i += 3
             continue

@@ -11,7 +11,7 @@ import json
 import logging
 import re
 from collections.abc import Callable
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 import httpx
 from sqlmodel import Session, select
@@ -31,6 +31,23 @@ ClientFactory = Callable[..., ImapClient]
 Fetcher = Callable[[str], bytes]
 
 INFORMATIONAL = {"bank_alert", "payday", "payment_confirmation", "upcoming_bills"}  # kept as auto facts; no confirmation needed
+MAX_PDF_ATTACHMENTS = 5  # PDFs read from one message; a stub comes alone, and each read has a time budget of its own
+# A folder name goes into an IMAP command line as it is. Printable ASCII only, and never a quote, a backslash or a
+# control character: a name that could end the line and start a command of its own (STORE, EXPUNGE) is refused.
+FOLDER_NAME = re.compile(r"^[ !#-\[\]-~]{1,200}$")
+
+
+def safe_folder(name: str) -> bool:
+    return bool(FOLDER_NAME.fullmatch(name or ""))
+
+
+def folder_list(folders: str) -> list[str]:
+    """The folders a mailbox setting names, or ValueError when one could not be opened safely."""
+    names = [f.strip() for f in (folders or "").split(",") if f.strip()]
+    bad = [f for f in names if not safe_folder(f)]
+    if bad:
+        raise ValueError("A folder name is letters, digits, spaces and punctuation, up to 200 characters, without quotes or backslashes")
+    return names
 
 
 def default_fetch(url: str) -> bytes:
@@ -58,11 +75,57 @@ def explain_error(host: str, error: Exception) -> str:
             return "The Bridge is not answering. It may still be starting; if this stays, start it again on the server (the command is under Mailboxes on Connectors)."
     if host in ("127.0.0.1", "localhost", "::1") and isinstance(error, ConnectionRefusedError):
         return "Nothing answers at 127.0.0.1 from inside the app. For Proton, the host is bridge: the Bridge's own screen says 127.0.0.1 because it speaks from inside its container."
-    if isinstance(error, imaplib.IMAP4.error) and re.search(r"auth|login|credential|password|invalid", str(error), re.IGNORECASE):
+    if signin_refused(error):
+        if host == "bridge" and re.search(r"no such user", str(error), re.IGNORECASE):
+            return "The Bridge has no account signed in: it needs your one sign-in on the server (the two commands are under Mailboxes on Connectors), then Sync now."
         if host == "bridge":
             return "The Bridge refused the sign-in. Use the username and password the Bridge printed with info, not the Proton account password."
         return "The mail server refused the sign-in. Check the username and the app password."
     return f"{type(error).__name__}: {error}"[:300]
+
+
+SIGN_IN_WORDS = re.compile(r"auth|login|credential|password|invalid|no such user", re.IGNORECASE)
+# After a refused sign-in the scheduled read waits an hour, then four, then a day between tries: the server
+# answered, so trying every quarter hour only trips its own lockout ("too many login attempts") and fills the
+# Jobs page. Sync now from Connectors always tries, and a read that succeeds clears the wait.
+BACKOFF_HOURS = (1, 4, 24)
+
+
+def signin_refused(error: Exception) -> bool:
+    """True when the mailbox answered and said no to the sign-in (never a network error: those pass)."""
+    return not isinstance(error, OSError) and bool(SIGN_IN_WORDS.search(str(error)))
+
+
+def backoff_key(account_id: int) -> str:
+    return f"mail.{account_id}.backoff"
+
+
+def now_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def waiting_until(session: Session, account_id: int) -> datetime | None:
+    """When the next scheduled read of this mailbox may try again, or None when it may try now."""
+    state = get_setting(session, backoff_key(account_id)) or {}
+    try:
+        until = datetime.fromisoformat(state["until"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return until if until > now_utc() else None
+
+
+def note_refusal(session: Session, account_id: int) -> datetime:
+    """One more refused sign-in: the wait grows along BACKOFF_HOURS and the time it ends is returned."""
+    state = get_setting(session, backoff_key(account_id)) or {}
+    fails = int(state.get("fails", 0) or 0) + 1
+    until = now_utc() + timedelta(hours=BACKOFF_HOURS[min(fails, len(BACKOFF_HOURS)) - 1])
+    set_setting(session, backoff_key(account_id), {"fails": fails, "until": until.isoformat()})
+    return until
+
+
+def clear_refusals(session: Session, account_id: int) -> None:
+    if get_setting(session, backoff_key(account_id)):
+        set_setting(session, backoff_key(account_id), None)
 
 
 def uid_key(account_id: int, folder: str) -> str:
@@ -234,10 +297,8 @@ def paystub_from_attachments(session: Session, ref: MessageRef, parsed: Parsed, 
     from ..parsers.paystub import parse_paystub_text, pdf_text
 
     found = False
-    for attachment in parsed.attachments:
-        is_pdf = attachment.content_type == "application/pdf" or attachment.name.lower().endswith(".pdf")
-        if not is_pdf or not attachment.data:
-            continue
+    pdfs = [a for a in parsed.attachments if (a.content_type == "application/pdf" or a.name.lower().endswith(".pdf")) and a.data]
+    for attachment in pdfs[:MAX_PDF_ATTACHMENTS]:
         text = pdf_text(attachment.data)
         stub = parse_paystub_text(text, today)
         if not stub:
@@ -301,17 +362,26 @@ class MailConnector(Connector):
         total_new = 0
         ok = True
         for account in accounts:
+            if account_id is None and (until := waiting_until(session, account.id)) is not None:
+                # A scheduled run after a refused sign-in: nothing is tried until the wait ends, and nothing
+                # fails, since the mailbox's error is already on the row, the self-check and Needs you.
+                notes.append(f"{account.label}: the sign-in was refused; trying again at {until.astimezone().strftime('%H:%M')}")
+                continue
             try:
                 new, facts = self._sync_account(session, account, today)
                 total_new += new
                 account.last_error = ""
                 account.last_sync_at = utcnow()
                 account.messages_seen += new
+                clear_refusals(session, account.id)
                 notes.append(f"{account.label}: {new} new, {facts} facts")
             except Exception as error:  # noqa: BLE001
                 session.rollback()
                 ok = False
                 account.last_error = explain_error(account.host, error)[:300]
+                if signin_refused(error):
+                    until = note_refusal(session, account.id)
+                    account.last_error = f"{account.last_error} Trying again at {until.astimezone().strftime('%H:%M')}."[:300]
                 notes.append(f"{account.label}: {account.last_error}")
                 log.warning("mail sync failed for %s: %s", account.label, error)
             session.add(account)
@@ -320,10 +390,11 @@ class MailConnector(Connector):
 
     def _sync_account(self, session: Session, account: MailAccount, today: date) -> tuple[int, int]:
         client = self.client_factory(account.host, account.port, account.username, account_password(account), account.use_ssl, account.starttls)
+        folders = folder_list(account.folders)  # refused before anything is sent: a bad name is this mailbox's error
         client.connect()
         new = facts = 0
         try:
-            for folder in [f.strip() for f in account.folders.split(",") if f.strip()]:
+            for folder in folders:
                 client.select_readonly(folder)
                 last = int(get_setting(session, uid_key(account.id, folder), 0) or 0)
                 validity = getattr(client, "uidvalidity", lambda: 0)()
