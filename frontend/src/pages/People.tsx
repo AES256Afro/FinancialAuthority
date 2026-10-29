@@ -289,7 +289,7 @@ function PersonCard({ p, roles, invite, onChanged, onRemoved, onInvite, onHideIn
           {p.active
             ? <ConfirmButton label="Turn off" question={`Turn off ${p.display_name}? They are signed out now and cannot sign in until you turn them on again. Their password stays.`} yes="Yes, turn them off" no="Keep them on" onConfirm={turnOff} style={SMALL} />
             : <button type="button" className="btn" disabled={busy} onClick={turnOn} style={SMALL}>{busy ? "Turning on…" : "Turn on"}</button>}
-          <ConfirmButton label="Remove" question={`Remove ${p.display_name} for good? They are signed out, their passkeys are deleted, and accounts marked ${possessive(p.display_name)} become yours again.`} yes={`Yes, remove ${p.display_name}`} no="Keep them" onConfirm={remove} style={SMALL} />
+          <ConfirmButton label="Remove" name={`Remove ${p.display_name}`} question={`Remove ${p.display_name} for good? They are signed out, their passkeys are deleted, and accounts marked ${possessive(p.display_name)} become yours again.`} yes={`Yes, remove ${p.display_name}`} no="Keep them" onConfirm={remove} style={SMALL} />
         </div>
       )}
       {!p.active && <span style={{ fontSize: 12, color: "var(--ink-2)" }}>Turn them on to make a new link.</span>}

@@ -10,7 +10,7 @@ import { Approvals } from "../components/Approvals";
 import { ConfirmButton } from "../components/ConfirmButton";
 import { PurchaseChoices, dayWord } from "../components/Documents";
 import { PAST_DUE_WORDS, PaidQuestions, type PastDueRow } from "../components/PaidQuestions";
-import { Empty, Failed, Loading, Said, useJumpToHash } from "../components/State";
+import { Empty, Failed, Loading, Said, useFocusOnSaid, useJumpToHash } from "../components/State";
 import { SeverityTag } from "../components/Status";
 import { amountClass, money, ordinal, parseMoney, shortDate, when } from "../format";
 import type { DocumentTermsFields, FactRow, PairRow, PairSide, PairsOut, SeriesRow, Snapshot } from "../types";
@@ -27,9 +27,10 @@ interface Done {
 }
 
 function DoneLine({ done }: { done: Done | null }) {
+  const ref = useFocusOnSaid(done);
   if (!done) return null;
   return (
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
+    <div ref={ref} tabIndex={-1} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "baseline" }}>
       <Said text={done.text} tone={done.tone} />
       {done.to && done.link && <Link to={done.to} style={{ fontSize: 12, fontWeight: 700 }}>{done.link}</Link>}
     </div>
@@ -588,6 +589,7 @@ function PairCard({ p, onDone }: { p: PairRow; onDone: (text: string) => void })
 function Pairs({ state, onChanged }: { state: Loaded<PairsOut>; onChanged: () => void }) {
   const [said, setSaid] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const saidRef = useFocusOnSaid(said);
   if (state.error && !state.data) return <Failed error={state.error} what="money that moved between your accounts" onRetry={state.reload} />;
   if (!state.data) return <Loading what="money that moved between your accounts" />;
   const { waiting, matched, counts } = state.data;
@@ -601,7 +603,7 @@ function Pairs({ state, onChanged }: { state: Loaded<PairsOut>; onChanged: () =>
   return (
     <>
       <h2 className="lab" style={{ margin: "6px 0 0" }}>Money that moved between your accounts · {counts.waiting}</h2>
-      <Said text={said} />
+      <div ref={saidRef} tabIndex={-1}><Said text={said} /></div>
       {waiting.length === 0 && <div style={{ fontSize: 13, color: "var(--ink-2)" }}>Nothing to decide here.</div>}
       {waiting.map((p) => <PairCard key={p.id} p={p} onDone={done} />)}
       {recent.length > 0 && (

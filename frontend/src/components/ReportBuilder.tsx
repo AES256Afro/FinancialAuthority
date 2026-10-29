@@ -495,7 +495,7 @@ export function ReportBuilder() {
                     {r.name}
                     <span style={{ fontWeight: 400, fontSize: 11 }}> · {describe(r)}</span>
                   </button>
-                  <ConfirmButton label="Remove" question={`Remove the saved report "${r.name}"? Only the shortcut goes; your transactions stay.`} yes="Yes, remove it" no="Keep it" onConfirm={() => remove(r.name)} style={{ ...small, fontSize: 12 }} />
+                  <ConfirmButton label="Remove" name={`Remove the saved report ${r.name}`} question={`Remove the saved report "${r.name}"? Only the shortcut goes; your transactions stay.`} yes="Yes, remove it" no="Keep it" onConfirm={() => remove(r.name)} style={{ ...small, fontSize: 12 }} />
                 </span>
               );
             })}
@@ -649,7 +649,7 @@ function Groups({ saved, onSaved }: { saved: Loaded<SavedList>; onSaved: () => v
                 {groups[g].map((c) => <span key={c} style={{ fontSize: 12, padding: "2px 8px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--hairline)" }}>{c}</span>)}
               </span>
               <button type="button" className="btn" style={small} onClick={() => change(g)}>Change</button>
-              <ConfirmButton label="Remove" question={`Remove the group "${g}"? Its categories stay and show on their own again.`} yes="Yes, remove it" no="Keep it" onConfirm={() => remove(g)} style={small} />
+              <ConfirmButton label="Remove" name={`Remove the group ${g}`} question={`Remove the group "${g}"? Its categories stay and show on their own again.`} yes="Yes, remove it" no="Keep it" onConfirm={() => remove(g)} style={small} />
             </div>
           ))}
         </div>

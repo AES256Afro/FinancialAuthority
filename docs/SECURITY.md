@@ -188,3 +188,18 @@ Scripted Plaid, Teller, OpenAI-shaped, Anthropic-shaped, Ollama-shaped, ntfy and
 | The import folder followed symlinks, blocked for good on a FIFO, failed every run after one dangling entry, read files of any size whole, and rewrote its record per file | low to medium | symlinks and non-files skipped, over 50 MB refused unread, a cap per run, one record per run |
 
 Held: the token only ever in its header for every vendor; a provider reply holding a fake tool call, a tool-result block, a system-prompt line or a JSON "approve", "send", "confirm" or "fetch" is shown as text and acts on nothing; the reviewer's schema refuses extra keys and unknown kinds; the aggregates-level request body carries no account, bank, employer, bill, merchant, last-four, sender or subject; a push redirect to another host is not followed; the VAPID private key reaches no response; Home Assistant's aggregates answer is figures only; a 20,000 by 20,000 picture, a zip named as a PDF, a 10,000-page TIFF, a path with `..` and a file over the limit are refused or bounded, the reader runs with no shell under a resource limit and a timeout, its temp folder is gone even on a crash, and the stored blob and pages are sealed on disk.
+
+## The ninth sweep, the data at rest and the operator, 2026-10-29
+
+Every secret the app can hold was seeded into a household, then looked for in the database file, its journal, every file under the data folder, the restore points, the off-box copy, the twelve exports, the restore command's output, every page and error page, sixteen days of logs at DEBUG, and the data folder after "delete everything". Tests: `backend/tests/test_sweep13_security_rest.py`, `_operator.py`, `_logs.py`, `_keys.py`.
+
+| Found | Severity | Control now |
+|---|---|---|
+| After "delete everything" the database file still held every account name, merchant, subject, sender and amount: VACUUM under write-ahead logging rebuilds into the journal, which was never truncated, so a copy of the data folder taken afterwards (the nightly archive) carried the household | medium | secure delete on before the wipe, the journal truncated after the rebuild, and the test reads the file bytes |
+| A changed `FA_DATA_KEY` was silent: the app started and each feature failed on its own, and anything saved was sealed under the new key | low | a sealed canary is checked at startup; a key that does not open it stops the app with a sentence naming the variable |
+| Rotating `FA_SESSION_SECRET` silently killed the ten recovery codes, which were hashed with it | low | each code is its own salted scrypt hash; codes kept the old way still sign in |
+| The MCP transport and the SSE library logged each session id and each tool result verbatim at DEBUG | low | both loggers pinned above DEBUG |
+| A Shared person was told the whole household's transaction count | low | counts only the accounts they may see |
+| The database, its journal, the off-box copy, the restore points and the stored documents were world-readable on disk | low | 0600 for the database, the journal and the off-box copy; restore points and document blobs follow |
+
+Held: no seeded secret in the clear anywhere; password hashes are scrypt; invites, keys and tokens hashed; the TOTP secret sealed; the manual account keeps four digits; document pages sealed; the off-box copy sealed with no plaintext scratch left; exports carry no sealed blob; the restore command prints names, sizes and verdicts only; the health route says up and demo only; no environment value reaches a page; the audit rows hold who, which tool, how many rows and a keyed hash. There is still no job to rotate `FA_DATA_KEY` (M8.5): a rotation would re-seal every `*_enc` column, the sealed settings and every document blob.

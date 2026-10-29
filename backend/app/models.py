@@ -739,7 +739,7 @@ class MessageRef(SQLModel, table=True):
     account_id: int = Field(foreign_key="mail_accounts.id", index=True)
     folder: str
     uid: int
-    message_id: str = ""
+    message_id: str = Field(default="", index=True)  # the mail sync looks each new message up by it; unindexed, that scanned the whole mailbox per message
     sender: str = Field(default="", index=True)
     sender_name: str = ""
     subject: str = ""

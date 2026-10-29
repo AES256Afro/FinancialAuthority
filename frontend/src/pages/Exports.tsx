@@ -3,7 +3,7 @@
 // want, previewed live and kept by name; and a calendar feed your phone subscribes to. Every file is made from
 // the engine's results, carries its sources and the not-advice line, and never holds a secret.
 import { ArrowDown, ArrowUp, Download } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, useApi } from "../api";
 import { DEMO } from "../demo/shim";
 import { ConfirmButton } from "../components/ConfirmButton";
@@ -59,6 +59,19 @@ export function Exports() {
   const cat = useApi<Catalog>("/api/v1/exports");
   const [t, setT] = useState<Template>({ name: "My report", layout: "board", palette: "layout", mascot: null, sections: [], notes: "", css: "" });
   const [preview, setPreview] = useState<string>("");
+  // Keyboard reach: focus inside the sandboxed preview matches neither :focus-visible nor a focus event on the frame,
+  // so the ring is drawn by watching where the page's focus went whenever the window loses or regains it.
+  const frame = useRef<HTMLIFrameElement>(null);
+  const [previewFocused, setPreviewFocused] = useState(false);
+  useEffect(() => {
+    const check = () => setPreviewFocused(document.activeElement === frame.current);
+    window.addEventListener("blur", check);
+    window.addEventListener("focus", check);
+    return () => {
+      window.removeEventListener("blur", check);
+      window.removeEventListener("focus", check);
+    };
+  }, []);
   const [note, setNote] = useState<{ at: Area; text: string; tone: "info" | "error" } | null>(null);
   const [feedUrl, setFeedUrl] = useState<string | null>(null);
   // Null until the owner ticks or unticks it: the box starts from the feed's own setting.
@@ -247,7 +260,7 @@ export function Exports() {
           </div>
           <div style={{ minWidth: 0 }}>
             <div className="lab" style={{ marginBottom: 6 }}>Preview, the web page export</div>
-            <iframe title="Report preview" sandbox="" srcDoc={preview} style={{ width: "100%", height: 640, border: "1px solid var(--hairline)", borderRadius: 10, background: "#fff" }} />
+            <iframe ref={frame} title="Report preview" sandbox="" srcDoc={preview} style={{ width: "100%", height: 640, border: "1px solid var(--hairline)", borderRadius: 10, background: "#fff", outline: previewFocused ? "2px solid var(--paycheck)" : undefined, outlineOffset: 2 }} />
           </div>
         </div>
       </section>
@@ -262,7 +275,7 @@ export function Exports() {
               <div style={{ flexGrow: 1 }} />
               <button type="button" className="btn" onClick={() => setT(x)}>Edit</button>
               {reports.map((f) => <DownloadLink key={f.id} href={fileUrl(f.id, null, x.id)} label={`.${f.ext}`} />)}
-              <ConfirmButton label="Remove" question={`Remove the template ${x.name}?`} yes="Yes, remove it" no="Keep it" onConfirm={() => removeTemplate(x)} />
+              <ConfirmButton label="Remove" name={`Remove the template ${x.name}`} question={`Remove the template ${x.name}?`} yes="Yes, remove it" no="Keep it" onConfirm={() => removeTemplate(x)} />
             </div>
           ))}
         </section>

@@ -233,8 +233,8 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
                         : <span style={{ ...highlight(wanted.signin === String(l.id)), fontSize: 12, color: "var(--ink-2)", maxWidth: 260, textAlign: "left", alignSelf: "center" }}>To sign in again: Remove this link, then press Connect a bank through Teller below and sign in to {l.institution || "the bank"}.</span>)}
                       <button className="btn" type="button" disabled={syncing !== null} onClick={() => sync(l.id)}>{syncing === l.id ? "Reading…" : "Sync now"}</button>
                       {l.accounts.length > 0
-                        ? <button className="btn" type="button" aria-expanded={removing?.id === l.id} onClick={() => setRemoving(removing?.id === l.id ? null : { id: l.id, accounts: "keep" })}>Remove</button>
-                        : <ConfirmButton label="Remove" question={removeQuestion(l)} yes="Yes, remove it" no="Keep it" onConfirm={() => remove(l, "keep")} />}
+                        ? <button className="btn" type="button" aria-label={`Remove the link to ${l.institution || "the bank"}`} aria-expanded={removing?.id === l.id} onClick={() => setRemoving(removing?.id === l.id ? null : { id: l.id, accounts: "keep" })}>Remove</button>
+                        : <ConfirmButton label="Remove" name={`Remove the link to ${l.institution || "the bank"}`} question={removeQuestion(l)} yes="Yes, remove it" no="Keep it" onConfirm={() => remove(l, "keep")} />}
                     </span>
                     {note?.at === `link-${l.id}` && <div style={{ marginTop: 4, textAlign: "left" }}>{said(`link-${l.id}`)}</div>}
                   </td>

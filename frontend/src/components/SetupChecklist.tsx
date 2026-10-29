@@ -55,7 +55,7 @@ export function SetupChecklist() {
               <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 800, color }}><Icon size={15} aria-hidden />{word}</span>
               <h3 style={{ margin: 0, fontSize: 14, fontWeight: 800 }}>{c.title}</h3>
               <span style={{ fontSize: 13, color: "var(--ink-2)", overflowWrap: "anywhere" }}>{c.detail}</span>
-              {c.state !== "ok" && c.fix && <span style={{ fontSize: 13 }}>{c.fix} {c.link && <Link to={c.link}>Go there</Link>}</span>}
+              {c.state !== "ok" && c.fix && <span style={{ fontSize: 13 }}>{c.fix} {c.link && <Link to={c.link} aria-label={`Go there: ${c.title}`}>Go there</Link>}</span>}
             </li>
           );
         })}

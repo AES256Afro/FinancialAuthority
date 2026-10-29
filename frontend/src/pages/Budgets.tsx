@@ -252,6 +252,7 @@ export function Budgets() {
                             <button type="button" className="btn" style={SMALL_BTN} onClick={() => startEdit(b.category, b.per_paycheck, b.rollover)}>Change</button>
                             <ConfirmButton
                               label="Remove"
+                              name={`Remove the ${b.category} budget`}
                               style={SMALL_BTN}
                               question={`Remove the ${b.category} budget? Its spending stays in your transactions.`}
                               yes="Yes, remove it"

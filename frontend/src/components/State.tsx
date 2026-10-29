@@ -1,7 +1,7 @@
 // Loading, failed and empty: the same three states on every screen, each saying what happened and what to do.
 // A failure always has a Try again; an empty list always says how to fill it.
 import { Inbox, Loader, OctagonAlert } from "lucide-react";
-import { useEffect, useLayoutEffect, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Link, useLocation } from "react-router-dom";
 import type { ApiError, Loaded } from "../api";
 import { DEMO } from "../demo/shim";
@@ -84,8 +84,20 @@ export function useJumpToHash(ready: unknown = true): void {
 }
 
 /** A save's outcome, next to the button that caused it. */
+/** A write that takes its card off the page would drop keyboard focus to the body; this moves it to the line that
+ * says what happened (give that element the ref and tabIndex -1), so a keyboard or a screen reader carries on there. */
+export function useFocusOnSaid(said: unknown): RefObject<HTMLDivElement | null> {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (said) ref.current?.focus();
+  }, [said]);
+  return ref;
+}
+
+// The live region is on the page before it has anything to say (empty and out of the layout), so a screen reader
+// announces the sentence when it arrives; a region that appears with its text already in it is often not read.
 export function Said({ text, tone = "info" }: { text: string | null; tone?: "info" | "error" }) {
-  if (!text) return null;
+  if (!text) return <span role="status" aria-live="polite" className="sr-only" />;
   return (
     <span role={tone === "error" ? "alert" : "status"} aria-live="polite" style={{ fontSize: 12, fontWeight: 700, color: tone === "error" ? "var(--critical-ink)" : "var(--safe-ink)" }}>
       {tone === "error" ? <OctagonAlert size={13} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 4 }} /> : null}

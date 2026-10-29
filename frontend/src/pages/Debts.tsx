@@ -446,7 +446,7 @@ function People({ rows, onChanged }: { rows: PersonLoan[]; onChanged: () => void
                   <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", paddingLeft: 24 }}>
                     <button type="button" className="btn" style={SMALL_BTN} disabled={busy === `row-${i}`} onClick={() => settle(i, r)}>{r.settled ? "Mark as not settled" : "Mark as settled"}</button>
                     <button type="button" className="btn" style={SMALL_BTN} onClick={() => { setListSaid(null); setEditing(i); }}>Edit</button>
-                    <ConfirmButton label="Remove" style={SMALL_BTN} question={`Take ${r.direction === "lent" ? `the loan to ${r.person}` : `the loan from ${r.person}`} off the list?`} yes="Yes, remove it" no="Keep it" onConfirm={() => removeRow(i, r)} />
+                    <ConfirmButton label="Remove" name={`Remove the loan ${r.direction === "lent" ? "to" : "from"} ${r.person}`} style={SMALL_BTN} question={`Take ${r.direction === "lent" ? `the loan to ${r.person}` : `the loan from ${r.person}`} off the list?`} yes="Yes, remove it" no="Keep it" onConfirm={() => removeRow(i, r)} />
                     {said && <Said text={said.text} tone={said.tone} />}
                   </div>
                 )}

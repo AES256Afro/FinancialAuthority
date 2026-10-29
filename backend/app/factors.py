@@ -103,8 +103,30 @@ def _totp(secret: str):  # noqa: ANN202
     return pyotp.TOTP(secret)
 
 
+def _normal(code: str) -> str:
+    return code.strip().lower().replace(" ", "")
+
+
 def _hash_code(code: str) -> str:
-    return hashlib.sha256((settings.signing_secret() + "\x00" + code.strip().lower().replace(" ", "")).encode()).hexdigest()
+    """A recovery code as it is kept: its own salted scrypt hash (people.hash_password), so a stolen table is slow
+    to try against and nothing about it hangs on FA_SESSION_SECRET, which may be rotated at any time."""
+    from .people import hash_password
+
+    return hash_password(_normal(code))
+
+
+def _legacy_hash(code: str) -> str:
+    """How codes were kept before: a digest keyed with the session secret. Still accepted for codes made then,
+    while that secret is what it was; a rotated secret ends them, and the owner makes new ones from Settings."""
+    return hashlib.sha256((settings.signing_secret() + "\x00" + _normal(code)).encode()).hexdigest()
+
+
+def _matches(kept: str, code: str) -> bool:
+    from .people import check_password
+
+    if kept.startswith("scrypt$"):
+        return check_password(kept, _normal(code))
+    return hmac.compare_digest(kept, _legacy_hash(code))
 
 
 def check_code(session: Session, code: str, person_id: int | None = None) -> bool:
@@ -123,12 +145,12 @@ def check_code(session: Session, code: str, person_id: int | None = None) -> boo
                 _set_last_step(session, person_id, step)
                 return True
         return False
-    hashed = _hash_code(code)
     left = list(state.get("recovery", []))
-    if hashed in left:
-        left.remove(hashed)
-        _save_state(session, person_id, {**state, "recovery": left})
-        return True
+    for kept in left:
+        if _matches(kept, code):
+            left.remove(kept)
+            _save_state(session, person_id, {**state, "recovery": left})
+            return True
     return False
 
 

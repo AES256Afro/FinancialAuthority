@@ -6,7 +6,7 @@ import { api, useApi } from "../api";
 import { amountClass, money, parseMoney, shortDate } from "../format";
 import type { SinkingFund, SinkingOut } from "../types";
 import { ConfirmButton } from "./ConfirmButton";
-import { Failed, Loading, Said } from "./State";
+import { Failed, Loading, Said, useFocusOnSaid } from "./State";
 import { StatusPill } from "./Status";
 
 interface GoalItem {
@@ -127,6 +127,7 @@ export function Goals({ onChanged }: { onChanged?: () => void }) {
   const [kind, setKind] = useState<"save" | "paydown">("save");
   const [fund, setFund] = useState<Record<number, string>>({});
   const [addSaid, setAddSaid] = useState<{ text: string; tone: "info" | "error" } | null>(null);
+  const addSaidRef = useFocusOnSaid(addSaid);
   const [fundSaid, setFundSaid] = useState<Record<number, { text: string; tone: "info" | "error" }>>({});
 
   async function add(e: React.FormEvent) {
@@ -205,7 +206,7 @@ export function Goals({ onChanged }: { onChanged?: () => void }) {
           <button className="btn dark" type="submit" style={{ minHeight: 34, padding: "4px 12px" }}>Save the goal</button>
         </form>
       )}
-      {addSaid && <Said text={addSaid.text} tone={addSaid.tone} />}
+      {addSaid && <div ref={addSaidRef} tabIndex={-1}><Said text={addSaid.text} tone={addSaid.tone} /></div>}
       {data.items.length === 0 && !adding && <div style={{ fontSize: 13, color: "var(--muted)" }}>No goals yet. A goal takes its share from each paycheck before safe to spend is worked out, so the plan keeps it.</div>}
       {data.items.map((g) => {
         const pct = Math.min(100, (g.funded / Math.max(1, g.target)) * 100);
@@ -235,7 +236,7 @@ export function Goals({ onChanged }: { onChanged?: () => void }) {
               <button className="btn" type="button" style={{ minHeight: 32, padding: "2px 10px", fontSize: 12 }} onClick={() => put(g, fund[g.id] ?? "")}>Add</button>
               {said && <Said text={said.text} tone={said.tone} />}
               <div style={{ flexGrow: 1 }} />
-              <ConfirmButton label="Remove" question={`Remove the goal ${g.name}?`} yes="Yes, remove it" no="Keep it" onConfirm={() => remove(g.id)} style={{ minHeight: 32, padding: "2px 10px", fontSize: 12 }} />
+              <ConfirmButton label="Remove" name={`Remove the goal ${g.name}`} question={`Remove the goal ${g.name}?`} yes="Yes, remove it" no="Keep it" onConfirm={() => remove(g.id)} style={{ minHeight: 32, padding: "2px 10px", fontSize: 12 }} />
             </div>
           </div>
         );

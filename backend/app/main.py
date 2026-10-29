@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import auth, factors, oauth
+from . import auth, crypto, factors, oauth
 from .security import SecurityMiddleware
 from .api import apphealth, appearance, business, datacheck, approvals, banks, borrowing, credit, custom_reports, exports, goals, guide, homeassistant, housing, imports, moving, needsyou, people, moves, investments, ledger_rules, llm, mail, payoff, planned, plaid_webhook, privacy, projections, push, recap, registers, restore, routes, scenarios, sinking, tools, watch
 from .config import settings
@@ -40,8 +40,24 @@ class _HideFeedToken(logging.Filter):
 
 
 logging.getLogger("uvicorn.access").addFilter(_HideFeedToken())
+# Two libraries log more than the operator should see: the SSE writer logs every chunk it sends at DEBUG (a tool's
+# whole result, rows and all), and the MCP transport logs each session id at INFO. Neither line carries anything the
+# log needs, and a raised log level must never put a row in it.
+logging.getLogger("sse_starlette").setLevel(logging.INFO)
+logging.getLogger("mcp.server.streamable_http_manager").setLevel(logging.WARNING)
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+
+
+def _owner_only(db: Path) -> None:
+    """The database and its journal readable by the app's own user alone. SQLite makes the journal files with the
+    database file's mode, so the file's mode carries to them; a mount that refuses the change is left as it is."""
+    for path in (db, db.with_name(db.name + "-wal"), db.with_name(db.name + "-shm")):
+        try:
+            if path.exists():
+                path.chmod(0o600)
+        except OSError:
+            pass
 
 
 @asynccontextmanager
@@ -52,6 +68,11 @@ async def lifespan(app: FastAPI):
         log.error(problem)
         raise RuntimeError(problem)  # an installed copy never runs open; the log says what to set
     init_db()
+    problem = crypto.data_key_problem()
+    if problem:
+        log.error(problem)
+        raise RuntimeError(problem)  # a changed data key is said once, here, not found feature by feature
+    _owner_only(settings.db_path)
     if settings.demo:
         with session_scope() as session:
             result = seed(session)

@@ -371,7 +371,7 @@ export function Investments() {
                   <button className="btn" type="button" style={{ minHeight: 32, padding: "4px 10px", fontSize: 12 }} onClick={() => updateBalance(a.id)}>Record</button>
                   <ImportHoldings onFile={(f) => importHoldings(a.id, f)} />
                   <div style={{ flexGrow: 1 }} />
-                  <ConfirmButton label="Remove" question={`Remove ${a.name} and its balance history?`} yes="Yes, remove it" no="Keep it" onConfirm={() => remove(a.id)} style={{ minHeight: 32, padding: "4px 10px", fontSize: 12 }} />
+                  <ConfirmButton label="Remove" name={`Remove ${a.name}`} question={`Remove ${a.name} and its balance history?`} yes="Yes, remove it" no="Keep it" onConfirm={() => remove(a.id)} style={{ minHeight: 32, padding: "4px 10px", fontSize: 12 }} />
                 </div>
                 {rowNotes[a.id] && <Said text={rowNotes[a.id]?.text ?? null} tone={rowNotes[a.id]?.tone} />}
                 </>

@@ -224,7 +224,7 @@ export function Connectors() {
                     <td style={{ textAlign: "right" }}>
                       <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "flex-start" }}>
                         <button className="btn" type="button" disabled={syncing !== null} onClick={() => syncNow(a.id)}>{syncing === a.id ? "Reading…" : "Sync now"}</button>
-                        <ConfirmButton label="Remove" question={`Stop reading ${a.label}? Its password is forgotten; mail already read stays.`} yes="Yes, remove it" no="Keep it" onConfirm={() => remove(a.id)} />
+                        <ConfirmButton label="Remove" name={`Remove ${a.label}`} question={`Stop reading ${a.label}? Its password is forgotten; mail already read stays.`} yes="Yes, remove it" no="Keep it" onConfirm={() => remove(a.id)} />
                       </span>
                       {mailNote?.id === a.id && <div style={{ marginTop: 4, textAlign: "left" }}><Said text={mailNote.text} tone={mailNote.tone} /></div>}
                     </td>

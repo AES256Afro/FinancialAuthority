@@ -243,9 +243,9 @@ function Secrets({ state, canStore, onSaved }: { state: Record<string, boolean>;
             <input className="input" type="password" autoComplete="off" value={values[r.name]} onChange={(e) => setValues({ ...values, [r.name]: e.target.value })} placeholder={state[r.name] ? "Paste a new key to replace it" : "Paste the key"} disabled={!canStore} />
             <Where id={r.where} />
           </label>
-          <button className="btn dark" type="submit" disabled={!canStore || !values[r.name].trim()}>Save</button>
+          <button className="btn dark" type="submit" aria-label={`Save the ${r.title}`} disabled={!canStore || !values[r.name].trim()}>Save</button>
           {state[r.name] && !values[r.name].trim() && (
-            <ConfirmButton label="Remove the key" question={`Remove the ${r.title}? Any model set to use it stops working until a new key is pasted.`} yes="Yes, remove it" no="Keep it" onConfirm={() => removeKey(r.name)} />
+            <ConfirmButton label="Remove the key" name={`Remove the ${r.title}`} question={`Remove the ${r.title}? Any model set to use it stops working until a new key is pasted.`} yes="Yes, remove it" no="Keep it" onConfirm={() => removeKey(r.name)} />
           )}
           {note?.name === r.name && <Said text={note.text} tone={note.tone} />}
         </form>

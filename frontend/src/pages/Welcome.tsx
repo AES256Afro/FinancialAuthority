@@ -59,8 +59,8 @@ export function Welcome() {
               <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>{s.title}{s.done ? <span style={{ fontWeight: 600, color: "var(--safe-ink)" }}> · done</span> : null}</h2>
               <span style={{ fontSize: 13, color: "var(--ink-2)" }}>{s.text}</span>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                <Link to={s.link} className={`btn${current?.id === s.id ? " dark" : ""}`} style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}>{s.done ? "Look again" : "Do this"}</Link>
-                {!s.done && <button type="button" className="btn" onClick={() => put(s.id, { mark: s.id }, "Marked done.")}>Mark done</button>}
+                <Link to={s.link} className={`btn${current?.id === s.id ? " dark" : ""}`} aria-label={`${s.done ? "Look again" : "Do this"}: ${s.title}`} style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}>{s.done ? "Look again" : "Do this"}</Link>
+                {!s.done && <button type="button" className="btn" aria-label={`Mark done: ${s.title}`} onClick={() => put(s.id, { mark: s.id }, "Marked done.")}>Mark done</button>}
                 {said(s.id)}
               </div>
             </div>

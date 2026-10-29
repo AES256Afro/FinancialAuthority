@@ -414,8 +414,15 @@ def write_setting(key: str, body: SettingIn, session: Session = Depends(get_sess
 
 
 @router.get("/about")
-def about(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+def about(session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
     from sqlalchemy import func
 
-    count = session.exec(select(func.count()).select_from(Transaction)).one()
+    from ..people import visible_account_ids
+
+    # The row count is the household's size; a person who sees only the shared accounts is told theirs.
+    visible = visible_account_ids(session, principal.person_id, principal.role)
+    query = select(func.count()).select_from(Transaction)
+    if visible is not None:
+        query = query.where(Transaction.account_id.in_(visible))
+    count = session.exec(query).one()
     return {"version": __version__, "demo": settings.demo, "transactions": int(count), "today": today().isoformat(), "tz": settings.tz, "public_url": settings.public_url or None, "started": json.dumps(datetime.now().isoformat())}

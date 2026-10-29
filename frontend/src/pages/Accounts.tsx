@@ -520,7 +520,7 @@ function OtherAssets({ state, onChanged }: { state: Loaded<Assets>; onChanged: (
                       : <span style={{ fontSize: 12, color: "var(--muted)" }}>The app asks for a new value on {shortDate(a.update_due)}.</span>}
                     <div style={{ flexGrow: 1 }} />
                     <button className="btn" type="button" onClick={() => { setSaid(null); setForm({ id: a.id, update: false }); }} style={SMALL}>Edit</button>
-                    <ConfirmButton label="Remove" question={`Remove ${a.name}? Net worth stops counting it.`} yes="Yes, remove it" no="Keep it" onConfirm={() => remove(a)} style={SMALL} />
+                    <ConfirmButton label="Remove" name={`Remove ${a.name}`} question={`Remove ${a.name}? Net worth stops counting it.`} yes="Yes, remove it" no="Keep it" onConfirm={() => remove(a)} style={SMALL} />
                   </div>
                 </div>
               ),

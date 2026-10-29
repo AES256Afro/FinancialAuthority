@@ -95,7 +95,7 @@ export function PlannedPayments({ onChanged }: { onChanged?: () => void }) {
                   <td style={{ textAlign: "right" }}>
                     <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "flex-start" }}>
                       <button className="btn" type="button" onClick={() => wentThrough(p.id)}>It went through</button>
-                      <ConfirmButton label="Remove" question={`Stop counting ${p.name}?`} yes="Yes, remove it" no="Keep it" onConfirm={() => remove(p.id)} />
+                      <ConfirmButton label="Remove" name={`Remove ${p.name}`} question={`Stop counting ${p.name}?`} yes="Yes, remove it" no="Keep it" onConfirm={() => remove(p.id)} />
                     </span>
                     {rowNote?.id === p.id && <div style={{ marginTop: 4 }}><Said text={rowNote.text} tone="error" /></div>}
                   </td>

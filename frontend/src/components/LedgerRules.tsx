@@ -180,7 +180,7 @@ export function LedgerRules({ onChanged }: { onChanged: () => void }) {
           {rules.map((r) => (
             <div key={r.id} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <span style={{ flex: "1 1 200px" }}>merchant contains <code>{r.pattern}</code> → {KIND_WORD[r.kind]}{r.value ? <> <strong>{r.value}</strong></> : null}</span>
-              <ConfirmButton label="Remove" question="Remove this rule? Rows it already changed stay as they are." yes="Yes, remove it" no="Keep it" onConfirm={() => remove(r.id)} style={{ minHeight: 32, padding: "4px 10px", fontSize: 12 }} />
+              <ConfirmButton label="Remove" name={`Remove the rule for ${r.pattern}`} question="Remove this rule? Rows it already changed stay as they are." yes="Yes, remove it" no="Keep it" onConfirm={() => remove(r.id)} style={{ minHeight: 32, padding: "4px 10px", fontSize: 12 }} />
             </div>
           ))}
         </div>

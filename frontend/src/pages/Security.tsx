@@ -392,7 +392,7 @@ function Passkeys({ f, onChanged }: { f: Factors; onChanged: () => void }) {
                 <td style={{ whiteSpace: "nowrap" }}>{when(p.created_at)}</td>
                 <td style={{ whiteSpace: "nowrap" }}>{p.last_used_at ? when(p.last_used_at) : "not yet"}</td>
                 <td style={{ textAlign: "right" }}>
-                  <ConfirmButton label="Remove" question={`Remove "${p.name}"? It will no longer sign in here.`} yes="Yes, remove it" no="Keep it" onConfirm={() => remove(p)} />
+                  <ConfirmButton label="Remove" name={`Remove the passkey ${p.name}`} question={`Remove "${p.name}"? It will no longer sign in here.`} yes="Yes, remove it" no="Keep it" onConfirm={() => remove(p)} />
                 </td>
               </tr>
             ))}
