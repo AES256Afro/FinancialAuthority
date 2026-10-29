@@ -17,6 +17,7 @@ LOOKBACK_DAYS = 60
 AHEAD_DAYS = 21
 BEFORE_DAYS = 6
 AFTER_DAYS = 4
+HEAL_DAYS = 90  # as needsyou.PAST_DUE_DAYS: a kept period is looked at again for as long as Needs you shows it
 
 
 def _due_dates(bill: Bill, start: date, end: date) -> list[date]:
@@ -64,23 +65,47 @@ def _match_in_month(bill: Bill, bill_key: list[str], series_key: str | None, due
 def match_payments(session: Session, today: date) -> dict:
     start = today - timedelta(days=LOOKBACK_DAYS)
     end = today + timedelta(days=AHEAD_DAYS)
+    heal_from = today - timedelta(days=HEAL_DAYS)
     bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
     series_keys = {s.id: s.merchant_key for s in session.exec(select(RecurringSeries)).all()}
-    transactions = session.exec(select(Transaction).where(Transaction.date >= start - timedelta(days=BEFORE_DAYS), Transaction.date <= today, Transaction.amount > 0, Transaction.pending == False)).all()  # noqa: E712
+    transactions = session.exec(select(Transaction).where(Transaction.date >= heal_from - timedelta(days=BEFORE_DAYS), Transaction.date <= today, Transaction.amount > 0, Transaction.pending == False)).all()  # noqa: E712
     by_id = {t.id: t for t in transactions}
     existing = {(p.bill_id, p.due_date): p for p in session.exec(select(Payment).where(Payment.due_date >= start)).all()}
     # Every transaction a period already holds, however old that period: one that paid a period now past the lookback
     # (a long grace) must not pay the next period too once the first has left the window.
     used = {t for t in session.exec(select(Payment.transaction_id).where(Payment.transaction_id != None)).all()}  # noqa: E711
     counts = {"paid": 0, "late": 0, "past_due": 0, "scheduled": 0}
+    # A due day moved without the Bills page's rebuild (a confirmed notice sets it) left periods on the old day: the
+    # paid ones held the month's payment while the new day's period stood past due (found on the owner's box, sweep 18).
+    for p in session.exec(select(Payment).where(Payment.due_date >= heal_from, Payment.due_date < start)).all():
+        existing[(p.bill_id, p.due_date)] = p
+    holders: dict[int, int] = {}
+    for tid in session.exec(select(Payment.transaction_id).where(Payment.transaction_id != None)).all():  # noqa: E711
+        holders[tid] = holders.get(tid, 0) + 1
     for bill in bills:
         bill_key = bill_keys(bill)
         series_key = series_keys.get(bill.series_id) if bill.series_id else None
         monthly = (bill.cadence or "monthly") == "monthly"
+        first = bill.created_on or heal_from
+        dues = _due_dates(bill, max(heal_from, first), end)
+        on_day = set(dues)
+        # Periods on a day the bill no longer comes due: an open one is no period at all; a paid one lends its payment to
+        # the period on the new day that it pays (and goes), or stays as the month's record when none takes it.
+        released: dict[int, Payment] = {}
+        for key, p in [(k, p) for k, p in existing.items() if k[0] == bill.id and k[1] >= first and k[1] not in on_day and (monthly or not bill.anchor_date or k[1] >= bill.anchor_date)]:
+            if p.status in ("scheduled", "late", "past_due"):
+                session.delete(p)
+                del existing[key]
+            elif p.status == "paid" and p.transaction_id and holders.get(p.transaction_id) == 1:
+                used.discard(p.transaction_id)
+                released[p.transaction_id] = p
         paid_months = {p.due_date.strftime("%Y-%m") for (b, _), p in existing.items() if b == bill.id and p.status == "paid"}
-        # A bill is looked for from the day it was added, never in the months before it existed.
-        for due in _due_dates(bill, max(start, bill.created_on or start), end):
+        # A bill is looked for from the day it was added, never in the months before it existed; before the lookback only
+        # the periods already kept are looked at again, none is made.
+        for due in dues:
             payment = existing.get((bill.id, due))
+            if due < start and payment is None:
+                continue
             if payment is not None and payment.status == "paid":
                 t = by_id.get(payment.transaction_id) if payment.transaction_id else None
                 if t is not None and (payment.amount, payment.paid_date) != (t.amount, t.date):
@@ -89,15 +114,28 @@ def match_payments(session: Session, today: date) -> dict:
                 counts["paid"] += 1
                 continue
             # A monthly bill is paid once a month: a period on a new due day is not owed again in a month whose period
-            # on the old day is already paid (the owner moved the day; the months before the move were paid as they were).
-            if monthly and payment is None and due.strftime("%Y-%m") in paid_months:
-                continue
-            match = _match_for(bill, bill_key, series_key, due, transactions, used)
-            if match is None and monthly and due < today:
-                match = _match_in_month(bill, bill_key, series_key, due, transactions, used, today)
+            # on the old day is already paid (the owner moved the day; the months before the move were paid as they were),
+            # unless the old day's own payment sits near the new day, when it pays the new day's period instead.
+            paid_month = monthly and due.strftime("%Y-%m") in paid_months
+            if paid_month and payment is None:
+                match = _match_for(bill, bill_key, series_key, due, [t for t in transactions if t.id in released], used)
+                if match is None:
+                    continue
+            else:
+                match = _match_for(bill, bill_key, series_key, due, transactions, used)
+                if match is None and monthly and due < today:
+                    match = _match_in_month(bill, bill_key, series_key, due, transactions, used | set(released), today)
             if match is not None:
                 status, paid_date, tx_id, amount, evidence = "paid", match.date, match.id, match.amount, f"transaction:{match.id}"
                 used.add(match.id)
+                gone = released.pop(match.id, None)
+                if gone is not None:  # the old day's period was this one, paid: one row for one payment
+                    session.delete(gone)
+                    existing.pop((bill.id, gone.due_date), None)
+            elif paid_month:
+                session.delete(payment)  # made before the month's payment on the old day was seen: not owed twice
+                del existing[(bill.id, due)]
+                continue
             elif due < today:
                 days_late = (today - due).days
                 status = "late" if days_late <= max(3, bill.grace_days) else "past_due"
@@ -111,6 +149,7 @@ def match_payments(session: Session, today: date) -> dict:
                 payment.status, payment.paid_date, payment.transaction_id, payment.amount, payment.evidence = status, paid_date, tx_id, amount, evidence
             session.add(payment)
             counts[status] += 1
+        used.update(released)  # what no period on the new day took stays the old day's record
     session.commit()
     return counts
 

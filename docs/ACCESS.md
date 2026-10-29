@@ -130,6 +130,27 @@ BoxPilot mirrors its backups to the cloud bucket every night at 04:15 UTC, unenc
 4. Decide whether to rotate what those copies held, depending on who could have read the bucket: `FA_SESSION_SECRET` and `FA_PASSWORD` from the app's BoxPilot settings (a new session secret signs everyone out); the keys sealed under `FA_DATA_KEY` at their sources, since the data key itself cannot be rotated yet (M8.5): the Plaid and Teller links (remove and link again), a Gmail app password, and any model keys.
 5. Optional, on GitHub: a tag ruleset that lets only you create `v*` tags, since a tag publishes the image the catalog pins.
 
+### 16. The other ways to the app's secrets (round fourteen, 2026-10-29)
+
+Round fourteen looked for every path to `FA_DATA_KEY` besides the cloud mirror. Four need you; do them in this order.
+
+1. **Dockge: done.** It had no admin account, so the first visitor would have become root on the server. On the owner's word it was uninstalled through BoxPilot on 2026-10-29 at 17:12 UTC, keeping its small data folder (`/var/lib/boxpilot-managed/catalog/dockge`; `/opt/stacks` was empty, so no stack was lost). One leftover: Tailscale Serve still forwards the tailnet's port 5001 to the server's 127.0.0.1:5001, where nothing listens now; remove it with `tailscale serve --https=5001 off` so a later app on that port is not published by accident.
+2. **The backup drive is readable by every user on the server.** BoxPilot's nightly "Copy backups to the backup drive" (04:15 UTC) copies every app archive, each FinancialAuthority one with its `.env` beside the database it seals, onto the NAS share mounted at `/mnt/boxpilot/backup`, and that share is mounted with uid 1000 and mode 0664, so any account or service on the server can read them. BoxPilot pull request #602 mounts a new backup share for root alone; the existing line has to be changed once, as root on the server:
+   1. `cp /etc/fstab /etc/fstab.bak-round14`
+   2. `sed -i '/ \/mnt\/boxpilot\/backup cifs /s/uid=1000,gid=1000,file_mode=0664,dir_mode=0775/uid=0,gid=0,file_mode=0600,dir_mode=0700/' /etc/fstab`
+   3. `findmnt --verify` (no errors), then `systemctl daemon-reload`
+   4. Outside the 04:15 copy: `systemctl stop mnt-boxpilot-backup.mount`, then `ls -ld /mnt/boxpilot/backup` mounts it again and shows `drwx------ root root`.
+   5. `runuser -u nobody -- ls /mnt/boxpilot/backup` must answer "Permission denied". The `Win2CachyOS` folder on the same share is then root's to read on this server too.
+3. **The same copies sit unencrypted on the NAS.** Ten FinancialAuthority archives and every Portainer archive (Portainer's database keeps each container's environment, `FA_DATA_KEY` included) are in `boxpilot-local-mirror/application-backups` on that share. Whoever can open the share, on the NAS, in the NAS maker's app or its remote access, can unseal the database. On the NAS: make sure that folder is reachable by your account alone and that the NAS maker's cloud or remote access does not reach it. Encrypting this copy the way the cloud mirror now is is a BoxPilot follow-up, not yet built.
+4. **One password is used in many places.** `FA_PASSWORD` is also the password of all five NAS shares BoxPilot mounts, of BaselineWatch's admin (published to the internet through the tunnel), of the two Plaud apps, and sits in Portainer's database. Give FinancialAuthority a password of its own: in BoxPilot open FinancialAuthority, press Settings, replace Owner password, apply, then sign in with it (every session ends). Then change the NAS account's password on the NAS and in BoxPilot › Storage for each share, and give BaselineWatch its own.
+
+Optional, smaller:
+
+5. Portainer listens on every interface (port 9443, the LAN included) and also holds the Docker socket. If Dockge and BoxPilot cover what you use it for, uninstall Portainer from BoxPilot; that also stops its database and backups collecting every app's environment.
+6. The hand-run install from before BoxPilot is still in `/home/bigbox/financialauthority` (an older database and a `.env` with the same `FA_DATA_KEY`) and its stopped containers `financialauthority` and `financialauthority-bridge` still carry that environment. When BoxPilot's install has run a week without needing them: `docker rm financialauthority financialauthority-bridge`, then move that folder off the server or delete it.
+7. SSH on port 22 accepts passwords from the LAN, and the `bigbox` account has a password and sudo. Root already comes in through Tailscale SSH, so a file `/etc/ssh/sshd_config.d/10-no-passwords.conf` holding `PasswordAuthentication no` (it must sort before the existing `50-cloud-init.conf`, since the first setting wins), checked with `sshd -t` and applied with `systemctl reload ssh`, closes the LAN guess.
+8. Before taking a machine snapshot, know that it holds every app's `.env` and goes to the same backup drive (none has been taken since FinancialAuthority was installed). The SSH mirror (Backups › Off-box › SSH) is not set up; if you set it up, it copies the same archives unencrypted to the other machine.
+
 ## What the coding agent never asks for
 
 Passwords, second factors, bank logins, card numbers, government identifiers. Anything that must be typed into a sign-in form is typed by the owner. Values for the app's own test accounts come from the fixture, never from the owner.
