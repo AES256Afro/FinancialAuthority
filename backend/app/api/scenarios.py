@@ -7,6 +7,7 @@ import json
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import Field
 from sqlmodel import Session, select
 
 from .inputs import In
@@ -32,7 +33,7 @@ class Recurring(In):
     name: str = "Added bill"
     amount: float
     due_day: int | None = None
-    from_: date | None = None
+    from_: date | None = Field(default=None, alias="from")  # the spec stores and reads it back as "from"
 
     model_config = {"populate_by_name": True}
 

@@ -1041,7 +1041,7 @@ function HomeHeader({ h, ctx }: { h: HomeRow; ctx: Ctx }) {
         <span style={{ fontSize: 12, color: "var(--ink-2)" }}>{KIND_WORD[h.kind] ?? h.kind} · paid to {payeeOf(h)}</span>
         <span style={{ flexGrow: 1 }} />
         <EditToggle open={editing} onClick={open} label="Edit the name" />
-        <ConfirmButton label="Remove this home" style={SMALL} question={`Remove ${h.name}? Its rent, fees and costs stop counting. Its documents stay.`} yes="Yes, remove it" no="Keep it" onConfirm={remove} />
+        <ConfirmButton label="Remove this home" style={SMALL} question={`Remove ${h.name}? Its rent, fees and costs stop counting, and so do its utilities' bills, even one that was on your bills list before the home. Its documents stay.`} yes="Yes, remove it" no="Keep it" onConfirm={remove} />
       </div>
       {h.note && !editing && <div style={MUTED}>{h.note}</div>}
       {editing && (

@@ -14,7 +14,7 @@ from sqlmodel import Session, select
 
 from . import restore
 from .jobs.writing import one_writer
-from .models import Account, Bill, Document, ImportBatch, Transaction, utcnow
+from .models import Account, Bill, Document, ImportBatch, Invoice, PlannedPayment, Transaction, utcnow
 
 log = logging.getLogger(__name__)
 BILL_FIELDS = ("amount", "cadence", "due_day", "anchor_date", "autopay", "category")
@@ -52,6 +52,10 @@ def bill_before(bill: Bill) -> dict[str, Any]:
     return {k: getattr(bill, k) for k in BILL_FIELDS}
 
 
+def _plain(v: Any) -> Any:
+    return v.isoformat() if hasattr(v, "isoformat") else v
+
+
 def undo(session: Session, batch_id: int, today: date) -> dict[str, Any]:
     """Remove what one import added and put back what it changed. Returns what was undone."""
     with one_writer():  # never beside a detection, a sync or another import that would read the rows half gone
@@ -70,6 +74,13 @@ def _undo(session: Session, batch_id: int, today: date) -> dict[str, Any]:
     ids = [t.id for t in rows if t.id is not None]
     # What was matched to these rows is unmatched (the matcher runs again below); their splits and pairings go, and
     # a receipt kept with one stays, unmatched: the next import's rows take these ids and must inherit nothing.
+    if ids:
+        for invoice in session.exec(select(Invoice).where(Invoice.transaction_id.in_(ids))).all():  # type: ignore[union-attr]
+            invoice.transaction_id = None  # the owner's "paid" stays; the row goes, and the database refuses a row an invoice still names
+            session.add(invoice)
+        for plan in session.exec(select(PlannedPayment).where(PlannedPayment.transaction_id.in_(ids))).all():  # type: ignore[union-attr]
+            plan.done = False  # the row that posted it is gone: the plan counts again until another row posts it
+            session.add(plan)
     detach(session, ids)
     for t in rows:
         session.delete(t)
@@ -86,7 +97,10 @@ def _undo(session: Session, batch_id: int, today: date) -> dict[str, Any]:
             bill.active = False
             bills_removed += 1
         elif c.get("op") == "bill_updated":
+            after = c.get("after") or {}
             for k, v in (c.get("before") or {}).items():
+                if k in after and _plain(getattr(bill, k)) != _plain(after[k]):
+                    continue  # changed since the import (the owner's own edit): it stays, as everything since does
                 if k in BILL_FIELDS:
                     setattr(bill, k, date.fromisoformat(v) if k == "anchor_date" and isinstance(v, str) else v)
             bills_restored += 1

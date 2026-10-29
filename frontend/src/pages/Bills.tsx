@@ -1,7 +1,8 @@
 // Bills: every confirmed bill and subscription, editable in place. First the picture: the next five weeks, each bill
 // on its due day and the paydays marked. Then the list: on a phone each bill is a card; from the md breakpoint up
-// they sit in one table. The date mover and planned payments follow it.
-import { useEffect, useState } from "react";
+// they sit in one table. Only the one that fits the screen is built: both, kept with one hidden, were over 6,000
+// elements for sixty bills. The date mover and planned payments follow it.
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { ConfirmButton } from "../components/ConfirmButton";
@@ -304,6 +305,15 @@ function BillCard({ b, accounts, choices, onSaved }: { b: Bill; accounts: Accoun
 
 // ---- the page ------------------------------------------------------------------------------------------------------
 
+// Tailwind's md breakpoint, 48rem: the table from here up, the cards below it.
+const WIDE = "(min-width: 48rem)";
+const wideNow = () => window.matchMedia(WIDE).matches;
+function watchWide(onChange: () => void): () => void {
+  const query = window.matchMedia(WIDE);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+
 export function Bills({ onChanged }: { onChanged: () => void }) {
   const state = useApi<BillsOut>("/api/v1/bills");
   const { data, reload } = state;
@@ -322,6 +332,7 @@ export function Bills({ onChanged }: { onChanged: () => void }) {
   const [tick, setTick] = useState(0);
   const total = data?.monthly_total ?? 0; // the engine's, each bill by its own cadence
   const accountRows = accounts?.accounts ?? [];
+  const wide = useSyncExternalStore(watchWide, wideNow);
 
   function changed() {
     reload();
@@ -380,18 +391,18 @@ export function Bills({ onChanged }: { onChanged: () => void }) {
       >
         {(d) => (
           <>
-            {/* The wrapper carries md:hidden: an inline display on the list itself would override it. */}
-            <div className="md:hidden">
+            {wide ? (
+              <div className="card" style={{ padding: "6px 14px", overflowX: "auto" }}>
+                <table className="ledger">
+                  <thead><tr><th>Bill</th><th>Amount</th><th>How often</th><th>Due day or next date</th><th>Charged to</th><th>Paid from</th><th>Autopay</th><th>Date can move</th><th><span className="sr-only">Save or remove</span></th></tr></thead>
+                  <tbody>{d.bills.map((b) => <BillTableRow key={b.id} b={b} accounts={accountRows} choices={choices} onSaved={changed} />)}</tbody>
+                </table>
+              </div>
+            ) : (
               <ul aria-label="Your bills" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
                 {d.bills.map((b) => <BillCard key={b.id} b={b} accounts={accountRows} choices={choices} onSaved={changed} />)}
               </ul>
-            </div>
-            <div className="card hidden md:block" style={{ padding: "6px 14px", overflowX: "auto" }}>
-              <table className="ledger">
-                <thead><tr><th>Bill</th><th>Amount</th><th>How often</th><th>Due day or next date</th><th>Charged to</th><th>Paid from</th><th>Autopay</th><th>Date can move</th><th><span className="sr-only">Save or remove</span></th></tr></thead>
-                <tbody>{d.bills.map((b) => <BillTableRow key={b.id} b={b} accounts={accountRows} choices={choices} onSaved={changed} />)}</tbody>
-              </table>
-            </div>
+            )}
           </>
         )}
       </Show>

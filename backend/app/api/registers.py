@@ -421,7 +421,7 @@ def update_income(income_id: int, body: IncomeIn, session: Session = Depends(get
         if value is not None and not 0 < value <= 1_000_000:
             raise HTTPException(400, "Type the take-home pay, what lands in the account, like 1850 or 1850.25.")
     for field, value in body.model_dump(exclude_unset=True).items():
-        if value is not None:
+        if value is not None or field == "expected_net_end":  # the end check emptied is "the same as the mid check"
             setattr(income, field, value)
     # A monthly paycheck keeps its own day of the month, so a date in a short month never pulls it earlier for good:
     # a new date that the day already lands on (Feb 28 for month end) keeps it; any other date sets it.

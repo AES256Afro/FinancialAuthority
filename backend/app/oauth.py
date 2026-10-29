@@ -194,7 +194,10 @@ class AuthorityProvider(OAuthAuthorizationServerProvider[AuthorizationCode, Refr
                 if key is None:
                     return None
                 # person_id names the second person who made the key, so a send it queues through a tool is theirs.
-                return AccessToken(token=token, client_id=key.name, scopes=sorted(key.scope_set & auth.KEY_SCOPES), expires_at=None, resource=issuer(), subject="owner",
+                # The subject names the key itself: the MCP transport ties a session to (client, issuer, subject), and key
+                # names are not unique, so two keys called the same would otherwise share each other's sessions. The
+                # prefix keeps a new key that reuses a deleted key's id and name out of the old key's sessions too.
+                return AccessToken(token=token, client_id=key.name, scopes=sorted(key.scope_set & auth.KEY_SCOPES), expires_at=None, resource=issuer(), subject=f"key:{key.id}:{key.prefix}",
                                    claims={"redaction": key.redaction, "kind": "key", "name": key.name, "person_id": key.person_id})
             row = session.exec(select(TokenRow).where(TokenRow.token_hash == _hash(token), TokenRow.kind == "access")).first()
             if row is None or row.revoked_at is not None or (row.expires_at and row.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc)):

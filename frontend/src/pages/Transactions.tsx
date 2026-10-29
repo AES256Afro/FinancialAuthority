@@ -341,6 +341,10 @@ function Editor({ row, onSaved, onClose, readReceipt }: { row: Row; onSaved: (id
   );
 }
 
+// The table shows a hundred rows at a time. Five hundred at once were over 8,000 elements on a phone; the rows asked
+// for stay loaded and Older and Newer move through them.
+const PAGE = 100;
+
 interface BulkChange {
   category?: string;
   tags_add?: string[];
@@ -373,6 +377,8 @@ export function Transactions() {
   const path = `/api/v1/transactions/search?${params}`;
   const { data, error, reload } = useApi<Search>(path);
   const rows = data?.transactions ?? NO_ROWS;
+  const [page, setPage] = useState(0);
+  const onPage = useMemo(() => rows.slice(page * PAGE, (page + 1) * PAGE), [rows, page]);
 
   const [selected, setSelected] = useState<Set<number>>(() => new Set());
   const [openId, setOpenId] = useState<number | null>(null);
@@ -393,12 +399,13 @@ export function Transactions() {
     setSelected(new Set());
     setOpenId(null);
     setSaid(null);
+    setPage(0);
   }, [path]);
 
-  const shownIds = useMemo(() => new Set(rows.map((r) => r.id)), [rows]);
+  const shownIds = useMemo(() => new Set(onPage.map((r) => r.id)), [onPage]);
   const categories = useMemo(() => [...new Set(rows.flatMap((r) => [r.category, ...(r.splits ?? []).map((p) => p.category)]).filter(Boolean))].sort(), [rows]);
   const tagsSeen = useMemo(() => [...new Set(rows.flatMap((r) => r.tags ?? []))].sort(), [rows]);
-  const allOn = rows.length > 0 && rows.every((r) => selected.has(r.id));
+  const allOn = onPage.length > 0 && onPage.every((r) => selected.has(r.id));
   const someOn = selected.size > 0 && !allOn;
   useEffect(() => {
     if (allBox.current) allBox.current.indeterminate = someOn;
@@ -409,17 +416,28 @@ export function Transactions() {
     const id = wantOpen.current;
     if (id === null || !data) return;
     wantOpen.current = null;
-    if (rows.some((r) => r.id === id)) {
+    const at = rows.findIndex((r) => r.id === id);
+    if (at >= 0) {
+      setPage(Math.floor(at / PAGE));
       setOpenId(id);
-      window.requestAnimationFrame(() => {
+      // Two frames: the row's page is drawn first when it is not the first page.
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
         const button = document.getElementById(`tx-open-${id}`);
         button?.scrollIntoView({ block: "center" });
         button?.focus();
-      });
+      }));
     } else {
       setSaid({ id: null, tone: "error", text: "The purchase that receipt belongs to is not in this list. Search for its store, or pick “Everything”." });
     }
   }, [data, rows]);
+
+  // Another hundred: the open editor closes and the list starts again at its top.
+  const listTop = useRef<HTMLDivElement>(null);
+  const turnPage = (next: number) => {
+    setOpenId(null);
+    setPage(next);
+    listTop.current?.scrollIntoView({ block: "start" });
+  };
 
   const toggle = useCallback((id: number) => setSelected((s) => {
     const next = new Set(s);
@@ -626,7 +644,7 @@ export function Transactions() {
       )}
       {saidHere && <div><Said text={saidHere.text} tone={saidHere.tone} /></div>}
 
-      <div className="card" style={{ padding: "12px 16px", overflowX: "auto" }}>
+      <div ref={listTop} className="card" style={{ padding: "12px 16px", overflowX: "auto" }}>
         {error && !data && <Failed error={error} what="your transactions" onRetry={reload} card={false} />}
         {!data && !error && <Loading what="your transactions" card={false} />}
         {data && rows.length === 0 && (query || tag
@@ -661,13 +679,13 @@ export function Transactions() {
               </div>
             )}
             <label style={{ display: "inline-flex", alignItems: "center", gap: 8, minHeight: 32, fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 4 }}>
-              <input ref={allBox} type="checkbox" checked={allOn} onChange={() => setSelected(allOn ? new Set() : new Set(rows.map((r) => r.id)))} style={{ width: 18, height: 18, margin: 0 }} />
-              Select all shown ({rows.length})
+              <input ref={allBox} type="checkbox" checked={allOn} onChange={() => setSelected(allOn ? new Set() : new Set(onPage.map((r) => r.id)))} style={{ width: 18, height: 18, margin: 0 }} />
+              Select all shown ({onPage.length})
             </label>
             <table className="ledger">
               <thead><tr><th><span className="sr-only">Selected</span></th><th>When</th><th>Merchant</th><th>Category</th><th>Account</th><th style={{ textAlign: "right" }}>Amount</th></tr></thead>
               <tbody>
-                {rows.map((t) => (
+                {onPage.map((t) => (
                   <Fragment key={t.id}>
                     <TxRow t={t} selected={selected.has(t.id)} open={openId === t.id} onSelect={toggle} onOpen={openRow} onReceipt={openReceipt} />
                     {openId === t.id && <Editor row={t} onSaved={saved} onClose={closeEditor} readReceipt={readId === t.id} />}
@@ -675,9 +693,22 @@ export function Transactions() {
                 ))}
               </tbody>
             </table>
+            {rows.length > PAGE && <Pages page={page} count={rows.length} onPage={turnPage} />}
           </>
         )}
       </div>
     </div>
+  );
+}
+
+/** Newer and Older through the rows loaded: which hundred is on screen, of how many. */
+function Pages({ page, count, onPage }: { page: number; count: number; onPage: (page: number) => void }) {
+  const last = Math.ceil(count / PAGE) - 1;
+  return (
+    <nav aria-label="Pages of rows" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 10, fontSize: 13 }}>
+      <button type="button" className="btn" disabled={page === 0} onClick={() => onPage(page - 1)} style={SMALL}>Newer</button>
+      <span aria-live="polite">Rows {page * PAGE + 1} to {Math.min(count, (page + 1) * PAGE)} of {count}</span>
+      <button type="button" className="btn" disabled={page >= last} onClick={() => onPage(page + 1)} style={SMALL}>Older</button>
+    </nav>
   );
 }

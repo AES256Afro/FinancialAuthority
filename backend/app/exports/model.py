@@ -200,6 +200,7 @@ def registers(session: Session) -> dict[str, list[dict]]:
     out: dict[str, list[dict]] = {}
     for name, model, fields in REGISTERS:
         out[name] = rows(model, fields)
-    out["transactions"] = [{**r, "account": names.get(r["account_id"], "")} for r in out["transactions"]]
+    kinds = {a.id: a.kind for a in accounts}
+    out["transactions"] = [{**r, "account": names.get(r["account_id"], ""), "account_kind": kinds.get(r["account_id"], "")} for r in out["transactions"]]  # read back, each row finds its account and its kind
     out["rules"] = [r for r in out["rules"] if r["kind"] not in MAIL_RULES]
     return out

@@ -287,7 +287,8 @@ def test_a_database_from_an_older_release_opens_runs_and_reads(owner: TestClient
     if tag == "v0.8.2":
         assert "business_id" in built["dropped"].get("transactions", []) and "trust" in built["dropped"].get("message_refs", []) and "businesses" not in built["tables"]
     else:
-        assert not built["dropped"], built["dropped"]
+        # Since v0.9.x a fact keeps who answered it and what confirming it made (sweep 15): the upgrade adds them.
+        assert {k: sorted(v) for k, v in built["dropped"].items()} == {"extracted_facts": ["made", "resolved_by"]}, built["dropped"]
     replace_live_database(old_db)
 
     # The upgrade: what the app does at start.

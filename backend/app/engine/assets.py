@@ -55,9 +55,11 @@ def save_asset(session: Session, *, asset_id: int | None, name: str, kind: str, 
     if not (7 <= update_every_days <= 1100):
         raise ValueError("ask to update between every week and every three years")
     row = session.get(OtherAsset, asset_id) if asset_id else None
+    new = row is None
     row = row or OtherAsset(name=name.strip()[:80], kind=kind, value=0.0, value_on=value_on)
     row.name, row.kind, row.value, row.value_on = name.strip()[:80], kind, round(value, 2), value_on
-    row.yearly_change = yearly_change if yearly_change is not None else (-DEFAULT_RATES[kind] if kind in DEFAULT_RATES else None)
+    # The usual rate fills only a new asset: an edit that clears the change keeps the value as set, as the page says.
+    row.yearly_change = yearly_change if yearly_change is not None else (-DEFAULT_RATES[kind] if new and kind in DEFAULT_RATES else None)
     row.update_every_days, row.owed, row.note, row.updated_at = update_every_days, round(owed, 2), note.strip()[:300], utcnow()
     session.add(row)
     session.commit()

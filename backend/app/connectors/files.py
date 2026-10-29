@@ -6,6 +6,7 @@ and dropped it here."""
 from __future__ import annotations
 
 import csv
+import html
 import io
 import logging
 import re
@@ -33,6 +34,9 @@ CATEGORY_KEYS = ("category", "transaction type", "type")
 ACCOUNT_KEYS = ("account", "account name", "account number", "account id")
 INFLOW_WORDS = re.compile(r"deposit|payroll|direct dep|salary|interest|refund|transfer in|paycheck|payment thank you|payment received|autopay payment|online payment", re.IGNORECASE)
 PAY_WORDS = re.compile(r"payroll|direct dep|salary|paycheck|wages", re.IGNORECASE)  # income; a refund or a transfer in is not
+NOT_PAY_WORDS = re.compile(r"advance", re.IGNORECASE)  # "Paycheck advance" is money borrowed against the paycheck, not pay
+OWN_COLUMNS = ("note", "tags", "account_kind", "is_transfer", "is_card_payment", "is_income", "is_ignored")
+TRANSFER_CATEGORIES = {"Transfer", "Transfers", "Internal Transfers"}  # the category names the ledger's own exports and the budgeting apps' use
 
 HOLDING_SYMBOL = ("symbol", "ticker", "fund symbol")
 HOLDING_NAME = ("investment name", "description", "name", "security", "security name", "fund name", "holding")
@@ -42,7 +46,7 @@ HOLDING_VALUE = ("total value", "current value", "market value", "value", "balan
 BILL_NAME_KEYS = ("bill", "name", "payee", "biller", "merchant", "subscription", "service", "description")
 BILL_AMOUNT_KEYS = ("amount", "cost", "price", "payment", "monthly cost", "total")
 BILL_DUE_DAY_KEYS = ("due day", "day of month", "day due")
-BILL_NEXT_KEYS = ("next due", "next date", "next payment", "due date", "next charge", "renews", "renewal date", "next bill", "due")
+BILL_NEXT_KEYS = ("anchor date", "next due", "next date", "next payment", "due date", "next charge", "renews", "renewal date", "next bill", "due")
 BILL_CADENCE_KEYS = ("frequency", "cadence", "repeats", "billing cycle", "cycle", "every", "interval", "period", "schedule")
 BILL_AUTOPAY_KEYS = ("autopay", "auto pay", "auto-pay", "automatic")
 BILL_CATEGORY_KEYS = ("category", "type", "kind")
@@ -121,9 +125,16 @@ def sniff_csv(text: str) -> dict[str, Any]:
         mapping["debit"] = mapping["credit"] = None
     posted = _pick(columns, POSTED_KEYS)
     mapping["posted"] = posted if posted and posted != mapping["date"] else None
+    # A file with a merchant column beside its description (the app's own export, a card's) names the merchant there.
+    merchant = next((c for c in columns if _norm(c) == "merchant"), None)
+    mapping["merchant"] = merchant if merchant and merchant != mapping["description"] else None
+    # The app's own transactions.csv carries the owner's words and flags; read back, they come back as they were.
+    for key in OWN_COLUMNS:
+        mapping[key] = next((c for c in columns if _norm(c) == key.replace("_", " ")), None)
     sign = "bank"
     if mapping["amount"] and not (mapping["debit"] and mapping["credit"]):
-        inflows = [parse_amount(r.get(mapping["amount"])) for r in rows if INFLOW_WORDS.search(str(r.get(mapping["description"] or "", "")))]
+        # The payroll's name may be in either column (the app's own export leaves the description empty).
+        inflows = [parse_amount(r.get(mapping["amount"])) for r in rows if INFLOW_WORDS.search(f"{r.get(mapping['description'] or '', '') or ''} {r.get(mapping['merchant'] or '', '') or ''}")]
         inflows = [v for v in inflows if v is not None]
         if inflows and sum(1 for v in inflows if v < 0) > len(inflows) / 2:
             sign = "ledger"  # money in is already negative: the file speaks the ledger's own convention
@@ -145,8 +156,10 @@ def to_row(raw: dict, mapping: dict, sign: str) -> dict | None:
         credit = parse_amount(raw.get(mapping.get("credit") or "", "")) or 0.0
         amount = abs(debit) - abs(credit)
     description = str(raw.get(mapping.get("description") or "", "") or "").strip()
-    return {
-        "date": when, "amount": round(amount, 2), "description": description, "merchant": re.sub(r"\s+", " ", description)[:80],
+    named = str(raw.get(mapping.get("merchant") or "", "") or "").strip() or description
+    own = {k: str(raw.get(mapping[k], "") or "").strip() for k in OWN_COLUMNS if mapping.get(k)}
+    return {**own,
+        "date": when, "amount": round(amount, 2), "description": description, "merchant": re.sub(r"\s+", " ", named)[:80],
         "category": str(raw.get(mapping.get("category") or "", "") or "").strip() or "Uncategorized", "account": str(raw.get(mapping.get("account") or "", "") or "").strip(), "fitid": "",
         "posted": parse_date(raw.get(mapping.get("posted") or "", "")) if mapping.get("posted") else None,
     }
@@ -167,8 +180,9 @@ def parse_csv_rows(text: str, mapping: dict | None = None, sign: str | None = No
 OFX_TAG = re.compile(r"<([A-Z0-9.]+)>([^<\r\n]*)")
 
 
-def _ofx_blocks(text: str, name: str) -> list[dict[str, str]]:
-    """Each <name>...</name> block, found in one pass: an unclosed tag ends the search instead of rescanning."""
+def _ofx_blocks(text: str, name: str, spans: list[tuple[int, int]] | None = None) -> list[dict[str, str]]:
+    """Each <name>...</name> block, found in one pass: an unclosed tag ends the search instead of rescanning. With
+    spans, where each block starts and ends is added to it."""
     blocks = []
     opening, closing = re.compile(rf"<{name}>", re.IGNORECASE), re.compile(rf"</{name}>", re.IGNORECASE)
     pos = 0
@@ -184,8 +198,10 @@ def _ofx_blocks(text: str, name: str) -> list[dict[str, str]]:
         fields: dict[str, str] = {}
         for tag, value in OFX_TAG.findall(body):
             if value.strip() and tag.upper() not in fields:
-                fields[tag.upper()] = value.strip()
+                fields[tag.upper()] = html.unescape(value.strip())  # an XML statement writes "A&amp;B" for A&B
         blocks.append(fields)
+        if spans is not None:
+            spans.append((start.start(), end.end()))
     return blocks
 
 
@@ -196,7 +212,16 @@ def parse_ofx(text: str) -> dict[str, Any]:
     acct = re.search(r"<ACCTID>([^<\r\n]*)", upper)
     acct_type = re.search(r"<ACCTTYPE>([^<\r\n]*)", upper)
     rows = []
-    for t in _ofx_blocks(upper, "STMTTRN"):
+    # A file may hold several accounts' statements (checking and savings, or a card): each row keeps its own.
+    statements: list[tuple[int, int, str, str]] = []
+    for tag, kind in (("STMTRS", ""), ("CCSTMTRS", "card")):
+        spans: list[tuple[int, int]] = []
+        for block, (a, b) in zip(_ofx_blocks(upper, tag, spans), spans):
+            statements.append((a, b, block.get("ACCTID", ""), kind))
+    trn_spans: list[tuple[int, int]] = []
+    trns = _ofx_blocks(upper, "STMTTRN", trn_spans)
+    for t, (at, _end) in zip(trns, trn_spans):
+        held_by = next(((number, kind) for a, b, number, kind in statements if a <= at < b), ("", ""))
         when = parse_date((t.get("DTPOSTED") or t.get("DTUSER") or "")[:8])
         amount = parse_amount(t.get("TRNAMT"))
         if when is None or amount is None:
@@ -204,8 +229,8 @@ def parse_ofx(text: str) -> dict[str, Any]:
         name = (t.get("NAME") or t.get("MEMO") or t.get("TRNTYPE") or "").strip()
         memo = (t.get("MEMO") or "").strip()
         description = f"{name} {memo}".strip() if memo and memo != name else name
-        rows.append({"date": when, "amount": round(-amount, 2), "description": description, "merchant": name[:80], "category": "Uncategorized", "account": "", "fitid": t.get("FITID", ""),
-                     "posted": parse_date((t.get("DTPOSTED") or "")[:8])})
+        rows.append({"date": when, "amount": round(-amount, 2), "description": description, "merchant": name[:80], "category": "Uncategorized", "account": held_by[0], "fitid": t.get("FITID", ""),
+                     "posted": parse_date((t.get("DTPOSTED") or "")[:8]), "account_kind": held_by[1]})
     securities = {}
     for s in _ofx_blocks(upper, "SECINFO"):
         securities[s.get("UNIQUEID", "")] = {"name": s.get("SECNAME", ""), "ticker": s.get("TICKER", "")}
@@ -242,14 +267,24 @@ def _words(text: str) -> set[str]:
     return {w for w in re.findall(r"[a-z]{3,}", (text or "").lower()) if w not in GENERIC_WORDS}
 
 
-def _target_account(session: Session, *, account_id: int | None, account_name: str, account_number: str, institution: str, kind: str) -> tuple[Account, bool]:
-    """The account the rows belong to: the one chosen; else the account the bank link holds under the same last
-    four digits; else the account of the same name; else a new one."""
+def _target_account(session: Session, *, account_id: int | None, account_name: str, account_number: str, institution: str, kind: str,
+                    rows: list[dict] | None = None) -> tuple[Account, bool]:
+    """The account the rows belong to: the one chosen; else, for the app's own OFX export read back, the account it
+    came from; else the account the bank link holds under the same last four digits; else the account of the same
+    name; else a new one."""
     if account_id:
         chosen = session.get(Account, account_id)
         if chosen is None or not chosen.active:
             raise ValueError("No such account")
         return chosen, False
+    own = re.fullmatch(r"FA(\d{6})", account_number or "")
+    if own and rows:
+        # The app's OFX names an account FA<id> and a row fa-<row id>: when this database holds those rows in that
+        # account, the file came from here, and its rows are the ones already held (not new rows beside them).
+        mine = session.get(Account, int(own.group(1)))
+        ids = [int(r["fitid"][3:]) for r in rows if re.fullmatch(r"fa-\d+", r.get("fitid") or "")][:200]
+        if mine is not None and mine.active and ids and session.exec(select(Transaction.id).where(Transaction.id.in_(ids), Transaction.account_id == mine.id)).first() is not None:  # type: ignore[union-attr]
+            return mine, False
     digits = re.sub(r"\D", "", account_number or "")
     if len(digits) >= 4:
         from .rocketmoney import _live_accounts_by_last4
@@ -309,59 +344,103 @@ def import_rows(session: Session, rows: list[dict], *, source_file: str, account
                             account_number=account_number, via=via)
 
 
+def _clean_tags(text: str | None) -> str:
+    from ..engine.edits import clean_tags
+
+    return ",".join(clean_tags(str(text or "").split(",")))
+
+
+def _groups(rows: list[dict], *, account_id: int | None, account_name: str, account_number: str, institution: str, kind: str) -> list[tuple[str, str, str, list[dict]]]:
+    """The file's rows by the account each belongs to: (name, number, kind, rows). A file of one account, or one
+    the owner pointed at an account, is one group as given. A file that names two or more accounts on its rows (a
+    statement of checking and savings, a budgeting app's export, the app's own) lands each in its own account
+    instead of all in one: an account number finds the account by its last four digits, a name by its name."""
+    named = {str(r.get("account") or "").strip() for r in rows} - {""}
+    if account_id or len(named) < 2:
+        kinds = {str(r.get("account_kind") or "") for r in rows} - {""}
+        return [(account_name, account_number, kinds.pop() if len(kinds) == 1 else kind, rows)]
+    out: dict[str, tuple[str, str, str, list[dict]]] = {}
+    for r in rows:
+        key = str(r.get("account") or "").strip()
+        if key not in out:
+            digits = re.sub(r"\D", "", key)
+            if not key:
+                out[key] = (account_name, account_number, kind, [])
+            elif len(digits) >= 4 and len(digits) >= len(re.sub(r"[^A-Za-z]", "", key)):  # a number (FA000123, xxxx1234), not a name
+                out[key] = (f"{institution or 'Account'} {digits[-4:]}".strip(), key, r.get("account_kind") or kind, [])
+            else:
+                out[key] = (key[:80], "", r.get("account_kind") or kind, [])
+        out[key][3].append(r)
+    return list(out.values())
+
+
 def _import_rows(session: Session, rows: list[dict], *, source_file: str, account_name: str, institution: str, kind: str, account_id: int | None, account_number: str,
                  via: str) -> SyncResult:
     from .. import importlog
 
-    account, created = _target_account(session, account_id=account_id, account_name=account_name, account_number=account_number, institution=institution, kind=kind)
     batch = importlog.begin(session, "file", source_file, via)
     existing = set(session.exec(select(Transaction.row_hash)).all())
-    # What the account already holds, by amount; each row can stand for one row of the file, once.
-    held: dict[str, list[list]] = {}
-    # Only what falls inside the file's own dates can be the same row: a purchase the day after the statement ends
-    # is a different purchase, however alike.
-    # A row's day may be when it was bought or when it posted; both count, on either side.
-    file_days = [d for r in rows for d in (r["date"], r.get("posted")) if d]
-    span = (min(file_days), max(file_days)) if file_days else None
-    for t in session.exec(select(Transaction).where(Transaction.account_id == account.id, Transaction.pending == False)).all():  # noqa: E712
-        days = {d for d in (t.date, t.posted_date) if d}
-        if span is None or not any(span[0] <= d <= span[1] for d in days):
-            continue
-        held.setdefault(f"{t.amount:.2f}", []).append([days, _words(f"{t.merchant} {t.raw_name} {t.description}"), False])
     rules = rules_for(session)
     inserted = duplicates = merged = 0
-    seen: dict[str, int] = {}
-    for r in rows:
-        h = row_hash(account.name if account_id else account_name, r)
-        repeat = seen.get(h, 0)
-        seen[h] = repeat + 1
-        if repeat and not r["fitid"]:
-            h = sha256(f"{h}|{repeat}".encode()).hexdigest()  # a real repeat purchase on the same day
-        if h in existing:
-            duplicates += 1
-            continue
-        words = _words(f"{r['merchant']} {r['description']}")
-        mine = {d for d in (r["date"], r.get("posted")) if d}
+    landed: list[Account] = []
+    made: list[int] = []
+    for name, number, group_kind, group in _groups(rows, account_id=account_id, account_name=account_name, account_number=account_number, institution=institution, kind=kind):
+        account, created = _target_account(session, account_id=account_id, account_name=name, account_number=number, institution=institution, kind=group_kind, rows=group)
+        landed.append(account)
+        if created:
+            made.append(int(account.id or 0))
+        # What the account already holds, by amount; each row can stand for one row of the file, once.
+        held: dict[str, list[list]] = {}
+        # Only what falls inside the file's own dates can be the same row: a purchase the day after the statement ends
+        # is a different purchase, however alike.
+        # A row's day may be when it was bought or when it posted; both count, on either side.
+        file_days = [d for r in group for d in (r["date"], r.get("posted")) if d]
+        span = (min(file_days), max(file_days)) if file_days else None
+        for t in session.exec(select(Transaction).where(Transaction.account_id == account.id, Transaction.pending == False)).all():  # noqa: E712
+            days = {d for d in (t.date, t.posted_date) if d}
+            if span is None or not any(span[0] <= d <= span[1] for d in days):
+                continue
+            held.setdefault(f"{t.amount:.2f}", []).append([days, _words(f"{t.merchant} {t.raw_name} {t.description}"), False])
+        seen: dict[str, int] = {}
+        for r in group:
+            h = row_hash(account.name if account_id else name, r)
+            repeat = seen.get(h, 0)
+            seen[h] = repeat + 1
+            if repeat and not r["fitid"]:
+                h = sha256(f"{h}|{repeat}".encode()).hexdigest()  # a real repeat purchase on the same day
+            if h in existing:
+                duplicates += 1
+                continue
+            words = _words(f"{r['merchant']} {r['description']}")
+            mine = {d for d in (r["date"], r.get("posted")) if d}
 
-        def gap(x: list) -> int:
-            return min(abs((a - b).days) for a in x[0] for b in mine)
+            def gap(x: list) -> int:
+                return min(abs((a - b).days) for a in x[0] for b in mine)
 
-        near = [x for x in held.get(f"{r['amount']:.2f}", []) if not x[2] and gap(x) <= MERGE_DAYS and (gap(x) == 0 or words & x[1])]
-        if near:
-            twin = min(near, key=lambda x: (gap(x), 0 if words & x[1] else 1))
-            twin[2] = True
-            merged += 1
-            continue
-        t = Transaction(account_id=account.id, date=r["date"], posted_date=r.get("posted") or r["date"], merchant=r["merchant"], raw_name=r["description"], description=r["description"], amount=r["amount"], category=r["category"], is_income=r["amount"] < 0 and bool(PAY_WORDS.search(r["description"])), source="file", source_ref=source_file, row_hash=h, import_id=batch.id)
-        apply_rules(rules, t)
-        session.add(t)
-        existing.add(h)
-        inserted += 1
-    summary = f"{inserted} new, {duplicates} already imported" + (f", {merged} already in {account.name} from another source" if merged else "") + f", into {account.name}"
-    importlog.finish(session, batch, inserted=inserted, duplicates=duplicates, merged=merged, account_id=account.id, accounts_created=[account.id] if created else [], summary=summary)
+            near = [x for x in held.get(f"{r['amount']:.2f}", []) if not x[2] and gap(x) <= MERGE_DAYS and (gap(x) == 0 or words & x[1])]
+            if near:
+                twin = min(near, key=lambda x: (gap(x), 0 if words & x[1] else 1))
+                twin[2] = True
+                merged += 1
+                continue
+            said = f"{r['merchant']} {r['description']}"
+            flag = {k: str(r[k]).lower() in ("true", "1", "yes") for k in ("is_transfer", "is_card_payment", "is_income", "is_ignored") if r.get(k)}  # the file's own flags win
+            t = Transaction(account_id=account.id, date=r["date"], posted_date=r.get("posted") or r["date"], merchant=r["merchant"], raw_name=r["description"], description=r["description"], amount=r["amount"], category=r["category"],
+                            is_income=flag.get("is_income", r["amount"] < 0 and bool(PAY_WORDS.search(said)) and not NOT_PAY_WORDS.search(said)),
+                            is_transfer=flag.get("is_transfer", r["category"] in TRANSFER_CATEGORIES), is_card_payment=flag.get("is_card_payment", r["category"] == "Credit Card Payment"),
+                            is_ignored=flag.get("is_ignored", False), note=str(r.get("note") or "")[:500], tags=_clean_tags(r.get("tags")),
+                            source="file", source_ref=source_file, row_hash=h, import_id=batch.id)
+            apply_rules(rules, t)
+            session.add(t)
+            existing.add(h)
+            inserted += 1
+    first = landed[0]
+    into = first.name if len({a.id for a in landed}) == 1 else f"{len({a.id for a in landed})} accounts ({', '.join(dict.fromkeys(a.name for a in landed))})"
+    summary = f"{inserted} new, {duplicates} already imported" + (f", {merged} already in {into} from another source" if merged else "") + f", into {into}"
+    importlog.finish(session, batch, inserted=inserted, duplicates=duplicates, merged=merged, account_id=first.id, accounts_created=made, summary=summary)
     session.commit()
-    return SyncResult(ok=True, summary=summary, inserted=inserted, duplicates=duplicates, accounts=int(created),
-                      details={"account_id": account.id, "merged": merged, "import_id": batch.id if inserted or created else None}, at=utcnow())
+    return SyncResult(ok=True, summary=summary, inserted=inserted, duplicates=duplicates, accounts=len(made),
+                      details={"account_id": first.id, "merged": merged, "import_id": batch.id if inserted or made else None}, at=utcnow())
 
 
 def sniff_holdings_csv(text: str) -> dict[str, Any]:
@@ -413,6 +492,8 @@ def sniff_bills_csv(text: str) -> dict[str, Any]:
     mapping = {
         "name": _pick(columns, BILL_NAME_KEYS), "amount": _pick(columns, BILL_AMOUNT_KEYS), "due_day": _pick(columns, BILL_DUE_DAY_KEYS),
         "next_date": _pick(columns, BILL_NEXT_KEYS), "cadence": _pick(columns, BILL_CADENCE_KEYS), "autopay": _pick(columns, BILL_AUTOPAY_KEYS), "category": _pick(columns, BILL_CATEGORY_KEYS),
+        # The app's own bills.csv: a bill that has ended, or not begun, or was taken off, comes back as it was.
+        **{key: next((c for c in columns if _norm(c) in names), None) for key, names in (("starts_on", ("starts on", "start date")), ("ends_on", ("ends on", "end date")), ("active", ("active",)))},
     }
     if mapping["due_day"] and mapping["due_day"] == mapping["next_date"]:
         mapping["next_date"] = None
@@ -442,7 +523,10 @@ def parse_bills_rows(text: str, mapping: dict | None = None) -> list[dict]:
         cadence = _cadence_word(str(raw.get(m.get("cadence") or "", "") or "")) if m.get("cadence") else "monthly"
         autopay = str(raw.get(m.get("autopay") or "", "") or "").strip().lower() in ("yes", "y", "true", "1", "on", "auto", "autopay") if m.get("autopay") else False
         category = str(raw.get(m.get("category") or "", "") or "").strip()
-        rows.append({"name": name[:80], "amount": round(abs(amount), 2), "cadence": cadence, "due_day": max(1, min(31, due_day)) if due_day else None, "next_date": next_date, "autopay": autopay, "category": category})
+        if m.get("active") and str(raw.get(m["active"], "") or "").strip().lower() in ("false", "no", "n", "0", "off"):
+            continue  # a bill taken off the register is not a bill to pay
+        span = {k: parse_date(raw.get(m[k], "")) if m.get(k) else None for k in ("starts_on", "ends_on")}
+        rows.append({"name": name[:80], "amount": round(abs(amount), 2), "cadence": cadence, "due_day": max(1, min(31, due_day)) if due_day else None, "next_date": next_date, "autopay": autopay, "category": category, **span})
     return rows
 
 
@@ -478,6 +562,7 @@ def _import_bills(session: Session, rows: list[dict], *, source_file: str, today
         kind = "subscription" if suggest_kind(r["category"], r["name"]) == "subscription" else "bill"
         if bill is None:
             bill = Bill(name=r["name"], kind=kind, amount=r["amount"], amount_mode="fixed", cadence=r["cadence"], due_day=r["due_day"], anchor_date=r.get("next_date"), autopay=r["autopay"], movable=True, move_window="1-28", category=r["category"],
+                        starts_on=r.get("starts_on"), ends_on=r.get("ends_on"),
                         created_on=today)
             session.add(bill)
             session.flush()
@@ -496,7 +581,7 @@ def _import_bills(session: Session, rows: list[dict], *, source_file: str, today
                      "autopay": r["autopay"] or bill.autopay, "category": r["category"] or bill.category}
             if any(getattr(bill, field) != value for field, value in after.items()):
                 # Only a real change is an update: the same list read again keeps every bill, and takes no restore point.
-                changes.append({"op": "bill_updated", "id": bill.id, "before": importlog.bill_before(bill)})
+                changes.append({"op": "bill_updated", "id": bill.id, "before": importlog.bill_before(bill), "after": after})  # undo leaves a field changed since as it is
                 for field, value in after.items():
                     setattr(bill, field, value)
                 session.add(bill)

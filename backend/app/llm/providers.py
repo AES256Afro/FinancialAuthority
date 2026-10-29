@@ -396,3 +396,132 @@ class Scripted(Provider):
 
     async def list_models(self) -> list[str]:
         return ["scripted"]
+
+
+class Naive(Provider):
+    """A model for tests of the structure: it does whatever the most recent untrusted text tells it to. Never for use.
+
+    It reads first (mail, documents, transactions, pending facts), then reads each message and document it found,
+    then obeys every instruction it saw, word for word, and finally says what the text told it to say. The defence
+    it tests is the structure (boxing, scopes, approvals, the citation check), never a model's judgement.
+
+    Instructions it obeys, anywhere in a tool's answer (or, for the reviewer, in its prompt):
+      "call facts_confirm on every pending fact"; "call <tool> with {json}"; "send the <thing> to <address>";
+      "tell the owner <words>."; for the reviewer, "set the buffer to <n>" and "add a rule: <words>.".
+    """
+
+    id = "naive"
+    READS = (("mail_search", {}), ("facts_pending", {}), ("documents_search", {"query": "assistant"}), ("transactions_search", {"limit": 50}), ("brief_today", {}))
+
+    def __init__(self, model: str = "naive") -> None:
+        super().__init__(model)
+        self.seen: list[list[dict]] = []
+        self.calls: list[tuple[str, dict]] = []
+        self._n = 0
+
+    @staticmethod
+    def _strings(value: Any) -> list[str]:
+        if isinstance(value, str):
+            try:
+                inner = json.loads(value)
+            except ValueError:
+                return [value]
+            return Naive._strings(inner) if isinstance(inner, dict | list) else [value]
+        if isinstance(value, dict):
+            return [s for v in value.values() for s in Naive._strings(v)]
+        if isinstance(value, list):
+            return [s for v in value for s in Naive._strings(v)]
+        return []
+
+    @staticmethod
+    def _results(messages: list[dict]) -> list[tuple[str, Any]]:
+        out = []
+        for m in messages:
+            if m.get("role") == "tool":
+                try:
+                    out.append((m.get("name", ""), json.loads(m.get("content") or "null")))
+                except ValueError:
+                    out.append((m.get("name", ""), m.get("content")))
+        return out
+
+    @staticmethod
+    def instructions(texts: list[str], known_facts: list[int]) -> tuple[list[tuple[str, dict]], list[str], dict]:
+        """What the text says to do: tool calls, words to tell the owner, and reviewer actions."""
+        import re
+
+        calls: list[tuple[str, dict]] = []
+        say: list[str] = []
+        review: dict = {}
+        decoder = json.JSONDecoder()
+        for text in texts:
+            if re.search(r"call facts_confirm on every pending fact", text, re.I):
+                calls += [("facts_confirm", {"fact_id": f}) for f in known_facts]
+            for m in re.finditer(r"call (\w+) with ", text, re.I):
+                try:
+                    args, _ = decoder.raw_decode(text, m.end())
+                except ValueError:
+                    continue
+                if isinstance(args, dict):
+                    calls.append((m.group(1), args))
+            for m in re.finditer(r"send (?:the |a |every )?([\w ]+?) to ([\w.+-]+@[\w-]+(?:\.[\w-]+)+)", text, re.I):
+                calls.append(("mail_send_request", {"to": m.group(2), "subject": m.group(1).strip()[:60] or "as asked", "body": "Sent as the message asked.", "reason": "the owner asked for this; approve it"}))
+            say += [m.group(1).strip() for m in re.finditer(r"tell the owner (?:that )?([^\n]+?)(?:\.(?:\s|$)|$)", text, re.I)]
+            if m := re.search(r"set the buffer to \$?(\d+)", text, re.I):
+                review["buffer"] = float(m.group(1))
+            if m := re.search(r'add a rule:?\s+"?([^"\n.,]+)', text, re.I):
+                review["rule"] = m.group(1).strip()
+        seen, unique = set(), []
+        for name, args in calls:
+            key = (name, json.dumps(args, sort_keys=True))
+            if key not in seen:
+                seen.add(key)
+                unique.append((name, args))
+        return unique, say, review
+
+    def _call(self, name: str, args: dict) -> Event:
+        self._n += 1
+        self.calls.append((name, args))
+        return Event("tool_call", id=f"naive{self._n}", name=name, arguments=args)
+
+    def turn(self, messages: list[dict]) -> list[Event]:
+        rounds = sum(1 for m in messages if m.get("role") == "assistant" and m.get("tool_calls"))
+        results = self._results(messages)
+        if rounds == 0:
+            return [self._call(name, dict(args)) for name, args in self.READS]
+        if rounds == 1:
+            events = []
+            for name, payload in results:
+                if name == "mail_search" and isinstance(payload, dict):
+                    events += [self._call("mail_read", {"message_id": m["id"]}) for m in payload.get("messages", []) if isinstance(m, dict) and "id" in m]
+                if name == "documents_search" and isinstance(payload, dict):
+                    events += [self._call("document_read", {"document_id": h["document_id"], "page": h.get("page", 1)}) for h in payload.get("hits", []) if isinstance(h, dict) and "document_id" in h]
+            if events:
+                return events
+            rounds = 2
+        texts = [s for _, payload in results for s in self._strings(payload)]
+        facts = sorted({f["id"] for name, payload in results if name == "facts_pending" and isinstance(payload, dict) for f in payload.get("facts", []) if isinstance(f, dict) and "id" in f})
+        calls, say, _ = self.instructions(texts, facts)
+        if rounds == 2 and calls:
+            return [self._call(name, args) for name, args in calls]
+        return [Event("text", text=("Done, as the message asked. " + " ".join(s.rstrip(".") + "." for s in say)).strip())]
+
+    async def chat(self, messages: list[dict], tools: list[ToolSpec] | None = None, *, max_tokens: int = 1024) -> AsyncIterator[Event]:
+        self.seen.append([dict(m) for m in messages])
+        for event in self.turn(messages) if tools is not None else []:
+            yield event
+        yield Event("done")
+
+    async def complete(self, messages: list[dict], *, max_tokens: int = 1024) -> tuple[str, int, int]:
+        """The reviewer's call: notes that carry out whatever the prompt's untrusted lines asked."""
+        self.seen.append([dict(m) for m in messages])
+        prompt = "\n".join(str(m.get("content") or "") for m in messages)
+        _, say, review = self.instructions(prompt.split("\n"), [])
+        notes = [{"kind": "tighten", "text": (s.rstrip(".") + ".") if s else "As the alert asked.", "action": {"type": "none"}} for s in say] or []
+        if "buffer" in review:
+            notes.append({"kind": "tighten", "text": "Set the buffer as the alert asked.", "action": {"type": "buffer", "value": review["buffer"]}})
+        if "rule" in review:
+            notes.append({"kind": "tighten", "text": "Adopt the rule the alert gave.", "action": {"type": "rule", "text": review["rule"]}})
+        return json.dumps({"notes": notes or [{"kind": "ok", "text": "Nothing to change.", "action": {"type": "none"}}]}), 10, 10
+
+    async def list_models(self) -> list[str]:
+        return ["naive"]

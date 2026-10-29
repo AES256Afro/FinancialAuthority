@@ -23,7 +23,7 @@ from sqlmodel import Session, select
 from ..engine.snapshot import finance_snapshot
 from ..models import ReviewRun, utcnow
 from ..store import get_setting, set_setting
-from .advisor import compact_plan
+from .advisor import compact_plan, quoted_in
 from .citations import engine_numbers, unverified
 from .providers import Provider, ProviderError
 from .roles import cost_of, provider_for, role_settings
@@ -78,6 +78,7 @@ def packet(session: Session, today: date) -> dict:
         "alerts": [b["text"] for b in snap["brief"] if b["severity"] != "info"],
         "previous": previous,
         "as_of": snap["as_of"],
+        "quoted": sorted(quoted_in(snap)),  # a sender's or a merchant's words in an alert line: their figures are not the plan's
     }
 
 
@@ -139,7 +140,7 @@ async def review(session_factory: Callable[[], AbstractContextManager[Session]],
     if chosen is None:
         run.ok, run.error = False, "no reviewer is configured; choose one on Settings › Models"
     else:
-        allowed = engine_numbers(pack["plan"])
+        allowed = engine_numbers(pack["plan"], quoted=set(pack.get("quoted") or ()))
         try:
             text, inp, out = await chosen.complete([{"role": "user", "content": prompt_for(pack, trigger)}], max_tokens=1500)
             run.raw = text[:20000]

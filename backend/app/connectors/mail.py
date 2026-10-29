@@ -238,7 +238,7 @@ def handle_message(session: Session, account: MailAccount, folder: str, uid: int
     status = "auto" if kind in INFORMATIONAL else "pending"
     if kind in ("bill_due", "past_due") and "amount" not in fields:
         confidence = min(confidence, 0.5)
-    session.add(ExtractedFact(kind=kind, message_ref_id=ref.id, fields=json.dumps(fields), confidence=confidence, status=status, excerpt=excerpt_for(parsed.text, fields), produced_by=produced_by, resolved_at=utcnow() if status == "auto" else None))
+    session.add(ExtractedFact(kind=kind, message_ref_id=ref.id, fields=json.dumps(fields), confidence=confidence, status=status, excerpt=excerpt_for(parsed.text, fields), produced_by=produced_by, resolved_at=utcnow() if status == "auto" else None, resolved_by="rule" if status == "auto" else ""))
     outcome["fact"] = status
     return outcome
 
@@ -285,7 +285,7 @@ def upcoming_bills_facts(session: Session, ref: MessageRef, parsed: Parsed, toda
     if parsed.date:
         base["message_date"] = parsed.date.date().isoformat()
     if not charges:
-        session.add(ExtractedFact(kind="upcoming_bills", message_ref_id=ref.id, fields=json.dumps(base), confidence=0.5, status="auto", excerpt=clean(parsed.text, 200), produced_by=produced_by, resolved_at=utcnow()))
+        session.add(ExtractedFact(kind="upcoming_bills", message_ref_id=ref.id, fields=json.dumps(base), confidence=0.5, status="auto", excerpt=clean(parsed.text, 200), produced_by=produced_by, resolved_at=utcnow(), resolved_by="rule"))
         return {"fact": "auto", "charges": 0}
     bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
     pending = known = 0
@@ -296,7 +296,8 @@ def upcoming_bills_facts(session: Session, ref: MessageRef, parsed: Parsed, toda
         fields = {**base, "name": charge["name"], "amount": charge["amount"], "due_date": charge["due_date"].isoformat()}
         excerpt = f"{charge['name']} · {charge['due_date'].strftime('%A, %B %d')} · ${charge['amount']:,.2f}"
         session.add(ExtractedFact(kind="bill_due", message_ref_id=ref.id, fields=json.dumps(fields), confidence=0.85, status="auto" if same else "pending", excerpt=excerpt,
-                                  produced_by=f"{produced_by}+parser:rocketmoney_bills", applied_to=f"bill:{match.id}" if same else "", resolved_at=utcnow() if same else None))
+                                  produced_by=f"{produced_by}+parser:rocketmoney_bills", applied_to=f"bill:{match.id}" if same else "", resolved_at=utcnow() if same else None,
+                                  resolved_by="rule" if same else ""))
         if same:
             known += 1
         else:

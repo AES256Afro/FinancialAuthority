@@ -224,7 +224,7 @@ def same_email_twice(session: Session, today: date) -> int:
         for later in copies[1:]:
             for f in session.exec(select(ExtractedFact).where(ExtractedFact.message_ref_id == later.id, ExtractedFact.status == "pending")).all():
                 if (f.kind, f.fields) in kept:
-                    f.status, f.applied_to, f.resolved_at = "rejected", f"set aside: the same email as message {first.id}, kept in two mailboxes", utcnow()
+                    f.status, f.applied_to, f.resolved_at, f.resolved_by = "rejected", f"set aside: the same email as message {first.id}, kept in two mailboxes", utcnow(), "datacheck"
                     session.add(f)
                     aside += 1
     if aside:
@@ -299,7 +299,7 @@ def answer(session: Session, key: str, action: str, today: date) -> str:
         ref_id = int(key.split(":")[1])
         n = 0
         for f in session.exec(select(ExtractedFact).where(ExtractedFact.message_ref_id == ref_id, ExtractedFact.status == "pending")).all():
-            f.status, f.applied_to, f.resolved_at = "rejected", "discarded on the data check: the sender could not be confirmed", utcnow()
+            f.status, f.applied_to, f.resolved_at, f.resolved_by = "rejected", "discarded on the data check: the sender could not be confirmed", utcnow(), "datacheck"
             session.add(f)
             n += 1
         session.commit()

@@ -326,6 +326,14 @@ def verify(session: Session, move: AccountMove, today: date) -> dict[str, int]:
         if (item.last_seen_old, item.last_seen_new) != seen:
             item.last_seen_old, item.last_seen_new = seen
             changed = True
+        if item.status == "confirmed" and not item.last_seen_new:
+            # The row that confirmed it is gone (an import undone, a row withdrawn): so is the confirmation.
+            auto = item.switched_on == item.confirmed_on  # confirmed from todo by the ledger, not tapped first
+            item.status, item.confirmed_on = ("todo" if auto else "switched"), None
+            if auto:
+                item.switched_on = None
+                _point(session, item, move.source_account_id)
+            changed = True
         if item.decision == "move" and item.status != "confirmed" and item.last_seen_new:
             if item.status == "todo":
                 item.switched_on = item.last_seen_new

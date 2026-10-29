@@ -18,7 +18,7 @@ from sqlmodel import Session
 from .. import mcp_server as mcp
 from ..engine.snapshot import finance_snapshot
 from ..store import get_setting
-from .citations import engine_numbers, unverified
+from .citations import engine_numbers, third_party_strings, unverified
 from .providers import Event, Provider, ToolSpec
 
 # Tools that return third-party words (mail, documents, what was read from them): their figures never verify a reply.
@@ -112,6 +112,16 @@ async def run_tool(name: str, arguments: dict) -> Any:
     return parsed if isinstance(parsed, dict | list) else {"text": text}
 
 
+def _refused(name: str, arguments: Any) -> None:
+    """A call the chat does not offer (a write tool, a tool a message named) leaves the same row as a refused MCP call."""
+    from .. import services
+    from ..db import session_scope
+
+    args = {k: v for k, v in (arguments or {}).items() if isinstance(v, (int, float, str, bool)) or v is None} if isinstance(arguments, dict) else {}
+    with session_scope() as session:
+        services.audit(session, client="advisor", client_kind="key", tool=f"{str(name)[:60]}_refused", args=args, rows=0, redaction=_sees(session))
+
+
 def rules_block(session: Session) -> str:
     rules = (get_setting(session, "rules", "") or "").strip()
     goals = (get_setting(session, "goals", "") or "").strip()
@@ -123,15 +133,35 @@ def rules_block(session: Session) -> str:
     return ("\n\n".join(parts) + "\n") if parts else ""
 
 
+def quoted_in(snap: dict) -> set[str]:
+    """The third party's words the engine's sentences may quote: every sender's name, subject, merchant and the
+    like anywhere in the snapshot, and the amount a mail alert stated (the brief says "X sent an overdraft alert for
+    $N": N is the mail's figure, not the engine's). Taken out of a sentence before its figures count as the engine's."""
+    from ..engine.brief import money
+
+    quotes = third_party_strings(snap)
+    for alert in (snap.get("mail") or {}).get("alerts", []):
+        amount = (alert.get("fields") or {}).get("amount")
+        if isinstance(amount, int | float) and not isinstance(amount, bool):
+            quotes.add(f"for {money(amount)}")
+    return quotes
+
+
 def system_prompt(session: Session, today: date) -> tuple[str, set[float]]:
+    system, allowed, _ = system_prompt_and_quotes(session, today)
+    return system, allowed
+
+
+def system_prompt_and_quotes(session: Session, today: date) -> tuple[str, set[float], set[str]]:
     snap = finance_snapshot(session, today)
+    quotes = quoted_in(snap)
     level = _sees(session)
     plan = mcp.redact(compact_plan(snap), level)
     # The brief's sentences name accounts, payees and mail senders; they are held back at the same level as the
     # brief_today tool's text, so a client that sees totals only sees totals in the prompt too.
     plan["brief"] = [mcp.redact({"text": line}, level)["text"] for line in plan["brief"]]
-    allowed = engine_numbers(plan)
-    return SYSTEM.format(rules=rules_block(session), as_of=snap["as_of"], plan=json.dumps(plan, separators=(",", ":"))), allowed
+    allowed = engine_numbers(plan, quoted=quotes)
+    return SYSTEM.format(rules=rules_block(session), as_of=snap["as_of"], plan=json.dumps(plan, separators=(",", ":"))), allowed, quotes
 
 
 async def advise(
@@ -145,11 +175,11 @@ async def advise(
     """Run one turn of the chat: the model, its tool calls, its reply; yield events for the screen."""
     import asyncio
 
-    def prepare() -> tuple[str, set[float]]:
+    def prepare() -> tuple[str, set[float], set[str]]:
         with session_factory() as session:
-            return system_prompt(session, today)
+            return system_prompt_and_quotes(session, today)
 
-    system, allowed = await asyncio.to_thread(prepare)  # the plan is worked out off the event loop
+    system, allowed, quotes = await asyncio.to_thread(prepare)  # the plan is worked out off the event loop
     messages: list[dict] = [{"role": "system", "content": system}, *history]
     specs = tool_specs() if tools else []
     reply_parts: list[str] = []
@@ -184,13 +214,14 @@ async def advise(
         for call in calls:
             if call.name not in CHAT_TOOLS:
                 payload: Any = {"error": f"{call.name} is not available in the chat"}
+                await asyncio.to_thread(_refused, call.name, call.arguments)  # an attempt is in the activity log, whatever the tool
             else:
                 try:
                     payload = slim(call.name, await run_tool(call.name, call.arguments))
                 except Exception as error:  # noqa: BLE001 - the model gets the failure as data
                     payload = {"error": f"{type(error).__name__}: {error}"}
             if call.name not in UNTRUSTED_TOOLS:
-                allowed |= engine_numbers(payload)  # a figure in third-party text (mail, a document) is not the engine's
+                allowed |= engine_numbers(payload, quoted=quotes)  # a figure in third-party text (mail, a document, a merchant's or a sender's name) is not the engine's
             rows = len(payload) if isinstance(payload, list) else next((len(v) for v in payload.values() if isinstance(v, list)), 1) if isinstance(payload, dict) else 1
             used.append({"name": call.name, "arguments": call.arguments, "rows": rows})
             yield {"type": "tool", "name": call.name, "arguments": call.arguments, "rows": rows}

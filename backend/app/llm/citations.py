@@ -61,30 +61,67 @@ def figures_in_words(text: str) -> list[tuple[str, float]]:
     return found
 
 
-def engine_numbers(payload: Any, into: set[float] | None = None) -> set[float]:
-    """Every number in a structure the engine returned, as rounded floats, both signs."""
+# Keys whose strings are written by someone other than the engine: a merchant's or a sender's name, a subject, a
+# description, a note, a message's words. A figure inside one is the third party's, never the engine's, so it verifies
+# nothing, and where an engine sentence quotes one ("Past-due notice in the mail from ..."), the quote is taken out
+# before the sentence's own figures are read.
+THIRD_PARTY_KEYS = {"merchant", "merchants", "raw_name", "description", "note", "memo", "subject", "sender", "sender_name", "snippet", "excerpt", "body", "boxed", "quote", "said",
+                    "name", "names", "payee", "institution", "employer", "provider", "providers", "lender", "billing_company", "filename", "label", "account", "to", "from",
+                    "tags", "url", "host", "link", "trust_why", "order_no"}
+_DIGIT = re.compile(r"\d")
+
+
+def third_party_strings(payload: Any, key: str = "", into: set[str] | None = None) -> set[str]:
+    """The strings under third-party keys that carry a figure, anywhere in a structure."""
+    out: set[str] = set() if into is None else into
+    if isinstance(payload, dict):
+        for k, v in payload.items():
+            third_party_strings(v, str(k), out)
+    elif isinstance(payload, list | tuple | set):
+        for v in payload:
+            third_party_strings(v, key, out)
+    elif isinstance(payload, str) and key in THIRD_PARTY_KEYS and _DIGIT.search(payload) and payload.strip():
+        out.add(payload.strip())
+    return out
+
+
+def engine_numbers(payload: Any, into: set[float] | None = None, *, quoted: set[str] | frozenset[str] | tuple = ()) -> set[float]:
+    """Every number in a structure the engine returned, as rounded floats, both signs. Numbers are the engine's;
+    strings are read for figures only when they are the engine's own words, with any third-party words they quote
+    (those in the structure, and `quoted`, from elsewhere) taken out first."""
     out: set[float] = set() if into is None else into
+    quotes = sorted(third_party_strings(payload) | {q for q in quoted if q and _DIGIT.search(q)}, key=len, reverse=True)
+    _walk(payload, out, "", quotes)
+    return out
+
+
+def _walk(payload: Any, out: set[float], key: str, quotes: list[str]) -> None:
     if isinstance(payload, bool):
-        return out
+        return
     if isinstance(payload, int | float):
         v = round(float(payload), 2)
         out.add(abs(v))
         out.add(round(abs(v)))
         out.add(float(int(abs(v))))
     elif isinstance(payload, dict):
-        for v in payload.values():
-            engine_numbers(v, out)
+        for k, v in payload.items():
+            _walk(v, out, str(k), quotes)
     elif isinstance(payload, list | tuple | set):
         for v in payload:
-            engine_numbers(v, out)
+            _walk(v, out, key, quotes)
     elif isinstance(payload, str):
-        for m in AMOUNT.finditer(payload):
+        if key in THIRD_PARTY_KEYS or not _DIGIT.search(payload) or not any(c in payload for c in "$,.%"):
+            return  # only a token with a dollar sign, a separator, cents or a percent is read from words
+        text = payload
+        for q in quotes:
+            if q in text:
+                text = text.replace(q, " ")
+        for m in AMOUNT.finditer(text):
             token = m.group(0)
             if token.endswith("%") or "$" in token or "," in token or "." in token:
                 value = _value(token)
                 if value is not None:
                     out.add(value)
-    return out
 
 
 def figures_in(text: str) -> list[tuple[str, float]]:

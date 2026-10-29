@@ -106,7 +106,8 @@ function IncomeEditor({ i, onSaved }: { i: IncomeRow; onSaved: () => void }) {
     setNote(null);
     try {
       // The day of the month goes only when it was changed here; otherwise the server keeps it from the next payday.
-      const body = { ...cadenceOf(schedule), expected_net: value, expected_net_end: end, next_date: nextDate, ...(day ? { pay_day: day } : {}) };
+      // The end check emptied on a twice-a-month paycheck goes as null: "the same as the mid check", cleared on the server.
+      const body = { ...cadenceOf(schedule), expected_net: value, expected_net_end: semi && !netEnd.trim() ? null : end, next_date: nextDate, ...(day ? { pay_day: day } : {}) };
       await api(`/api/v1/incomes/${i.id}`, { method: "PUT", body: JSON.stringify(body) });
       setNote({ text: "Saved. Every screen uses it now.", tone: "info" });
       onSaved();

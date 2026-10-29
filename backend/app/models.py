@@ -791,6 +791,8 @@ class ExtractedFact(SQLModel, table=True):
     applied_to: str = ""
     created_at: dt.datetime = Field(default_factory=utcnow)
     resolved_at: dt.datetime | None = None
+    resolved_by: str = ""  # who confirmed or rejected it: owner | person:<id> | key:<name> | app:<client> | rule | datacheck (engine/facts.py)
+    made: str = ""  # what confirming it created, as against changed (bill:3, plan:2:4 with the payments left then): only that can be taken back
 
 class ReviewRun(SQLModel, table=True):
     """One run of the reviewer: what triggered it, which model, its notes with their statuses, and its cost."""

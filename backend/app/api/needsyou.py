@@ -10,9 +10,10 @@ from sqlmodel import Session, select
 from .inputs import In
 from .. import auth, services
 from ..db import get_session
+from ..engine import facts
 from ..engine.needsyou import AlreadyAnswered, answer_payment, plan_many, triage
 from ..jobs.writing import one_writer
-from ..models import ExtractedFact, MessageRef, Payment, utcnow
+from ..models import ExtractedFact, MessageRef, Payment
 from .routes import today
 
 router = APIRouter(prefix="/api/v1/needs-you", tags=["needs you"])
@@ -70,15 +71,13 @@ def _answer_one(session: Session, fid: int, action: str, steps: dict, principal:
         failed.append({"id": fid, "error": "already answered"})
         return
     if action == "reject":
-        fact.status, fact.resolved_at = "rejected", utcnow()
-        session.add(fact)
+        facts.resolve_fact(session, fact, "rejected", by=facts.who(principal))
         session.commit()
         done.append({"id": fid, "applied_to": ""})
         return
     step = steps.get(fid, {"do": "own_card", "why": "needs your answer on its own card"})
     if step["do"] == "set_aside":
-        fact.status, fact.applied_to, fact.resolved_at = "rejected", f"set aside: {step['why']}"[:200], utcnow()
-        session.add(fact)
+        facts.resolve_fact(session, fact, "rejected", applied_to=f"set aside: {step['why']}"[:200], by=facts.who(principal))
         session.commit()
         done.append({"id": fid, "applied_to": "", "aside": True})
         return
@@ -87,20 +86,19 @@ def _answer_one(session: Session, fid: int, action: str, steps: dict, principal:
         return
     if step.get("record"):
         # A notice that changes nothing in the plan is kept as read; nothing is applied.
-        fact.status, fact.applied_to, fact.resolved_at = "confirmed", "read: changes nothing in the plan", utcnow()
-        session.add(fact)
+        facts.resolve_fact(session, fact, "confirmed", applied_to="read: changes nothing in the plan", by=facts.who(principal))
         session.commit()
         done.append({"id": fid, "applied_to": ""})
         return
     ref = session.get(MessageRef, fact.message_ref_id) if fact.message_ref_id else None
+    b = facts.watermark(session)
     try:
         applied = apply_fact(session, fact, ref, ConfirmIn(apply=True), owner=principal.full)
     except HTTPException as error:
         session.rollback()
         failed.append({"id": fid, "error": str(error.detail)})
         return
-    fact.status, fact.applied_to, fact.resolved_at = ("applied" if applied else "confirmed"), applied, utcnow()
-    session.add(fact)
+    facts.resolve_fact(session, fact, "applied" if applied else "confirmed", applied_to=applied, by=facts.who(principal), before=b)
     session.commit()
     done.append({"id": fid, "applied_to": applied})
 

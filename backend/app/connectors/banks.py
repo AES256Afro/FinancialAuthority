@@ -535,12 +535,21 @@ def detach(session: Session, ids: list[int], *, replaced_by: Transaction | None 
     with them is kept on its own (shown as not matched yet). With `replaced_by` (a pending charge's posted row) all
     of it moves to that row instead; a split moves only while its parts still add up to the posted amount."""
     from ..engine.pairs import _restore
-    from ..models import Document, Payment, PlannedPayment, Paystub, TransactionPair, TransactionSplit
+    from ..models import Document, Invoice, Payment, PlannedPayment, Paystub, TransactionPair, TransactionSplit
 
     ids = [i for i in ids if i is not None]
     if not ids:
         return
     to = replaced_by.id if replaced_by is not None else None
+    # As an import's undo does (importlog.py): an invoice the rows settled lets go of them (the owner's "paid"
+    # stays), and a planned payment they posted counts again until another row posts it.
+    for invoice in session.exec(select(Invoice).where(Invoice.transaction_id.in_(ids))).all():  # type: ignore[union-attr]
+        invoice.transaction_id = to
+        session.add(invoice)
+    if to is None:
+        for plan in session.exec(select(PlannedPayment).where(PlannedPayment.transaction_id.in_(ids))).all():  # type: ignore[union-attr]
+            plan.done = False
+            session.add(plan)
     for p in session.exec(select(Payment).where(Payment.transaction_id.in_(ids))).all():  # type: ignore[union-attr]
         p.transaction_id = to
         if to is None:
