@@ -325,8 +325,26 @@ def triage(session: Session, today: date) -> dict[str, Any]:
     }
 
 
+class AlreadyAnswered(ValueError):
+    """The period was answered since the screen was read (another tab, the matcher): nothing changed. A 409."""
+
+
+OPEN_STATUSES = ("past_due", "late", "scheduled")
+
+
 def answer_payment(session: Session, payment: Payment, answer: str, today: date, *, transaction_id: int | None = None, paid_on: date | None = None) -> str:
     """The owner's answer about a bill marked past due. Returns what changed, in words."""
+    from ..jobs.writing import one_writer
+
+    with one_writer():  # read again under the lock: an answer from another tab, or the matcher, may have landed since
+        session.refresh(payment)
+        if payment.status not in OPEN_STATUSES:
+            when = f" on {payment.paid_date:%a %b} {payment.paid_date.day}" if payment.status == "paid" and payment.paid_date else ""
+            raise AlreadyAnswered(f"This bill was already answered: {'paid' if payment.status == 'paid' else 'marked as stopped' if payment.status == 'missed' else payment.status}{when}. Nothing changed.")
+        return _answer_payment(session, payment, answer, today, transaction_id=transaction_id, paid_on=paid_on)
+
+
+def _answer_payment(session: Session, payment: Payment, answer: str, today: date, *, transaction_id: int | None = None, paid_on: date | None = None) -> str:
     bill = session.get(Bill, payment.bill_id)
     if answer == "paid":
         tx = session.get(Transaction, transaction_id) if transaction_id else None

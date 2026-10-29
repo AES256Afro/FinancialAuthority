@@ -36,7 +36,7 @@ CARRIED = ("api_keys", "oauth_clients", "oauth_codes", "oauth_tokens", "web_sess
 # phone's push keys and devices, and what reminders were already sent. A model switched off since stays off; a
 # leaked passphrase rotated since is not used again; a phone added since keeps receiving.
 CARRIED_SETTINGS = ("calendar.feed", "auth.totp", "auth.totp.last_step", "send.allowances", "webpush.subs", "webpush.vapid", "push", "push.brief_day", "reminders.sent",
-                    "models", "models.secrets", "banks.secrets", "banks.plaid", "backups.offbox")
+                    "models", "models.secrets", "banks.secrets", "banks.plaid", "backups.offbox", "imports.processed")
 # What a restore leaves as it is now, in words for the Backups page.
 KEPT_AS_NOW = [
     "Sign-in: your password, second step, passkeys, sessions, keys and connected apps",
@@ -47,6 +47,7 @@ KEPT_AS_NOW = [
     "Privacy: which model may receive anything, and the model keys",
     "Push to your phone: the devices and their signing key, and the reminders already sent",
     "The off-box copy's folder and passphrase, and the calendar feed",
+    "Which files in the import folder were already read: a restore never reads them in again",
 ]
 
 
@@ -72,11 +73,15 @@ def check(path: Path, quick: bool = False) -> dict[str, Any]:
     return {"ok": result == "ok", "result": result, "tables": tables, "transactions": rows}
 
 
-def _copy(src: Path, dst: Path) -> None:
+def _copy(src: Path, dst: Path, *, standalone: bool = True) -> None:
     source = sqlite3.connect(str(src))
     target = sqlite3.connect(str(dst))
     try:
         source.backup(target)
+        if standalone:
+            # A copy keeps the live file's WAL mode, and every read-only open of it (the check, the documents it names)
+            # then leaves a -wal and a -shm beside it that nothing ever removes; a copy is a file on its own.
+            target.execute("PRAGMA journal_mode=DELETE")
     finally:
         target.close()
         source.close()
@@ -90,14 +95,21 @@ def make_point(kind: str, reason: str) -> dict[str, Any]:
     now = datetime.now(UTC)
     name = f"{now:%Y%m%d-%H%M%S-%f}-{kind}.db"
     path = folder() / name
-    _copy(settings.db_path, path)
-    verdict = check(path, quick=kind == "import")  # the daily copy and the drill check every page
-    if not verdict["ok"] or not verdict["tables"]:
-        path.unlink(missing_ok=True)
-        raise RuntimeError(f"The copy did not read back ({verdict['result']}); nothing was kept")
-    meta = {"name": name, "kind": kind, "reason": reason[:200], "created_at": now.isoformat(), "bytes": path.stat().st_size, "verified": True,
-            "tables": verdict["tables"], "transactions": verdict["transactions"], "documents": sorted(document_shas(path))}
-    path.with_suffix(".json").write_text(json.dumps(meta), encoding="utf-8")
+    # Made under a name no listing reads, and given its own name only once checked and described: a copy cut off
+    # half way (the process killed, the disk full) is never a point to restore.
+    partial = folder() / f".{name}.partial"
+    try:
+        _copy(settings.db_path, partial)
+        verdict = check(partial, quick=kind == "import")  # the daily copy and the drill check every page
+        if not verdict["ok"] or not verdict["tables"]:
+            raise RuntimeError(f"The copy did not read back ({verdict['result']}); nothing was kept")
+        meta = {"name": name, "kind": kind, "reason": reason[:200], "created_at": now.isoformat(), "bytes": partial.stat().st_size, "verified": True,
+                "tables": verdict["tables"], "transactions": verdict["transactions"], "documents": sorted(document_shas(partial))}
+        path.with_suffix(".json").write_text(json.dumps(meta), encoding="utf-8")
+        partial.replace(path)
+    finally:
+        for leftover in (partial, *(partial.with_name(partial.name + end) for end in ("-wal", "-shm", "-journal"))):
+            leftover.unlink(missing_ok=True)  # the copy's own journal goes with it, or it would sit beside the points
     _prune(kind)
     return meta
 
@@ -197,7 +209,29 @@ def missing_documents(db: Path | None = None) -> list[str]:
     return sorted(s for s in document_shas(db or settings.db_path) if not (where / f"{s}.bin").exists())
 
 
+LEFTOVER_SECONDS = 3600  # a half-made copy this old belongs to no run still going
+
+
+def sweep_leftovers(where: Path | None = None) -> int:
+    """Remove what a copy killed half way left behind: its partial file and that file's own journal, a description whose copy never got its
+    name, a scratch folder of the off-box copy. Only past an hour, so a copy being made right now is left be."""
+    import shutil
+
+    where = where or folder()
+    now, removed = time.time(), 0
+    for path in list(where.glob(".*.partial")) + list(where.glob(".*.partial-*")) + list(where.glob(".offbox-*")) + [m for m in where.glob("*.json") if NAME.fullmatch(m.with_suffix(".db").name) and not m.with_suffix(".db").exists()]:
+        try:
+            if now - path.stat().st_mtime < LEFTOVER_SECONDS:
+                continue
+            shutil.rmtree(path) if path.is_dir() else path.unlink()
+            removed += 1
+        except OSError:
+            continue
+    return removed
+
+
 def _prune(kind: str) -> None:
+    sweep_leftovers()
     points = [p for p in list_points() if p["kind"] == kind]
     for p in points[KEEP[kind]:]:
         remove_point(p["name"])
@@ -275,12 +309,20 @@ def restore(name: str) -> dict[str, Any]:
     path = _path(name)
     with one_writer():  # no job or sync writes while the database file is replaced
         before = make_point("before-restore", f"Before restoring the point of {name[:15]}")
+        # The point is made whole beside the database first (this version's columns, today's sign-ins, keys and
+        # links carried in), then put in place in one step: a restore killed or failing half way leaves the
+        # database as it was, never the old point with the keys revoked since working again.
+        staged = folder() / f".restore-{before['name']}.partial"
+        try:
+            _copy(path, staged, standalone=False)
+            _upgrade(staged)  # a point from an older version gains the columns this version added
+            _carry_forward(folder() / before["name"], staged)
+            engine.dispose()
+            _copy(staged, settings.db_path, standalone=False)
+        finally:
+            staged.unlink(missing_ok=True)
         engine.dispose()
-        _copy(path, settings.db_path)
-        engine.dispose()
-        init_db()  # a point from an older version gains the columns this version added
-        _carry_forward(folder() / before["name"], settings.db_path)
-        engine.dispose()
+        init_db()
         from .db import bump_version
 
         bump_version()  # every computed plan is of the database that was just replaced
@@ -291,6 +333,22 @@ def restore(name: str) -> dict[str, Any]:
     except (sqlite3.Error, OSError):
         missing = []
     return {"restored": name, "before": before, "documents_missing": len(missing)}
+
+
+def _upgrade(db: Path) -> None:
+    """This version's tables and columns in a copy that is not the live database."""
+    from sqlalchemy import create_engine
+    from sqlmodel import SQLModel
+
+    from . import models  # noqa: F401  (registers the tables)
+    from .db import add_missing_columns
+
+    other = create_engine(f"sqlite:///{db}")
+    try:
+        SQLModel.metadata.create_all(other)
+        add_missing_columns(other)
+    finally:
+        other.dispose()
 
 
 def _carry_forward(current: Path, db: Path) -> None:

@@ -5,6 +5,7 @@ import { User } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api, useApi } from "../api";
 import { when } from "../format";
+import { ownerName } from "../types-people";
 import { ConfirmButton } from "./ConfirmButton";
 import { Failed, Loading, Said } from "./State";
 
@@ -55,10 +56,12 @@ export function Approvals({ onChanged, onCount }: { onChanged?: () => void; onCo
   }, [waiting]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function who(a: ApprovalRow): string {
-    if (a.created_kind === "owner" || a.created_kind === "person") return mine(a) ? "you" : a.created_by;
+    if (a.created_kind === "owner" || a.created_kind === "person") return mine(a) ? "you" : a.created_kind === "owner" ? ownerName(a.created_by) : a.created_by;
     return clients.data?.clients.find((c) => c.client_id === a.created_by)?.name || a.created_by;
   }
-  const whose = (a: ApprovalRow) => a.whose || "someone else";
+  // The owner by name, or "the owner" while the sign-in name is still the default, so a line never reads "owner approves".
+  const whose = (a: ApprovalRow) => (a.whose ? ownerName(a.whose) : "someone else");
+  const Whose = (a: ApprovalRow) => whose(a).charAt(0).toUpperCase() + whose(a).slice(1);
 
   async function decide(a: ApprovalRow, action: "approve" | "deny") {
     setBusy(a.id);
@@ -107,11 +110,11 @@ export function Approvals({ onChanged, onCount }: { onChanged?: () => void; onCo
           {others.map((a) => (
             <div key={a.id} className="card" style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 6, borderStyle: "dashed" }}>
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 12, color: "var(--ink-2)" }}>
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 999, background: "var(--surface-2)", fontWeight: 800 }}><User size={12} aria-hidden="true" />{whose(a)}</span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 999, background: "var(--surface-2)", fontWeight: 800 }}><User size={12} aria-hidden="true" />{Whose(a)}</span>
                 Asked for by <strong>{who(a)}</strong>{KIND_WORD[a.created_kind] ?? ""} · {when(a.created_at)}
               </div>
               <div style={{ fontSize: 13 }}><span style={{ color: "var(--muted)" }}>To</span> <strong>{a.to}</strong> · {a.subject}</div>
-              <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{whose(a)} approves this one. Each person approves only their own emails.</div>
+              <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{Whose(a)} approves this one. Each person approves only their own emails.</div>
             </div>
           ))}
         </>

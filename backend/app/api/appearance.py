@@ -10,9 +10,9 @@ import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlmodel import Session
 
+from .inputs import In
 from .. import auth
 from ..db import get_session
 from ..models import Setting
@@ -35,24 +35,24 @@ SVG_REFUSED = re.compile(r"<script|<foreignobject|<iframe|<embed|<object|javascr
 DEFAULT = {"look": "light", "active": "river", "arrangements": [], "show_as": {}, "colours": None, "brand": {"name": "", "mark": ""}, "type_size": "regular", "density": "comfortable", "quiet": False, "calm": False, "font": "regular"}
 
 
-class SectionIn(BaseModel):
+class SectionIn(In):
     key: str
     show_as: str | None = None
     hidden: bool = False
 
 
-class ArrangementIn(BaseModel):
+class ArrangementIn(In):
     id: str
     name: str
     sections: list[SectionIn]
 
 
-class BrandIn(BaseModel):
+class BrandIn(In):
     name: str = ""
     mark: str = ""
 
 
-class AppearanceIn(BaseModel):
+class AppearanceIn(In):
     look: str = "light"
     active: str = "river"
     arrangements: list[ArrangementIn] = []

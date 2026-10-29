@@ -8,13 +8,14 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import auth, crypto, factors, oauth
 from .security import SecurityMiddleware
-from .api import apphealth, appearance, business, datacheck, approvals, banks, borrowing, credit, custom_reports, exports, goals, guide, homeassistant, housing, imports, moving, needsyou, people, moves, investments, ledger_rules, llm, mail, payoff, planned, plaid_webhook, privacy, projections, push, recap, registers, restore, routes, scenarios, sinking, tools, watch
+from .api import apphealth, appearance, inputs, business, datacheck, approvals, banks, borrowing, credit, custom_reports, exports, goals, guide, homeassistant, housing, imports, moving, needsyou, people, moves, investments, ledger_rules, llm, mail, payoff, planned, plaid_webhook, privacy, projections, push, recap, registers, restore, routes, scenarios, sinking, tools, watch
 from .config import settings
 from .db import init_db, session_scope
 from .engine.household import demo_rows, seed
@@ -109,7 +110,8 @@ def cors_origins(raw: list[str]) -> list[str]:
 
 
 _docs = {} if not auth.auth_enabled() else {"docs_url": None, "redoc_url": None, "openapi_url": None}
-app = FastAPI(title="FinancialAuthority", version=__version__, lifespan=lifespan, **_docs)
+app = FastAPI(title="FinancialAuthority", version=__version__, lifespan=lifespan, dependencies=[Depends(inputs.bounded_params)], **_docs)
+app.add_exception_handler(RequestValidationError, inputs.validation_error)
 _cors = cors_origins(settings.cors_origins)
 if _cors:
     app.add_middleware(CORSMiddleware, allow_origins=_cors, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])

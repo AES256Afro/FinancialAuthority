@@ -7,9 +7,9 @@ import json
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from .inputs import In
 from .. import auth
 from ..db import get_session
 from ..engine.readiness import readiness
@@ -22,13 +22,13 @@ from .routes import today
 router = APIRouter(prefix="/api/v1/scenarios", tags=["scenarios"])
 
 
-class OneOff(BaseModel):
+class OneOff(In):
     name: str = "One-off"
     amount: float
     date: date
 
 
-class Recurring(BaseModel):
+class Recurring(In):
     name: str = "Added bill"
     amount: float
     due_day: int | None = None
@@ -37,7 +37,7 @@ class Recurring(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class ScenarioIn(BaseModel):
+class ScenarioIn(In):
     name: str = "Scenario"
     move_date: date
     new_rent: float | None = None

@@ -30,6 +30,7 @@ import os
 import sqlite3
 import struct
 import tempfile
+import time
 import zipfile
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -156,7 +157,7 @@ def _write_copy(point: Path, passphrase: str, target: Path) -> dict[str, Any]:
     shas = sorted(restore.document_shas(point))
     where = restore.documents_folder()
     present = [s for s in shas if (where / f"{s}.bin").exists()]
-    with tempfile.TemporaryDirectory(dir=restore.folder()) as scratch:
+    with tempfile.TemporaryDirectory(dir=restore.folder(), prefix=".offbox-") as scratch:  # named so a copy killed half way is swept (restore.sweep_leftovers)
         plain = Path(scratch) / "copy.zip"
         with zipfile.ZipFile(plain, "w") as z:
             z.write(point, DB_NAME, compress_type=zipfile.ZIP_DEFLATED)
@@ -238,6 +239,9 @@ def copy_now(session: Session) -> dict[str, Any]:
         if not folder.is_dir():
             raise ValueError(f"{folder} is not a folder the server can see; mount the drive or the synced folder there")
         _writable(folder)
+        for old in folder.glob(f".financialauthority-*{SUFFIX}.partial"):  # the partial copy of a run killed half way; only ours
+            if time.time() - old.stat().st_mtime > restore.LEFTOVER_SECONDS:
+                old.unlink(missing_ok=True)
         passphrase = crypto.decrypt(c["passphrase_enc"])
         point = _point_for_copy()
         name = f"financialauthority-{datetime.now(UTC):%Y%m%d-%H%M%S}{SUFFIX}"

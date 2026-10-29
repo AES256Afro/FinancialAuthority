@@ -25,9 +25,9 @@ from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
-from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from .api.inputs import In
 from . import auth, crypto
 from .config import settings
 from .db import get_session
@@ -196,7 +196,7 @@ def totp_start(request: Request, session: Session = Depends(get_session)) -> dic
     return {"secret": secret, "uri": uri, "qr_svg": qr}
 
 
-class CodeIn(BaseModel):
+class CodeIn(In):
     code: str
 
 
@@ -234,7 +234,7 @@ def _tickets() -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(settings.signing_secret(), salt="fa-second-step")
 
 
-class SecondIn(BaseModel):
+class SecondIn(In):
     ticket: str
     code: str
 
@@ -335,7 +335,7 @@ def passkey_register_options(request: Request, session: Session = Depends(get_se
     return {"key": _remember("reg", options.challenge, rp_id), "options": json.loads(options_to_json(options))}
 
 
-class PasskeyIn(BaseModel):
+class PasskeyIn(In):
     key: str
     credential: dict
     name: str = ""

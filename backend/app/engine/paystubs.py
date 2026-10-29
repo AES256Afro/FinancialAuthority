@@ -47,12 +47,21 @@ def paystub_fact_from_file(session: Session, data: bytes, filename: str, today: 
     if not stub:
         return None
     confidence = stub.pop("confidence")
+    # The same stub read again (a crash after it was queued, before the folder noted the file; or the file dropped
+    # twice) is the fact already waiting or applied, never a second one: the pay date and the net are its key.
+    for known in session.exec(select(ExtractedFact).where(ExtractedFact.kind == "paystub", ExtractedFact.status != "rejected", ExtractedFact.message_ref_id == None)).all():  # noqa: E711
+        got = json.loads(known.fields or "{}")
+        if got.get("pay_date") == stub.get("pay_date") and got.get("net") == stub.get("net") and got.get("source") == source:
+            return known
     stub.update({"source": source, "attachment": filename, "sender_name": stub.get("employer") or ""})
     try:  # the file itself is kept with its month, and joins the paystub when the owner confirms it
         from .documents import save_document
 
         pay = stub.get("pay_date") or today.isoformat()
-        doc = save_document(session, data, filename=filename, title=f"Paystub · {pay}", kind="paystub", period=pay[:7], source=source)
+        digest = sha256(data).hexdigest()
+        # A copy kept by a read that crashed before its fact was queued is this file's copy, not a second one.
+        doc = session.exec(select(Document).where(Document.sha256 == digest, Document.kind == "paystub", Document.attach_to == "", Document.source == source)).first()
+        doc = doc or save_document(session, data, filename=filename, title=f"Paystub · {pay}", kind="paystub", period=pay[:7], source=source)
         stub["document_id"] = doc.id
     except ValueError:
         pass
@@ -90,8 +99,7 @@ def record_paystub(session: Session, fields: dict, source: str, fact_id: int | N
         source=source, fact_id=fact_id, transaction_id=deposit.id if deposit else None, expected_net=usual, difference=round(net - usual, 2) if usual is not None else None, stub_hash=stub_hash,
     )
     session.add(stub)
-    session.commit()
-    session.refresh(stub)
+    session.flush()  # one commit below with the paycheck's figure: a stub kept without it would never update it, a retry finds the stub
     # Keep the paycheck's expected net current. A semi-monthly paycheck keeps one figure per position of the
     # month: the first stub in a position sets it, and from two stubs the median does.
     income = session.exec(select(Income).where(Income.active == True)).first()  # noqa: E712
@@ -104,13 +112,13 @@ def record_paystub(session: Session, fields: dict, source: str, fact_id: int | N
         if position and len(same) == 1 and (current is None or abs(same[0] - current) > TOLERANCE):
             setattr(income, target, round(same[0], 2))
             session.add(income)
-            session.commit()
         elif (len(same) >= 2 if position else len(same) >= 3):
             median = round(statistics.median(same), 2)
             if current is None or abs(median - current) > 1:
                 setattr(income, target, median)
                 session.add(income)
-                session.commit()
+    session.commit()
+    session.refresh(stub)
     return stub
 
 

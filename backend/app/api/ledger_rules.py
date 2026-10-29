@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlmodel import Session
 
+from .inputs import In
 from .. import auth
 from ..db import get_session
 from ..engine.rules import apply_to_ledger, create_rule, load_rules, rule_out
@@ -15,7 +15,7 @@ from .routes import under_writer
 router = APIRouter(prefix="/api/v1/ledger/rules", tags=["ledger"])
 
 
-class RuleIn(BaseModel):
+class RuleIn(In):
     kind: str
     pattern: str
     value: str = ""

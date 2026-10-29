@@ -4,11 +4,12 @@
 import { ArrowLeftRight, BarChart3, BellDot, BookOpen, Briefcase, Clock, Download, Eye, EyeOff, FileText, FolderOpen, Gauge, History, Home, KeyRound, Landmark, LayoutGrid, List, LogOut, Mail, MessageSquare, Mountain, PieChart, PiggyBank, Receipt, Repeat, Scale, Settings, Telescope, TrendingUp, Truck, UserRound, Wallet, Waves, type LucideIcon } from "lucide-react";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
-import { api, useApi } from "../api";
+import { api, useApi, type ApiError } from "../api";
 import { appearance, brandMark, brandName, saveAppearance, useAppearance } from "../appearance";
 import { DEMO } from "../demo/shim";
 import { clearDeviceState } from "../session";
 import { NextStepsStrip } from "./NextSteps";
+import { Failed, Said } from "./State";
 import { daysWord, localToday, longDate, shortDate } from "../format";
 import type { Snapshot } from "../types";
 import { roleOf, type MePerson } from "../types-people";
@@ -132,7 +133,11 @@ function usePageTitle(brand: string, person: boolean) {
   }, [pathname, brand, person]);
 }
 
-export function Shell({ children, snapshot, me = null }: { children: ReactNode; snapshot: Snapshot | null; me?: MePerson | null; title?: string }) {
+// The pages that show the plan's own failure in their place; on every other page the header says it.
+const PLAN_PAGES = new Set(["/", "/today", "/chat"]);
+
+export function Shell({ children, snapshot, me = null, planError = null, onRetryPlan }: { children: ReactNode; snapshot: Snapshot | null; me?: MePerson | null; title?: string; planError?: ApiError | null; onRetryPlan?: () => void }) {
+  const { pathname } = useLocation();
   const look = useAppearance();
   const role = roleOf(me);
   const limited = role === "shared";
@@ -215,11 +220,13 @@ export function Shell({ children, snapshot, me = null }: { children: ReactNode; 
           {!limited && <button type="button" onClick={toggleQuiet} aria-pressed={look.quiet} title={look.quiet ? "Show the amounts again" : "Blur the amounts on screen; tap one to see it"} style={{ display: "inline-flex", alignItems: "center", gap: 4, minHeight: 32, padding: "0 6px", background: "none", border: 0, font: "inherit", fontSize: 12, color: "var(--ink-2)", cursor: "pointer" }}>
             {look.quiet ? <Eye size={15} aria-hidden="true" /> : <EyeOff size={15} aria-hidden="true" />}{look.quiet ? "Show amounts" : "Hide amounts"}
           </button>}
-          {quietNote && <span role="alert" style={{ fontSize: 12, color: "var(--critical-ink)" }}>{quietNote}</span>}
+          {quietNote && <Said text={quietNote} tone="error" />}
           {!limited && <Link to="/glossary" title="The words the app uses" style={{ display: "inline-flex", alignItems: "center", gap: 4, minHeight: 32, fontSize: 12, color: "var(--ink-2)" }}><BookOpen size={15} aria-hidden="true" />Words</Link>}
           {/* Anyone signed in can end this browser's session here, the owner too (a borrowed or shared computer). */}
           {!limited && me?.auth_enabled && <SignOut look="header" />}
         </header>
+        {/* Without the plan the header has no payday, no accounts and no Needs you count: say so, with Try again. */}
+        {!limited && planError && !snapshot && !PLAN_PAGES.has(pathname) && <Failed error={planError} what="the plan, so the payday and the Needs you count are missing" onRetry={onRetryPlan} />}
         {!limited && <NextStepsStrip />}
         {children}
       </main>

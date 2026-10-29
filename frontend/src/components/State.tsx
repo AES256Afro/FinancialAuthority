@@ -1,9 +1,9 @@
 // Loading, failed and empty: the same three states on every screen, each saying what happened and what to do.
 // A failure always has a Try again; an empty list always says how to fill it.
-import { Inbox, Loader, OctagonAlert } from "lucide-react";
+import { Hourglass, Inbox, Loader, OctagonAlert } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Link, useLocation } from "react-router-dom";
-import type { ApiError, Loaded } from "../api";
+import { BUSY_WORDS, isBusy, type ApiError, type Loaded } from "../api";
 import { DEMO } from "../demo/shim";
 
 const box = { padding: 14, display: "flex", alignItems: "flex-start", gap: 10, fontSize: 13 } as const;
@@ -21,6 +21,16 @@ export function Failed({ error, what = "this", onRetry, card = true }: { error: 
   const message = typeof error === "string" ? error : error.message;
   // In the static demo a screen the capture did not record is not a failure: a plain line says so, with no Try again.
   if (DEMO && message.startsWith("Not part of the demo")) return <Empty card={card}>{message} Your own FinancialAuthority shows {what} here.</Empty>;
+  // A sync holding the data for a moment is not a failure: said calmly, with the same Try again.
+  if (isBusy(message)) {
+    return (
+      <div role="status" className={card ? "card" : undefined} style={{ ...box, color: "var(--ink-2)", flexWrap: "wrap" }}>
+        <Hourglass size={16} aria-hidden="true" style={{ flexShrink: 0, marginTop: 1 }} />
+        <span style={{ flex: "1 1 220px", minWidth: 0 }}>{BUSY_WORDS}</span>
+        {onRetry && <button type="button" className="btn" onClick={onRetry} style={{ minHeight: 32, padding: "5px 12px" }}>Try again</button>}
+      </div>
+    );
+  }
   return (
     <div role="alert" className={card ? "card" : undefined} style={{ ...box, background: "var(--critical-soft)", color: "var(--critical-ink)", flexWrap: "wrap" }}>
       <OctagonAlert size={16} aria-hidden="true" style={{ flexShrink: 0, marginTop: 1 }} />
@@ -98,6 +108,15 @@ export function useFocusOnSaid(said: unknown): RefObject<HTMLDivElement | null> 
 // announces the sentence when it arrives; a region that appears with its text already in it is often not read.
 export function Said({ text, tone = "info" }: { text: string | null; tone?: "info" | "error" }) {
   if (!text) return <span role="status" aria-live="polite" className="sr-only" />;
+  // A write that met a running sync is not refused: the sentence alone, calmly, whatever the screen put before it.
+  if (isBusy(text)) {
+    return (
+      <span role="status" aria-live="polite" style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-2)" }}>
+        <Hourglass size={13} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 4 }} />
+        {BUSY_WORDS}
+      </span>
+    );
+  }
   return (
     <span role={tone === "error" ? "alert" : "status"} aria-live="polite" style={{ fontSize: 12, fontWeight: 700, color: tone === "error" ? "var(--critical-ink)" : "var(--safe-ink)" }}>
       {tone === "error" ? <OctagonAlert size={13} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 4 }} /> : null}

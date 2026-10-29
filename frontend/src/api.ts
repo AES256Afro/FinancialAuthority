@@ -38,17 +38,30 @@ export function onSignedOut(fn: () => void): () => void {
   return () => window.removeEventListener(SIGNED_OUT, fn);
 }
 
+// A read that has had no answer in this long is given up, so a screen never waits on a hung connection; it says so
+// and offers Try again. A write is never given up: it may already be saved, and a second tap would save it twice.
+const READ_WAIT_MS = 30_000;
+
+/** What a write says when it met a running sync, detection or import (the server's 409 from the writer lock): not a
+ * failure, the same tap works in a moment. Said and Failed show it calmly, never as an error. */
+export const BUSY_WORDS = "Busy for a moment: a sync, a detection or an import is running. Nothing was changed; try again in a moment.";
+export const isBusy = (text: string | null | undefined): boolean => Boolean(text?.includes(BUSY_WORDS));
+
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const writes = Boolean(init.method && init.method.toUpperCase() !== "GET");
   if (writes) shared.clear(); // a write makes every answer stale
   const headers = new Headers(init.headers);
   headers.set("X-Requested-With", "FinancialAuthority");
   if (init.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  const waiting = writes || init.signal ? null : new AbortController();
+  const timer = waiting ? window.setTimeout(() => waiting.abort(), READ_WAIT_MS) : undefined;
   let response: Response;
   try {
-    response = DEMO ? await demoFetch(path, init) : await fetch(path, { ...init, headers, credentials: "same-origin" });
+    response = DEMO ? await demoFetch(path, init) : await fetch(path, { ...init, headers, credentials: "same-origin", signal: waiting?.signal ?? init.signal });
   } catch {
-    throw new ApiError(0, "The app can't be reached right now. Check the connection, then try again.");
+    throw new ApiError(0, waiting?.signal.aborted ? "The app took too long to answer. Check the connection, then try again." : "The app can't be reached right now. Check the connection, then try again.");
+  } finally {
+    window.clearTimeout(timer);
   }
   if (!response.ok) {
     let detail = response.statusText || `The app answered ${response.status}.`;
@@ -56,8 +69,10 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
       const body = (await response.json()) as { detail?: unknown };
       detail = readable(body.detail) ?? detail;
     } catch {
-      // not JSON
+      // Not JSON: a page from a proxy in front of the app (502 Bad Gateway), or a crash. Its title is not a sentence.
+      if (response.status >= 500) detail = `The app is not answering right now (the server in front of it said ${response.status}). Try again in a moment.`;
     }
+    if (response.status === 409 && /try again in a moment/i.test(detail)) detail = BUSY_WORDS;
     if (response.status === 401 && !DEMO && !SIGN_IN_CALL.test(path.split("?")[0])) window.dispatchEvent(new Event(SIGNED_OUT));
     throw new ApiError(response.status, detail);
   }

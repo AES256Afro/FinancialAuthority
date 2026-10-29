@@ -5,9 +5,9 @@ from __future__ import annotations
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from .inputs import In
 from .. import auth, notify, services
 from ..clock import zone
 from ..db import get_session
@@ -29,7 +29,7 @@ def get_history(days: int = Query(30, ge=7, le=90), session: Session = Depends(g
     return out
 
 
-class AlertsIn(BaseModel):
+class AlertsIn(In):
     on: bool
 
 

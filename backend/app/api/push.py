@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
 from sqlmodel import Session
 
+from .inputs import In
 from .. import auth, crypto, notify
 from ..db import get_session
 from ..engine.snapshot import finance_snapshot
@@ -14,7 +14,7 @@ from .routes import today
 router = APIRouter(prefix="/api/v1/push", tags=["push"])
 
 
-class PushIn(BaseModel):
+class PushIn(In):
     kind: str | None = None
     url: str | None = None
     topic: str | None = None
@@ -52,7 +52,7 @@ def send_brief_now(session: Session = Depends(get_session), _: auth.Principal = 
 
 # ---- the app's own push, per device ---------------------------------------------------------------------------
 
-class SubscribeIn(BaseModel):
+class SubscribeIn(In):
     endpoint: str
     keys: dict[str, str]
     label: str = "A device"
@@ -94,7 +94,7 @@ def remove_device(device_id: str, session: Session = Depends(get_session), _: au
 
 # ---- reminders --------------------------------------------------------------------------------------------------
 
-class RemindersIn(BaseModel):
+class RemindersIn(In):
     bills_days: int | None = None
     payday: bool | None = None
     statement: bool | None = None

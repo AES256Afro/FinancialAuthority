@@ -19,6 +19,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 
 from . import services
+from .api.inputs import check_args
 from .config import settings
 from .db import session_scope
 from .engine.snapshot import finance_snapshot
@@ -142,6 +143,10 @@ def _tool(server: "MCPServer", **kwargs: Any):  # noqa: ANN202
         @functools.wraps(fn)
         def inner(*args: Any, **kw: Any) -> Any:
             client, level = _caller()
+            why = check_args(kw)  # the bounds every REST body keeps: finite, in range, dated 1900 to 2199, one clean line
+            if why:
+                note(client, level, "refused", kw)
+                return {"error": why}
             flag = _AUDITED.set(False)
             try:
                 out = fn(*args, **kw)
@@ -445,11 +450,22 @@ def build_server() -> MCPServer:
             stop_bills: Bill ids that end on the date.
             name: A short name for the scenario.
         """
+        from fastapi import HTTPException
+        from pydantic import ValidationError
+
+        from .api.scenarios import ScenarioIn, _spec
         from .engine.scenario import run_scenario
 
         client, redaction = _caller()
+        try:  # the same model and checks as the REST route: a one-off without an amount raised out of the engine
+            spec = _spec(ScenarioIn.model_validate({"name": name[:60], "move_date": move_date, "new_rent": new_rent, "overlap_months": max(0, min(3, int(overlap_months or 0))),
+                                                    "one_offs": list(one_offs or [])[:30], "recurring": list(recurring or [])[:30], "stop_bills": list(stop_bills or [])}))
+        except ValidationError as error:
+            first = error.errors()[0]
+            return {"error": f"{'.'.join(str(p) for p in first.get('loc', ()))}: {str(first.get('msg', 'invalid')).removeprefix('Value error, ')}"}
+        except HTTPException as error:
+            return {"error": str(error.detail)}
         with session_scope() as session:
-            spec = {"name": name[:60], "move_date": move_date, "new_rent": new_rent, "overlap_months": max(0, min(3, int(overlap_months or 0))), "one_offs": [dict(o) for o in (one_offs or [])][:30], "recurring": [dict(r) for r in (recurring or [])][:30], "stop_bills": [int(x) for x in (stop_bills or [])]}
             out = run_scenario(session, _today(), spec)
             _audit(session, client=client, client_kind="key", tool="scenario_run", args={"move_date": move_date, "new_rent": new_rent}, rows=len(out["windows"]), redaction=redaction)
             return out
@@ -604,7 +620,10 @@ def build_server() -> MCPServer:
 
         client, redaction = _caller()
         with session_scope() as session:
-            out = date_move_check(session, _today(), bill_id, max(1, min(28, day)))
+            try:
+                out = date_move_check(session, _today(), bill_id, max(1, min(28, day)))
+            except KeyError:
+                return {"error": "no such bill; bills_list names each one with its id"}
             _audit(session, client=client, client_kind="key", tool="billing_date_check", args={"bill_id": bill_id, "day": day}, rows=1, redaction=redaction)
             return out
 
@@ -685,8 +704,10 @@ def build_server() -> MCPServer:
         from .engine.next_steps import next_steps
 
         client, redaction = _caller()
+        token = get_access_token()  # a key or a token a second person made reads that person's steps
+        person_id = (getattr(token, "claims", None) or {}).get("person_id") if token else None
         with session_scope() as session:
-            out = next_steps(session, _today())
+            out = next_steps(session, _today(), person_id=int(person_id) if person_id is not None else None)
             _audit(session, client=client, client_kind="key", tool="next_steps", rows=len(out["steps"]), redaction=redaction)
             return out
 

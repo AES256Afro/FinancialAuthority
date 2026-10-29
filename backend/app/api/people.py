@@ -4,9 +4,9 @@ shared or whose; the shared page is what a "shared" sign-in sees."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from .inputs import In
 from .. import auth, people, services
 from ..config import settings
 from ..db import get_session
@@ -43,7 +43,7 @@ def list_people(session: Session = Depends(get_session), _: auth.Principal = Dep
     return _overview(session)
 
 
-class PersonIn(BaseModel):
+class PersonIn(In):
     username: str
     display_name: str = ""
     role: str = "shared"
@@ -66,7 +66,7 @@ def add_person(body: PersonIn, request: Request, session: Session = Depends(get_
     return {**_overview(session), "invite": {"person_id": person.id, "link": _link(request, token), "expires_at": person.invite_expires_at.isoformat()}}
 
 
-class PersonEdit(BaseModel):
+class PersonEdit(In):
     display_name: str | None = None
     role: str | None = None
     active: bool | None = None
@@ -127,7 +127,7 @@ def remove_person(person_id: int, session: Session = Depends(get_session), princ
     return _overview(session)
 
 
-class SharingIn(BaseModel):
+class SharingIn(In):
     shared: bool
     person_id: int | None = None
 

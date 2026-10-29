@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlmodel import Session
 
+from .inputs import In
 from .. import auth
 from ..db import get_session
 from ..engine.projections import DEFAULT_ASSUMPTIONS, assumptions, outlook
@@ -17,13 +17,13 @@ from .routes import today
 router = APIRouter(prefix="/api/v1/projections", tags=["projections"])
 
 
-class ReturnsIn(BaseModel):
+class ReturnsIn(In):
     low: float | None = None
     mid: float | None = None
     high: float | None = None
 
 
-class AssumptionsIn(BaseModel):
+class AssumptionsIn(In):
     savings_apy: float | None = None
     returns: ReturnsIn | None = None
     inflation: float | None = None

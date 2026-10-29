@@ -113,7 +113,7 @@ def test_a_bills_list_lands_on_the_register(owner: TestClient):
     assert bills["Example Internet"]["due_day"] == 3 and bills["Example Internet"]["autopay"] is True and bills["Example Internet"]["kind"] == "bill"
     assert bills["Example Streaming Co"]["due_day"] == 15 and bills["Example Streaming Co"]["kind"] == "subscription"
     again = owner.post("/api/v1/imports/file", files={"file": ("bills.csv", io.BytesIO(BILLS_CSV.encode()), "text/csv")}).json()
-    assert again["inserted"] == 0 and "2 updated" in again["summary"]
+    assert again["inserted"] == 0 and "0 updated" in again["summary"]  # the same list again changes nothing (sweep 14)
 
 
 SAME_AS_CSV_OFX = """<OFX><SIGNONMSGSRSV1><SONRS><FI><ORG>Example Bank</ORG></FI></SONRS></SIGNONMSGSRSV1>

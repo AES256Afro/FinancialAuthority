@@ -12,7 +12,10 @@ applyLook(getPrefs().look);
 
 // After an update, a page piece this tab knew may have been renamed. Load the new app once instead of breaking;
 // the flag stops a loop if the piece is truly missing.
+// Offline, the piece is missing because there is no network, not because of an update: a reload would open the kept
+// shell with nobody signed in, so the page's own card says it needs the network instead (ErrorBoundary).
 window.addEventListener("vite:preloadError", (event) => {
+  if (!navigator.onLine) return;
   if (sessionStorage.getItem("fa-reloaded-for-update")) return;
   event.preventDefault();
   try {

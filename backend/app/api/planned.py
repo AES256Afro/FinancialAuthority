@@ -6,9 +6,9 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from .inputs import In
 from .. import auth
 from ..db import get_session
 from ..engine.planned import planned_out, settle_planned
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/api/v1/planned", tags=["planned"])
 KINDS = {"card_payment", "bill", "transfer", "other"}
 
 
-class PlannedIn(BaseModel):
+class PlannedIn(In):
     name: str
     amount: float
     date: date

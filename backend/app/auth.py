@@ -19,9 +19,9 @@ from dataclasses import dataclass, field
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from itsdangerous import BadSignature, URLSafeTimedSerializer
-from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from .api.inputs import In
 from .config import settings
 from .db import get_session
 from .models import ApiKey, utcnow
@@ -365,7 +365,7 @@ require_owner = require_scope("approve")
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
-class LoginIn(BaseModel):
+class LoginIn(In):
     username: str
     password: str
 
@@ -466,7 +466,7 @@ def list_sessions(request: Request, session: Session = Depends(get_session)) -> 
                           "who": "you" if r.person_id == principal.person_id else names.get(r.person_id, "someone") if r.person_id else settings.username, "person_id": r.person_id} for r in rows]}
 
 
-class EndIn(BaseModel):
+class EndIn(In):
     session_id: int | None = None
     all_others: bool = False
 
@@ -532,7 +532,7 @@ def me(request: Request, session: Session = Depends(get_session)) -> dict:
 # ---- joining: the second person sets their own password from the owner's invitation ------------------------------
 
 
-class JoinCheckIn(BaseModel):
+class JoinCheckIn(In):
     token: str
 
 
@@ -548,11 +548,18 @@ def join_check(body: JoinCheckIn, request: Request, session: Session = Depends(g
     if person is None:
         _record_failure(ip)
         raise HTTPException(400, "This invitation has expired or was used already. Ask the person who sent it for a new one.")
-    return {"username": person.username, "display_name": person.display_name or person.username, "role": person.role, "role_words": people.ROLES_FOR_THEM.get(person.role, "").format(owner=settings.username),
+    return {"username": person.username, "display_name": person.display_name or person.username, "role": person.role, "role_words": people.ROLES_FOR_THEM.get(person.role, "").format(owner=owner_name(settings.username)),
             "expires_at": person.invite_expires_at.isoformat() if person.invite_expires_at else None, "min_length": people.MIN_PASSWORD}
 
 
-class JoinIn(BaseModel):
+def owner_name(username: str | None) -> str:
+    """The owner as a name in a sentence, by the frontend's ownerName rule: the sign-in name, or "the owner" while it
+    is the default "owner" or empty, so a line never reads "approving owner's sends"."""
+    name = (username or "").strip()
+    return name if name and name.lower() != "owner" else "the owner"
+
+
+class JoinIn(In):
     token: str
     password: str
 

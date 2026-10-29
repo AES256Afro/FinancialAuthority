@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from .inputs import In
 from .. import auth, crypto
 from ..config import settings
 from ..connectors import CONNECTORS
@@ -19,30 +20,30 @@ from ..store import get_setting, set_setting
 router = APIRouter(prefix="/api/v1/banks", tags=["banks"])
 
 
-class PlaidSettingsIn(BaseModel):
+class PlaidSettingsIn(In):
     client_id: str | None = None
     secret: str | None = None
     environment: str | None = None
 
 
-class TellerSettingsIn(BaseModel):
+class TellerSettingsIn(In):
     application_id: str | None = None
     certificate: str | None = None
     private_key: str | None = None
     environment: str | None = None
 
 
-class LinkTokenIn(BaseModel):
+class LinkTokenIn(In):
     link_id: int | None = None
     purpose: str = "bank"  # bank | investments
 
 
-class ExchangeIn(BaseModel):
+class ExchangeIn(In):
     public_token: str
     institution: str = ""
 
 
-class EnrollIn(BaseModel):
+class EnrollIn(In):
     access_token: str
     enrollment_id: str
     institution: str = ""
@@ -116,9 +117,16 @@ def put_plaid(body: PlaidSettingsIn, session: Session = Depends(get_session), _:
     return overview(session)
 
 
+def _unreachable(error: Exception) -> str:
+    return f"Plaid could not be reached ({type(error).__name__}); try again in a moment"
+
+
 def record_key_check(session: Session, api) -> dict[str, str]:  # noqa: ANN001
     """Try the keys once and keep the verdict where the page and the next steps can show it."""
-    verdict = api.check_keys()
+    try:
+        verdict = api.check_keys()
+    except httpx.HTTPError as error:  # the network, not the keys: the keys are kept and the page says so
+        verdict = {"result": "error", "message": _unreachable(error)}
     set_setting(session, "banks.plaid", {**(get_setting(session, "banks.plaid", {}) or {}), "keys": {**verdict, "environment": api.environment}})
     return verdict
 
@@ -171,6 +179,8 @@ def plaid_link_token(body: LinkTokenIn | None = None, session: Session = Depends
             raise HTTPException(502, record_key_check(session, api)["message"]) from error
         else:
             raise HTTPException(502, str(error)) from error
+    except httpx.HTTPError as error:
+        raise HTTPException(502, _unreachable(error)) from error
     return {"link_token": token, "environment": bank_state(session, "plaid")["environment"], "oauth_redirect": oauth}
 
 
@@ -183,6 +193,8 @@ def plaid_exchange(body: ExchangeIn, session: Session = Depends(get_session), _:
         link = plaid().connect(session, api, body.public_token, body.institution)
     except PlaidError as error:
         raise HTTPException(502, str(error)) from error
+    except httpx.HTTPError as error:
+        raise HTTPException(502, _unreachable(error)) from error
     except crypto.DataKeyMissing as error:
         raise HTTPException(409, str(error)) from error
     result = plaid().sync(session, link_id=link.id)
@@ -318,7 +330,7 @@ def freshness(session: Session = Depends(get_session), _: auth.Principal = Depen
     }
 
 
-class ShowsIn(BaseModel):
+class ShowsIn(In):
     amount: float
 
 
@@ -359,7 +371,7 @@ def bank_shows_clear(account_id: int, session: Session = Depends(get_session), p
     return {"ok": True, "said": said}
 
 
-class FreshnessIn(BaseModel):
+class FreshnessIn(In):
     sync_every_hours: int | None = None
     price_per_item: float | None = None
     clear_price: bool = False

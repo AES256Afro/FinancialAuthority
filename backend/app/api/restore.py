@@ -4,9 +4,9 @@ signed in, can restore; a restore takes a point of the moment before, so it can 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlmodel import Session
 
+from .inputs import In
 from .. import auth, restore, services
 from ..db import get_session
 
@@ -25,7 +25,7 @@ def make_point(principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     return {"made": made, "points": restore.list_points()}
 
 
-class OffboxIn(BaseModel):
+class OffboxIn(In):
     folder: str | None = None
     passphrase: str | None = None
     every_days: int | None = None

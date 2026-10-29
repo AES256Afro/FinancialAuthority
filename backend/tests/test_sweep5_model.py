@@ -124,7 +124,7 @@ def test_facts_pending_at_aggregates_names_nobody():
 # ---- the audit log -----------------------------------------------------------------------------
 
 
-def test_a_refused_or_failed_tool_call_is_audited_too():
+def test_a_refused_or_failed_tool_call_is_audited_too(monkeypatch):
     with Session(engine) as session:
         seed(session)
         session.add(ExtractedFact(kind="bill_due", fields=json.dumps({"name": "Example Water", "amount": 64.0, "due_date": "2026-11-02"}), confidence=0.9, status="pending", excerpt="due $64.00"))
@@ -133,14 +133,16 @@ def test_a_refused_or_failed_tool_call_is_audited_too():
     assert "confirm scope" in call("facts_confirm", {"fact_id": fact_id}, "full")["error"]  # no token: refused
     assert "error" in call("mail_read", {"message_id": 1}, "merchants")  # refused by the redaction level
     assert "error" in call("transactions_search", {"text": "x"}, "aggregates")
+    assert "date" in call("transactions_search", {"start_date": "not-a-date"}, "full")["error"]  # refused at the door (sweep 14)
+    monkeypatch.setattr(mcp.services, "search_transactions", lambda *a, **k: 1 / 0)
     with pytest.raises(Exception):
-        call("transactions_search", {"start_date": "not-a-date"}, "full")  # fails inside the tool
+        call("transactions_search", {"start_date": "2026-10-01"}, "full")  # fails inside the tool
     with Session(engine) as session:
         rows = session.exec(select(AuditEntry).where(AuditEntry.client == "sweep")).all()
     tools = [r.tool for r in rows]
     for name in ("facts_confirm", "mail_read", "transactions_search"):
         assert any(t.startswith(name) for t in tools), (name, tools)
-    assert sum(1 for t in tools if t.startswith("transactions_search")) == 2
+    assert sum(1 for t in tools if t.startswith("transactions_search")) == 3 and "transactions_search_failed" in tools
     assert all(r.rows == 0 for r in rows)
 
 

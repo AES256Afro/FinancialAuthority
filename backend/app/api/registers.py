@@ -5,9 +5,9 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from .inputs import In
 from .. import auth
 from ..db import get_session
 from ..jobs.detect import pending_series, run_detection
@@ -49,7 +49,7 @@ def detect_now(session: Session = Depends(get_session), _: auth.Principal = Depe
     return run_detection(session, today())
 
 
-class ClassifyIn(BaseModel):
+class ClassifyIn(In):
     kind: str
     name: str | None = None
     amount: float | None = None
@@ -73,6 +73,11 @@ def list_payments(session: Session = Depends(get_session), _: auth.Principal = D
     return payments_overview(session, today())
 
 
+def _named_as(series: RecurringSeries, linked: bool) -> str:
+    words = {"bill": "a bill", "subscription": "a subscription", "income": "a paycheck", "installment": "a payment plan", "ignored": "not recurring", "advance": "an advance"}
+    return words.get(series.kind, "a bill" if linked else series.kind or "something")
+
+
 @router.post("/recurring/{series_id}/classify")
 @under_writer
 def classify(series_id: int, body: ClassifyIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_scope("confirm"))) -> dict:
@@ -86,6 +91,12 @@ def classify(series_id: int, body: ClassifyIn, session: Session = Depends(get_se
             raise HTTPException(403, "Only the owner names a charge at an amount far from what was seen")
     if body.kind not in KINDS:
         raise HTTPException(400, f"kind must be one of {', '.join(sorted(KINDS))}")
+    # Read under the writer lock (the decorator above): a second tab, or a second tap, on a charge named meanwhile
+    # made a second bill. A charge named once is changed on its own register's page.
+    session.refresh(series)
+    linked = session.exec(select(Bill.id).where(Bill.series_id == series.id)).first() or session.exec(select(Income.id).where(Income.series_id == series.id)).first()
+    if series.confirmed or linked is not None:
+        raise HTTPException(409, f"This charge was already named as {_named_as(series, linked is not None)}; change it on its own page.")
     name = (body.name or series.merchant).strip()
     amount = body.amount if body.amount is not None else series.typical_amount
     created: dict = {}
@@ -167,7 +178,7 @@ def _need_anchor(session: Session, bill: Bill) -> None:
     bill.anchor_date = found
 
 
-class BillIn(BaseModel):
+class BillIn(In):
     name: str | None = None
     kind: str | None = None
     amount: float | None = None
@@ -297,7 +308,7 @@ def list_incomes(session: Session = Depends(get_session), _: auth.Principal = De
 PAY_CADENCES = ("weekly", "biweekly", "semimonthly", "monthly")
 
 
-class NewIncomeIn(BaseModel):
+class NewIncomeIn(In):
     name: str = ""
     cadence: str = "biweekly"
     expected_net: float | str | None = None
@@ -348,7 +359,7 @@ def create_income(body: NewIncomeIn, session: Session = Depends(get_session), _:
     return income_out(income)
 
 
-class FromPaystubIn(BaseModel):
+class FromPaystubIn(In):
     cadence: str = "biweekly"
     name: str = ""
     pay_days: str = ""
@@ -379,7 +390,7 @@ def income_from_paystub(paystub_id: int, body: FromPaystubIn | None = None, sess
     return income_out(income)
 
 
-class IncomeIn(BaseModel):
+class IncomeIn(In):
     name: str | None = None
     cadence: str | None = None
     expected_net: float | None = None
@@ -439,7 +450,7 @@ def list_pairs(session: Session = Depends(get_session), _: auth.Principal = Depe
     return pairs_overview(session)
 
 
-class PairDecisionIn(BaseModel):
+class PairDecisionIn(In):
     decision: str
 
 
@@ -469,7 +480,7 @@ def get_budgets(session: Session = Depends(get_session), _: auth.Principal = Dep
     return budget_plan(session, today())
 
 
-class BudgetIn(BaseModel):
+class BudgetIn(In):
     per_paycheck: float
     rollover: str = "next"
 
@@ -504,7 +515,7 @@ def delete_budget(category: str, session: Session = Depends(get_session), _: aut
 # ---- the owner's own edits: category, note, tags, splits, many at once, a rule tried first --------------------
 
 
-class TxEditIn(BaseModel):
+class TxEditIn(In):
     category: str | None = None
     note: str | None = None
     tags: list[str] | None = None
@@ -525,13 +536,13 @@ def edit_transaction(tx_id: int, body: TxEditIn, session: Session = Depends(get_
     return {"id": t.id, "category": t.category, "note": t.note, "tags": tags_of(t), "hidden": t.is_ignored}
 
 
-class SplitPart(BaseModel):
+class SplitPart(In):
     category: str
     amount: float
     note: str = ""
 
 
-class SplitIn(BaseModel):
+class SplitIn(In):
     parts: list[SplitPart]
 
 
@@ -549,7 +560,7 @@ def split_transaction(tx_id: int, body: SplitIn, session: Session = Depends(get_
     return {"id": tx_id, "parts": [{"category": p.category, "amount": p.amount, "note": p.note} for p in parts]}
 
 
-class BulkIn(BaseModel):
+class BulkIn(In):
     ids: list[int]
     category: str | None = None
     tags_add: list[str] = []
@@ -571,7 +582,7 @@ def bulk_edit(body: BulkIn, session: Session = Depends(get_session), principal: 
     return {"changed": changed}
 
 
-class RulePreviewIn(BaseModel):
+class RulePreviewIn(In):
     kind: str
     pattern: str
     value: str = ""
@@ -598,7 +609,7 @@ def list_assets(session: Session = Depends(get_session), _: auth.Principal = Dep
     return {**assets_overview(session, today()), "returns": holdings_returns(session)}
 
 
-class AssetIn(BaseModel):
+class AssetIn(In):
     name: str
     kind: str = "other"
     value: float
