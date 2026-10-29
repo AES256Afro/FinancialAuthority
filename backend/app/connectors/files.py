@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 import re
 from datetime import date, datetime, timezone
 from hashlib import sha256
@@ -19,6 +20,8 @@ from ..jobs.writing import one_writer
 from ..models import Account, Transaction, utcnow
 from .banks import record_balance, upsert_holding
 from .base import SyncResult
+
+log = logging.getLogger(__name__)
 
 DATE_KEYS = ("date", "transaction date", "posted date", "post date", "trade date", "settlement date", "run date", "posting date", "effective date")
 POSTED_KEYS = ("posted date", "post date", "posting date", "settlement date")
@@ -489,15 +492,15 @@ def _import_bills(session: Session, rows: list[dict], *, source_file: str, today
             created += 1
             changes.append({"op": "bill_created", "id": bill.id})
         else:
-            changes.append({"op": "bill_updated", "id": bill.id, "before": importlog.bill_before(bill)})
-            bill.amount, bill.cadence, bill.due_day = r["amount"], r["cadence"], r["due_day"]
-            if r.get("next_date"):
-                bill.anchor_date = r["next_date"]
-            bill.autopay = r["autopay"] or bill.autopay
-            if r["category"]:
-                bill.category = r["category"]
-            session.add(bill)
-            updated += 1
+            after = {"amount": r["amount"], "cadence": r["cadence"], "due_day": r["due_day"], "anchor_date": r.get("next_date") or bill.anchor_date,
+                     "autopay": r["autopay"] or bill.autopay, "category": r["category"] or bill.category}
+            if any(getattr(bill, field) != value for field, value in after.items()):
+                # Only a real change is an update: the same list read again keeps every bill, and takes no restore point.
+                changes.append({"op": "bill_updated", "id": bill.id, "before": importlog.bill_before(bill)})
+                for field, value in after.items():
+                    setattr(bill, field, value)
+                session.add(bill)
+                updated += 1
         ids.append(int(bill.id or 0))
     summary = f"{created} bill{'s' if created != 1 else ''} added, {updated} updated" + (f", {skipped} without a due day skipped" if skipped else "") + (
         f". Needs its next due date on Bills: {', '.join(undated[:5])}" if undated else "")
@@ -506,6 +509,10 @@ def _import_bills(session: Session, rows: list[dict], *, source_file: str, today
     if created or updated:
         from ..llm.reviewer import mark_pending
 
-        mark_pending(session, f"bills imported from {source_file}")  # it commits, so only once the import's own point is made
+        try:  # it commits, so only once the import's own point is made; the import has landed, and a failure here must not read the file again
+            mark_pending(session, f"bills imported from {source_file}")
+        except Exception as error:  # noqa: BLE001
+            session.rollback()
+            log.warning("the reviewer could not be told of the bills imported from %s: %s", source_file, error)
     return SyncResult(ok=True, summary=summary, inserted=created, details={"created": created, "updated": updated, "skipped": skipped, "bill_ids": ids, "source_file": source_file,
                                                                         "import_id": batch.id if changes else None}, at=utcnow())

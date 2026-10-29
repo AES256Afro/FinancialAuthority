@@ -8,9 +8,9 @@ import json
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from .inputs import In
 from .. import auth, crypto
 from ..connectors import CONNECTORS
 from ..connectors.mail import MailConnector, account_password, folder_list, safe_folder, test_account
@@ -75,7 +75,7 @@ def account_out(a: MailAccount) -> dict:
     }
 
 
-class MailAccountIn(BaseModel):
+class MailAccountIn(In):
     label: str | None = None
     kind: str | None = None
     host: str | None = None
@@ -177,7 +177,7 @@ def remove_account(account_id: int, session: Session = Depends(get_session), _: 
     return {"ok": True}
 
 
-class TestIn(BaseModel):
+class TestIn(In):
     id: int | None = None
     kind: str | None = None
     host: str | None = None
@@ -358,7 +358,7 @@ def list_facts(status: str | None = "pending", limit: int = Query(50, ge=1, le=5
     return {"facts": rows, "pending": pending}
 
 
-class ConfirmIn(BaseModel):
+class ConfirmIn(In):
     apply: bool = True
     name: str | None = None
     amount: float | None = None

@@ -7,9 +7,9 @@ from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from .inputs import In
 from .. import auth, services
 from ..config import settings
 from ..connectors import CONNECTORS
@@ -81,7 +81,7 @@ def list_accounts(session: Session = Depends(get_session), _: auth.Principal = D
     return {"accounts": services.list_accounts(session)}
 
 
-class AccountIn(BaseModel):
+class AccountIn(In):
     name: str
     kind: str = "card"
     institution: str = ""
@@ -154,8 +154,8 @@ def bill_suggestions(session: Session = Depends(get_session), principal: auth.Pr
 
 
 @router.get("/next_steps")
-def get_next_steps(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
-    return next_steps(session, today())
+def get_next_steps(session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
+    return next_steps(session, today(), person_id=principal.person_id if principal.kind in ("person", "key") else None)
 
 
 @router.get("/watchlist")
@@ -184,7 +184,7 @@ def accounts_overview(session: Session = Depends(get_session), principal: auth.P
     return out
 
 
-class DebtIn(BaseModel):
+class DebtIn(In):
     apr: float | None = None
     minimum: float | None = None
     statement_day: int | None = None
@@ -287,7 +287,7 @@ def list_connectors(_: auth.Principal = Depends(auth.require_read)) -> dict:
 # ---- keys ----------------------------------------------------------------------------------
 
 
-class KeyIn(BaseModel):
+class KeyIn(In):
     name: str
     scopes: list[str] = ["read"]
     redaction: str = "full"
@@ -347,7 +347,7 @@ def revoke_oauth_client(client_id: str, session: Session = Depends(get_session),
     return {"ok": True, "tokens_revoked": revoke_client(session, client_id)}
 
 
-class ClientRedactionIn(BaseModel):
+class ClientRedactionIn(In):
     redaction: str
 
 
@@ -395,7 +395,7 @@ def read_settings(session: Session = Depends(get_session), _: auth.Principal = D
     return {key: get_setting(session, key) for key in ("buffer", "appearance", "selfcheck")}
 
 
-class SettingIn(BaseModel):
+class SettingIn(In):
     value: object
 
 

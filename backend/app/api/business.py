@@ -8,9 +8,10 @@ import json
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from pydantic import BaseModel, Field
+from pydantic import Field
 from sqlmodel import Session, select
 
+from .inputs import In
 from .. import auth, services
 from ..db import get_session
 from ..engine import business as biz
@@ -42,7 +43,7 @@ def overview(session: Session = Depends(get_session), _: auth.Principal = Depend
     return {"businesses": [_out(b) for b in rows], "guide": biz.guide(session, first), "lines": [{"key": k, **v} for k, v in R.TAX_LINES.items()]}
 
 
-class BusinessIn(BaseModel):
+class BusinessIn(In):
     name: str = Field(min_length=1, max_length=120)
     kind: str = "sole_prop"
     state: str = Field(default="TX", min_length=2, max_length=2)
@@ -86,7 +87,7 @@ def change_business(business_id: int, body: BusinessIn, session: Session = Depen
     return overview(session, principal)
 
 
-class TickIn(BaseModel):
+class TickIn(In):
     done: bool
 
 
@@ -107,7 +108,7 @@ def finder(years: int = Query(3, ge=1, le=10), session: Session = Depends(get_se
     return biz.finder(session, today(), years)
 
 
-class AnswerIn(BaseModel):
+class AnswerIn(In):
     ids: list[int] = Field(min_length=1, max_length=2000)
     answer: str
     business_id: int | None = None
@@ -126,7 +127,7 @@ def answer_finder(body: AnswerIn, session: Session = Depends(get_session), princ
     return {**biz.finder(session, today()), "said": said}
 
 
-class MarkIn(BaseModel):
+class MarkIn(In):
     ids: list[int] = Field(min_length=1, max_length=2000)
     business_id: int | None = None
     share: float = Field(default=1.0, gt=0, le=1)
@@ -152,13 +153,13 @@ def books(business_id: int, year: int | None = None, session: Session = Depends(
 
 # ---- invoices ------------------------------------------------------------------------------------------------
 
-class LineIn(BaseModel):
+class LineIn(In):
     what: str = Field(min_length=1, max_length=200)
     quantity: float = Field(default=1, ge=0, le=100000)
     price: float = Field(ge=0, le=10_000_000)
 
 
-class InvoiceIn(BaseModel):
+class InvoiceIn(In):
     direction: str = "out"
     counterparty: str = Field(min_length=1, max_length=120)
     issued_on: date
@@ -229,7 +230,7 @@ def change_invoice(invoice_id: int, body: InvoiceIn, session: Session = Depends(
     return _invoice_out(session, i)
 
 
-class PaidIn(BaseModel):
+class PaidIn(In):
     transaction_id: int | None = None
     paid_on: date | None = None
 
@@ -291,7 +292,7 @@ def print_invoice(invoice_id: int, session: Session = Depends(get_session), _: a
 
 # ---- the mileage log -----------------------------------------------------------------------------------------
 
-class TripIn(BaseModel):
+class TripIn(In):
     day: date
     miles: float = Field(gt=0, le=2000)
     purpose: str = Field(min_length=3, max_length=200)
@@ -344,7 +345,7 @@ def tax_for(year: int, session: Session = Depends(get_session), _: auth.Principa
     return taxcenter.tax_year(session, today(), year)
 
 
-class AnswersIn(BaseModel):
+class AnswersIn(In):
     answers: dict[str, object]
 
 

@@ -4,9 +4,9 @@ stream turned into a plan with an end date; the card payoff setting."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from pydantic import BaseModel
 from sqlmodel import Session
 
+from .inputs import In
 from .. import auth
 from ..db import get_session
 from ..engine.borrowing import borrowing_overview
@@ -19,14 +19,14 @@ router = APIRouter(prefix="/api/v1/borrowing", tags=["borrowing"])
 CARD_MODES = {"auto", "split", "next", "mid", "end", "minimum", "off"}
 
 
-class PlanIn(BaseModel):
+class PlanIn(In):
     bill_id: int | None = None
     series_id: int | None = None
     remaining: int
     apr: float | None = None
 
 
-class SettingsIn(BaseModel):
+class SettingsIn(In):
     cards_pay_from: str | None = None  # split | next | mid | end
 
 

@@ -70,13 +70,17 @@ export function brandMark(): string {
   return current.brand.mark || DEFAULT_ICON;
 }
 
+// A sign-in that sees the shared accounts only reads the appearance but cannot change it, and its page has no Show
+// amounts button: the owner's Hide amounts is for the owner's screens, so it is not put on theirs.
+let viewOnly = false;
+
 function apply(a: AppearanceState): void {
   const root = document.documentElement;
   applyLook(a.look);
   setColourOverrides(a.colours);
   root.dataset.size = a.type_size;
   root.dataset.density = a.density;
-  if (a.quiet) root.dataset.quiet = "1";
+  if (a.quiet && !viewOnly) root.dataset.quiet = "1";
   else delete root.dataset.quiet;
   if (a.calm) root.dataset.calm = "1";
   else delete root.dataset.calm;
@@ -98,8 +102,15 @@ export async function saveAppearance(next: AppearanceState): Promise<AppearanceS
   const before = current;
   setAppearance({ ...next, saved: true });
   if (DEMO) return current;
-  const { saved: _saved, ...body } = next;
   try {
+    // Another tab or device may have changed the appearance since this one loaded it. Only what this change touches
+    // is put over the server's copy as it is now, so a tab left open never puts back a look chosen elsewhere.
+    const fresh = await api<AppearanceState>("/api/v1/appearance");
+    const merged: Record<string, unknown> = fresh.saved ? { ...fresh } : { ...before };
+    for (const key of Object.keys(next) as (keyof AppearanceState)[]) {
+      if (JSON.stringify(next[key]) !== JSON.stringify(before[key])) merged[key] = next[key];
+    }
+    const { saved: _saved, ...body } = merged;
     const out = await api<AppearanceState>("/api/v1/appearance", { method: "PUT", body: JSON.stringify(body) });
     setAppearance(out);
     return out;
@@ -109,7 +120,9 @@ export async function saveAppearance(next: AppearanceState): Promise<AppearanceS
   }
 }
 
-export async function loadAppearance(): Promise<void> {
+/** `opts.viewOnly`: the sign-in sees the shared accounts only (see viewOnly above). */
+export async function loadAppearance(opts: { viewOnly?: boolean } = {}): Promise<void> {
+  viewOnly = Boolean(opts.viewOnly);
   setLoad({ status: "loading", error: null });
   try {
     const a = await api<AppearanceState>("/api/v1/appearance");
@@ -132,7 +145,7 @@ export function useAppearanceLoad(): AppearanceLoad & { retry: () => void } {
       loadListeners.delete(setL);
     };
   }, []);
-  return { ...l, retry: () => void loadAppearance() };
+  return { ...l, retry: () => void loadAppearance({ viewOnly }) };
 }
 
 export function useAppearance(): AppearanceState {

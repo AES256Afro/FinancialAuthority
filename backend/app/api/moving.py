@@ -5,9 +5,9 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlmodel import Session
 
+from .inputs import In
 from .. import approvals, auth, services
 from ..db import get_session
 from ..engine.moving import moving_plan, tick
@@ -21,7 +21,7 @@ def get_plan(session: Session = Depends(get_session), _: auth.Principal = Depend
     return moving_plan(session, today())
 
 
-class TickIn(BaseModel):
+class TickIn(In):
     done: bool = True
 
 
@@ -34,7 +34,7 @@ def tick_step(step_id: str, body: TickIn, session: Session = Depends(get_session
     return moving_plan(session, today())
 
 
-class LetterIn(BaseModel):
+class LetterIn(In):
     to: str
     body: str
 
@@ -71,7 +71,7 @@ def advance_exit(session: Session = Depends(get_session), _: auth.Principal = De
     return exit_plan(session, today())
 
 
-class PaidIn(BaseModel):
+class PaidIn(In):
     on: date | None = None
 
 

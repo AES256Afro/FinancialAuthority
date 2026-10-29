@@ -7,9 +7,9 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from .inputs import In
 from .. import auth, crypto
 from ..config import settings
 from ..db import get_session, session_scope
@@ -25,7 +25,7 @@ from .routes import today
 router = APIRouter(prefix="/api/v1", tags=["models"])
 
 
-class RoleIn(BaseModel):
+class RoleIn(In):
     provider: str | None = None
     model: str | None = None
     base_url: str | None = None
@@ -34,27 +34,27 @@ class RoleIn(BaseModel):
     sees: str | None = None
 
 
-class SecretIn(BaseModel):
+class SecretIn(In):
     name: str
     value: str
 
 
-class RulesIn(BaseModel):
+class RulesIn(In):
     rules: str | None = None
     goals: str | None = None
 
 
-class ChatMessage(BaseModel):
+class ChatMessage(In):
     role: str
     content: str
 
 
-class ChatIn(BaseModel):
+class ChatIn(In):
     messages: list[ChatMessage]
     tools: bool = True
 
 
-class NoteIn(BaseModel):
+class NoteIn(In):
     answer: str | None = None
 
 
@@ -100,7 +100,7 @@ def put_role(role: str, body: RoleIn, session: Session = Depends(get_session), _
     return models_out(session)
 
 
-class CatalogIn(BaseModel):
+class CatalogIn(In):
     provider: str
     base_url: str = ""
 

@@ -91,7 +91,7 @@ def data_version() -> int:
 
 # Rows the engine never reads: writing them leaves a computed plan as it was.
 QUIET_TABLES = {"audit_entries", "job_runs", "web_sessions", "oauth_tokens", "oauth_codes", "oauth_clients", "api_keys", "review_runs", "message_refs", "passkeys", "documents", "people", "health_samples"}
-QUIET_SETTINGS = {"usage.calls", "selfcheck", "push.brief_day", "reminders.sent", "imports.processed", "review.pending", "auth.totp", "auth.totp.last_step"}
+QUIET_SETTINGS = {"usage.calls", "selfcheck", "push.brief_day", "reminders.sent", "imports.processed", "review.pending", "auth.totp", "auth.totp.last_step", "jobs.detected_through", "jobs.matched_through"}
 
 
 def _engine_reads(obj) -> bool:  # noqa: ANN001
@@ -150,17 +150,18 @@ def _trim_manual_keys() -> None:
                 keys.add(f"{head}:{digits}")
 
 
-def add_missing_columns() -> list[str]:
+def add_missing_columns(target=None) -> list[str]:  # noqa: ANN001 - an Engine; the app's own when not given
     """Columns a newer version added to an existing table are created in place, with the model's default.
 
     SQLite's `create_all` only creates tables that do not exist, so an upgrade would otherwise fail on the first
     query that names a new column. Only additions are handled; nothing is dropped or retyped."""
     from sqlalchemy import inspect, text
 
+    target = target if target is not None else engine
     added: list[str] = []
-    inspector = inspect(engine)
+    inspector = inspect(target)
     existing_tables = set(inspector.get_table_names())
-    with engine.begin() as connection:
+    with target.begin() as connection:
         for table in SQLModel.metadata.sorted_tables:
             if table.name not in existing_tables:
                 continue
@@ -168,7 +169,7 @@ def add_missing_columns() -> list[str]:
             for column in table.columns:
                 if column.name in present:
                     continue
-                ddl = f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {column.type.compile(engine.dialect)}'
+                ddl = f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {column.type.compile(target.dialect)}'
                 default = column.default.arg if column.default is not None and not callable(column.default.arg) else None
                 kind = str(column.type).upper()
                 if default is not None:

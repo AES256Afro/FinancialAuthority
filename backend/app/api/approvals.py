@@ -4,17 +4,17 @@ own: the owner approves the owner's, a second person their own, and neither appr
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from .inputs import In
 from .. import approvals, auth, services
 from ..db import get_session
-from ..models import Approval
+from ..models import Approval, MailAccount
 
 router = APIRouter(prefix="/api/v1/approvals", tags=["approvals"])
 
 
-class ApprovalIn(BaseModel):
+class ApprovalIn(In):
     to: str
     subject: str
     body: str
@@ -23,13 +23,13 @@ class ApprovalIn(BaseModel):
     account_id: int | None = None
 
 
-class EditIn(BaseModel):
+class EditIn(In):
     to: str | None = None
     subject: str | None = None
     body: str | None = None
 
 
-class DecideIn(BaseModel):
+class DecideIn(In):
     allow_always: bool = False
 
 
@@ -71,6 +71,8 @@ def list_approvals(status: str = "pending", limit: int = 50, session: Session = 
 
 @router.post("")
 def queue(body: ApprovalIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_scope("confirm"))) -> dict:
+    if body.account_id is not None and session.get(MailAccount, body.account_id) is None:
+        raise HTTPException(400, "No such mailbox to send from; leave it out to use the first one connected.")
     try:
         row = approvals.create(session, to=body.to, subject=body.subject, body=body.body, reason=body.reason, source=body.source, created_by=principal.name, created_kind=principal.kind, account_id=body.account_id,
                                for_person_id=_mine(principal))

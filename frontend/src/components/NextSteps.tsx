@@ -28,8 +28,10 @@ export function useNextSteps() {
 
 export function NextStepsStrip() {
   const { pathname } = useLocation();
-  const { data } = useNextSteps();
-  if (!data || data.steps.length === 0 || pathname === "/today") return null;
+  const { data, error, reload } = useNextSteps();
+  if (pathname === "/today") return null;
+  if (!data && error) return <Failed error={error} what="the next steps" onRetry={reload} card={false} />;
+  if (!data || data.steps.length === 0) return null;
   const shown = data.steps.filter((s) => s.severity !== "info").slice(0, 3);
   const rest = data.count - shown.length;
   if (shown.length === 0 && rest > 0) {

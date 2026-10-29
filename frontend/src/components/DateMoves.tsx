@@ -53,8 +53,11 @@ export function DateMoves({ refreshKey }: { refreshKey?: number }) {
   const [asking, setAsking] = useState<number | null>(null);
   const [to, setTo] = useState("");
   const [notes, setNotes] = useState<Record<number, Note>>({});
+  const [queuing, setQueuing] = useState(false);
   const say = (id: number, note: Note) => setNotes((n) => ({ ...n, [id]: note }));
   async function queue(s: Suggestion) {
+    if (queuing) return; // a second tap while the first is on its way would queue the same email twice
+    setQueuing(true);
     try {
       await api("/api/v1/approvals", { method: "POST", body: JSON.stringify({ to, subject: `Request to move my billing date to the ${ordinal(s.to_day)}`, body: s.draft, reason: `${s.name}: ${ordinal(s.from_day)} to ${ordinal(s.to_day)}`, source: `bill:${s.bill_id}` }) });
       say(s.bill_id, { text: "", tone: "info", queued: true });
@@ -62,6 +65,8 @@ export function DateMoves({ refreshKey }: { refreshKey?: number }) {
       setTo("");
     } catch (e) {
       say(s.bill_id, { text: (e as Error).message, tone: "error" });
+    } finally {
+      setQueuing(false);
     }
   }
   async function copy(s: Suggestion) {
@@ -132,7 +137,7 @@ export function DateMoves({ refreshKey }: { refreshKey?: number }) {
                   <span className="lab">The biller's email address</span>
                   <input className="input" type="email" value={to} onChange={(e) => setTo(e.target.value)} required style={{ minHeight: 34, padding: "4px 10px" }} />
                 </label>
-                <button className="btn dark" type="submit" style={{ minHeight: 34, padding: "4px 10px" }}>Queue for approval</button>
+                <button className="btn dark" type="submit" disabled={queuing} style={{ minHeight: 34, padding: "4px 10px" }}>{queuing ? "Queuing…" : "Queue for approval"}</button>
               </form>
             )}
             {note?.queued && (

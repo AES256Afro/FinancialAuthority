@@ -117,6 +117,11 @@ def save_document(session: Session, raw: bytes, *, filename: str, title: str = "
     if attach_to and not ATTACH.fullmatch(attach_to):
         raise ValueError("attach_to names what it belongs to, like home:3")
     digest = hashlib.sha256(raw).hexdigest()
+    if attach_to:
+        # The same file kept with the same thing again (a confirmation retried after a crash) is the one already kept.
+        same = session.exec(select(Document).where(Document.sha256 == digest, Document.attach_to == attach_to)).first()
+        if same is not None:
+            return same
     path = folder() / f"{digest}.bin"
     if not path.exists():
         path.write_bytes(_seal(raw))

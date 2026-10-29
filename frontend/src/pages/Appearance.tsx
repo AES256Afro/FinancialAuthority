@@ -10,6 +10,7 @@ import { defaultRoleColours, LOOKS, ROLES, VALIDATED_ORDER, type LookId, type Ro
 import { asHex, validatePalette, type Report } from "../looks/validate";
 import { PRESETS, SECTIONS, sectionByKey } from "../sections";
 import { ConfirmButton } from "../components/ConfirmButton";
+import { ownerName, roleOf, type MePerson } from "../types-people";
 import { Failed, Loading, Said } from "../components/State";
 
 // Where a save's outcome is said: beside the part of the page whose button caused it.
@@ -171,7 +172,7 @@ function readFile(f: File): Promise<string> {
   });
 }
 
-export function Appearance() {
+export function Appearance({ me = null }: { me?: MePerson | null }) {
   const ap = useAppearance();
   const load = useAppearanceLoad();
   const [editing, setEditing] = useState<Arrangement | null>(null);
@@ -199,7 +200,7 @@ export function Appearance() {
   const heading = (
     <section>
       <h1 style={{ margin: "0 0 4px", fontSize: 20, fontWeight: 800 }}>Appearance</h1>
-      <p style={{ margin: 0, color: "var(--ink-2)" }}>Every home shows the same numbers. Pick the arrangement that reads best, or make your own. Saved for all your devices.</p>
+      <p style={{ margin: 0, color: "var(--ink-2)" }}>Every home shows the same numbers. Pick the arrangement that reads best, or make your own. {roleOf(me) === "owner" ? "Saved for all your devices." : `One appearance for the whole app: a change here, Hide amounts too, changes it on ${ownerName(me?.owner)}'s devices as well as yours.`}</p>
     </section>
   );
   // Until the kept appearance is here, nothing on the page can change it: a save would send the defaults.

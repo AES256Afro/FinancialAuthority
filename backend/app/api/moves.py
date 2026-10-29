@@ -6,9 +6,9 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from .inputs import In
 from .. import auth, services
 from ..db import get_session
 from ..engine.moves import _point, move_plan, refresh_items, set_item, start_move, verify
@@ -42,7 +42,7 @@ def list_moves(session: Session = Depends(get_session), _: auth.Principal = Depe
     return {"moves": out, "accounts": [{"id": a.id, "name": a.name, "kind": a.kind, "institution": a.institution} for a in accounts]}
 
 
-class MoveIn(BaseModel):
+class MoveIn(In):
     source_account_id: int
     target_account_id: int | None = None
     target_name: str = ""
@@ -72,7 +72,7 @@ def get_move(move_id: int, session: Session = Depends(get_session), principal: a
     return out
 
 
-class MovePatch(BaseModel):
+class MovePatch(In):
     target_account_id: int | None = None
     target_name: str | None = None
     finish_by: date | None = None
@@ -108,7 +108,7 @@ def update_move(move_id: int, body: MovePatch, session: Session = Depends(get_se
     return move_plan(session, move, today())
 
 
-class ItemPatch(BaseModel):
+class ItemPatch(In):
     decision: str | None = None
     status: str | None = None
     note: str | None = None

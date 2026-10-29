@@ -36,7 +36,9 @@ function Steps() {
   );
 }
 
-export function SignIn({ onDone }: { onDone: () => void }) {
+/** `ended`: the page shows because a session ended while a screen was open (signed out on another device, turned
+ * off or removed by the owner, expired), so it says so instead of appearing without a word. */
+export function SignIn({ onDone, ended = false }: { onDone: () => void; ended?: boolean }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [ticket, setTicket] = useState<string | null>(null);
@@ -160,6 +162,7 @@ export function SignIn({ onDone }: { onDone: () => void }) {
     <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 16, background: "var(--ground)" }}>
       <form onSubmit={submit} className="card" style={box}>
         {head}
+        {ended && <p role="status" style={{ margin: 0, fontSize: 13, color: "var(--ink-2)" }}>You were signed out: this sign-in ended on the server, so nothing more was shown or saved. Sign in again; if your sign-in no longer works, ask the owner.</p>}
         <label style={field}>
           <span className="lab">Username</span>
           <input className="input" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />

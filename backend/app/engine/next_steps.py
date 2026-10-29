@@ -21,7 +21,8 @@ def _step(id: str, severity: str, text: str, action: str, link: str, source: str
     return {"id": id, "severity": severity, "text": text, "action": action, "link": link, "source": source}
 
 
-def next_steps(session: Session, today: date) -> dict:
+def next_steps(session: Session, today: date, *, person_id: int | None = None) -> dict:
+    """person_id: a second person reading their strip (None is the owner); each approves only their own sends."""
     steps: list[dict] = []
 
     if not settings.data_key:
@@ -148,7 +149,7 @@ def next_steps(session: Session, today: date) -> dict:
             said = next((w for w in housing.get("warnings", []) if w.startswith(b["name"])), None)
             steps.append(_step(f"home-adopt-{b['id']}", "warning", said or f"{b['name']} is on your bills list as rent and is not tied to a home on Housing. If it is a home's rent, make it that home's.", "Housing", "/housing#homes", f"bill:{b['id']}"))
 
-    pending_approvals = len(session.exec(select(Approval.id).where(Approval.status == "pending", Approval.for_person_id == None)).all())  # noqa: E711
+    pending_approvals = len(session.exec(select(Approval.id).where(Approval.status == "pending", Approval.for_person_id == person_id)).all())  # whose strip it is: a person sees their own sends waiting, never the owner's
     if pending_approvals:
         steps.append(_step("approvals", "warning", f"{pending_approvals} send{'s' if pending_approvals != 1 else ''} wait{'s' if pending_approvals == 1 else ''} for your approval; nothing goes out until you tap.", "Approve or deny", "/confirm#approvals", "approvals"))
     pending_facts = len(session.exec(select(ExtractedFact.id).where(ExtractedFact.status == "pending")).all())

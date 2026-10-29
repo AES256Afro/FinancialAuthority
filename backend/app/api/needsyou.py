@@ -5,12 +5,12 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from .inputs import In
 from .. import auth, services
 from ..db import get_session
-from ..engine.needsyou import answer_payment, plan_many, triage
+from ..engine.needsyou import AlreadyAnswered, answer_payment, plan_many, triage
 from ..jobs.writing import one_writer
 from ..models import ExtractedFact, MessageRef, Payment, utcnow
 from .routes import today
@@ -23,7 +23,7 @@ def get_triage(session: Session = Depends(get_session), _: auth.Principal = Depe
     return triage(session, today())
 
 
-class ManyIn(BaseModel):
+class ManyIn(In):
     ids: list[int]
     action: str  # preview | confirm | reject
 
@@ -105,7 +105,7 @@ def _answer_one(session: Session, fid: int, action: str, steps: dict, principal:
     done.append({"id": fid, "applied_to": applied})
 
 
-class PaidIn(BaseModel):
+class PaidIn(In):
     answer: str  # paid | not_yet | stopped
     transaction_id: int | None = None
     paid_on: date | None = None
@@ -118,6 +118,8 @@ def answer_one_payment(payment_id: int, body: PaidIn, session: Session = Depends
         raise HTTPException(404, "No such payment")
     try:
         said = answer_payment(session, payment, body.answer, today(), transaction_id=body.transaction_id, paid_on=body.paid_on)
+    except AlreadyAnswered as error:  # answered in another tab meanwhile: its sentence says how
+        raise HTTPException(409, str(error)) from error
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
     services.audit(session, client=principal.name, client_kind=principal.kind, tool="payment_answer", args={"payment": payment_id, "answer": body.answer}, rows=1)

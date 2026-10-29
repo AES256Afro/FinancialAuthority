@@ -284,6 +284,8 @@ def import_watch() -> str:
         if len(todo) > IMPORT_MAX_FILES:
             taken.append(f"{len(todo) - IMPORT_MAX_FILES} more files wait for the next run")
     if taken:
+        _owe(DETECTED)
+    if behind(DETECTED):
         detect_recurring()
     if failed:
         raise RuntimeError("; ".join(failed + taken))  # a file that would not import is a failed run, never a quiet one
@@ -333,15 +335,53 @@ def _today():
     return today()
 
 
+# The newest ledger row detection, and payment matching, last finished over; -1 while a run that stored something
+# waits for its follow-up. A sync or an import whose rows committed but whose detection then failed (a crash, a
+# locked database) reads nothing new when it runs again; the mark says the follow-up is still owed, so the retry
+# does it, never six hours later.
+DETECTED = "jobs.detected_through"
+MATCHED = "jobs.matched_through"
+
+
+def _newest_row() -> int:
+    from sqlalchemy import func
+
+    with session_scope() as session:
+        return int(session.exec(select(func.max(Transaction.id))).one() or 0)
+
+
+def behind(key: str) -> bool:
+    """Whether detection (DETECTED) or matching (MATCHED) is owed: a row newer than its last finished run, or a run
+    that stored something since."""
+    with session_scope() as session:
+        mark = int(get_setting(session, key, 0) or 0)
+    return _newest_row() > mark
+
+
+def _mark(key: str, through: int) -> None:
+    with session_scope() as session:
+        if int(get_setting(session, key, 0) or 0) != through:
+            set_setting(session, key, through)
+
+
+def _owe(key: str) -> None:
+    """This run stored something (rows, or mail that may change a bill): the follow-up is owed until it finishes."""
+    with session_scope() as session:
+        set_setting(session, key, -1)
+
+
 def detect_recurring() -> str:
     """Find recurring series in the ledger and link them to the bills and incomes already known."""
     from ..engine.borrowing import sync_borrowing
     from .detect import run_detection
 
-    with one_writer(), session_scope() as session:
-        result = run_detection(session, _today())
-        sync_borrowing(session, _today())
-    matched = match_payments_job()
+    with one_writer():
+        through = _newest_row()
+        with session_scope() as session:
+            result = run_detection(session, _today())
+            sync_borrowing(session, _today())
+        matched = match_payments_job()
+        _mark(DETECTED, through)  # only once all of it finished: a failure above leaves it owed
     return f"{result['found']} series: {result['created']} new, {result['updated']} updated, {result['linked']} linked · {matched}"
 
 
@@ -349,8 +389,11 @@ def match_payments_job() -> str:
     """Match each bill period to its payment, or mark it late, then past due."""
     from ..engine.payments import match_payments
 
-    with one_writer(), session_scope() as session:
-        counts = match_payments(session, _today())
+    with one_writer():
+        through = _newest_row()
+        with session_scope() as session:
+            counts = match_payments(session, _today())
+        _mark(MATCHED, through)
         return f"payments: {counts['paid']} paid, {counts['late']} late, {counts['past_due']} past due, {counts['scheduled']} scheduled"
 
 
@@ -359,7 +402,9 @@ def mail_sync() -> str:
     with session_scope() as session:
         result = CONNECTORS["mail"].sync(session, today=_today())
     if result.inserted:
-        match_payments_job()  # under the write lock: never beside a detection matching the same periods
+        _owe(MATCHED)
+    if behind(MATCHED):
+        match_payments_job()  # under the write lock: never beside a detection matching the same periods; also owed when the last one failed
     if not result.ok:
         # A mailbox that could not be read is a failed run on the Jobs page, never a quiet "ok".
         raise RuntimeError(result.summary or "a mailbox could not be read")
@@ -432,7 +477,9 @@ def bank_sync() -> str:
         if settled:
             notes.append(f"{settled} planned payment{'s' if settled != 1 else ''} posted")
     if inserted:
-        notes.append(detect_recurring())  # new rows may complete a series; the owner should not wait six hours
+        _owe(DETECTED)
+    if behind(DETECTED):
+        notes.append(detect_recurring())  # new rows may complete a series; the owner should not wait six hours, nor after a failed one
     if failed:
         raise RuntimeError("; ".join(notes))
     return "; ".join(notes)
@@ -629,6 +676,7 @@ def prune_job_runs() -> str:
 
     with _engine.begin() as connection:
         connection.execute(_text("PRAGMA optimize"))
+    _engine.dispose()  # a pooled connection keeps the statistics it opened with; the next ones read these
     return f"removed {old + idle} old job record{'s' if old + idle != 1 else ''}"
 
 

@@ -13,9 +13,9 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
-from pydantic import BaseModel
 from sqlmodel import Session
 
+from .inputs import In
 from .. import auth, services
 from ..config import settings
 from ..db import get_session
@@ -32,7 +32,7 @@ FEED_KEY = "calendar.feed"
 NAME = re.compile(r"^[\w\- .]{1,40}$")
 
 
-class TemplateIn(BaseModel):
+class TemplateIn(In):
     id: str | None = None
     name: str
     layout: str = "board"
@@ -113,7 +113,7 @@ def export_file(format: str, template: str | None = None, layout: str = "board",
     })
 
 
-class PreviewIn(BaseModel):
+class PreviewIn(In):
     layout: str = "board"
     palette: str = "layout"
     mascot: str | None = None
@@ -148,7 +148,7 @@ def delete_template(template_id: str, session: Session = Depends(get_session), _
 
 # ---- the calendar feed ---------------------------------------------------------------------------------------
 
-class FeedIn(BaseModel):
+class FeedIn(In):
     amounts: bool = False
 
 

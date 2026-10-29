@@ -5,9 +5,9 @@ engine's; the screens and the tools show the same."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlmodel import Session
 
+from .inputs import In
 from .. import auth, services
 from ..db import get_session
 from ..engine import firstrun as firstrun_engine
@@ -32,7 +32,7 @@ def cover(session: Session = Depends(get_session), principal: auth.Principal = D
     return out
 
 
-class TickIn(BaseModel):
+class TickIn(In):
     id: str
     done: bool = True
 
@@ -51,7 +51,7 @@ def saving(session: Session = Depends(get_session), principal: auth.Principal = 
     return out
 
 
-class SavingIn(BaseModel):
+class SavingIn(In):
     share: int | None = None
     clear_share: bool = False
     starter: float | None = None
@@ -97,7 +97,7 @@ def checkin(session: Session = Depends(get_session), principal: auth.Principal =
     return out
 
 
-class CheckinIn(BaseModel):
+class CheckinIn(In):
     flagged: list[int] = []
     subscription: str | None = None  # keep | drop | unsure
     card_paid: bool | None = None
@@ -143,7 +143,7 @@ def firstrun(session: Session = Depends(get_session), _: auth.Principal = Depend
     return firstrun_engine.firstrun(session)
 
 
-class FirstRunIn(BaseModel):
+class FirstRunIn(In):
     dismissed: bool | None = None
     mark: str | None = None
     unmark: str | None = None

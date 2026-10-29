@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import hmac
 import json
 from datetime import date
@@ -97,5 +98,16 @@ def audit(session: Session, *, client: str, client_kind: str, tool: str, args: d
     from .config import settings
 
     digest = hmac.new(settings.signing_secret().encode(), json.dumps(args or {}, sort_keys=True, default=str).encode(), hashlib.sha256).hexdigest()[:16]
+    # When the caller's write is already committed (nothing else pending), the row is all this commit carries: a
+    # failure here is logged and swallowed, so a completed write never answers 500 and is never sent again as a
+    # retry. When the write is still pending, this commit is the write's own and its failure is the caller's.
+    alone = not (session.new or session.dirty or session.deleted)
     session.add(AuditEntry(client=client, client_kind=client_kind, tool=tool, args_hash=digest, rows=rows, redaction=redaction))
-    session.commit()
+    if not alone:
+        session.commit()
+        return
+    try:
+        session.commit()
+    except Exception as error:  # noqa: BLE001
+        session.rollback()
+        logging.getLogger(__name__).warning("an activity row for %s could not be written: %s", tool, type(error).__name__)

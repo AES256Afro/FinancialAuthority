@@ -5,9 +5,9 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlmodel import Session
 
+from .inputs import In
 from .. import auth
 from ..db import get_session
 from ..engine.payoff import payoff_plan, people, save_person_loan
@@ -24,7 +24,7 @@ def plan(extra: float = 0.0, session: Session = Depends(get_session), _: auth.Pr
         raise HTTPException(400, str(error)) from error
 
 
-class PersonLoanIn(BaseModel):
+class PersonLoanIn(In):
     person: str
     direction: str
     amount: float

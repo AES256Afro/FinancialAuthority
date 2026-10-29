@@ -7,6 +7,7 @@ the brief the same hour. Nothing here replies, marks, moves or deletes.
 
 from __future__ import annotations
 
+import imaplib
 import json
 import logging
 import re
@@ -434,25 +435,35 @@ class MailConnector(Connector):
 
                     session.exec(delete(MessageRef).where(MessageRef.account_id == account.id, MessageRef.folder == folder, MessageRef.kind == "none"))
                     session.exec(update(MessageRef).where(MessageRef.account_id == account.id, MessageRef.folder == folder, MessageRef.uid > 0).values(uid=-MessageRef.uid))
+                session.commit()  # a fresh numbering's reset stands on its own: each message below commits by itself
                 uids = client.new_uids(last)
                 # A new mailbox starts from the most recent messages; after that, the oldest unread first.
                 uids = uids[-BATCH_FIRST:] if last == 0 else uids[:BATCH_FIRST]
                 for uid in uids:
                     try:
-                        parsed = parse_message(client.fetch_raw(uid))
-                        with session.begin_nested():
-                            outcome = handle_message(session, account, folder, uid, parsed, today, self.fetch)
+                        raw = client.fetch_raw(uid)
+                    except (OSError, EOFError, imaplib.IMAP4.abort) as error:
+                        # The connection, not the message: a timeout or a dropped line. The folder stops at the last
+                        # message read, so this one and the rest of the batch are read next time, and the run fails.
+                        set_setting(session, uid_key(account.id, folder), last)
+                        raise RuntimeError(f"the mail server stopped answering in {folder} ({type(error).__name__}); the next sync reads on from there") from error
+                    try:
+                        outcome = handle_message(session, account, folder, uid, parse_message(raw), today, self.fetch)
                     except Exception as error:  # noqa: BLE001 - one unreadable message never blocks the mailbox
+                        session.rollback()
                         log.warning("message %s in %s could not be read: %s", uid, folder, error)
                         outcome = {}
+                    last = max(last, uid)
+                    # No savepoint: under pysqlite a SAVEPOINT opens a deferred transaction that fails at once beside
+                    # another writer. Each message commits on its own, inside the job's lock, with the folder's last UID
+                    # in the same commit; a commit that fails ends the run with the UID where it was, so the message is
+                    # read again next time rather than skipped.
+                    _stage_setting(session, uid_key(account.id, folder), last)
+                    session.commit()
                     if outcome and not outcome.get("seen"):
                         new += 1
                     if outcome.get("fact") or outcome.get("imported"):
                         facts += 1
-                    last = max(last, uid)
-                    done = uids.index(uid) + 1
-                    if done % 25 == 0:
-                        set_setting(session, uid_key(account.id, folder), last)
                 set_setting(session, uid_key(account.id, folder), last)
                 if validity:
                     # Written with the last UID it goes with, once the folder is read: a sync that fails before this
@@ -465,6 +476,18 @@ class MailConnector(Connector):
 
 
 BATCH_FIRST = 150
+
+
+def _stage_setting(session: Session, key: str, value: object) -> None:
+    """set_setting without its commit, so the value lands in the caller's commit."""
+    from ..models import Setting
+
+    row = session.get(Setting, key)
+    if row is None:
+        session.add(Setting(key=key, value=json.dumps(value)))
+    else:
+        row.value = json.dumps(value)
+        session.add(row)
 
 
 def test_account(host: str, port: int, username: str, password: str, use_ssl: bool = True, starttls: bool = False, client_factory: ClientFactory = ImapClient) -> dict:

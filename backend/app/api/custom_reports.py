@@ -5,9 +5,9 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from pydantic import BaseModel
 from sqlmodel import Session
 
+from .inputs import In
 from .. import auth, services
 from ..db import get_session
 from ..engine import custom_reports as cr
@@ -33,7 +33,7 @@ def list_saved(session: Session = Depends(get_session), _: auth.Principal = Depe
     return {"reports": cr.saved(session), "groups": get_setting(session, cr.GROUPS, {}) or {}}
 
 
-class ReportIn(BaseModel):
+class ReportIn(In):
     name: str
     rows: str = "category"
     period: str = "month"
@@ -59,7 +59,7 @@ def remove(name: str, session: Session = Depends(get_session), _: auth.Principal
     return list_saved(session)
 
 
-class GroupsIn(BaseModel):
+class GroupsIn(In):
     groups: dict[str, list[str]]
 
 

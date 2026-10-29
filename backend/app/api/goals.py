@@ -5,9 +5,9 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlmodel import Session
 
+from .inputs import In
 from .. import auth
 from ..db import get_session
 from ..engine.goals import goals_plan
@@ -19,7 +19,7 @@ from .routes import today, under_writer
 router = APIRouter(prefix="/api/v1/goals", tags=["goals"])
 
 
-class GoalIn(BaseModel):
+class GoalIn(In):
     name: str | None = None
     kind: str | None = None
     target: float | None = None
@@ -30,7 +30,7 @@ class GoalIn(BaseModel):
     active: bool | None = None
 
 
-class FundIn(BaseModel):
+class FundIn(In):
     amount: float
 
 

@@ -8,14 +8,14 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
-from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from .inputs import In
 from .. import auth, crypto, services
 from ..db import get_session
 from ..engine import documents as docs
 from ..engine import housing as hs
-from ..models import Bill, Document, Home, HomeCharge, HomeCost, Utility
+from ..models import Account, Bill, Document, Home, HomeCharge, HomeCost, Utility
 from .routes import today, under_writer
 
 router = APIRouter(prefix="/api/v1", tags=["housing"])
@@ -26,7 +26,7 @@ def get_housing(session: Session = Depends(get_session), _: auth.Principal = Dep
     return hs.overview(session, today())
 
 
-class HomeIn(BaseModel):
+class HomeIn(In):
     name: str
     kind: str = "rent"
     payee: str = ""
@@ -59,9 +59,16 @@ def _apply_home(home: Home, body: HomeIn) -> None:
         setattr(home, field, value.strip()[:300] if isinstance(value, str) else value)
 
 
+def _check_account(session: Session, body: HomeIn) -> None:
+    """The account the home is paid from must be one the app holds: an id of none raised out of the database."""
+    if body.pay_from_account_id is not None and session.get(Account, body.pay_from_account_id) is None:
+        raise HTTPException(400, "No such account to pay the home from; choose one from the list")
+
+
 @router.post("/housing")
 @under_writer
 def add_home(body: HomeIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+    _check_account(session, body)
     home = Home(name=body.name)
     _apply_home(home, body)
     session.add(home)
@@ -78,6 +85,7 @@ def change_home(home_id: int, body: HomeIn, session: Session = Depends(get_sessi
     if home is None or not home.active:
         raise HTTPException(404, "No such home")
     was_start = home.starts_on
+    _check_account(session, body)
     _apply_home(home, body)
     session.add(home)
     session.commit()
@@ -106,7 +114,7 @@ def remove_home(home_id: int, session: Session = Depends(get_session), _: auth.P
     return {**hs.overview(session, today()), "said": said}
 
 
-class NoticeIn(BaseModel):
+class NoticeIn(In):
     given_on: date | None = None
 
 
@@ -122,7 +130,7 @@ def notice_given(home_id: int, body: NoticeIn, session: Session = Depends(get_se
     return hs.overview(session, today())
 
 
-class AdoptIn(BaseModel):
+class AdoptIn(In):
     bill_id: int
     name: str = ""
     kind: str = "rent"
@@ -147,7 +155,7 @@ def adopt(body: AdoptIn, session: Session = Depends(get_session), _: auth.Princi
     return hs.overview(session, today())
 
 
-class ChargeIn(BaseModel):
+class ChargeIn(In):
     name: str
     kind: str = "fee"
     amount: float | None = None
@@ -213,7 +221,7 @@ def remove_charge(charge_id: int, session: Session = Depends(get_session), _: au
     return hs.overview(session, today())
 
 
-class CostIn(BaseModel):
+class CostIn(In):
     name: str
     amount: float | None = None
     due_on: date | None = None
@@ -288,7 +296,7 @@ def move(home_id: int, session: Session = Depends(get_session), _: auth.Principa
 # ---- utilities ------------------------------------------------------------------------------------------------
 
 
-class UtilityIn(BaseModel):
+class UtilityIn(In):
     home_id: int | None = None
     service: str = "electric"
     provider: str = ""
@@ -482,7 +490,7 @@ def document_file(doc_id: int, session: Session = Depends(get_session), principa
     return Response(raw, media_type=doc.content_type, headers={"Content-Disposition": f'attachment; filename="{safe_name}"', "Cache-Control": "no-store"})
 
 
-class DocumentEdit(BaseModel):
+class DocumentEdit(In):
     title: str | None = None
     kind: str | None = None
     attach_to: str | None = None

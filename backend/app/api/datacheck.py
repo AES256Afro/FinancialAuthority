@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlmodel import Session
 
+from .inputs import In
 from .. import auth, services
 from ..db import get_session
 from ..engine import datacheck
@@ -30,7 +30,7 @@ def run_check(session: Session = Depends(get_session), principal: auth.Principal
     return datacheck.overview(session, today())
 
 
-class AnswerIn(BaseModel):
+class AnswerIn(In):
     key: str
     action: str
 
@@ -56,7 +56,7 @@ def answer(body: AnswerIn, session: Session = Depends(get_session), principal: a
 learn_router = APIRouter(prefix="/api/v1/suggestions", tags=["suggestions"])
 
 
-class SuggestionIn(BaseModel):
+class SuggestionIn(In):
     key: str
     answer: str
     kind: str | None = None
@@ -80,7 +80,7 @@ def answer_suggestion(body: SuggestionIn, session: Session = Depends(get_session
     return {**overview(session), "said": said}
 
 
-class KindIn(BaseModel):
+class KindIn(In):
     kind: str
 
 

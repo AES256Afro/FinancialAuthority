@@ -8,7 +8,7 @@ import { roleOf, type MePerson } from "../types-people";
 type Item = { to: string; title: string; text: string; owner?: boolean; person?: { title?: string; text: string } };
 const ITEMS: Item[] = [
   { to: "/settings/setup", title: "Setting up", text: "What only you can do, in order: the app's secrets, mail, your bank, reaching it from anywhere, your phone, Claude, backups." },
-  { to: "/settings/appearance", title: "Appearance", text: "The home views, four looks, text size. Saved for all your devices." },
+  { to: "/settings/appearance", title: "Appearance", text: "The home views, four looks, text size. Saved for all your devices.", person: { text: "The home views, four looks, text size, Hide amounts. One appearance for the whole app: a change here changes it for the owner too." } },
   { to: "/settings/connectors", title: "Connections", text: "Your banks, your mailboxes, importing a file, and Rocket Money exports in and out." },
   { to: "/settings/models", title: "Models", text: "The advisor and the reviewer: Ollama, any OpenAI-compatible server, or Claude by API; your rules and goals." },
   { to: "/settings/security", title: "Sign-in and security", text: "Passkeys, a code from an authenticator app at sign-in, and the devices signed in.", person: { title: "Your sign-in", text: "Your passkeys, a code from an authenticator app at sign-in, and the devices signed in as you." } },

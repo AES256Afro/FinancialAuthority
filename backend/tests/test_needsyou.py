@@ -66,8 +66,8 @@ def test_a_bill_with_no_payment_seen_is_asked_is_it_paid(owner: TestClient):
     assert "no longer counted from Thu Sep 3" in out["said"]
     with Session(engine) as session:
         assert session.get(Payment, late_id).status == "paid" and session.get(Bill, bill_id).ends_on == date(2026, 9, 2)
-    assert owner.post(f"/api/v1/needs-you/payments/{late_id}", json={"answer": "maybe"}).status_code == 400
-    assert owner.post(f"/api/v1/needs-you/payments/{older_id}", json={"answer": "paid", "paid_on": "2099-01-01"}).status_code == 400
+    assert owner.post(f"/api/v1/needs-you/payments/{late_id}", json={"answer": "maybe"}).status_code == 409  # answered already: nothing changes (sweep 14)
+    assert owner.post(f"/api/v1/needs-you/payments/{older_id}", json={"answer": "paid", "paid_on": "2099-01-01"}).status_code == 409  # answered already (sweep 14)
 
 
 def test_a_removed_documents_file_stays_while_a_restore_point_names_it(owner: TestClient):

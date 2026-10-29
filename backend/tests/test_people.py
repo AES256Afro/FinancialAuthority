@@ -38,7 +38,7 @@ def test_the_person_sets_their_own_password_from_a_one_time_link(owner: TestClie
     token = _invite(owner)
     stranger = TestClient(app)
     check = stranger.post("/api/auth/join/check", json={"token": token}).json()
-    assert check["username"] == "sam" and check["role_words"].startswith("You see the accounts owner marks shared")
+    assert check["username"] == "sam" and check["role_words"].startswith("You see the accounts the owner marks shared")
     assert stranger.post("/api/auth/join", json={"token": token, "password": "short"}).status_code == 400
     assert stranger.post("/api/auth/join", json={"token": token, "password": "sam is my password ok"}).status_code == 400  # the username in it
     person = _join(token)

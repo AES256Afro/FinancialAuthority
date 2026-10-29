@@ -36,7 +36,8 @@ export class ErrorBoundary extends Component<Props, State> {
 
   private again = () => {
     if (this.state.error && STALE_CODE.test(this.state.error.message)) {
-      window.location.reload();
+      // Still offline: a reload would lose the shell too, so the card stays until the network is back.
+      if (navigator.onLine) window.location.reload();
       return;
     }
     this.setState((s) => ({ error: null, attempt: s.attempt + 1 }));
@@ -45,7 +46,10 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     const { error, attempt } = this.state;
     if (!error) return <Fragment key={attempt}>{this.props.children}</Fragment>;
-    const message = (error.message || "something went wrong").trim().replace(/[.\s]+$/, "");
+    // A page's code that could not be fetched while offline: say that, not the browser's words.
+    const message = STALE_CODE.test(error.message) && !navigator.onLine
+      ? "this page needs the network to open, and this device is offline. Check the connection"
+      : (error.message || "something went wrong").trim().replace(/[.\s]+$/, "");
     return (
       <div role="alert" className="card" style={{ padding: 14, display: "flex", alignItems: "flex-start", gap: 10, flexWrap: "wrap", fontSize: 13, background: "var(--critical-soft)", color: "var(--critical-ink)", maxWidth: 760 }}>
         <OctagonAlert size={16} aria-hidden="true" style={{ flexShrink: 0, marginTop: 1 }} />

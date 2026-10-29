@@ -6,9 +6,9 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from .inputs import In
 from .. import auth
 from ..connectors.banks import mark_removed, record_balance
 from ..db import get_session
@@ -33,7 +33,7 @@ VENDORS = [
 ]
 
 
-class InvestmentIn(BaseModel):
+class InvestmentIn(In):
     name: str | None = None
     institution: str | None = None
     subtype: str | None = None
@@ -41,7 +41,7 @@ class InvestmentIn(BaseModel):
     as_of: str | None = None
 
 
-class HoldingIn(BaseModel):
+class HoldingIn(In):
     name: str
     ticker: str = ""
     kind: str = "other"

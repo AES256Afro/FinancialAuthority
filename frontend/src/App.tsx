@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { onSignedOut, useApi } from "./api";
 import { loadAppearance } from "./appearance";
@@ -75,8 +75,8 @@ export default function App() {
   // shared answer: it is asked again after a save on any screen and when the tab is shown again (see useApi).
   const snapshot = useApi<Snapshot>(me.data && role !== "shared" ? "/api/v1/snapshot" : null, { live: true });
   useEffect(() => {
-    if (me.data) loadAppearance();
-  }, [me.data]);
+    if (me.data) loadAppearance({ viewOnly: role === "shared" });
+  }, [me.data, role]);
   // A phone left open past midnight asks for today's plan once the day turns; once per day, so a server that keeps
   // another time zone is not asked every minute.
   const askedFor = useRef("");
@@ -102,13 +102,17 @@ export default function App() {
   useEffect(() => {
     if (signedOut) clearDeviceState();
   }, [signedOut]);
-  // A 401 from any screen mid-session: ask who is signed in again, which shows the sign-in page.
+  // A 401 from any screen mid-session: ask who is signed in again, which shows the sign-in page, saying why.
   const askMe = me.reload;
-  useEffect(() => onSignedOut(askMe), [askMe]);
+  const [ended, setEnded] = useState(false);
+  useEffect(() => onSignedOut(() => {
+    setEnded(true);
+    askMe();
+  }), [askMe]);
 
   if (joining) return <Suspense fallback={<Loading text="Opening…" />}><Join /></Suspense>;
   if (me.loading) return <Loading text="Opening…" />;
-  if (me.error && me.error.status === 401) return <SignIn onDone={me.reload} />;
+  if (me.error && me.error.status === 401) return <SignIn ended={ended} onDone={() => { setEnded(false); me.reload(); }} />;
   if (me.error) return <div style={{ padding: 24, maxWidth: 640 }}><Failed error={me.error} what="the app" onRetry={me.reload} /></div>;
 
   if (role === "shared") {
@@ -136,7 +140,7 @@ export default function App() {
 
   // A page that breaks shows a card with Try again in its place; the header and the menu stay.
   return (
-    <Shell snapshot={snap} me={me.data}>
+    <Shell snapshot={snap} me={me.data} planError={snapshot.error} onRetryPlan={snapshot.reload}>
       <ErrorBoundary resetKey={pathname}>
       <Suspense fallback={<Loading text="Opening…" />}>
       <Routes>
@@ -177,7 +181,7 @@ export default function App() {
         <Route path="/settings/security" element={<Security />} />
         <Route path="/settings/people" element={<People me={me.data} />} />
         <Route path="/settings/privacy" element={<Privacy me={me.data} />} />
-        <Route path="/settings/appearance" element={<Appearance />} />
+        <Route path="/settings/appearance" element={<Appearance me={me.data} />} />
         <Route path="/settings/clients" element={<Clients />} />
         <Route path="/settings/models" element={<Models />} />
         <Route path="/settings/notifications" element={<Notifications />} />

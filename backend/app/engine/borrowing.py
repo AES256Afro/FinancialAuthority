@@ -13,7 +13,7 @@ from datetime import date, timedelta
 from sqlmodel import Session, select
 
 from ..models import Account, Advance, Bill, InstallmentPlan, RecurringSeries, Rule, Transaction
-from ..store import get_setting, set_setting
+from ..store import get_setting
 from .cadence import next_paydays
 from .projections import NOT_ADVICE
 
@@ -716,7 +716,7 @@ def plan_from_fields(session: Session, fields: dict, amount: float | None, remai
         existing.finance_charge = existing.finance_charge or float(fields.get("finance_charge") or 0.0)
         existing.loan_amount = existing.loan_amount or (float(fields["loan_amount"]) if fields.get("loan_amount") else None)
         session.add(existing)
-        session.commit()
+        session.flush()  # the caller commits it with the fact marked applied: never a plan whose fact still waits
         return existing
     if schedule:
         upcoming = [s for s in schedule if s["date"] >= today.isoformat()]
@@ -738,10 +738,23 @@ def plan_from_fields(session: Session, fields: dict, amount: float | None, remai
             return None
         plan = existing or InstallmentPlan(provider=provider, merchant=merchant, total=round(float(each) * remaining, 2), installment=round(float(each), 2), count=remaining, remaining=remaining, next_date=today, cadence_days=30, loan_id=loan_id)
     session.add(plan)
-    session.commit()
-    session.refresh(plan)
-    refresh_plan_progress(session, today)
+    session.flush()  # the caller commits the plan with its fact marked applied: a retry never makes a second typed plan
+    refresh_plan_progress(session, today, commit=False)
     return plan
+
+
+def _stage_setting(session: Session, key: str, value) -> None:  # noqa: ANN001 - any JSON value
+    """set_setting without its commit: the caller's one commit lands the value with the rows it goes with."""
+    import json
+
+    from ..models import Setting
+
+    row = session.get(Setting, key)
+    if row is None:
+        session.add(Setting(key=key, value=json.dumps(value)))
+    else:
+        row.value = json.dumps(value)
+        session.add(row)
 
 
 OWNER_PAID = "borrowing.owner_paid"  # {plan id: [{"on": day, "amount": x}]}: payments the owner said were made
@@ -751,7 +764,7 @@ CLAIM_MATCH_DAYS = 10  # a bank row of the same amount this close to the owner's
 def mark_installment_paid(session: Session, plan: InstallmentPlan, on: date, today: date) -> str:
     """The owner says the next payment is made (the bank has not shown it yet, or it went by a card the app does not
     see). It counts at once; when the bank's own row arrives, that row stands in its place, never as a second one."""
-    from ..store import get_setting, set_setting
+    from ..store import get_setting
 
     if on > today:
         raise ValueError("A payment is marked on or after the day it was made")
@@ -762,7 +775,7 @@ def mark_installment_paid(session: Session, plan: InstallmentPlan, on: date, tod
         raise ValueError("Nothing is left to pay on this plan")
     claims = {k: list(v) for k, v in (get_setting(session, OWNER_PAID, {}) or {}).items()}
     claims.setdefault(str(plan.id), []).append({"on": on.isoformat(), "amount": upcoming[0]["amount"]})
-    set_setting(session, OWNER_PAID, claims)
+    _stage_setting(session, OWNER_PAID, claims)  # with the tick below, in one commit: never a claim whose plan did not tick
     if not (plan.schedule and plan.schedule != "[]"):
         # A plan known only by its installment and next date ticks at once; the bank's row of that amount near the day
         # the owner named takes the claim's place in refresh_plan_progress instead of counting a second payment.
@@ -770,7 +783,7 @@ def mark_installment_paid(session: Session, plan: InstallmentPlan, on: date, tod
         plan.next_date = plan.next_date + timedelta(days=plan.cadence_days or 14)
         plan.active = plan.remaining > 0
         session.add(plan)
-        session.commit()
+    session.commit()
     refresh_plan_progress(session, today)
     session.refresh(plan)
     left = plan.remaining
@@ -779,12 +792,13 @@ def mark_installment_paid(session: Session, plan: InstallmentPlan, on: date, tod
             + " When your bank shows it, that row takes its place.")
 
 
-def refresh_plan_progress(session: Session, today: date) -> int:
+def refresh_plan_progress(session: Session, today: date, *, commit: bool = True) -> int:
     """A plan with the lender's schedule follows the ledger: each payment to the lender of a scheduled amount
     on or after the loan's first date ticks one off. A plan whose schedule the lender confirmed on a day (the owner's
     account, a statement) counts any payment of the amount made after that day, up to a month early, since a payment
     made ahead of its date is still that payment. A payment the owner marked counts too, until the bank's own row of
-    that amount arrives near it and takes its place. Returns how many plans changed."""
+    that amount arrives near it and takes its place. Returns how many plans changed. With commit=False the caller's
+    own commit lands the changes (a plan being made from a fact, committed with the fact)."""
     import json
 
     from ..store import get_setting
@@ -829,9 +843,7 @@ def refresh_plan_progress(session: Session, today: date) -> int:
             session.add(p)
             changed += 1
     if claims_changed:
-        from ..store import set_setting
-
-        set_setting(session, OWNER_PAID, {k: v for k, v in claims.items() if v})
+        _stage_setting(session, OWNER_PAID, {k: v for k, v in claims.items() if v})  # committed with the ticks it stands for
     paid_to = {}
     for t in rows:
         provider = provider_of(_text(t), INSTALLMENT_PROVIDERS)
@@ -867,8 +879,10 @@ def refresh_plan_progress(session: Session, today: date) -> int:
                 p.balance = round(sum(s["amount"] for s in upcoming), 2)
             session.add(p)
             changed += 1
-    if changed:
+    if commit and (changed or claims_changed):
         session.commit()
+    elif changed or claims_changed:
+        session.flush()
     return changed
 
 
@@ -936,7 +950,7 @@ def apply_affirm_statement(session: Session, parsed: dict, today: date, *, sourc
     stored = get_setting(session, "affirm", {}) or {}
     if parsed.get("period_end") and parsed.get("period_end") >= str(stored.get("period_end", "")):
         stored.update({"period_start": parsed.get("period_start"), "period_end": parsed.get("period_end"), "interest_period": parsed.get("interest_period"), "interest_ytd": parsed.get("interest_ytd"), "total_closing": parsed.get("total_closing"), "source": source, "at": today.isoformat()})
-        set_setting(session, "affirm", stored)
+        _stage_setting(session, "affirm", stored)
     session.commit()
     return {"created": created, "updated": updated, "retired": retired, "typed_retired": unlisted, "loans": len(parsed["loans"]), "period_end": parsed.get("period_end"), "interest_period": parsed.get("interest_period"), "interest_ytd": parsed.get("interest_ytd"), "total_closing": parsed.get("total_closing")}
 
@@ -948,7 +962,7 @@ def set_setting_interest(session: Session, loan_id: str, period_end: date, amoun
     if key in seen:
         return False
     seen[key] = amount
-    set_setting(session, "affirm.interest_seen", seen)
+    _stage_setting(session, "affirm.interest_seen", seen)  # committed with the interest it marks: a crash never marks it added unadded
     return True
 
 

@@ -15,10 +15,10 @@ import shutil
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
 from sqlalchemy import text
 from sqlmodel import Session, select
 
+from .inputs import In
 from .. import auth, services
 from ..config import settings
 from ..db import bump_version, engine, get_session
@@ -28,7 +28,10 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/privacy", tags=["privacy"])
 PHRASE = "delete everything"
 KEEP_TABLES = {"web_sessions", "passkeys", "people"}
-KEEP_SETTINGS = {"auth.totp", "auth.totp.last_step", "crypto.canary"}  # all three are sealed under the data key the app still runs on
+KEEP_SETTINGS = {"auth.totp", "auth.totp.last_step", "crypto.canary",  # the first three are sealed under the data key the app still runs on
+                 # which files in the import folder were read already: the erase leaves the folder's files where the owner
+                 # put them, and without this list the next import_watch (five minutes on) read every one back in
+                 "imports.processed"}
 
 # What the chat's model sees at each level the owner can choose on Models.
 ADVISOR_SEES = {
@@ -81,7 +84,7 @@ def privacy(session: Session = Depends(get_session), _: auth.Principal = Depends
     }
 
 
-class SwitchIn(BaseModel):
+class SwitchIn(In):
     on: bool
 
 
@@ -100,7 +103,7 @@ def switch_model(role: str, body: SwitchIn, session: Session = Depends(get_sessi
     return privacy(session)
 
 
-class EraseIn(BaseModel):
+class EraseIn(In):
     phrase: str
     password: str
     code: str = ""
