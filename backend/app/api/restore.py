@@ -51,9 +51,11 @@ def offbox_save(body: OffboxIn, session: Session = Depends(get_session), princip
 
 
 @router.post("/offbox/copy")
-def offbox_copy_now(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+def offbox_copy_now(session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     from .. import offbox
 
+    if principal.kind != "owner":
+        raise HTTPException(403, "Only the owner, signed in, makes the off-box copy")
     try:
         made = offbox.copy_now(session)
     except (ValueError, OSError) as error:

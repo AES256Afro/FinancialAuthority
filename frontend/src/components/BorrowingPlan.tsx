@@ -10,7 +10,9 @@ import { getPrefs } from "../prefs";
 import { Said, Show } from "./State";
 import { SeverityTag } from "./Status";
 
-interface Loan { id: number; name: string; label?: string; next_date: string; next_amount: number; payments_left: number; ends: string; left_to_pay: number; payoff_estimate: number; interest_ahead: number; apr: number | null; autopay: boolean | null; source: string }
+interface Loan { id: number; name: string; label?: string; next_date: string; next_amount: number; payments_left: number; ends: string; left_to_pay: number; payoff_estimate: number; interest_ahead: number; apr: number | null; autopay: boolean | null; source: string;
+  /** The loan's one monthly figure, the one Debts and Borrowing give it; a calendar month's stair can differ (two due dates in one month, or none). */
+  per_month?: number }
 interface PlanOut {
   loans: Loan[];
   stairs: { month: string; total: number; parts: { id: number; name: string; amount: number }[] }[];
@@ -52,16 +54,18 @@ export function BorrowingPlan() {
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               <h2 id="bplan-title" style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>Your borrowing plan</h2>
               <span className="num" style={{ fontSize: 13, color: "var(--ink-2)" }}>
-                {p.totals.loans} loans, {money(p.totals.left_to_pay, { cents: true })} still to pay, of which about {money(p.totals.interest_ahead, { cents: true })} is interest ahead.
+                {p.totals.loans} loan{p.totals.loans === 1 ? "" : "s"}, {money(p.totals.left_to_pay, { cents: true })} still to pay, of which about {money(p.totals.interest_ahead, { cents: true })} is interest ahead.
+                {p.loans.some((l) => l.per_month !== undefined) ? ` On the plan: ${p.loans.filter((l) => l.per_month !== undefined).map((l) => `${l.label ?? l.name} ${money(l.per_month ?? 0, { cents: true })} a month`).join(", ")}.` : ""}
               </span>
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <h3 style={{ margin: 0, fontSize: 13, fontWeight: 800 }}>What the loans take each month</h3>
-              <div role="img" aria-label={p.stairs.map((s) => `${s.month}: ${money(s.total, { cents: true })}`).join("; ")}
+              <h3 style={{ margin: 0, fontSize: 13, fontWeight: 800 }}>This month's payments, month by month</h3>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>Each bar is the payments that fall due in that calendar month, on their own dates, so a month can be more or less than the plan's monthly figure.</span>
+              <div role="img" aria-label={`This month's payments, month by month: ${p.stairs.map((s) => `${s.month}: ${money(s.total, { cents: true })}`).join("; ")}`}
                 style={{ display: "grid", gridTemplateColumns: `repeat(${p.stairs.length}, minmax(0, 1fr))`, gap: 3, alignItems: "end", height: 140 }}>
                 {p.stairs.map((s) => (
-                  <button key={s.month} type="button" aria-hidden="true" tabIndex={-1} onClick={() => setPicked(s.month === picked ? null : s.month)} title={`${s.month}: ${money(s.total, { cents: true })}`}
+                  <button key={s.month} type="button" aria-hidden="true" tabIndex={-1} onClick={() => setPicked(s.month === picked ? null : s.month)} title={`${s.month} payments: ${money(s.total, { cents: true })}`}
                     style={{ height: "100%", padding: 0, border: 0, background: "transparent", display: "flex", flexDirection: "column-reverse", gap: 2, cursor: "pointer", outline: picked === s.month ? "2px solid var(--ink)" : undefined, outlineOffset: 2, borderRadius: 4 }}>
                     {s.parts.map((x, i) => (
                       <span key={x.id} style={{ height: `${(x.amount / top) * 100}%`, minHeight: x.amount > 0 ? 3 : 0, background: colour.get(x.id), borderRadius: i === s.parts.length - 1 ? "4px 4px 0 0" : 0 }} />
@@ -81,7 +85,7 @@ export function BorrowingPlan() {
               </div>
               <div aria-live="polite" className="num" style={{ fontSize: 13, color: "var(--ink-2)" }}>
                 {shown
-                  ? <><strong style={{ color: "var(--ink)" }}>{MONTH[Number(shown.month.slice(5, 7)) - 1]} {shown.month.slice(0, 4)}: {money(shown.total, { cents: true })}</strong>{shown.parts.length ? ` (${shown.parts.map((x) => `${x.name} ${money(x.amount, { cents: true })}`).join(", ")})` : ""}</>
+                  ? <><strong style={{ color: "var(--ink)" }}>{MONTH[Number(shown.month.slice(5, 7)) - 1]} {shown.month.slice(0, 4)} payments: {money(shown.total, { cents: true })}</strong>{shown.parts.length ? ` (${shown.parts.map((x) => `${x.name} ${money(x.amount, { cents: true })}`).join(", ")})` : ""}</>
                   : "Tap a month to see what each loan takes in it."}
               </div>
             </div>
@@ -101,7 +105,7 @@ export function BorrowingPlan() {
                 <tbody>
                   {p.loans.map((l) => (
                     <tr key={l.id}>
-                      <td><span aria-hidden="true" style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: colour.get(l.id), marginRight: 6 }} />{l.label ?? l.name}<div style={{ fontSize: 11, color: "var(--muted)" }}>{l.apr ? `${l.apr}% a year` : "0%"} · ends {shortDate(l.ends)}</div></td>
+                      <td><span aria-hidden="true" style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: colour.get(l.id), marginRight: 6 }} />{l.label ?? l.name}<div style={{ fontSize: 11, color: "var(--muted)" }}>{l.apr ? `${l.apr}% a year` : "0%"} · ends {shortDate(l.ends)}{l.per_month !== undefined ? ` · ${money(l.per_month, { cents: true })} a month` : ""}</div></td>
                       <td className="num">{shortDate(l.next_date)}<div style={{ fontSize: 11, color: "var(--muted)" }}>{money(l.next_amount, { cents: true })}</div>
                         <button type="button" className="btn" aria-label={`I paid ${l.label ?? l.name}`} onClick={() => paid(l.id)} style={{ minHeight: 28, padding: "2px 8px", fontSize: 11, marginTop: 4, whiteSpace: "nowrap" }}>I paid it</button></td>
                       <td className="num" style={{ textAlign: "right" }}>{money(l.left_to_pay, { cents: true })}<div style={{ fontSize: 11, color: "var(--muted)" }}>{l.payments_left} payment{l.payments_left === 1 ? "" : "s"}</div></td>

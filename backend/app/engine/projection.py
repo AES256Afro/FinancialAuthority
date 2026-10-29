@@ -27,6 +27,16 @@ def household_accounts(session) -> list[Account]:  # noqa: ANN001 - a Session
     return [a for a in session.exec(select(Account).where(Account.active == True)).all() if a.shared or a.person_id is None]  # noqa: E712
 
 
+def paid_by_household(session, rows: list) -> list:  # noqa: ANN001 - a Session; bills or plans
+    """The bills and plans the household pays: one drawn from a second person's own account (or card) is paid from
+    money the plan does not count, so it never comes out of the owner's cash either (sweep 19: their balance left the
+    plan in 0.10.3, their bills stayed in it and came out of the owner's checking)."""
+    from sqlmodel import select
+
+    theirs = {a.id for a in session.exec(select(Account).where(Account.person_id != None, Account.shared == False)).all()}  # noqa: E711, E712
+    return [r for r in rows if getattr(r, "pay_from_account_id", None) not in theirs] if theirs else list(rows)
+
+
 def cash_of(accounts: list[Account]) -> tuple[float, float]:
     """(cash to spend, all cash including savings)."""
     spend = sum((a.balance or 0.0) for a in accounts if is_spendable(a))

@@ -20,6 +20,14 @@ def when(iso: str) -> str:
     return f"{MONTHS[int(m) - 1]} {int(d)}"
 
 
+def _first_three(names: list[str], total: int | None = None) -> str:
+    """"A, B, C and 4 more": three named, and how many more, so a list is never read as complete when cut."""
+    total = max(total or 0, len(names))
+    if total <= 3:
+        return ", ".join(names[:-1]) + (" and " if len(names) > 1 else "") + names[-1]
+    return f"{', '.join(names[:3])} and {total - 3} more"
+
+
 def build_brief(snap: dict) -> list[dict]:
     items: list[dict] = []
     pay = snap["next_paycheck"]
@@ -68,13 +76,17 @@ def build_brief(snap: dict) -> list[dict]:
         names = ", ".join(f["sender_name"] or f["subject"] for f in past_due_notices[:3])
         items.append({"severity": "critical", "text": f"Past-due notice{'s' if len(past_due_notices) > 1 else ''} in the mail from {names}.", "link": "/confirm"})
     for stub in snap.get("paystubs", {}).get("short", [])[:1]:
-        items.append({"severity": "warning", "text": f"The {when(stub['pay_date'])} paystub was {money(-stub['difference'])} under the usual net of {money(stub['expected_net'])}.", "link": "/paystubs"})
+        moved = "; ".join((f"hours {m['before']:g} to {m['after']:g}" if m["name"] == "Hours" else f"{m['name'].lower()} {money(m['before'])} to {money(m['after'])}") for m in (stub.get("moved") or [])[:3])  # PLAN 7: with the lines that moved
+        items.append({"severity": "warning", "text": f"The {when(stub['pay_date'])} paystub was {money(-stub['difference'])} under the usual net of {money(stub['expected_net'])}." + (f" What moved: {moved}." if moved else ""), "link": "/paystubs"})
     payments = snap.get("payments", {})
     if payments.get("past_due"):
-        names = ", ".join(f"{p['name']} {money(p['amount'])}" for p in payments["past_due"][:3])
-        items.append({"severity": "critical", "text": f"Past due: {names}.", "link": "/bills"})
+        due = payments["past_due"]  # the count is said, Needs you's own where it is longer, so the two give one number (sweep 21)
+        n = max(len(due), int((snap.get("pending") or {}).get("past_due") or 0))
+        names = _first_three([f"{p['name']} {money(p['amount'])}" for p in due], n)
+        items.append({"severity": "critical", "text": f"{n} bill period{'s' if n != 1 else ''} past due with no payment seen: {names}.", "link": "/bills"})
     if payments.get("late"):
-        names = ", ".join(p["name"] for p in payments["late"][:3])
+        late = payments["late"]
+        names = ", ".join(p["name"] for p in late[:3]) + (" and more" if len(late) > 3 else "")  # never read as the whole list when cut
         items.append({"severity": "warning", "text": f"Not matched to a payment yet: {names}. If paid, the ledger will catch up within a sync.", "link": "/bills"})
     bad_weeks = [w for w in snap["calendar"]["weeks"][:6] if w["low"] is not None and w["low"] < 0]
     if bad_weeks:

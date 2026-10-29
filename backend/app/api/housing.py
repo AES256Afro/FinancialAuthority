@@ -386,8 +386,18 @@ def remove_utility(utility_id: int, session: Session = Depends(get_session), _: 
 # ---- documents ------------------------------------------------------------------------------------------------
 
 
+def _boxed_for_key(principal: auth.Principal, payload: dict, source: str) -> dict:
+    """A document's title, file name, merchant and note can come from a message or a file someone else wrote: a key
+    or a connected app reads them boxed, as it reads the document's text. The owner's screens show them as they are."""
+    if principal.kind != "key":
+        return payload
+    from ..mail.box import box_fields
+
+    return box_fields(payload, source)
+
+
 @router.get("/documents")
-def list_documents(attach_to: str = "", kind: str = "", period: str = "", session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+def list_documents(attach_to: str = "", kind: str = "", period: str = "", session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
     query = select(Document).order_by(Document.uploaded_at.desc())
     if attach_to:
         query = query.where(Document.attach_to == attach_to)
@@ -395,11 +405,11 @@ def list_documents(attach_to: str = "", kind: str = "", period: str = "", sessio
         query = query.where(Document.kind == kind)
     if period:
         query = query.where(Document.period == period)
-    return {"documents": [docs.doc_out(d) for d in session.exec(query).all()], "kinds": list(docs.KINDS)}
+    return {"documents": [_boxed_for_key(principal, docs.doc_out(d), f"document {d.id}") for d in session.exec(query).all()], "kinds": list(docs.KINDS)}
 
 
 @router.get("/documents/months")
-def documents_by_month(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+def documents_by_month(session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
     """Every kept file with a month, grouped by month: statements, paystubs, receipts."""
     from ..engine.receipts import months
 
@@ -408,14 +418,15 @@ def documents_by_month(session: Session = Depends(get_session), _: auth.Principa
     kinds: dict[str, int] = {}
     for d in undated:
         kinds[d.kind] = kinds.get(d.kind, 0) + 1
-    return {"months": got, "undated": [docs.doc_out(d) for d in undated], "undated_kinds": kinds}
+    return _boxed_for_key(principal, {"months": got, "undated": [docs.doc_out(d) for d in undated], "undated_kinds": kinds}, "a kept document")
 
 
 @router.get("/receipts")
-def get_receipts(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+def get_receipts(session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
     from ..engine.receipts import receipts_overview
 
-    return receipts_overview(session, today())
+    out = receipts_overview(session, today())
+    return {**out, **_boxed_for_key(principal, {k: out[k] for k in ("receipts", "unmatched") if k in out}, "a kept receipt")}
 
 
 @router.get("/receipts/candidates")
@@ -461,7 +472,16 @@ def upload_document(file: UploadFile = File(...), title: str = Form(""), kind: s
 def search_documents(q: str, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
     if principal.redaction != "full":
         raise HTTPException(403, "Documents are read with full access only")
-    return {"hits": docs.search(session, q[:200])}
+    hits = docs.search(session, q[:200])
+    if principal.kind == "key":
+        # A key or a connected app (a model, most likely) gets each snippet boxed, as documents_search gives it: the
+        # text is a third party's, never an instruction. The app's own screens show it as it is.
+        from ..mail.box import box_untrusted
+
+        for h in hits:
+            h["snippet"] = box_untrusted(h["snippet"], f"document {h['document_id']}, page {h['page']}")
+        hits = [_boxed_for_key(principal, h, f"document {h['document_id']}") for h in hits]
+    return {"hits": hits}
 
 
 @router.get("/documents/{doc_id}/pages/{page}")
@@ -473,6 +493,10 @@ def document_page(doc_id: int, page: int, session: Session = Depends(get_session
     pages = docs.pages_of(doc)
     if not 1 <= page <= len(pages):
         raise HTTPException(404, f"It has {len(pages)} page{'s' if len(pages) != 1 else ''} of text")
+    if principal.kind == "key":  # boxed for a key or a connected app, as document_read gives it
+        from ..mail.box import box_untrusted
+
+        return {**_boxed_for_key(principal, docs.doc_out(doc), f"document {doc.id}"), "page": page, "of": len(pages), "boxed": box_untrusted(pages[page - 1], f"document {doc.id}, page {page} of {len(pages)}")}
     return {**docs.doc_out(doc), "page": page, "of": len(pages), "text": pages[page - 1]}
 
 

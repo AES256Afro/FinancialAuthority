@@ -2,7 +2,7 @@
 // cushion and what is yours.
 import { Empty } from "../components/State";
 import { noPayday } from "../components/SafeExplain";
-import { amountClass, money, moneyOr, shortDate } from "../format";
+import { amountClass, eventDay, money, moneyOr, shortDate } from "../format";
 import { getPrefs } from "../prefs";
 import { palette } from "../looks";
 import { inkOn } from "../paychecks";
@@ -37,7 +37,7 @@ export function WhereItGoes({ snapshot }: ViewProps) {
     { id: "bills", label: `Bills ${money(w.bills.total)}`, sub: `${shortDate(w.start)} to ${shortDate(w.end)}`, amount: w.bills.total, fill: c.bill, text: inkOn(c.bill) },
     { id: "aside", label: `Set aside ${money(w.set_aside.total)}`, sub: "for the next paycheck", amount: w.set_aside.total, fill: c.surface, stroke: c.bill, text: c.ink },
     { id: "buffer", label: `Safety cushion ${money(w.buffer)}`, amount: w.buffer, fill: c.buffer, text: inkOn(c.buffer) },
-    { id: "safe", label: safe !== null && safe < 0 ? `Short ${money(-safe)}` : "Safe to spend", sub: short ? undefined : moneyOr(safe), amount: safe === null ? 0 : Math.abs(safe), fill: short ? "var(--critical-soft)" : c.safe, stroke: short ? "var(--critical)" : undefined, text: short ? "var(--critical-ink)" : inkOn(c.safe) },
+    { id: "safe", label: safe !== null && safe < 0 ? `Short ${money(-safe)}` : "Left", sub: short ? undefined : moneyOr(safe), amount: safe === null ? 0 : Math.abs(safe), fill: short ? "var(--critical-soft)" : c.safe, stroke: short ? "var(--critical)" : undefined, text: short ? "var(--critical-ink)" : inkOn(c.safe) },
   ].filter((g) => g.amount > 0);
   const scale = USABLE / Math.max(1, groups.reduce((s, g) => s + g.amount, 0));
   let ySrc = TOP;
@@ -55,11 +55,11 @@ export function WhereItGoes({ snapshot }: ViewProps) {
   const bills: Event[] = [...w.bills.items].sort((a, b) => b.amount - a.amount);
   const top = bills.slice(0, 8);
   const rest = bills.slice(8);
-  for (const e of top) leaves.push({ label: `${e.name} · ${money(e.amount)} · ${shortDate(e.date)}`, amount: e.amount, fill: e.kind === "installment" ? c.debt : c.bill, group: "bills" });
+  for (const e of top) leaves.push({ label: `${e.name} · ${money(e.amount)} · ${eventDay(e)}`, amount: e.amount, fill: e.kind === "installment" ? c.debt : c.bill, group: "bills" });
   if (rest.length) leaves.push({ label: `${w.bills.after_eight.count} smaller · ${money(w.bills.after_eight.total)}`, amount: w.bills.after_eight.total, fill: c.bill, group: "bills" });
   for (const e of [...w.set_aside.items].sort((a, b) => b.amount - a.amount).slice(0, 5)) {
     const kept = e.kept ?? e.amount;
-    leaves.push({ label: `${e.name}${(e.share ?? 1) < 1 ? ", half" : ""} · ${money(kept)} · ${shortDate(e.date)}`, amount: kept, fill: c.surface, stroke: c.bill, group: "aside" });
+    leaves.push({ label: `${e.name}${(e.share ?? 1) < 1 ? ", half" : ""} · ${money(kept)} · ${eventDay(e)}`, amount: kept, fill: c.surface, stroke: c.bill, group: "aside" });
   }
   const leafPlaced: (typeof leaves[number] & { y: number; h: number; fromY: number })[] = [];
   for (const g of placed) {

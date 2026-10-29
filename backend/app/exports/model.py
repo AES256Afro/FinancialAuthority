@@ -38,11 +38,11 @@ def usd(v: float | None, cents: bool = False) -> str:
     return f"{sign}${abs(v):,.{2 if cents else 0}f}"
 
 
-def day(iso: str | date | None) -> str:
+def day(iso: str | date | None, *, year: bool = False) -> str:
     if not iso:
         return "-"
     d = date.fromisoformat(iso) if isinstance(iso, str) else iso
-    return f"{d:%a %b} {d.day}"
+    return f"{d:%a %b} {d.day}" + (f", {d.year}" if year else "")
 
 
 def _section(key: str, title: str, lead: str = "", kpis: list | None = None, bars: list | None = None, table: dict | None = None, notes: list | None = None) -> dict:
@@ -104,7 +104,7 @@ def build_report(session: Session, today: date, sections: list[str] | None = Non
                                 table={"columns": ["Account", f"Needs before {day(cov['paydays'][0])}", f"Needs before {day(cov['paydays'][1])}", "Has", "Status"], "align": ["l", "r", "r", "r", "l"], "rows": rows},
                                 notes=["The payday sheet:"] + sheet if sheet else []))
         elif key == "saving":
-            rows = [[f"{r['n']}. {r['name']}", usd(r["target"]), "reached" if r["reached"] else usd(r["short"]) + " to go", day(r["eta"]) if r["eta"] else "not within six years"] for r in sv["rungs"]]
+            rows = [[f"{r['n']}. {r['name']}", usd(r["target"]), "reached" if r["reached"] else usd(r["short"]) + " to go", day(r["eta"], year=True) if r["eta"] else "not within six years"] for r in sv["rungs"]]
             out.append(_section(key, title, f"{usd(sv['balance'])} saved. Each check keeps {sv['share_used']}% of what it leaves" + ("" if sv["chosen"] else " (the suggested share)") + ".",
                                 kpis=[{"label": "Saved", "value": usd(sv["balance"]), "note": ""}, {"label": "A month of costs", "value": usd(sv["month"]), "note": "bills and everyday spending"}],
                                 bars=[{"label": f"Rung {r['n']}", "value": r["target"], "role": "saving"} for r in sv["rungs"][:3]],

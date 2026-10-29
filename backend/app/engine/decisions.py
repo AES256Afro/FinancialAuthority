@@ -58,6 +58,10 @@ def purchase_check(session: Session, today: date, amount: float, *, on: date | N
     projection = snap["projection"]
     horizon_end = date.fromisoformat(projection[-1]["date"])
     charges = _charges(amount, on, installments)
+    if snap.get("no_balance"):
+        # No bank has reported a balance: the line starts from an unknown (its figures are None), so the check cannot
+        # say yes or no. It says it cannot tell yet, and the caveat says why.
+        projection = [{**p, "available": 0.0, "at_pace": 0.0, "cash": 0.0} for p in projection]  # a frame of dates only; nothing below is shown
     after = _apply(projection, charges)
     from_on = [p for p in after if date.fromisoformat(p["date"]) >= on] or after
     low = low_point(from_on)
@@ -102,19 +106,23 @@ def purchase_check(session: Session, today: date, amount: float, *, on: date | N
         # No bank has reported a balance: the line starts from an unknown, so the check cannot say yes or no. It says
         # it cannot tell yet, and the caveat says why.
         verdict, breaks, first_ok, after_line = "outside", None, None, []
+    no_balance = bool(snap.get("no_balance"))
+    # What the purchase adds to each of the next three paychecks, as PLAN section 7 promises for the pay-in-four variant.
+    by_paycheck = [{"payday": w["start"], "through": w["end"], "adds": round(sum(a for d, a in charges if w["start"] <= d.isoformat() <= w["end"]), 2)} for w in snap["windows"][:3]]
     return {
         "as_of": today.isoformat(),
         "amount": amount,
         "on": on.isoformat(),
         "installments": installments if installments and installments > 1 else None,
         "charges": [{"date": d.isoformat(), "amount": a} for d, a in charges],
+        "by_paycheck": by_paycheck,
         "verdict": verdict,
         "breaks": breaks,
         "outside": {"horizon": horizon_end.isoformat(), "charges": [{"date": d.isoformat(), "amount": a} for d, a in after_line],
                     "text": f"The plan sees through {horizon_end:%b} {horizon_end.day}; {len(after_line)} charge{'s' if len(after_line) != 1 else ''} fall{'' if len(after_line) != 1 else 's'} after it, which it cannot check."} if after_line else None,
         "first_ok_date": first_ok,
-        "low_point": {"date": low["date"], "at_pace": low["value"]},
-        "low_point_before": low_point([p for p in projection if date.fromisoformat(p["date"]) >= on] or projection),
+        "low_point": {"date": None, "at_pace": None} if no_balance else {"date": low["date"], "at_pace": low["value"]},
+        "low_point_before": None if no_balance else low_point([p for p in projection if date.fromisoformat(p["date"]) >= on] or projection),
         "caveats": snap["caveats"],
         "fits_safe_to_spend": None if safe["amount"] is None else amount <= safe["amount"],
         "no_balance": bool(snap.get("no_balance")),
@@ -157,8 +165,10 @@ def _low_finder(session: Session, today: date):
     following = paydays[1]
     pay_dates = set(paydays)
     pay_amounts = {d: net_for(d) for d in paydays}
-    bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
-    plans = session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all()  # noqa: E712
+    from .projection import paid_by_household
+
+    bills = paid_by_household(session, session.exec(select(Bill).where(Bill.active == True)).all())  # noqa: E712 - as the snapshot takes them
+    plans = paid_by_household(session, session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all())  # noqa: E712
     advances = session.exec(select(Advance).where(Advance.repaid == False)).all()  # noqa: E712
     pace = usual_pace(session, today, {b.name for b in bills})
     unconfirmed_rows = session.exec(select(RecurringSeries).where(RecurringSeries.confirmed == False, RecurringSeries.active == True)).all()  # noqa: E712
@@ -259,6 +269,15 @@ def billing_date_suggestions(session: Session, today: date) -> dict:
 
 def _billing_date_suggestions(session: Session, today: date) -> dict:
     finder, bills, caveats = _low_finder(session, today)
+    from .projection import household_accounts, is_spendable
+
+    counted = [a for a in household_accounts(session) if is_spendable(a) and a.kind != "card"]
+    if not counted or all(a.balance is None for a in counted):
+        # No balance yet: a low point worked out from $0 is no low point, as the snapshot says (sweep 21).
+        return {"as_of": today.isoformat(), "no_balance": True, "baseline": {"low": None, "low_date": None}, "moves_start": None,
+                "note": "No balance yet: link the bank or type what checking holds, and the billing dates can be judged.", "suggestions": [], "plan": [], "plan_low": None,
+                "movable": sum(1 for b in bills if _monthly(b)), "sources": [], "caveats": caveats,
+                "drafts_only": "The app drafts the request; it never sends anything. Copy it to the biller yourself, or approve a send once sending exists."}
     tried: dict[frozenset, dict] = {}
 
     def low_for(due_days: dict[int, int]) -> dict:
@@ -323,6 +342,7 @@ def _billing_date_suggestions(session: Session, today: date) -> dict:
                 f"its date, and a change starts with the cycle after it. So no move lifts that point.")
     return {
         "as_of": today.isoformat(),
+        "no_balance": False,
         "baseline": {"low": baseline["value"], "low_date": baseline["date"]},
         "moves_start": moves_start.isoformat() if moves_start else None,
         "note": note,

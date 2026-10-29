@@ -4,13 +4,13 @@
 // usual everyday spending. It is not the bank balance, so it is never called one.
 import { TriangleAlert } from "lucide-react";
 import { Link } from "react-router-dom";
-import { money, parseIso, shortDate } from "../format";
+import { money, monthDay, parseIso, shortDate } from "../format";
 import { palette } from "../looks";
 import { inkOn } from "../paychecks";
 import { getPrefs } from "../prefs";
 import type { Event } from "../types";
 import type { ViewProps } from "./index";
-import { PlanCaveats, SafeExplain, SafePill, safeFigure, safeTitle } from "../components/SafeExplain";
+import { PlanCaveats, SafeExplain, SafePill, SafeSentence, noBalance, safeFigure, safeTitle } from "../components/SafeExplain";
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -35,11 +35,14 @@ export function MonthGrid({ snapshot }: ViewProps) {
     const fill = e.kind === "paycheck" ? c.paycheck : e.kind === "installment" || e.kind === "advance" ? c.debt : c.bill;
     return { background: fill, color: inkOn(fill) };
   };
-  const chipText = (e: Event) => (e.kind === "paycheck" ? `Payday ${money(-e.amount, { sign: true })}` : `${e.name} ${money(e.amount)}`);
+  const chipText = (e: Event) => (e.kind === "paycheck" ? `Payday ${money(-e.amount, { sign: true })}` : `${e.name} ${money(e.amount)}${e.late && e.due ? ` · was due ${monthDay(e.due)}` : ""}`);
   const weeks = snapshot.calendar.weeks.slice(0, 6);
   const byDate = new Map<string, Event[]>();
   for (const e of snapshot.calendar.events) byDate.set(e.date, [...(byDate.get(e.date) ?? []), e]);
   const today = snapshot.as_of;
+  // The weekly lows start from what checking holds: with no balance the engine leaves them null, said in words.
+  const empty = noBalance(snapshot);
+  const lowFigure = (w: (typeof weeks)[number]) => (w.low === null ? (empty ? "no balance yet" : "—") : money(w.low));
   const firstBad = weeks.find((w) => w.low !== null && w.low < 0);
   const title = weeks.length ? `${MONTHS[parseIso(weeks[0].start).getMonth()]} to ${MONTHS[parseIso(weeks[weeks.length - 1].end).getMonth()]} ${parseIso(weeks[weeks.length - 1].end).getFullYear()}` : "";
   const lowWords = (w: (typeof weeks)[number]) => {
@@ -71,7 +74,7 @@ export function MonthGrid({ snapshot }: ViewProps) {
                 <span className="lab">Week of {shortDate(w.start)}</span>
                 <span style={{ fontSize: 12, color: bad ? "var(--warning-ink)" : "var(--ink-2)", fontWeight: bad ? 700 : 500 }}>
                   {bad && <TriangleAlert size={13} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 4 }} />}
-                  Lowest left to spend <strong className="num">{w.low === null ? "—" : money(w.low)}</strong>{w.low_date ? ` · ${lowWords(w)}` : ""}
+                  Lowest left to spend <strong className="num">{lowFigure(w)}</strong>{w.low_date ? ` · ${lowWords(w)}` : ""}
                 </span>
               </div>
               {days.length === 0 && <div style={{ fontSize: 13, color: "var(--muted)" }}>Nothing due this week.</div>}
@@ -116,7 +119,7 @@ export function MonthGrid({ snapshot }: ViewProps) {
               }),
               <div key={`low-${w.start}`} style={{ display: "flex", flexDirection: "column", justifyContent: "center", gap: 2, padding: "6px 8px", borderRadius: 10, background: bad ? "var(--warning-soft)" : "var(--surface-2)" }}>
                 <span className="lab">lowest left</span>
-                <span className="num" style={{ fontSize: 18, fontWeight: 800 }}>{w.low === null ? "—" : money(w.low)}</span>
+                <span className="num" style={{ fontSize: 18, fontWeight: 800 }}>{lowFigure(w)}</span>
                 <span style={{ fontSize: 11, color: bad ? "var(--warning-ink)" : "var(--muted)", fontWeight: bad ? 700 : 400 }}>{bad && <TriangleAlert size={12} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 3 }} />}{lowWords(w)}</span>
               </div>,
             ];
@@ -129,7 +132,7 @@ export function MonthGrid({ snapshot }: ViewProps) {
           <div style={{ flex: "1 1 200px", display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
             <strong>{safeTitle(snapshot)}.</strong>
             <SafePill s={snapshot} />
-            <span style={{ color: "var(--ink-2)" }}>Lowest left to spend is what stays free after the safety cushion, what is kept for bills, and your usual <span className="num">{money(snapshot.usual_pace.per_day)}</span> a day. It is not your bank balance.</span>
+            {empty ? <span style={{ color: "var(--ink-2)" }}><SafeSentence s={snapshot} /></span> : <span style={{ color: "var(--ink-2)" }}>Lowest left to spend is what stays free after the safety cushion, what is kept for bills, and your usual <span className="num">{money(snapshot.usual_pace.per_day)}</span> a day. It is not your bank balance.</span>}
           </div>
           <PlanCaveats s={snapshot} />
           <SafeExplain s={snapshot} />

@@ -30,7 +30,10 @@ HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 NAME = re.compile(r"^[\w\- .]{1,40}$")
 MARK_MAX = 300_000
 MARK_TYPES = ("image/png", "image/jpeg", "image/webp", "image/svg+xml")
-SVG_REFUSED = re.compile(r"<script|<foreignobject|<iframe|<embed|<object|javascript:|\bon[a-z]+\s*=|href\s*=\s*[\"']?\s*(?!#)[a-z]+:", re.IGNORECASE)
+# Possessive runs: "href=", then a long run of blanks and no scheme, was tried every way the run splits between the
+# two blank runs around the quote (300 KB of spaces did not finish in 20 s). A letter or "=" has to follow each run, so
+# taking it whole refuses the same marks.
+SVG_REFUSED = re.compile(r"<script|<foreignobject|<iframe|<embed|<object|javascript:|\bon[a-z]++\s*+=|href\s*+=\s*+[\"']?+\s*+(?!#)[a-z]++:", re.IGNORECASE)
 
 DEFAULT = {"look": "light", "active": "river", "arrangements": [], "show_as": {}, "colours": None, "brand": {"name": "", "mark": ""}, "type_size": "regular", "density": "comfortable", "quiet": False, "calm": False, "font": "regular"}
 

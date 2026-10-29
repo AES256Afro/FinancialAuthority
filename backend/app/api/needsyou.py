@@ -20,8 +20,13 @@ router = APIRouter(prefix="/api/v1/needs-you", tags=["needs you"])
 
 
 @router.get("")
-def get_triage(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
-    return triage(session, today())
+def get_triage(session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
+    out = triage(session, today())
+    if principal.kind == "key":  # the waiting facts carry the sender's words: boxed for a key or a connected app
+        from ..mail.box import MAIL_WORDS, box_fields
+
+        out = {**out, "groups": box_fields(out["groups"], "waiting mail"), "how": MAIL_WORDS}
+    return out
 
 
 class ManyIn(In):
@@ -47,9 +52,15 @@ def answer_many(body: ManyIn, session: Session = Depends(get_session), principal
         with one_writer():  # each fact claimed as its own card claims it: read again under the lock, so one answered there meanwhile is found answered
             _answer_one(session, fid, body.action, steps, principal, done, failed)
             aside += 1 if done and done[-1].get("aside") else 0
+    confirmed = [row for row in done if not row.get("aside")] if body.action == "confirm" else []
     for row in done:
         row.pop("aside", None)
     services.audit(session, client=principal.name, client_kind=principal.kind, tool=f"facts_{body.action}_many", args={"ids": body.ids[:50]}, rows=len(done))
+    if body.action == "confirm" and principal.kind == "key":  # a key or a connected app confirmed: the owner hears of it, as from the MCP tool
+        from .mail import told_owner
+
+        kinds = {f.id: f.kind for f in chosen}
+        told_owner(principal.name, [(kinds.get(row["id"], "fact"), row["id"], row.get("applied_to", "")) for row in confirmed])
     if done:
         from ..llm.reviewer import mark_pending
 

@@ -19,6 +19,19 @@ DATE_LABELS = r"pay date|check date|payment date|date paid|paid on|pay day"
 PERIOD_LABELS = r"pay period|period (?:beginning|begin|start|from)|period:|pay period ending|period ending"
 PLAIN_AMOUNT = r"((?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2})"  # 1,234.56 or 1234.56; never a slice of a longer number
 COLUMNS_LAYOUT = re.compile(r"earnings statement.*pay date:.*(?:current period|net pay distribution)", re.IGNORECASE | re.DOTALL)
+
+
+def _columns_layout(text: str) -> bool:
+    """The columns layout's three marks in order, found with plain finds: the regex above backtracks for minutes on a
+    text that repeats the first two marks."""
+    low = text.lower()
+    a = low.find("earnings statement")
+    if a < 0:
+        return False
+    b = low.find("pay date:", a)
+    if b < 0:
+        return False
+    return low.find("current period", b) >= 0 or low.find("net pay distribution", b) >= 0
 NUMBER_RUN = re.compile(r"^(.*?)\s+((?:-?\d[\d,]*\.\d{2}\s*)+)$")
 DEDUCTION_LABELS = [
     ("Federal income tax", r"federal (?:income )?(?:tax|withholding)|fed(?:eral)? w/h|fit\b|fed tax"),
@@ -148,7 +161,7 @@ def parse_columns_layout(text: str, ref: date | None = None) -> dict | None:
     """The earnings-statement layout: "Pay Date:", "Period Start:", "Period End:", then sections (Earnings,
     W/H Taxes, Deductions) whose rows end in a run of numbers, the last two of which are this period and year
     to date, and a "Net Pay <period> <ytd>" line. Amounts carry no thousands separators."""
-    if not COLUMNS_LAYOUT.search(text):
+    if not _columns_layout(text):
         return None
 
     def date_after(label: str) -> date | None:
@@ -275,7 +288,8 @@ def parse_paystub_text(text: str, ref: date | None = None) -> dict | None:
             break
     hours = None
     # "Regular Hours: 80", or an earnings row "Regular  37.26  80.00  2,980.77" where the rate comes before the hours.
-    h = re.search(r"(?:regular|reg)\s*(?:hours|hrs)\s*[:\s]\s*(\d{1,3}(?:\.\d{1,2})?)", text, re.IGNORECASE) or re.search(
+    # Possessive runs: a crafted run of spaces after the label is read once, not split every way.
+    h = re.search(r"(?:regular|reg)\s*+(?:hours|hrs)(?=[:\s])\s*+:?\s*+(\d{1,3}(?:\.\d{1,2})?)", text, re.IGNORECASE) or re.search(
         r"(?:regular|reg)\s+(?:\$?\d{1,3}\.\d{2,4}\s+)?(\d{1,3}(?:\.\d{1,2})?)\s+\$?\d{1,3}(?:,\d{3})*\.\d{2}", text, re.IGNORECASE
     )
     if h:

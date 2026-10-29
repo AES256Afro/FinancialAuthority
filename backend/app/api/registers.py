@@ -610,8 +610,14 @@ class RulePreviewIn(In):
 
 
 @router.post("/ledger/rules/preview")
-def rule_preview(body: RulePreviewIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+def rule_preview(body: RulePreviewIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
     from ..engine.edits import preview_rule
+
+    if principal.kind == "key" and body.pattern.strip().startswith("re:"):
+        # A rule's "re:" pattern runs as a regular expression over a year of rows; one written to backtrack, twenty
+        # characters long, held a worker for fifty seconds per request. Saving one is the owner's; a key or a
+        # connected app previews the plain words a rule matches.
+        raise HTTPException(403, "A key or a connected app previews a rule's plain words; a regular expression (re:) is previewed in the app")
 
     try:
         return preview_rule(session, today(), kind=body.kind, pattern=body.pattern, value=body.value, match_field=body.match_field)

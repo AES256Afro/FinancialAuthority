@@ -225,21 +225,22 @@ function OrderColumn({ way, kind, scale, cheapest }: { way: PayoffWay; kind: "av
 
 // The interest each way on one scale: only the minimums, then the two orders with the extra.
 function InterestBars({ p }: { p: PayoffOut }) {
+  // A way that never finishes has no interest figure (null): it is said in words and drawn as nothing, never as $0.
   const rows = [
-    { label: "Only the minimums", value: p.minimums_only.interest ?? 0 },
-    { label: WAY_WORD.avalanche.title, value: p.avalanche.interest ?? 0 },
-    { label: WAY_WORD.snowball.title, value: p.snowball.interest ?? 0 },
-  ]; // a way that never finishes has no interest figure and draws as nothing
-  const scale = Math.max(1, ...rows.map((r) => r.value));
+    { label: "Only the minimums", value: p.minimums_only.interest },
+    { label: WAY_WORD.avalanche.title, value: p.avalanche.interest },
+    { label: WAY_WORD.snowball.title, value: p.snowball.interest },
+  ];
+  const scale = Math.max(1, ...rows.map((r) => r.value ?? 0));
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6, maxWidth: 560 }}>
       <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>Interest each way</h3>
       {rows.map((r) => (
         <div key={r.label} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: "2px 10px", alignItems: "center", fontSize: 13 }}>
           <span>{r.label}</span>
-          <strong className="num" style={{ textAlign: "right" }}>{money(r.value)}</strong>
-          <div role="img" aria-label={`${r.label}: ${money(r.value)} in interest`} style={{ gridColumn: "1 / -1", position: "relative", height: 10, background: "var(--surface-2)", borderRadius: 4 }}>
-            <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${Math.min(100, (r.value / scale) * 100)}%`, background: "var(--debt)", borderRadius: 4 }} />
+          <strong className={r.value === null ? undefined : "num"} style={{ textAlign: "right" }}>{r.value === null ? "never paid off" : money(r.value)}</strong>
+          <div role="img" aria-label={r.value === null ? `${r.label}: never paid off, so no interest total` : `${r.label}: ${money(r.value)} in interest`} style={{ gridColumn: "1 / -1", position: "relative", height: 10, background: "var(--surface-2)", borderRadius: 4 }}>
+            <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${Math.min(100, ((r.value ?? 0) / scale) * 100)}%`, background: "var(--debt)", borderRadius: 4 }} />
           </div>
         </div>
       ))}

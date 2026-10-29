@@ -317,31 +317,6 @@ def test_a_register_write_waits_for_the_writer_then_says_so(owner: TestClient, m
         assert len(session.exec(select(Bill).where(Bill.name == "Example Water")).all()) == 1
 
 
-def test_every_register_write_route_runs_under_the_writer():
-    """The enumeration itself: every route that writes a register in these modules carries the lock, so a route added
-    beside them without it fails here. Documents (an upload that may read a scan for seconds) and the ledger rules
-    preview (which writes nothing) are the known exceptions."""
-    from fastapi.routing import APIRoute
-
-    modules = {f"app.api.{m}" for m in ("registers", "housing", "business", "investments", "borrowing", "goals", "ledger_rules", "datacheck")}
-    exceptions = {"/api/v1/ledger/rules/preview", "/api/v1/documents", "/api/v1/documents/{doc_id}", "/api/v1/suggestions/answer", "/api/v1/suggestions/bring-back", "/api/v1/taxes/answers"}  # the last three write a setting, not a register
-
-    def walk(routes):
-        for r in routes:
-            if isinstance(r, APIRoute):
-                yield r
-            elif hasattr(r, "original_router"):
-                yield from walk(r.original_router.routes)
-            elif hasattr(r, "routes"):
-                yield from walk(r.routes)
-
-    checked = 0
-    for route in walk(app.routes):
-        if route.endpoint.__module__ not in modules or route.path in exceptions:
-            continue
-        if not route.methods & {"POST", "PUT", "PATCH", "DELETE"}:
-            continue
-        checked += 1
-        wrapped = getattr(route.endpoint, "__wrapped__", None)
-        assert wrapped is not None and route.endpoint.__name__ == wrapped.__name__, (route.path, sorted(route.methods))  # under_writer, keeping the route's own signature
-    assert checked >= 50, checked
+# The enumeration of register writes that held a hand list of modules and exceptions lives on, derived from the
+# running app, as test_every_register_write_route_runs_under_the_writer in test_sweep20_security_access.py: every
+# write route is called and every statement it sends watched, so a route added anywhere without the lock fails.

@@ -21,6 +21,9 @@ export interface CoverWindow {
   bills: number;
   everyday: number;
   buffer: number;
+  /** What the check keeps in the deposit account for the window after this one (the sheet's "Leave in"); part of
+   * needs, so `left` is after it and can be below zero while the window's own bills are paid. 0 on other windows. */
+  set_aside?: number;
   left: number | null;
   low: number | null;
   low_on: string | null;
@@ -104,7 +107,8 @@ export interface Saving {
   share_used: number;
   presets: Record<string, number>;
   starter: number;
-  per_check: { date: string; left: number; keep: number }[];
+  /** `left` is null on the first check when no bank has reported a balance (no_balance). */
+  per_check: { date: string; left: number | null; keep: number }[];
   rungs: Rung[];
   next_rung: Rung | null;
   by_share: { share: number; per_check: number; etas: (string | null)[] }[];

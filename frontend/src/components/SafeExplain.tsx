@@ -3,7 +3,7 @@
 import { ChevronRight, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { amountClass, money, moneyOr, shortDate, when } from "../format";
+import { amountClass, eventDay, money, moneyOr, shortDate, when } from "../format";
 import type { Snapshot } from "../types";
 import { StatusPill } from "./Status";
 
@@ -21,6 +21,26 @@ export function noBalance(s: Snapshot): boolean {
   if (s.safe_to_spend.amount === null || s.cash === null) return true;
   if (!s.fresh) return false;
   return !s.fresh.accounts.some((a) => (a.kind === "checking" || a.kind === "cash") && a.balance !== null && a.balance !== undefined);
+}
+
+/** One day of the engine's daily line, with figures. */
+export interface LinePoint { date: string; available: number; at_pace: number; cash: number }
+
+/** The engine's daily line (`projection`) as figures, or null when there is none to draw: it starts from what checking
+ * holds, so with no balance (no_balance) its figures are null, and a line drawn from them would be a made-up $0. */
+export function dailyLine(s: Snapshot): LinePoint[] | null {
+  if (noBalance(s)) return null;
+  if (s.projection.some((p) => p.available === null || p.at_pace === null || p.cash === null)) return null;
+  return s.projection as LinePoint[];
+}
+
+/** What stands where the daily line would be when there is no balance: the same words and link as safe to spend. */
+export function NoBalanceLine({ what }: { what: string }) {
+  return (
+    <div role="note" style={{ fontSize: 13, color: "var(--ink-2)", padding: "8px 0" }}>
+      No balance yet: {what} from what checking holds, and no bank has told the app that yet. <Link to="/settings/connectors#banks" style={{ fontWeight: 700 }}>Link your bank</Link>
+    </div>
+  );
 }
 
 /** Safe to spend as it is shown: the engine's figure, or words when there is no balance to count from. */
@@ -102,7 +122,7 @@ export function SafeExplain({ s, open = false }: { s: Snapshot; open?: boolean }
                     {st.label}
                     {(st.note || st.as_of) && <div style={{ fontSize: 11, color: "var(--muted)" }}>{[st.note, st.as_of ? when(st.as_of) : ""].filter(Boolean).join(", ")}</div>}
                     {st.items && st.items.length > 0 && (
-                      <div className="num" style={{ fontSize: 11, color: "var(--muted)" }}>{st.items.slice(0, 4).map((i) => `${i.name} ${money(i.amount, { cents: true })} on ${shortDate(i.date)}`).join(" · ")}{st.items.length > 4 ? ` · and ${st.items.length - 4} more` : ""}</div>
+                      <div className="num" style={{ fontSize: 11, color: "var(--muted)" }}>{st.items.slice(0, 4).map((i) => `${i.name} ${money(i.amount, { cents: true })}${i.due && i.due < i.date ? `, ${eventDay(i)}` : ` on ${shortDate(i.date)}`}`).join(" · ")}{st.items.length > 4 ? ` · and ${st.items.length - 4} more` : ""}</div>
                     )}
                   </td>
                   <td className="num" style={{ textAlign: "right", whiteSpace: "nowrap", verticalAlign: "top" }}>{st.amount === null ? "no balance yet" : `${st.amount < 0 ? "− " : ""}${money(Math.abs(st.amount), { cents: true })}`}</td>

@@ -32,10 +32,12 @@ interface Step {
 }
 
 interface Moves {
-  baseline: { low: number; low_date: string };
+  /** True when no balance is known: no low point is worked out (baseline and plan_low are null), and `note` says why. */
+  no_balance?: boolean;
+  baseline: { low: number | null; low_date: string | null };
   suggestions: Suggestion[];
   plan: Step[];
-  plan_low: number;
+  plan_low: number | null;
   movable: number;
   caveats?: string[];
   /** Why nothing is suggested, when the low point comes before any move could take effect. */
@@ -79,11 +81,30 @@ export function DateMoves({ refreshKey }: { refreshKey?: number }) {
       say(s.bill_id, { text: "This browser would not copy. Use Send it, with approval, or try another browser.", tone: "error" });
     }
   }
+  // Every move is worked out from the lowest left to spend, which starts from what checking holds: with no balance
+  // the engine works out no low point and says so in its note.
+  if (data?.no_balance) {
+    return (
+      <section className="card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+        <h2 style={{ margin: 0, fontSize: 14, fontWeight: 800 }}>Dates that could move</h2>
+        <div role="note" style={{ fontSize: 13, color: "var(--ink-2)" }}>
+          {data.note || "No balance yet, so the billing dates cannot be judged."} <Link to="/settings/connectors#banks" style={{ fontWeight: 700 }}>Link your bank</Link>
+        </div>
+        {data.caveats && data.caveats.length > 0 && (
+          <div style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, color: "var(--warning-ink)", fontWeight: 600 }}>
+            <TriangleAlert size={14} aria-hidden="true" style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>{data.caveats.join(" ")}</span>
+          </div>
+        )}
+        <div style={{ fontSize: 11, color: "var(--muted)" }}>{data.drafts_only} {data.not_advice}</div>
+      </section>
+    );
+  }
   return (
     <section className="card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0, fontSize: 14, fontWeight: 800 }}>Dates that could move</h2>
-        {data && <span style={{ fontSize: 12, color: "var(--ink-2)" }}>The lowest left to spend in the next 60 days: {money(data.baseline.low)} on {shortDate(data.baseline.low_date)}. Each move below is worked out on its own.</span>}
+        {data && data.baseline.low !== null && data.baseline.low_date && <span className="num" style={{ fontSize: 12, color: "var(--ink-2)" }}>The lowest left to spend in the next 60 days: {money(data.baseline.low)} on {shortDate(data.baseline.low_date)}. Each move below is worked out on its own.</span>}
       </div>
       {error && !data && <Failed error={error} what="the date moves" onRetry={state.reload} card={false} />}
       {!data && !error && <Loading what="the date moves" card={false} />}
@@ -105,13 +126,15 @@ export function DateMoves({ refreshKey }: { refreshKey?: number }) {
           <span>
             <strong>Together, in this order:</strong>{" "}
             {data.plan.map((p, i) => (
-              <span key={p.bill_id}>{i > 0 ? "; then " : ""}{p.name} to the {ordinal(p.to_day)} (lowest left to spend {money(p.low_after)})</span>
+              <span key={p.bill_id} className="num">{i > 0 ? "; then " : ""}{p.name} to the {ordinal(p.to_day)} (lowest left to spend {money(p.low_after)})</span>
             ))}
             .
           </span>
-          {data.plan_low < 0
-            ? <StatusPill status="warn">Still {money(-data.plan_low)} short at the lowest point.</StatusPill>
-            : <StatusPill status="good">The lowest point stays {money(data.plan_low)} above your <Link to="/glossary#buffer">safety cushion</Link>.</StatusPill>}
+          {data.plan_low === null
+            ? null
+            : data.plan_low < 0
+            ? <StatusPill status="warn">Still <span className="num">{money(-data.plan_low)}</span> short at the lowest point.</StatusPill>
+            : <StatusPill status="good">The lowest point stays <span className="num">{money(data.plan_low)}</span> above your <Link to="/glossary#buffer">safety cushion</Link>.</StatusPill>}
         </div>
       )}
       {data && data.suggestions.length > 0 && <div className="lab" style={{ marginTop: 4 }}>Each on its own</div>}
@@ -120,8 +143,8 @@ export function DateMoves({ refreshKey }: { refreshKey?: number }) {
         return (
           <div key={s.bill_id} style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", borderTop: "1px solid var(--surface-2)", paddingTop: 8, fontSize: 13 }}>
             <div style={{ flex: "1 1 240px" }}>
-              <strong>{s.name}</strong> <span style={{ color: "var(--ink-2)" }}>{money(s.amount)} · {ordinal(s.from_day)} → {ordinal(s.to_day)}</span>
-              <div style={{ color: "var(--ink-2)" }}>Lowest left to spend {money(s.low_before)} → <strong style={{ color: s.low_after < 0 ? "var(--warning-ink)" : "var(--safe-ink)" }}>{money(s.low_after)}</strong>, up {money(s.improvement)}.</div>
+              <strong>{s.name}</strong> <span className="num" style={{ color: "var(--ink-2)" }}>{money(s.amount)} · {ordinal(s.from_day)} → {ordinal(s.to_day)}</span>
+              <div className="num" style={{ color: "var(--ink-2)" }}>Lowest left to spend {money(s.low_before)} → <strong style={{ color: s.low_after < 0 ? "var(--warning-ink)" : "var(--safe-ink)" }}>{money(s.low_after)}</strong>, up {money(s.improvement)}.</div>
             </div>
             <button className="btn" type="button" onClick={() => copy(s)} style={{ minHeight: 34, padding: "4px 10px" }}>{copied === s.bill_id ? "Copied" : "Copy the request"}</button>
             <button className="btn" type="button" aria-expanded={asking === s.bill_id} onClick={() => setAsking(asking === s.bill_id ? null : s.bill_id)} style={{ minHeight: 34, padding: "4px 10px" }}>Send it, with approval</button>

@@ -44,8 +44,10 @@ def load_inputs(session: Session, today: date, horizon_days: int = HORIZON) -> d
 
     from .payments import paid_periods, unposted_periods
 
-    bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
-    plans = session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all()  # noqa: E712
+    from .projection import paid_by_household
+
+    bills = paid_by_household(session, session.exec(select(Bill).where(Bill.active == True)).all())  # noqa: E712 - as the snapshot takes them
+    plans = paid_by_household(session, session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all())  # noqa: E712
     advances = session.exec(select(Advance).where(Advance.repaid == False)).all()  # noqa: E712
     debts = session.exec(select(Debt).where(Debt.active == True)).all()  # noqa: E712
     pending_streams = [r for r in session.exec(select(RecurringSeries).where(RecurringSeries.confirmed == False, RecurringSeries.active == True)).all() if r.suggested_kind == "installment"]  # noqa: E712

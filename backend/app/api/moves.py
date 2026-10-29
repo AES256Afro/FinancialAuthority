@@ -13,7 +13,7 @@ from .. import auth, services
 from ..db import get_session
 from ..engine.moves import _point, move_plan, refresh_items, set_item, start_move, verify
 from ..models import Account, AccountMove, MoveItem
-from .routes import today
+from .routes import today, under_writer
 
 router = APIRouter(prefix="/api/v1/moves", tags=["moves"])
 
@@ -51,6 +51,7 @@ class MoveIn(In):
 
 
 @router.post("")
+@under_writer
 def create_move(body: MoveIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     if session.exec(select(AccountMove).where(AccountMove.status == "moving", AccountMove.source_account_id == body.source_account_id)).first():
         raise HTTPException(409, "A move from that account is already under way")
@@ -128,6 +129,7 @@ def update_item(move_id: int, item_id: int, body: ItemPatch, session: Session = 
 
 
 @router.post("/{move_id}/refresh")
+@under_writer
 def refresh(move_id: int, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     move = _move(session, move_id)
     added = refresh_items(session, move, today())

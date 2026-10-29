@@ -52,6 +52,12 @@ export function shortDate(iso: string): string {
   return `${DAYS[d.getDay()]} ${MONTHS[d.getMonth()]} ${d.getDate()}`;
 }
 
+/** The day a planned payment is shown on: its date, or, for one already late (the engine plans it for today and
+ * keeps the day it was due in `due`), the day it was due, as Needs you and the bill board say it. */
+export function eventDay(e: { date: string; due?: string | null; late?: boolean }): string {
+  return e.due && (e.late || e.due < e.date) ? `was due ${shortDate(e.due)}` : shortDate(e.date);
+}
+
 export function monthDay(iso: string): string {
   const d = parseIso(iso);
   return `${MONTHS[d.getMonth()]} ${d.getDate()}`;

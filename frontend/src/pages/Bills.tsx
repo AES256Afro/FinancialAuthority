@@ -258,7 +258,7 @@ function BillTableRow({ b, accounts, choices, onSaved }: { b: Bill; accounts: Ac
   const e = useBillEditor(b, onSaved);
   return (
     <tr>
-      <td><strong>{b.name}</strong><div style={{ fontSize: 11, color: "var(--ink-2)" }}>{billLine(b)}</div><div style={{ fontSize: 11, color: "var(--muted)" }}>{b.kind}{b.category ? ` · ${b.category}` : ""}</div></td>
+      <td><strong>{b.name}</strong><div className="num" style={{ fontSize: 11, color: "var(--ink-2)" }}>{billLine(b)}</div><div style={{ fontSize: 11, color: "var(--muted)" }}>{b.kind}{b.category ? ` · ${b.category}` : ""}</div></td>
       <td><input className="input num" style={{ width: 96 }} value={e.amount} onChange={(x) => e.setAmount(x.target.value)} inputMode="decimal" aria-label={`Amount of ${b.name}`} /></td>
       <td style={{ minWidth: 150 }}><CadenceSelect b={b} e={e} /></td>
       <td style={{ minWidth: e.monthly ? 0 : 150 }}><DueInput b={b} e={e} /></td>
@@ -281,7 +281,7 @@ function BillCard({ b, accounts, choices, onSaved }: { b: Bill; accounts: Accoun
     <li className="card" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 10 }}>
       <div>
         <h2 style={{ margin: 0, fontSize: 14, fontWeight: 800 }}>{b.name}</h2>
-        <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{billLine(b)}</div>
+        <div className="num" style={{ fontSize: 12, color: "var(--ink-2)" }}>{billLine(b)}</div>
         <div style={{ fontSize: 12, color: "var(--muted)" }}>{b.kind}{b.category ? ` · ${b.category}` : ""}</div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
@@ -367,7 +367,7 @@ export function Bills({ onChanged }: { onChanged: () => void }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 1100 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Bills</h1>
-        <span style={{ fontSize: 13, color: "var(--ink-2)" }}>{data ? `${data.bills.length} bills and subscriptions · about ${money(total)} a month today, each counted by how often it comes` : ""}</span>
+        <span className="num" style={{ fontSize: 13, color: "var(--ink-2)" }}>{data ? `${data.bills.length} bills and subscriptions · about ${money(total)} a month today, each counted by how often it comes` : ""}</span>
       </div>
       {data && ((data.one_time?.items.length ?? 0) > 0 || (data.starting_later?.items.length ?? 0) > 0) && (
         <div style={{ fontSize: 13, color: "var(--ink-2)", display: "flex", flexDirection: "column", gap: 2 }}>

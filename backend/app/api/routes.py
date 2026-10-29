@@ -91,6 +91,7 @@ class AccountIn(In):
 
 
 @router.post("/accounts")
+@under_writer
 def add_account(body: AccountIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     """An account the connectors do not reach yet, by hand: a card another lender charges, a loan. Its balance
     is typed until a link brings it live."""
@@ -118,13 +119,20 @@ def search_transactions(
     limit: int = Query(50, ge=1, le=500),
     tag: str | None = None,
     offset: int = Query(0, ge=0, le=10_000_000),
+    after: str | None = Query(None, max_length=64),
     session: Session = Depends(get_session),
     principal: auth.Principal = Depends(auth.require_read),
 ) -> dict:
-    result = services.search_transactions(
-        session, redaction=principal.redaction, text=text, category=category, account=account, start=start, end=end,
-        min_amount=min_amount, max_amount=max_amount, include_non_spending=include_non_spending, limit=limit, tag=tag, offset=offset,
-    )
+    """Newest first. Page with `after` set to the `next` the page before returned (null on the last page): a row a
+    sync adds or removes between pages shifts an `offset`, which then repeats or skips a row; the cursor does not.
+    `offset` stays for older callers."""
+    try:
+        result = services.search_transactions(
+            session, redaction=principal.redaction, text=text, category=category, account=account, start=start, end=end,
+            min_amount=min_amount, max_amount=max_amount, include_non_spending=include_non_spending, limit=limit, tag=tag, offset=offset, after=after,
+        )
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
     if principal.kind == "key":
         services.audit(session, client=principal.name, client_kind="key", tool="transactions_search", args={"text": text, "category": category}, rows=result["returned"], redaction=principal.redaction)
     return result
@@ -196,6 +204,7 @@ class DebtIn(In):
 
 
 @router.put("/debts/{debt_id}")
+@under_writer
 def update_debt(debt_id: int, body: DebtIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     """The card's terms are the owner's to type: its APR, its line, the statement and due days, whether it is
     paid in full. The balance follows the account."""
@@ -252,8 +261,13 @@ def audit_log(limit: int = 200, session: Session = Depends(get_session), _: auth
 
 
 @router.get("/snapshot")
-def snapshot(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
-    return finance_snapshot(session, today())
+def snapshot(session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
+    out = finance_snapshot(session, today())
+    if principal.kind == "key" and isinstance(out.get("mail"), dict):  # the mail rows carry the sender's words: boxed for a key or an app
+        from ..mail.box import MAIL_WORDS, box_fields
+
+        out = {**out, "mail": {**box_fields(out["mail"], "mail"), "how": MAIL_WORDS}}
+    return out
 
 
 # ---- imports -------------------------------------------------------------------------------

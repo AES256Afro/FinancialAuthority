@@ -9,8 +9,7 @@ import { amountClass, money, monthDay, parseIso, shortDate } from "../format";
 import { palette } from "../looks";
 import type { LookId } from "../looks";
 import type { Snapshot } from "../types";
-import { Link } from "react-router-dom";
-import { noBalance } from "./SafeExplain";
+import { NoBalanceLine, dailyLine, type LinePoint } from "./SafeExplain";
 
 interface Props {
   snapshot: Snapshot;
@@ -23,17 +22,12 @@ const TOP = 20;
 /** The river starts from what checking holds; with no balance from a bank there is no starting point, so it is not
  * drawn from a made-up zero. */
 export function RiverChart({ snapshot, look }: Props) {
-  if (noBalance(snapshot)) {
-    return (
-      <div style={{ fontSize: 13, color: "var(--ink-2)", padding: "8px 0" }}>
-        The river starts from what checking holds, and no bank has told the app that yet. <Link to="/settings/connectors#banks" style={{ fontWeight: 700 }}>Link your bank</Link> and the next 60 days are drawn here, day by day.
-      </div>
-    );
-  }
-  return <RiverDrawn snapshot={snapshot} look={look} />;
+  const points = dailyLine(snapshot);
+  if (!points) return <NoBalanceLine what="the next 60 days are drawn" />;
+  return <RiverDrawn snapshot={snapshot} points={points} look={look} />;
 }
 
-function RiverDrawn({ snapshot, look }: Props) {
+function RiverDrawn({ snapshot, points, look }: Props & { points: LinePoint[] }) {
   const c = palette(look);
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(WIDE);
@@ -61,7 +55,6 @@ function RiverDrawn({ snapshot, look }: Props) {
   const RIGHT = W - (narrow ? 14 : 30);
   const BASE = H - 60;
 
-  const points = snapshot.projection;
   const n = points.length;
   let windowEnd = points.findIndex((p) => p.date > snapshot.window.end);
   if (windowEnd <= 0) windowEnd = n;

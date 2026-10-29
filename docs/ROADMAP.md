@@ -87,7 +87,7 @@ Done when: on the fixture the plan matches its golden output, the optimiser find
 ## M6 — It runs itself (1.5 weeks)
 
 - 🔄 **M6.1 Schedules** (2026-10-14). Mail every fifteen minutes, banks every four hours and on demand, import watch every five minutes, detection six-hourly, payment matching daily, the reviewer hourly (payday and after confirmed changes), the brief to the phone once a day from the chosen hour, the self-check hourly; all idempotent, all on the Jobs page with their last runs. *Left: a re-plan hook on payday that refreshes the cached snapshot; webhooks where a vendor offers them.*
-- 🔄 **M6.2 The brief, the recap, the report** (2026-10-14, the brief pulled forward). Daily, written by the engine in its own sentences: what clears before payday, past due and unmatched, the week that dips under the buffer at the usual pace, what waits for the owner, safe to spend; `brief_today`; Today and mission control show it. *Left: paystub discrepancies, new plans or advances, price increases and failed connectors as the registers arrive; the Monday recap; the month report.*
+- 🔄 **M6.2 The brief, the recap, the report** (2026-10-14, the brief pulled forward). Daily, written by the engine in its own sentences: what clears before payday, past due and unmatched, the week that dips under the buffer at the usual pace, what waits for the owner, safe to spend; `brief_today`; Today and mission control show it. *Left: new plans or advances, price increases and failed connectors as the registers arrive; the Monday recap; the month report.*
 - 🔄 **M6.3 Push** (2026-10-14). ntfy or Gotify from BoxPilot's catalog (or ntfy.sh with a private topic): the morning brief once a day from the chosen hour, high priority when the brief has a critical line; a test button and a send-now on Settings › Notifications; the token encrypted. *Left: an approve action for sends (with M4.5), alerts the moment a past-due or overdraft notice lands.*
 - ✅ **M6.4 Self-check** (2026-10-14). Hourly: each mailbox's and bank link's last success and error, whether the public address answers, stale balances, disk and database size, summarised as a list of problems; shown in `jobs_status` and on Mission control.
 - ☐ **M6.5 Export reminder.** The aggregator's export email triggers a reminder; nothing is downloaded automatically.
@@ -228,9 +228,9 @@ Proposed after a survey of YNAB, Monarch, Copilot, Rocket Money, Empower, Simpli
 
 **Planning**
 
-- ✅ **M22 A budget for each paycheck.** (built 2026-10-16) Category amounts per paycheck rather than per month; what is left in each between paydays; leftovers roll to the next check or a goal; safe to spend by category.
+- ✅ **M22 A budget for each paycheck.** (built 2026-10-16) Category amounts per paycheck rather than per month; what is left in each between paydays; leftovers roll to the next check; safe to spend by category.
 - ✅ **M23 Plan versus what happened.** (built 2026-10-16) After each payday, the last window's plan beside what happened; the usual pace adjusts from it with the change shown; a weekly recap on the phone.
-- ✅ **M24 Goals you can watch fill.** (built 2026-10-16) A progress picture per goal with the date it is reached at the current pace; sinking funds for yearly bills; goals that take a window's leftovers.
+- ✅ **M24 Goals you can watch fill.** (built 2026-10-16) A progress picture per goal with the date it is reached at the current pace; sinking funds for yearly bills.
 - ✅ **M25 Debt payoff, advances included.** (built 2026-10-16) Snowball or avalanche with dates and interest saved; advance apps and pay-later plans as debts with the fee per $100; money lent to and borrowed from people; a check-by-check plan to stop using advances.
 
 **Security and safety**

@@ -117,10 +117,52 @@ def _part_text(part) -> str:  # noqa: ANN001 - an email.message part
 
 
 MAX_TEXT = 200_000  # characters of a message's text or html that are read; a bill or an alert is far shorter
+# Characters of one header's value that are kept. The standard library's header parser is quadratic or worse on some
+# shapes (a From of a million addresses, a Subject of encoded words, nested angle brackets) and recursive on nested
+# comments: a 25 MB message with one such header held the mail sync, and the writer lock with it, past 40 s. A real
+# header (an Authentication-Results, a DKIM signature) is a few hundred characters to a few thousand.
+MAX_HEADER = 8_000
+
+
+class _BoundedHeaders(policy.EmailPolicy):
+    """policy.default, with each header's value cut to MAX_HEADER characters as the message is read, in every part,
+    before anything parses it."""
+
+    def header_source_parse(self, sourcelines):  # noqa: ANN001, ANN201
+        name, value = super().header_source_parse(sourcelines)
+        return name, value[:MAX_HEADER]
+
+
+BOUNDED = _BoundedHeaders()
+# Lines starting with "--" (each part's boundary is one) that are read. The reader spends some 60 µs on each part, so
+# a 25 MB message of six hundred thousand empty parts took 36 s; no bill has more than a handful of parts, and a body's
+# own "--" lines (a signature, a rule under a table) come nowhere near this.
+MAX_DASH_LINES = 5_000
+
+
+# Lines that are read. The reader's cost is per line: 25 MB of empty lines took 2.3 s where 25 MB of text took 0.07;
+# a 25 MB message of attachments has some 330,000.
+MAX_LINES = 1_000_000
+
+
+def _bounded(raw: bytes) -> bytes:
+    """The message up to its MAX_LINES-th line and its MAX_DASH_LINES-th line that starts with "--"; the rest is not
+    read (a cut part is read as far as it goes)."""
+    for sep in (b"\n", b"\r"):
+        if raw.count(sep) > MAX_LINES:
+            rest = raw.split(sep, MAX_LINES)[-1]
+            raw = raw[: len(raw) - len(rest)]
+    at = 0
+    for _ in range(MAX_DASH_LINES):
+        at = raw.find(b"\n--", at)
+        if at < 0:
+            return raw
+        at += 3
+    return raw[:at]
 
 
 def parse_message(raw: bytes) -> Parsed:
-    msg: EmailMessage = email.message_from_bytes(raw, policy=policy.default)  # type: ignore[assignment]
+    msg: EmailMessage = email.message_from_bytes(_bounded(raw), policy=BOUNDED)  # type: ignore[assignment]
     sender_pairs = getaddresses([msg.get("From", "")])
     sender_name, sender = (sender_pairs[0] if sender_pairs else ("", ""))
     try:

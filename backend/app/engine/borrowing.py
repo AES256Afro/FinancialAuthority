@@ -184,8 +184,11 @@ def _rows(session: Session, today: date) -> tuple[list[dict], list[dict]]:
     since = today - timedelta(days=LOOKBACK_DAYS)
     advances: list[dict] = []
     installments: list[dict] = []
-    cols = select(Transaction.id, Transaction.date, Transaction.amount, Transaction.merchant, Transaction.raw_name, Transaction.description)
+    cols = select(Transaction.id, Transaction.date, Transaction.amount, Transaction.merchant, Transaction.raw_name, Transaction.description, Transaction.account_id)
+    theirs = {a.id for a in session.exec(select(Account).where(Account.person_id != None, Account.shared == False)).all()}  # noqa: E711, E712
     for t in session.exec(cols.where(Transaction.date >= since, Transaction.is_ignored == False)).all():  # noqa: E712
+        if t.account_id in theirs:
+            continue  # a second person's own advance is repaid from their account, never from the owner's check (sweep 19)
         text = _text(t)
         provider = provider_of(text, ADVANCE_PROVIDERS)
         if provider:
@@ -494,6 +497,22 @@ def borrowing_overview(session: Session, today: date) -> dict:
             "remaining": plan.remaining if plan else None, "ends": (plan.next_date + timedelta(days=plan.cadence_days * max(0, plan.remaining - 1))).isoformat() if plan else None,
             "per_month": _money(s["amount"] * 30.0 / s["cadence_days"]),
         })
+    # A plan on the register that no lender-named ledger stream shows (a plan read from mail or typed) still runs:
+    # it is listed with the same monthly figure Debts and the report give it, so one plan has one figure (sweep 21).
+    from .reports import _plan_month
+
+    shown = {i["plan_id"] for i in installments if i["plan_id"]}
+    for p in plans:
+        if p.id in shown or (p.remaining or 0) <= 0:
+            continue
+        installments.append({"provider": plan_provider(p), "merchant": p.merchant, "amount": _money(p.installment), "cadence_days": p.cadence_days, "cadence_assumed": False, "payments_seen": max(0, (p.count or 0) - (p.remaining or 0)),
+                             "first_date": None, "last_date": None, "next_date": p.next_date.isoformat(), "active": True, "paid_so_far": _money(p.installment * max(0, (p.count or 0) - (p.remaining or 0))), "sources": [f"plan:{p.id}"],
+                             "status": "plan", "plan_id": p.id, "bill_id": None, "series_id": None, "remaining": p.remaining,
+                             "ends": (p.next_date + timedelta(days=p.cadence_days * max(0, p.remaining - 1))).isoformat(), "per_month": _plan_month(p)})
+    for i in installments:
+        if i["plan_id"] and i["status"] == "plan":
+            plan = next(p for p in plans if p.id == i["plan_id"])
+            i["per_month"] = _plan_month(plan)  # the plan's own figure, the one Debts says
     installments_month = _money(sum(i["per_month"] for i in installments if i["active"]))
     import json as _json
 

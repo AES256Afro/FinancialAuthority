@@ -6,7 +6,7 @@ import { amountClass, connectorWord, daysWord, money, shortDate, when } from "..
 import { palette } from "../looks";
 import { getPrefs } from "../prefs";
 import type { ViewProps } from "./index";
-import { PlanCaveats, SafeExplain, SafePill, noPayday, safeFigure, safeShort } from "../components/SafeExplain";
+import { NoBalanceLine, PlanCaveats, SafeExplain, SafePill, SafeSentence, dailyLine, noBalance, noPayday, safeFigure, safeShort } from "../components/SafeExplain";
 import { Failed, Loading } from "../components/State";
 import { SeverityTag } from "../components/Status";
 import { Watchlist } from "../components/Watchlist";
@@ -63,7 +63,8 @@ export function MissionControl({ snapshot }: ViewProps) {
   const jobs = useApi<JobsData>("/api/v1/jobs");
   const settings = useApi<{ selfcheck: SelfCheck }>("/api/v1/settings");
   const s = snapshot;
-  const pts = s.projection.slice(0, 30);
+  // The daily line starts from what checking holds: with no balance there is none, and it is not drawn from $0.
+  const pts = (dailyLine(s) ?? []).slice(0, 30);
   const top = Math.max(600, ...pts.map((p) => p.at_pace));
   const bottom = Math.min(0, ...pts.map((p) => p.at_pace));
   const y = (v: number) => 130 - ((v - bottom) / (top - bottom)) * 120;
@@ -77,6 +78,7 @@ export function MissionControl({ snapshot }: ViewProps) {
   const waiting = s.pending.total;
   const short = safeShort(s);
   const unknown = noPayday(s);
+  const empty = noBalance(s);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 16 }}>
@@ -86,10 +88,10 @@ export function MissionControl({ snapshot }: ViewProps) {
         <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 800, padding: "5px 12px", borderRadius: 999, background: "var(--paycheck-soft)", color: "var(--paycheck-ink)" }}><span className="sw" style={{ background: "var(--paycheck)", margin: 0 }} />{s.next_paycheck.known === false ? "No payday on file" : `Payday ${daysWord(s.next_paycheck.days)} · ${shortDate(s.next_paycheck.date)}`}</div>
       </div>
       <section className="grid grid-cols-2 xl:grid-cols-4" style={{ gap: 12 }}>
-        <Tile label="Safe to spend" border={short ? "var(--critical)" : "var(--safe)"}>
+        <Tile label="Safe to spend" border={short ? "var(--critical)" : empty ? "var(--warning)" : "var(--safe)"}>
           <Big value={safeFigure(s)} sub={`${unknown ? "now, counting no paycheck; bills due by" : "through"} ${shortDate(s.safe_to_spend.through)} · safety cushion ${money(s.buffer)} kept`} />
-          {(short || unknown) && <div><SafePill s={s} /></div>}
-          {unknown && <Link to="/paystubs#paycheck" style={{ fontSize: 12, fontWeight: 700 }}>Add your paycheck</Link>}
+          {(short || unknown || empty) && <div><SafePill s={s} /></div>}
+          {empty ? <div style={{ fontSize: 12, color: "var(--ink-2)" }}><SafeSentence s={s} /></div> : unknown && <Link to="/paystubs#paycheck" style={{ fontSize: 12, fontWeight: 700 }}>Add your paycheck</Link>}
         </Tile>
         <Tile label={unknown ? `Due by ${shortDate(s.safe_to_spend.through)}` : "Due before payday"}><Big value={money(soon)} sub={s.due_before_payday.groups && s.due_before_payday.groups.length > 0 ? s.due_before_payday.groups.map((g) => `${g.label.toLowerCase()} ${money(g.total)}`).join(" · ") : s.due_before_payday.items.map((e) => e.name).join(", ") || "nothing"} /></Tile>
         <Tile label="Past due" border={s.pending.past_due ? "var(--critical)" : undefined}><Big value={String(s.pending.past_due)} sub={s.payments.late.length ? `${s.payments.late.length} not matched yet` : "none unmatched"} /></Tile>
@@ -99,7 +101,7 @@ export function MissionControl({ snapshot }: ViewProps) {
       <SafeExplain s={s} />
       <section className="grid grid-cols-1 xl:grid-cols-[1.4fr_1fr_1fr]" style={{ gap: 12 }}>
         <Tile label="At your usual spending, next 30 days">
-          <svg viewBox="0 0 520 150" width="100%" style={{ display: "block", height: "auto" }} role="img" aria-label="What is free to spend, day by day, for the next thirty days, at your usual spending">
+          {pts.length === 0 ? <NoBalanceLine what="the next 30 days are drawn" /> : <><svg viewBox="0 0 520 150" width="100%" style={{ display: "block", height: "auto" }} role="img" aria-label="What is free to spend, day by day, for the next thirty days, at your usual spending">
             <line x1={0} y1={y(0)} x2={520} y2={y(0)} stroke={c.buffer} strokeWidth={1} />
             <path d={`${line} L${x(pts.length - 1).toFixed(1)},${y(0)} L0,${y(0)} Z`} fill={c.safe} fillOpacity={0.16} />
             <path d={line} fill="none" stroke={c.safe} strokeWidth={2} />
@@ -107,7 +109,7 @@ export function MissionControl({ snapshot }: ViewProps) {
             <text x={4} y={14} fontSize={11} fontWeight={700} fill={c.ink2}>today</text>
             {pts.map((p, i) => (s.calendar.events.some((e) => e.kind === "paycheck" && e.date === p.date) ? <g key={p.date}><line x1={x(i)} y1={y(0)} x2={x(i)} y2={y(p.at_pace)} stroke={c.paycheck} strokeWidth={2} /><text x={x(i) + 4} y={y(p.at_pace) - 6} fontSize={11} fontWeight={700} fill={c.ink2}>payday</text></g> : null))}
           </svg>
-          <div className="num" style={{ fontSize: 11, color: "var(--muted)" }}>{money(s.usual_pace.per_day)} a day, from the last {s.usual_pace.basis_days} days of your transactions</div>
+          <div className="num" style={{ fontSize: 11, color: "var(--muted)" }}>{money(s.usual_pace.per_day)} a day, from the last {s.usual_pace.basis_days} days of your transactions</div></>}
         </Tile>
         <Tile label="Connections">
           {s.accounts.map((a) => {
@@ -134,6 +136,8 @@ export function MissionControl({ snapshot }: ViewProps) {
       <section className="grid grid-cols-1 xl:grid-cols-3" style={{ gap: 12 }}>
         <Tile label="Needs you">
           {waiting === 0 && <div style={{ fontSize: 13, color: "var(--ink-2)" }}>Nothing. The next thing to confirm will appear here.</div>}
+          {/* Every part of the count above, so the rows add up to it: the bills with no payment seen are part of it. */}
+          {s.pending.past_due > 0 && <Row left={`${s.pending.past_due} ${s.pending.past_due === 1 ? "bill" : "bills"} with no payment seen`} right="Needs you" tone="warn" />}
           {s.pending.series > 0 && <Row left={`${s.pending.series} repeating ${s.pending.series === 1 ? "charge" : "charges"} to name`} right="Needs you" tone="warn" />}
           {s.pending.facts > 0 && <Row left={`${s.pending.facts} ${s.pending.facts === 1 ? "detail" : "details"} from your mail to confirm`} right="Needs you" tone="warn" />}
           {(s.pending.pairs ?? 0) > 0 && <Row left={`${s.pending.pairs} matched ${s.pending.pairs === 1 ? "pair" : "pairs"} to check`} right="Needs you" tone="warn" />}

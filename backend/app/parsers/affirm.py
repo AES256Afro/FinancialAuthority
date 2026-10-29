@@ -15,12 +15,12 @@ from datetime import date
 from ..mail.classify import DATE_WORDS, parse_date_text
 
 MONEY = r"\$\s?([\d,]+\.\d{2})"
-LOAN_AMOUNT = re.compile(MONEY + r"\s*\n\s*Loan amount", re.IGNORECASE)
-TOTAL = re.compile(MONEY + r"\s*\n\s*Total of payments", re.IGNORECASE)
-FINANCE = re.compile(MONEY + r"\s*\n\s*Finance charge", re.IGNORECASE)
+LOAN_AMOUNT = re.compile(MONEY + r"[^\S\n]*\n\s*+Loan amount", re.IGNORECASE)
+TOTAL = re.compile(MONEY + r"[^\S\n]*\n\s*+Total of payments", re.IGNORECASE)
+FINANCE = re.compile(MONEY + r"[^\S\n]*\n\s*+Finance charge", re.IGNORECASE)
 MERCHANT = re.compile(r"[–\-—]\s*([^\n]{1,120}?)\s+has processed your order", re.IGNORECASE)
 LOAN_ID = re.compile(r"Loan ID:\s*([A-Z0-9][A-Z0-9-]{3,})", re.IGNORECASE)
-ENTRY = re.compile(DATE_WORDS.pattern + r"\s*\n\s*" + MONEY + r"\s*\n\s*Principal:\s*" + MONEY + r"\s*\n\s*Interest:\s*" + MONEY, re.IGNORECASE)
+ENTRY = re.compile(DATE_WORDS.pattern + r"[^\S\n]*\n\s*+" + MONEY + r"[^\S\n]*\n\s*+Principal:\s*" + MONEY + r"[^\S\n]*\n\s*+Interest:\s*" + MONEY, re.IGNORECASE)
 MAX_AMOUNT = 100_000.0
 
 

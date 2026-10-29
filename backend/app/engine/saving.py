@@ -95,11 +95,13 @@ def saving_plan(session: Session, today: date, *, snap: dict | None = None) -> d
     ]
 
     # What each check truly leaves: the window's own figure less the everyday pace over its days.
-    def left_of(w: dict) -> float:
+    def left_of(w: dict, first: bool = False) -> float:
         days = (date.fromisoformat(w["end"]) - date.fromisoformat(w["start"])).days + 1
+        if first:  # the usual spending before the first payday comes out of what that check carries in, as Cover counts it (sweep 21)
+            days += max(0, (date.fromisoformat(w["start"]) - today).days - 1)
         return None if w["safe"] is None else w["safe"] - pace_day * days  # no balance yet: unknown, not short
 
-    lefts = [left_of(w) for w in windows]
+    lefts = [left_of(w, k == 0) for k, w in enumerate(windows)]
     share = cfg["share"]
     used = share if share is not None else SUGGESTED
     per_check = [{"date": w["start"], "left": None if lefts[k] is None else _money(lefts[k]), "keep": 0.0 if lefts[k] is None else _money(max(0.0, lefts[k]) * used / 100.0)} for k, w in enumerate(windows)]

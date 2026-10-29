@@ -192,7 +192,7 @@ def handle_message(session: Session, account: MailAccount, folder: str, uid: int
         return outcome
     # A PDF attachment that is a lender's statement (Affirm's Loans Statement) lands on the plans at once, as it does
     # from the import folder; one that reads like a paystub becomes a paystub fact, whatever the subject said.
-    statement = statement_from_attachments(session, parsed, today, produced_by)
+    statement = statement_from_attachments(session, parsed, today, produced_by, ref)
     if statement:
         outcome.update(fact="applied", kind="statement", note=f"a lender's statement, {statement['loans']} loans landed")
         return outcome
@@ -305,10 +305,31 @@ def upcoming_bills_facts(session: Session, ref: MessageRef, parsed: Parsed, toda
     return {"fact": "pending" if pending else "auto", "charges": len(charges), "pending": pending, "already_known": known}
 
 
-def statement_from_attachments(session: Session, parsed: Parsed, today: date, produced_by: str) -> dict | None:
-    """The first PDF attachment that is a lender's loans statement, applied; None when none is."""
+STATEMENT_LENDER = "affirm"  # the one lender whose statement PDF is read (parsers/affirm_statement.py)
+
+
+def from_the_lender(session: Session, ref: MessageRef, sender: str) -> bool:
+    """Whether a message is the lender's own: the mail server vouched for it (trust "ok") and it comes from the
+    lender's own domain, as the trust table names it or the owner marked genuine. Not the looser match the brand
+    check allows (a domain that starts with the name), since what passes here is applied with no confirmation."""
+    from ..engine.datacheck import TRUSTED
+    from ..mail.trust import KNOWN, org_domain
+
+    if ref.trust != "ok":
+        return False
+    marked = (get_setting(session, TRUSTED, {}) or {}).get(STATEMENT_LENDER) or []
+    return org_domain(sender) in {*KNOWN[STATEMENT_LENDER], *(str(d).lower() for d in marked)}
+
+
+def statement_from_attachments(session: Session, parsed: Parsed, today: date, produced_by: str, ref: MessageRef | None = None) -> dict | None:
+    """The first PDF attachment that is a lender's loans statement, applied; None when none is. Applied only from
+    the lender itself (from_the_lender): a statement lands without a confirmation, so one from anyone else (a forged
+    From, an unauthenticated message, a domain of a stranger's own) is left to the usual path and waits on Needs you;
+    the owner hands the PDF to Borrowing or the import folder if it is theirs."""
     from ..engine.borrowing import statement_fact_from_file
 
+    if ref is None or not from_the_lender(session, ref, parsed.sender):
+        return None
     pdfs = [a for a in parsed.attachments if (a.content_type == "application/pdf" or a.name.lower().endswith(".pdf")) and a.data]
     for attachment in pdfs[:MAX_PDF_ATTACHMENTS]:
         try:
@@ -355,6 +376,13 @@ def capture_export(session: Session, url: str, fetch: Fetcher) -> dict:
 
     with one_writer():  # never beside a detection, a sync or another import of the same rows
         result = import_rows(session, rows, "rocketmoney-export-from-mail.csv", via="mail")
+        if result.inserted:  # ROADMAP M4.9: detection and payment matching run after, not six hours later
+            from ..api.routes import today
+            from ..engine.payments import match_payments
+            from ..jobs.detect import run_detection
+
+            run_detection(session, today())
+            match_payments(session, today())
     return {"imported": result.inserted, "duplicates": result.duplicates, "note": f"export imported: {result.summary}"}
 
 

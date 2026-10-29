@@ -12,7 +12,7 @@ from ..config import settings
 from ..db import get_session
 from ..engine.shared import shared_view
 from ..models import Account, Passkey, Person
-from .routes import today
+from .routes import today, under_writer
 
 router = APIRouter(prefix="/api/v1", tags=["people"])
 
@@ -133,6 +133,7 @@ class SharingIn(In):
 
 
 @router.put("/accounts/{account_id}/sharing")
+@under_writer
 def account_sharing(account_id: int, body: SharingIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     """Mark an account shared, or whose it is (the owner's or the second person's)."""
     if not principal.full:

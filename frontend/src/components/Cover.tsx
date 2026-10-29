@@ -2,7 +2,7 @@
 // the same engine result: a gauge per account, the payday sheet to tick off, and needs-against-has columns.
 // Every figure is the engine's; the pictures only draw them. The app never moves money; the sheet says what
 // you would move.
-import { OctagonAlert } from "lucide-react";
+import { OctagonAlert, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
@@ -29,9 +29,9 @@ function dayBefore(iso: string): string {
 
 // A mark is a line across the bar; its words sit in a key under the bar, so two close marks never overlap and
 // a long one is never cut off. The first mark is a solid line, the second a dashed one.
-function Meter({ value, max, marks, tone, label }: { value: number; max: number; marks: { at: number; text: string }[]; tone: "fill" | "short" | "card"; label: string }) {
+function Meter({ value, max, marks, tone, label }: { value: number; max: number; marks: { at: number; text: string }[]; tone: "fill" | "short" | "watch" | "card"; label: string }) {
   const scale = Math.max(1, max);
-  const fill = tone === "short" ? "var(--critical)" : tone === "card" ? "var(--debt)" : "var(--safe)";
+  const fill = tone === "short" ? "var(--critical)" : tone === "watch" ? "var(--warning)" : tone === "card" ? "var(--debt)" : "var(--safe)";
   const stroke = (k: number) => `2px ${k === 0 ? "solid" : "dashed"} var(--ink)`;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -67,14 +67,17 @@ function SpendGauge({ a, paydays }: { a: CoverAccount; paydays: [string, string]
         if (has === null || left === null || w.has === null) return null; // an older server's account with no balance
         const label = k === 0 ? `Before ${shortDate(paydays[0])}` : `${shortDate(w.start)} to ${shortDate(w.end)}`;
         const short = left < 0;
+        const aside = w.set_aside ?? 0;
+        // Short of the set-aside only: the window's own bills are paid, the window after starts with less.
+        const asideOnly = short && aside > 0 && left + aside >= 0;
         return (
           <div key={`${k}-${w.start}`} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <span style={{ fontWeight: 700, fontSize: 12 }}>{label}</span>
-            <Meter value={has} max={Math.max(has, w.needs) * 1.05} marks={[{ at: w.needs, text: `needs ${money(w.needs)}` }]} tone={short ? "short" : "fill"} label={`${label}: has ${money(has)}, needs ${money(w.needs)}`} />
+            <Meter value={has} max={Math.max(has, w.needs) * 1.05} marks={[{ at: w.needs, text: `needs ${money(w.needs)}` }]} tone={asideOnly ? "watch" : short ? "short" : "fill"} label={`${label}: has ${money(has)}, needs ${money(w.needs)}`} />
             <span className="num" style={{ fontSize: 12, color: "var(--ink-2)" }}>
-              Has {money(w.has)}{w.inflow ? ` (+${money(w.inflow)} paycheck)` : ""} · Needs: bills {money(w.bills)}, everyday {money(w.everyday)}{w.buffer ? `, cushion ${money(w.buffer)}` : ""} ·{" "}
-              <strong style={{ color: short ? "var(--critical-ink)" : "var(--ink)", whiteSpace: "nowrap" }}>
-                {short ? <><OctagonAlert size={13} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 3 }} />{money(Math.abs(left))} short</> : `${money(left)} to spare`}
+              Has {money(w.has)}{w.inflow ? ` (+${money(w.inflow)} paycheck)` : ""} · Needs: bills {money(w.bills)}, everyday {money(w.everyday)}{w.buffer ? `, cushion ${money(w.buffer)}` : ""}{aside > 0 ? `, set aside ${money(aside)} for the ${shortDate(paydays[1])} window` : ""} ·{" "}
+              <strong style={{ color: asideOnly ? "var(--warning-ink)" : short ? "var(--critical-ink)" : "var(--ink)", whiteSpace: "nowrap" }}>
+                {short ? <>{asideOnly ? <TriangleAlert size={13} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 3 }} /> : <OctagonAlert size={13} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 3 }} />}{money(Math.abs(left))} short{asideOnly ? " of the set-aside" : ""}</> : `${money(left)} to spare`}
               </strong>
             </span>
           </div>
@@ -319,9 +322,13 @@ export function coverSummary(cover: Cover): string {
   const unknown = coverUnknown(cover);
   if (unknown) return unknown;
   const p1 = cover.paydays[0];
-  const short = cover.accounts.filter((a) => a.status === "crit").length;
+  // "crit" is a spending account short before payday, or a card with a minimum past due: each says its own words.
+  const short = cover.accounts.filter((a) => a.status === "crit" && a.role !== "card").length;
+  const pastDue = cover.accounts.filter((a) => a.status === "crit" && a.role === "card").length;
   const watch = cover.accounts.filter((a) => a.status === "warn").length;
-  if (short) return `${short} account${short === 1 ? "" : "s"} short before payday`;
+  const shortWords = short ? `${short} account${short === 1 ? "" : "s"} short before payday` : "";
+  const dueWords = pastDue ? `${pastDue} card${pastDue === 1 ? "" : "s"} past due` : "";
+  if (short || pastDue) return [shortWords, dueWords].filter(Boolean).join(" · ");
   if (watch) return `${watch} account${watch === 1 ? "" : "s"} to watch before ${shortDate(dayBefore(cover.paydays[1]))}`;
   return `Every account covered through ${shortDate(dayBefore(cover.paydays[1]))} · next payday ${shortDate(p1)}`;
 }

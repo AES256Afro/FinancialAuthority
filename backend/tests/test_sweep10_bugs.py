@@ -474,7 +474,7 @@ def test_every_number_in_the_brief_and_the_why_sentences_is_a_recomputed_figure(
     past_due = hand_past_due(R, today)
     allowed = {H["cash"], H["due_before"], *H["groups"].values(), H["window_total"], H["net"], days, len(H["advances_due"]), r2(H["advances_before"] + H["advances_on_payday"]),
                B["since_payday"]["n"], B["since_payday"]["amount"], B["fees_90d"], B["fees_month"], 90, H["pace"]["per_day"], H["goals"], H["safe"], abs(H["safe"]), r2(H["safe"] - H["goals"]),
-               *(-w["low"] for w in H["weeks"] if w["low"] is not None), *(a for _, _, a in past_due), *(r2(usual_net(R, p.pay_date)) for p in R.stubs), *(r2(usual_net(R, p.pay_date) - p.net) for p in R.stubs)}
+               *(-w["low"] for w in H["weeks"] if w["low"] is not None), *(a for _, _, a in past_due), len(past_due), len(past_due) - 3, *(r2(usual_net(R, p.pay_date)) for p in R.stubs), *(r2(usual_net(R, p.pay_date) - p.net) for p in R.stubs)}
     allowed_int = {round(v) for v in allowed}
     for line in snap["brief"]:
         for n in numbers_in(line["text"]):
@@ -658,7 +658,7 @@ def test_every_how_is_this_worked_out_list_adds_up(household):
     p0 = H["paydays"][0]
     for w, days, bills, inflow in ((w1, max(0, (p0 - timedelta(days=1) - today).days), H["due_before"], 0.0), (w2, 14, r2(H["windows"][0]["bills"] + H["windows"][0]["advances"]), H["net"])):
         assert (w["bills"], w["everyday"], w["buffer"], w["inflow"]) == (bills, r2(pace * days), BUFFER, inflow)
-        assert w["needs"] == r2(w["bills"] + w["everyday"] + w["buffer"]) and w["has_total"] == r2(w["has"] + w["inflow"]) and w["left"] == r2(w["has_total"] - w["needs"])
+        assert w["needs"] == r2(w["bills"] + w["everyday"] + w["buffer"] + w["set_aside"]) and w["has_total"] == r2(w["has"] + w["inflow"]) and w["left"] == r2(w["has_total"] - w["needs"])
     assert w1["has"] == H["cash"] and w2["has"] == r2(w1["left"] + BUFFER)
     # The purchase check at $250: the whole line drops by the price from today
     check = purchase_check(session, today, 250.0)

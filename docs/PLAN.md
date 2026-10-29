@@ -33,9 +33,9 @@ It never moves money. It reads, plans, drafts and, with an approval, sends. The 
 
 The owner asked for two things of the people and agents working on this: do everything yourselves, and ask only for what you cannot get. The app works the same way.
 
-- **It keeps itself current.** Mail is read every fifteen minutes. Bank data syncs daily and on demand. Paystubs and statements are picked up the moment they arrive as attachments or files. Bills are marked paid when the matching transaction clears. The plan is recomputed the morning a paycheck lands.
-- **It confirms what it can.** A fact from a sender whose previous facts the owner confirmed twice is confirmed automatically, with a note. Only a new sender, a new kind of fact, or an amount outside its usual range waits for the owner.
-- **It says what needs a human.** A morning brief on the phone and a `brief.today` tool for any model: what is due in three days and not yet funded, what is past due, a paystub that does not match the expected net, a new installment plan or advance, a price increase, a connector that stopped working.
+- **It keeps itself current.** Mail is read every fifteen minutes. Bank data syncs every four hours (or as often as the owner sets) and on demand. Paystubs and statements are picked up as their mail is read, or within five minutes of landing in the import folder. Bills are marked paid when the matching transaction clears. The plan is worked out again whenever the data changes, so it counts a paycheck as soon as the bank shows it.
+- **It confirms what it can.** Payment confirmations, paydays and bank alerts count without a tap, and so does a bill from Rocket Money's upcoming-bills mail that the register already agrees with. Every other fact waits for the owner; earning auto-confirm per sender is planned (M62).
+- **It says what needs a human.** A morning brief on the phone and a `brief.today` tool for any model: what clears before payday and whether checking covers it, what is past due, a paystub that does not match the expected net and the lines that moved, advances taken since payday, mail that needs a look and sends waiting for approval; price rises and a part that stopped working reach the phone from the watch and health jobs.
 - **Outward actions go through approvals.** Sending an email is an action: the app drafts it, asks once, sends on approval and records it. The owner can grant a standing allowance for a recipient (a landlord's office, a lender's billing address), after which that recipient needs no further approvals for what the owner or a second person queues themselves. A draft a model or a script queued (an API key, a connected app) always waits for a tap, allowance or not, since a hostile email could steer the model (2026-10-29). Nothing is ever sent to a recipient without one or the other.
 - **Money never moves.** No tool, job or button initiates a payment or transfer, with or without an approval. The app says what to pay and where; the owner pays.
 
@@ -129,9 +129,9 @@ BoxPilot's own agents cannot call an app's API today. FinancialAuthority uses Bo
 
 All deterministic, all tested against a synthetic household and golden outputs.
 
-**Cash-flow projection.** For each account, a daily balance for the next 90 days from the current balance, confirmed bills, recurring series, paychecks, advance repayments, minimum payments and installments. A what-if layer adds hypothetical events without saving them.
+**Cash-flow projection.** For the spending accounts together, a daily balance for the next sixty days (a scenario looks 180 days ahead) from the current balance, confirmed bills, recurring series, paychecks, advance repayments, minimum payments and installments. A what-if layer adds hypothetical events without saving them.
 
-**Payment matching.** Each bill period looks for its payment: a transaction to the biller within the window and near the amount, or a confirmation email. Matched is paid; past the due day with no match is late; past the grace period is past due. A past-due notice in mail marks the bill past due even without a match. This is the register the "pay this now" list reads.
+**Payment matching.** Each bill period looks for its payment: a transaction to the biller within the window and near the amount, or at the bill's exact amount. Matched is paid; past the due day with no match is late; past the grace period (at least three days) is past due. A payment confirmation email is kept as a record, and a past-due notice in mail reaches the brief as critical; neither changes the period on its own yet (M4.8). This is the register the "pay this now" list reads.
 
 **Paystub reconciliation.** Each paystub is matched to its deposit. The expected net (from the last few paystubs) is compared with the actual; a difference beyond a tolerance is flagged with the lines that moved, so a discrepancy is noticed on payday, not at tax time.
 
@@ -151,12 +151,12 @@ Jobs, each idempotent, logged, visible on the Jobs page and through `jobs.status
 
 | Job | When | What it does |
 | --- | --- | --- |
-| Mail sync | Every 15 minutes | New messages by UID from each mailbox; classify; extract; capture paystub and statement attachments; auto-confirm where earned. |
-| Bank sync | Daily at 05:30 and on demand | SimpleFIN pull; de-duplicate against exports; recurring detection; payment matching. |
-| Import watch | On file arrival | CSV, OFX, paystub PDFs from `/imports`. |
-| Re-plan | 06:00 on a payday, and after any confirmed change | Recompute the projection and the paycheck plan. |
-| Brief | 07:00 daily | What is due and unfunded in three days, past due, discrepancies, new plans or advances, price increases, connectors that failed, approvals waiting. Delivered as a push (ntfy or Gotify from BoxPilot's catalog), shown in the app, served by `brief.today`. |
-| Export reminder | When the aggregator's export email arrives | Reminds the owner to drop the file. |
+| Mail sync | Every 15 minutes | New messages by UID from each mailbox; classify; extract; capture paystub and statement attachments; count payment confirmations, paydays and bank alerts without a tap. |
+| Bank sync | Every four hours (as the owner sets) and on demand | Plaid or Teller pull; de-duplicate against exports; recurring detection; payment matching. |
+| Import watch | Every five minutes | CSV, OFX, paystub PDFs from `/imports`. |
+| Re-plan | On every change | No job: the projection and the paycheck plan are worked out from the registers when asked, and a kept copy lasts only until the next write (two minutes at most). |
+| Brief | Daily from the chosen hour (07:00 unless changed) | What clears before payday and whether it is covered, past due, paystub discrepancies, advances since payday, mail to look at, approvals waiting. Delivered as a push (ntfy or Gotify from BoxPilot's catalog), shown in the app, served by `brief.today`. |
+| Export capture | When the aggregator's export email is confirmed on Needs you | Follows its download link within its seven-day life, imports the file, then runs detection and payment matching. |
 | Self-check | Hourly | Each connector's last success; stale data warnings; the tunnel reachable; disk and database size. |
 
 ## 9. The web app: views and looks

@@ -74,6 +74,11 @@ async def lifespan(app: FastAPI):
     if problem:
         log.error(problem)
         raise RuntimeError(problem)  # a changed data key is said once, here, not found feature by feature
+    with session_scope() as session:
+        problem = auth.open_demo_problem(session)
+    if problem:
+        log.error(problem)
+        raise RuntimeError(problem)  # the demo's open door never opens onto real data
     _owner_only(settings.db_path)
     restore_points.owner_only_files()
     if settings.demo:
@@ -112,7 +117,7 @@ def cors_origins(raw: list[str]) -> list[str]:
 
 
 _docs = {} if not auth.auth_enabled() else {"docs_url": None, "redoc_url": None, "openapi_url": None}
-app = FastAPI(title="FinancialAuthority", version=__version__, lifespan=lifespan, dependencies=[Depends(inputs.bounded_params)], **_docs)
+app = FastAPI(title="FinancialAuthority", version=__version__, lifespan=lifespan, dependencies=[Depends(inputs.bounded_params), Depends(inputs.bounded_form)], **_docs)
 app.add_exception_handler(RequestValidationError, inputs.validation_error)
 _cors = cors_origins(settings.cors_origins)
 if _cors:

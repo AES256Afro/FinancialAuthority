@@ -70,6 +70,7 @@ def learning(session: Session = Depends(get_session), _: auth.Principal = Depend
 
 
 @learn_router.post("/answer")
+@under_writer
 def answer_suggestion(body: SuggestionIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     from ..engine.learning import answer as learn, overview
 
@@ -85,6 +86,7 @@ class KindIn(In):
 
 
 @learn_router.post("/bring-back")
+@under_writer
 def bring_back(body: KindIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     from ..engine.learning import bring_back as back, overview
 

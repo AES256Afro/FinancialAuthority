@@ -29,6 +29,10 @@ export interface Event {
   from_kind?: "card" | "cash";
   parts?: { balance: number; bills: number; spend: number };
   kept?: number;
+  /** Already past its due day and not out of the account yet: planned for `date` (today), due on `due`. */
+  late?: boolean;
+  due?: string;
+  note?: string;
 }
 
 export interface PaymentRow {
@@ -191,7 +195,7 @@ export interface Snapshot {
   safe_to_spend: {
     amount: number | null; after_goals: number | null; share_of_cash?: number | null; through: string; version: string; no_balance?: boolean; words?: string;
     parts?: { cash: number | null; due_before_payday: number; advances: number; advances_on_payday: number; buffer: number; next_window_shortfall: number };
-    steps?: { label: string; amount: number | null; note?: string; as_of?: string | null; items?: { name: string; amount: number; date: string; source?: string }[] }[];
+    steps?: { label: string; amount: number | null; note?: string; as_of?: string | null; items?: { name: string; amount: number; date: string; due?: string; source?: string }[] }[];
     by_account?: { id: number; name: string; kind: string; balance: number | null; as_of: string | null; from_bank: boolean; paycheck_lands: boolean; due: number; buffer: number; advances: number; shortfall: number; goes_out: number; safe: number | null; no_balance?: boolean; items: { name: string; amount: number; date: string }[] }[];
     left_out?: { name: string; verb?: string; amount: number; why: string; owes?: boolean }[];
   };
@@ -209,7 +213,9 @@ export interface Snapshot {
   fresh?: { balances_as_of: string | null; accounts: { id: number; name: string; kind: string; as_of: string | null; connector: string; balance?: number | null; told?: { amount: number; at: string; bank?: number | null } }[]; newest_transaction: string | null };
   in_flight?: { pending: { total: number; items: { id: number; date: string; merchant: string; amount: number; account: string; source: string }[] }; mail: { total: number; counted: boolean; items: { amount: number; merchant: string; last4: string; date: string; source: string }[] } };
   mail: { pending: { id: number; kind: string; sender_name: string; subject: string; date: string | null }[]; alerts: { id: number; kind: string; fields: Record<string, string | number>; sender_name: string; date: string | null }[] };
-  projection: { date: string; available: number; at_pace: number; cash: number }[];
+  /** The daily line. Its figures are null when no spending account has a balance (no_balance): it starts from the
+   * balance, so with none there is nothing to draw. */
+  projection: { date: string; available: number | null; at_pace: number | null; cash: number | null }[];
   not_advice: string;
 }
 

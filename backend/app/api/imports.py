@@ -13,7 +13,7 @@ from ..connectors.files import detect, import_bills, import_holdings, import_row
 from ..db import get_session
 from ..engine.paystubs import paystub_fact_from_file
 from ..models import Account
-from .routes import today
+from .routes import today, under_writer
 
 router = APIRouter(prefix="/api/v1/imports", tags=["imports"])
 LIMIT = 50 * 1024 * 1024
@@ -77,6 +77,7 @@ def _detect(text: str) -> dict:
 
 
 @router.post("/paystub")
+@under_writer
 def import_paystub(file: UploadFile = File(...), session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     """A paystub PDF handed over by hand: read, then queued on Needs you to confirm with one tap."""
     raw = file.file.read(LIMIT + 1)
@@ -169,6 +170,7 @@ def import_file(
 
 
 @router.post("/holdings/{account_id}")
+@under_writer
 def import_holdings_file(account_id: int, file: UploadFile = File(...), as_of: str = Form(""), session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     account = session.get(Account, account_id)
     if account is None or account.kind != "investment":

@@ -37,11 +37,12 @@ def test_cover_says_what_each_account_needs_before_each_payday():
     # the arithmetic holds in every window: what it has, plus the paycheck, less what it needs
     for w in (w1, w2):
         assert w["left"] == round(w["has"] + w["inflow"] - w["needs"], 2)
-        assert w["needs"] == round(w["bills"] + w["everyday"] + w["buffer"], 2)
+        assert w["needs"] == round(w["bills"] + w["everyday"] + w["buffer"] + w["set_aside"], 2)  # the set-aside kept for the window after (sweep 21)
     assert w2["inflow"] == snap["next_paycheck"]["amount"] and w2["has"] == round(w1["left"] + w1["buffer"], 2)
     # what leaves checking before payday is the snapshot's own figure (cash bills before the first payday)
     assert w1["bills"] == snap["due_before_payday"]["total"]
-    assert checking["status"] == "good" and checking["headline"].startswith("Covered through")
+    # the Oct 16 check covers its window but not all of the set-aside for the window after: Saving says the same (sweep 21)
+    assert checking["status"] == "warn" and checking["headline"].startswith("Covered until") and w2["left"] == _sv["per_check"][0]["left"] < 0
     cards = [a for a in cov["accounts"] if a["role"] == "card"]
     assert {c["name"] for c in cards} == {"Rewards Card", "Store Card"}
     assert all(c["headline"].startswith("Next payment") for c in cards)
