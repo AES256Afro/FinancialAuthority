@@ -1,9 +1,11 @@
 // Money and date formatting. Numbers are formatted here and nowhere else.
 
 export function money(value: number, opts: { sign?: boolean; cents?: boolean } = {}): string {
-  const abs = Math.abs(value);
-  const text = abs.toLocaleString("en-US", { minimumFractionDigits: opts.cents ? 2 : 0, maximumFractionDigits: opts.cents ? 2 : 0 });
-  if (value < 0) return `−$${text}`;
+  // A figure that is not a number (a field the server left out) shows as nothing owed, never "$NaN".
+  const n = Number.isFinite(value) ? value : 0;
+  const text = Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: opts.cents ? 2 : 0, maximumFractionDigits: opts.cents ? 2 : 0 });
+  // The sign follows the rounded figure: forty cents under, shown without cents, is "$0", not "−$0".
+  if (n < 0 && /[1-9]/.test(text)) return `−$${text}`;
   return `${opts.sign ? "+" : ""}$${text}`;
 }
 

@@ -10,6 +10,7 @@ from datetime import date, timedelta
 
 from sqlmodel import Session, select
 
+from ..clock import local_date
 from ..models import Account, BalanceSnapshot, Holding, Paystub
 
 NOT_ADVICE = "Computed by the engine from the accounts, holdings and paystubs on record. Not financial advice."
@@ -77,7 +78,7 @@ def investments_overview(session: Session, today: date) -> dict:
         for h in rows:
             allocation[h.kind or "other"] += h.value or 0.0
         history = [{"date": s.date.isoformat(), "balance": s.balance} for s in history_by_account.get(a.id, [])]
-        stale_days = (today - a.balance_at.date()).days if a.balance_at else None
+        stale_days = (today - local_date(a.balance_at)).days if a.balance_at else None  # the owner's day, not UTC's
         items.append({
             "id": a.id, "name": a.name, "institution": a.institution, "subtype": a.subtype, "what": subtype_word(a.subtype), "retirement": is_retirement(a.subtype),
             "balance": a.balance, "balance_at": a.balance_at.isoformat() if a.balance_at else None, "stale_days": stale_days, "connector": a.connector,

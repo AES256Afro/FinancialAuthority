@@ -31,7 +31,10 @@ export function TransitMap({ snapshot }: ViewProps) {
   const events: Event[] = snapshot.calendar.events.filter((e) => dayOf(e.date) >= 0 && dayOf(e.date) <= DAYS);
   const paydays = events.filter((e) => e.kind === "paycheck");
   const stations = events.filter((e) => e.kind !== "paycheck");
-  const byLine = (id: string) => stations.filter((e) => (e.line ?? "utilities") === id);
+  // The engine names no line yet (Event.line): a pay-later plan, an advance or a card payment rides the debt line
+  // by its kind, everything else the utilities line. Housing needs the engine to say so.
+  const lineOf = (e: Event) => e.line ?? (e.kind === "installment" || e.kind === "advance" || e.kind === "card_payment" ? "debt" : "utilities");
+  const byLine = (id: string) => stations.filter((e) => lineOf(e) === id);
   const next = stations.find((e) => dayOf(e.date) >= dayOf(snapshot.as_of));
   const biggest = [...stations].sort((a, b) => b.amount - a.amount)[0];
   const short = snapshot.safe_to_spend.amount < 0;
@@ -68,7 +71,7 @@ export function TransitMap({ snapshot }: ViewProps) {
                   <tr key={`${e.source}-${e.date}-${i}`}>
                     <td style={{ whiteSpace: "nowrap" }}>{shortDate(e.date)}</td>
                     <td>{e.kind === "paycheck" ? "Payday" : e.name}</td>
-                    <td style={{ color: "var(--ink-2)" }}>{e.kind === "paycheck" ? "every line" : lineName(e.line ?? "utilities")}</td>
+                    <td style={{ color: "var(--ink-2)" }}>{e.kind === "paycheck" ? "every line" : lineName(lineOf(e))}</td>
                     <td className="num" style={{ textAlign: "right" }}>{e.kind === "paycheck" ? money(-e.amount, { sign: true }) : money(e.amount)}</td>
                     <td style={{ color: "var(--ink-2)" }}>{e.kind === "paycheck" ? "" : `${e.autopay ? "autopay" : "pay it yourself"}${e.funded === false ? " · not yet funded" : ""}`}</td>
                   </tr>
@@ -123,13 +126,13 @@ export function TransitMap({ snapshot }: ViewProps) {
       <section style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
         {next && (
           <div className="card" style={{ flex: "1 1 300px", padding: "12px 16px", display: "flex", gap: 12, alignItems: "center" }}>
-            <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true" style={{ flexShrink: 0 }}><circle cx="17" cy="17" r="14" fill={c.surface} stroke={lineColor[next.line ?? "utilities"]} strokeWidth="4" /></svg>
+            <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true" style={{ flexShrink: 0 }}><circle cx="17" cy="17" r="14" fill={c.surface} stroke={lineColor[lineOf(next)]} strokeWidth="4" /></svg>
             <div><h3 className="lab" style={{ margin: 0 }}>Next stop</h3><strong>{next.name} <span className="num">{money(next.amount)}</span> · {shortDate(next.date)}</strong><div style={{ fontSize: 12, color: "var(--ink-2)" }}>{next.autopay ? "Autopay." : "Pay it yourself."} {next.funded === false ? "Not yet funded." : "Funded."}</div></div>
           </div>
         )}
         {biggest && (
           <div className="card" style={{ flex: "1 1 300px", padding: "12px 16px", display: "flex", gap: 12, alignItems: "center" }}>
-            <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true" style={{ flexShrink: 0 }}><circle cx="17" cy="17" r="14" fill={c.surface} stroke={lineColor[biggest.line ?? "utilities"]} strokeWidth="4" /></svg>
+            <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true" style={{ flexShrink: 0 }}><circle cx="17" cy="17" r="14" fill={c.surface} stroke={lineColor[lineOf(biggest)]} strokeWidth="4" /></svg>
             <div><h3 className="lab" style={{ margin: 0 }}>Biggest station</h3><strong>{biggest.name} <span className="num">{money(biggest.amount)}</span> · {shortDate(biggest.date)}</strong><div style={{ fontSize: 12, color: "var(--ink-2)" }}><Link to="/bills">Open Bills</Link> to see whether its date could move.</div></div>
           </div>
         )}

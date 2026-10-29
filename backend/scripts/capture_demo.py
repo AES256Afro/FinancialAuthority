@@ -57,6 +57,10 @@ GETS = [
     "/api/v1/pairs", "/api/v1/privacy", "/api/v1/recap", "/api/v1/reports/custom/saved", "/api/v1/reports/custom/tax", "/api/v1/reports/custom/year?year=2026",
     "/api/v1/reports/custom?rows=category&period=last_365", "/api/v1/restore-points/offbox", "/api/v1/watch", "/api/v1/housing", "/api/v1/utilities", "/api/v1/documents",
     "/api/v1/people", "/api/v1/shared", "/api/v1/receipts", "/api/v1/documents/months",
+    # The screens added since round three: credit, the data check, Needs you, the business, app health, report templates and groups, the cover sheet, the move plan.
+    "/api/v1/credit", "/api/v1/data-check", "/api/v1/needs-you", "/api/v1/business", "/api/v1/business/finder?years=3", "/api/v1/health/history", "/api/v1/move/plan", "/api/v1/borrowing/exit", "/api/v1/borrowing/plan",
+    # Taxes: the page offers this year and last by the browser's clock, so the years around the recorded day are kept.
+    "/api/v1/taxes", "/api/v1/taxes/2025", "/api/v1/taxes/2026", "/api/v1/taxes/2027",
 ]
 
 # The days a bill's date check is recorded for, per bill whose date can move; the demo answers the nearest one.

@@ -15,7 +15,7 @@ function local(): Record<string, string> {
 }
 
 export function showAsMap(): Record<string, string> {
-  return { ...local(), ...(serverCopy ?? {}) };
+  return { ...local(), ...serverCopy };
 }
 
 export function setServerShowAs(map: Record<string, string> | null): void {

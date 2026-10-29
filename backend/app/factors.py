@@ -270,10 +270,15 @@ def _rp(request: Request) -> tuple[str, str]:
     return rp
 
 
+CHALLENGES_MAX = 1000  # open challenges kept at once; past that the oldest go, so a flood at the public address holds no memory
+
+
 def _remember(purpose: str, challenge: bytes, rp_id: str) -> str:
     now = time.time()
     for k in [k for k, v in _challenges.items() if now - v[0] > CHALLENGE_SECONDS]:
         _challenges.pop(k, None)
+    while len(_challenges) >= CHALLENGES_MAX:
+        _challenges.pop(min(_challenges, key=lambda k: _challenges[k][0]), None)
     key = f"{purpose}:{secrets.token_urlsafe(16)}"
     _challenges[key] = (now, challenge, rp_id)
     return key
@@ -354,6 +359,9 @@ def passkey_login_options(request: Request, session: Session = Depends(get_sessi
     from webauthn.helpers import base64url_to_bytes
     from webauthn.helpers.structs import PublicKeyCredentialDescriptor, UserVerificationRequirement
 
+    if auth._locked("passkey:" + auth._client_ip(request)):
+        # The same count as the sign-in itself: an address that failed its passkeys is not handed more challenges.
+        raise HTTPException(429, "Too many failed passkey sign-ins. Wait, then try again.")
     rp = _rp_or_none(request)
     keys = session.exec(select(Passkey).where(Passkey.rp_id == rp[0])).all() if rp else []
     if not rp or not keys:

@@ -184,7 +184,7 @@ export function Freshness() {
           {said("price")}
         </label>
         {data.cost.monthly !== null && (
-          <span><strong>Forecast:</strong> {money(data.cost.monthly, { cents: true })} a month, {money(data.cost.yearly ?? 0, { cents: true })} a year, for the {data.plaid.items_active} bank login{data.plaid.items_active === 1 ? "" : "s"} connected now, however often the app reads.</span>
+          <span className="num"><strong>Forecast:</strong> {money(data.cost.monthly, { cents: true })} a month, {money(data.cost.yearly ?? 0, { cents: true })} a year, for the {data.plaid.items_active} bank login{data.plaid.items_active === 1 ? "" : "s"} connected now, however often the app reads.</span>
         )}
       </div>
     </section>

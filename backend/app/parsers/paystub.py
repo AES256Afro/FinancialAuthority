@@ -26,7 +26,7 @@ DEDUCTION_LABELS = [
     ("Medicare", r"medicare|fica[- ]?med"),
     ("State income tax", r"state (?:income )?(?:tax|withholding)|sit\b|state w/h"),
     ("Local tax", r"local (?:income )?tax|city tax|sdi\b"),
-    ("Health insurance", r"medical|health(?: insurance| plan| premium)?\b"),
+    ("Health insurance", r"medical|health(?! savings)(?: insurance| plan| premium)?\b"),  # "Health Savings" is the HSA line, below
     ("Dental", r"dental"),
     ("Vision", r"vision"),
     ("401(k)", r"401\(?k\)?|retirement|403\(?b\)?|pension"),

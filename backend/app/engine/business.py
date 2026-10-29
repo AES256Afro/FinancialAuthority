@@ -154,7 +154,7 @@ def books(session: Session, business: Business, year: int) -> dict[str, Any]:
     costs = _money(sum(r["amount"] for r in lines.values()))
     profit = _money(income - costs)
     se_base = max(0.0, profit) * R.SE_EARNINGS_SHARE
-    se_tax = _money(se_base * R.SE_TAX_RATE) if profit >= R.SE_FLOOR else 0.0
+    se_tax = _money(se_base * R.SE_TAX_RATE) if se_base >= R.SE_FLOOR else 0.0  # Schedule SE's $400 floor is on the 92.35% share, not the profit
 
     payers: dict[str, float] = defaultdict(float)
     for i in out_paid:

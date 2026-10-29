@@ -442,9 +442,10 @@ export interface PayoffWay {
   order: "avalanche" | "snowball" | "minimums";
   months: number | null;
   debt_free: string | null;
-  interest: number;
+  interest: number | null; // null when the way never finishes: the balance grows
+  grows?: boolean;
   interest_saved?: number | null;
-  debts: { name: string; source: string; paid_on: string | null; interest: number }[];
+  debts: { name: string; source: string; paid_on: string | null; interest: number | null }[];
 }
 
 export interface AdvanceCost {

@@ -9,7 +9,7 @@ import { api, useApi } from "../api";
 import { ConfirmButton } from "../components/ConfirmButton";
 import { Said, Show } from "../components/State";
 import { SeverityTag } from "../components/Status";
-import { shortDate, when } from "../format";
+import { amountClass, shortDate, when } from "../format";
 
 interface Item { label: string; detail: string; source: string; link: string }
 interface Action { id: string; label: string; question?: string }
@@ -45,7 +45,7 @@ function FindingCard({ f, onAnswered }: { f: Finding; onAnswered: (text: string)
         <SeverityTag severity={f.severity} word={f.severity === "crit" ? "Changes what is counted" : "Worth a look"} />
         <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800, flex: "1 1 220px", minWidth: 0, overflowWrap: "anywhere" }}>{f.title}</h2>
       </div>
-      <div style={{ fontSize: 13, color: "var(--ink-2)" }}>{f.why}</div>
+      <div className={amountClass(f.why)} style={{ fontSize: 13, color: "var(--ink-2)" }}>{f.why}</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))", gap: 8 }}>
         {f.items.map((i) => (
           <div key={i.source} style={{ padding: "8px 10px", borderRadius: 10, background: "var(--surface-2)", display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
@@ -120,7 +120,7 @@ export function DataCheck() {
                 )}
                 <div style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 14, fontWeight: 700, color: d.findings.length ? "var(--ink)" : "var(--safe-ink)" }}>
                   {d.findings.length === 0 ? <CircleCheck size={16} aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }} /> : d.findings.some((f) => f.severity === "crit") ? <OctagonAlert size={16} aria-hidden="true" style={{ flexShrink: 0, marginTop: 2, color: "var(--critical-ink)" }} /> : <TriangleAlert size={16} aria-hidden="true" style={{ flexShrink: 0, marginTop: 2, color: "var(--warning-ink)" }} />}
-                  <span>{d.said}</span>
+                  <span className={amountClass(d.said)}>{d.said}</span>
                 </div>
                 <span style={{ fontSize: 12, color: "var(--muted)" }}>
                   {d.last ? `Last checked ${when(d.last.at)}.` : "Not checked yet."}{d.decided ? ` ${d.decided} you settled as different are not raised again.` : ""}

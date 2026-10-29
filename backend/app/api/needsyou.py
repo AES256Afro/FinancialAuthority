@@ -11,6 +11,7 @@ from sqlmodel import Session, select
 from .. import auth, services
 from ..db import get_session
 from ..engine.needsyou import answer_payment, plan_many, triage
+from ..jobs.writing import one_writer
 from ..models import ExtractedFact, MessageRef, Payment, utcnow
 from .routes import today
 
@@ -32,8 +33,6 @@ def answer_many(body: ManyIn, session: Session = Depends(get_session), principal
     """Preview, confirm or discard several at once. Confirm follows the plan the preview shows (plan_many): only a
     bill's newest notice counts, an older one is set aside, and one that cannot be confirmed together stays waiting
     and says why. Each is answered on its own, so a failure leaves the rest done."""
-    from .mail import ConfirmIn, apply_fact
-
     if body.action not in ("preview", "confirm", "reject") or not body.ids or len(body.ids) > 200:
         raise HTTPException(400, "Choose preview, confirm or reject, for between 1 and 200 items")
     found = {f.id: f for f in session.exec(select(ExtractedFact).where(ExtractedFact.id.in_(body.ids))).all()}  # type: ignore[union-attr]
@@ -44,45 +43,11 @@ def answer_many(body: ManyIn, session: Session = Depends(get_session), principal
     steps = {s["id"]: s for s in plan_many(session, chosen, today(), loose=principal.full)["steps"]} if body.action == "confirm" else {}
     done, failed, aside = [], [], 0
     for fid in body.ids:
-        fact = session.get(ExtractedFact, fid)
-        if fact is None or fact.status != "pending":
-            failed.append({"id": fid, "error": "already answered"})
-            continue
-        if body.action == "reject":
-            fact.status, fact.resolved_at = "rejected", utcnow()
-            session.add(fact)
-            session.commit()
-            done.append({"id": fid, "applied_to": ""})
-            continue
-        step = steps.get(fid, {"do": "own_card", "why": "needs your answer on its own card"})
-        if step["do"] == "set_aside":
-            fact.status, fact.applied_to, fact.resolved_at = "rejected", f"set aside: {step['why']}"[:200], utcnow()
-            session.add(fact)
-            session.commit()
-            aside += 1
-            done.append({"id": fid, "applied_to": ""})
-            continue
-        if step["do"] != "apply":
-            failed.append({"id": fid, "error": step["why"]})
-            continue
-        if step.get("record"):
-            # A notice that changes nothing in the plan is kept as read; nothing is applied.
-            fact.status, fact.applied_to, fact.resolved_at = "confirmed", "read: changes nothing in the plan", utcnow()
-            session.add(fact)
-            session.commit()
-            done.append({"id": fid, "applied_to": ""})
-            continue
-        ref = session.get(MessageRef, fact.message_ref_id) if fact.message_ref_id else None
-        try:
-            applied = apply_fact(session, fact, ref, ConfirmIn(apply=True), owner=principal.full)
-        except HTTPException as error:
-            session.rollback()
-            failed.append({"id": fid, "error": str(error.detail)})
-            continue
-        fact.status, fact.applied_to, fact.resolved_at = ("applied" if applied else "confirmed"), applied, utcnow()
-        session.add(fact)
-        session.commit()
-        done.append({"id": fid, "applied_to": applied})
+        with one_writer():  # each fact claimed as its own card claims it: read again under the lock, so one answered there meanwhile is found answered
+            _answer_one(session, fid, body.action, steps, principal, done, failed)
+            aside += 1 if done and done[-1].get("aside") else 0
+    for row in done:
+        row.pop("aside", None)
     services.audit(session, client=principal.name, client_kind=principal.kind, tool=f"facts_{body.action}_many", args={"ids": body.ids[:50]}, rows=len(done))
     if done:
         from ..llm.reviewer import mark_pending
@@ -92,6 +57,52 @@ def answer_many(body: ManyIn, session: Session = Depends(get_session), principal
     head = (f"Confirmed {kept}" + (f" and set aside {aside} older notice{'s' if aside != 1 else ''}" if aside else "") + ".") if body.action == "confirm" else f"Discarded {len(done)}."
     word = head + (f" {len(failed)} still wait: they need your answer one at a time." if failed else "")
     return {"done": done, "failed": failed, "said": word, "triage": triage(session, today())}
+
+
+def _answer_one(session: Session, fid: int, action: str, steps: dict, principal: auth.Principal, done: list, failed: list) -> None:
+    """One fact answered under the writer lock; what happened lands on done (with aside=True for one set aside) or failed."""
+    from .mail import ConfirmIn, apply_fact
+
+    fact = session.get(ExtractedFact, fid)
+    if fact is not None:
+        session.refresh(fact)
+    if fact is None or fact.status != "pending":
+        failed.append({"id": fid, "error": "already answered"})
+        return
+    if action == "reject":
+        fact.status, fact.resolved_at = "rejected", utcnow()
+        session.add(fact)
+        session.commit()
+        done.append({"id": fid, "applied_to": ""})
+        return
+    step = steps.get(fid, {"do": "own_card", "why": "needs your answer on its own card"})
+    if step["do"] == "set_aside":
+        fact.status, fact.applied_to, fact.resolved_at = "rejected", f"set aside: {step['why']}"[:200], utcnow()
+        session.add(fact)
+        session.commit()
+        done.append({"id": fid, "applied_to": "", "aside": True})
+        return
+    if step["do"] != "apply":
+        failed.append({"id": fid, "error": step["why"]})
+        return
+    if step.get("record"):
+        # A notice that changes nothing in the plan is kept as read; nothing is applied.
+        fact.status, fact.applied_to, fact.resolved_at = "confirmed", "read: changes nothing in the plan", utcnow()
+        session.add(fact)
+        session.commit()
+        done.append({"id": fid, "applied_to": ""})
+        return
+    ref = session.get(MessageRef, fact.message_ref_id) if fact.message_ref_id else None
+    try:
+        applied = apply_fact(session, fact, ref, ConfirmIn(apply=True), owner=principal.full)
+    except HTTPException as error:
+        session.rollback()
+        failed.append({"id": fid, "error": str(error.detail)})
+        return
+    fact.status, fact.applied_to, fact.resolved_at = ("applied" if applied else "confirmed"), applied, utcnow()
+    session.add(fact)
+    session.commit()
+    done.append({"id": fid, "applied_to": applied})
 
 
 class PaidIn(BaseModel):

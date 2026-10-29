@@ -82,9 +82,13 @@ class Jobs:
         self.scheduler = BackgroundScheduler(timezone="UTC")
         last: dict[str, Any] = {}
         try:
+            from sqlalchemy import func
+
             with session_scope() as session:
-                for r in session.exec(select(JobRun).order_by(JobRun.started_at)).all():
-                    last[r.name] = r.started_at
+                # The newest run of each job, from the index, not thirty days of runs loaded one by one.
+                for name, started in session.exec(select(JobRun.name, func.max(JobRun.started_at)).group_by(JobRun.name)).all():
+                    if started is not None:
+                        last[name] = started if isinstance(started, datetime) else datetime.fromisoformat(str(started))
         except Exception:  # noqa: BLE001 - without the history every job simply starts on its interval
             last = {}
         now = datetime.now(timezone.utc)
@@ -325,10 +329,20 @@ jobs.register("match_payments", match_payments_job, 24 * 3600, "Match each bill 
 
 
 def review_if_due() -> str:
+    """A review that the provider refused (a bad key, a model that is gone, a timeout) is a failed run on the Jobs
+    page, not a sentence inside a green one; the reviewer's own backoff keeps the next try from paying for the
+    same failure every hour."""
     from ..api.routes import today
     from ..llm.reviewer import run_if_due
+    from ..models import ReviewRun
 
-    return run_if_due(session_scope, today())
+    started = utcnow()
+    summary = run_if_due(session_scope, today())
+    with session_scope() as session:
+        failed = session.exec(select(ReviewRun).where(ReviewRun.created_at >= started, ReviewRun.ok == False).order_by(ReviewRun.created_at.desc())).first()  # noqa: E712
+    if failed is not None:
+        raise RuntimeError(summary or failed.error or "the reviewer did not answer")
+    return summary
 
 
 jobs.register("review_if_due", review_if_due, 3600, "Ask the reviewer for notes on payday and after a confirmed change", writes=False)
@@ -356,7 +370,14 @@ def bank_sync() -> str:
         if not due:
             return "not due yet"
         for link in due:
-            result = CONNECTORS[link.provider].sync(session, link_id=link.id)
+            try:
+                result = CONNECTORS[link.provider].sync(session, link_id=link.id)
+            except Exception as error:  # noqa: BLE001 - one link's failure (a connection dropped, a vendor error the connector did not expect) never stops the others
+                session.rollback()
+                log.exception("bank sync of link %s failed", link.id)
+                notes.append(f"{link.institution or link.provider}: {type(error).__name__}: {str(error)[:120]}")
+                failed = True
+                continue
             notes.append(result.summary)
             inserted += result.inserted
             failed = failed or not result.ok
@@ -552,6 +573,11 @@ def prune_job_runs() -> str:
             if (r.summary or "").startswith(IDLE):
                 session.delete(r)
                 idle += 1
+        # The week recap's "sent" marks are one key a Sunday; only the last few months of them matter.
+        from ..models import Setting
+
+        cutoff = f"recap.week.{(now - _td(days=120)).date().isoformat()}"
+        session.exec(delete(Setting).where(Setting.key.like("recap.week.%"), Setting.key < cutoff))
         session.commit()
     from ..db import engine as _engine
     from sqlalchemy import text as _text

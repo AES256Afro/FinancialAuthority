@@ -1,13 +1,12 @@
 // Paystubs: the latest stub as one bar from gross to net, the last stubs as a strip, and every line with the deposit it matched.
 // A stub the app kept the file of has the PDF one tap away, and its text to read.
-import { useEffect, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useState } from "react";
 import { BookOpen, Download, TriangleAlert } from "lucide-react";
 import { useApi } from "../api";
 import { money, monthDay, shortDate } from "../format";
 import { Reader } from "../components/Documents";
 import { PaycheckSetup } from "../components/PaycheckSetup";
-import { Failed, Loading } from "../components/State";
+import { Failed, Loading, useJumpToHash } from "../components/State";
 import { StatusPill } from "../components/Status";
 import { palette } from "../looks";
 import { inkOn } from "../paychecks";
@@ -21,11 +20,8 @@ export function Paystubs() {
   const { data, error, reload } = useApi<{ recent: PaystubWithFile[]; last: PaystubWithFile | null; short: PaystubWithFile[] }>("/api/v1/paystubs");
   const [pick, setPick] = useState<number | null>(null);
   const [reading, setReading] = useState<{ id: number; page: number } | null>(null);
-  const { hash } = useLocation();
-  // The header's "Add your paycheck" link lands on the form once the page has loaded.
-  useEffect(() => {
-    if (hash && data) document.getElementById(hash.slice(1))?.scrollIntoView({ block: "start" });
-  }, [hash, data]);
+  // The header's "Add your paycheck" link lands on the form, with focus in it, once the page has loaded.
+  useJumpToHash(data);
   if (error && !data) return <Failed error={error} what="your paystubs" onRetry={reload} />;
   if (!data) return <Loading what="your paystubs" />;
   const stub = data.recent.find((p) => p.id === pick) ?? data.last;

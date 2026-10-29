@@ -17,7 +17,7 @@ def test_empty_app_lists_the_setup_with_links(owner: TestClient):
     out = owner.get("/api/v1/next_steps").json()
     ids = {s["id"]: s for s in out["steps"]}
     assert {"bank-keys", "mail-connect", "invest-add", "paystub-none", "reviewer", "push", "publish"} <= set(ids)
-    assert ids["bank-keys"]["link"] == "/settings/connectors#banks" and ids["invest-add"]["link"] == "/investments"
+    assert ids["bank-keys"]["link"] == "/settings/connectors#banks" and ids["invest-add"]["link"] == "/investments#add"
     assert all(s["action"] and s["link"].startswith("/") for s in out["steps"])
     severities = [s["severity"] for s in out["steps"]]
     assert severities == sorted(severities, key={"critical": 0, "warning": 1, "info": 2}.get)

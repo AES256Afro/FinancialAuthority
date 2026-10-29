@@ -104,7 +104,12 @@ async def run_tool(name: str, arguments: dict) -> Any:
         mcp.CALLER.reset(token)
     if getattr(result, "structured_content", None):
         return result.structured_content
-    return {"text": "".join(getattr(c, "text", "") for c in result.content)}
+    text = "".join(getattr(c, "text", "") for c in result.content)
+    try:
+        parsed = json.loads(text)  # the tools answer with JSON; as a structure its figures are the engine's, exactly
+    except ValueError:
+        return {"text": text}
+    return parsed if isinstance(parsed, dict | list) else {"text": text}
 
 
 def rules_block(session: Session) -> str:
@@ -120,7 +125,11 @@ def rules_block(session: Session) -> str:
 
 def system_prompt(session: Session, today: date) -> tuple[str, set[float]]:
     snap = finance_snapshot(session, today)
-    plan = mcp.redact(compact_plan(snap), _sees(session))
+    level = _sees(session)
+    plan = mcp.redact(compact_plan(snap), level)
+    # The brief's sentences name accounts, payees and mail senders; they are held back at the same level as the
+    # brief_today tool's text, so a client that sees totals only sees totals in the prompt too.
+    plan["brief"] = [mcp.redact({"text": line}, level)["text"] for line in plan["brief"]]
     allowed = engine_numbers(plan)
     return SYSTEM.format(rules=rules_block(session), as_of=snap["as_of"], plan=json.dumps(plan, separators=(",", ":"))), allowed
 

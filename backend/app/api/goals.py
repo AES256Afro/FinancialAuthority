@@ -14,7 +14,7 @@ from ..engine.goals import goals_plan
 from ..engine.snapshot import finance_snapshot
 from ..llm.reviewer import mark_pending
 from ..models import Goal
-from .routes import today
+from .routes import today, under_writer
 
 router = APIRouter(prefix="/api/v1/goals", tags=["goals"])
 
@@ -34,6 +34,18 @@ class FundIn(BaseModel):
     amount: float
 
 
+def _check_figures(body: GoalIn) -> None:
+    """A goal's money is dollars toward it: the target above zero, the pace and what is funded never below it."""
+    if body.target is not None and not 0 < body.target <= 10_000_000:
+        raise HTTPException(400, "target is dollars above zero, up to 10,000,000")
+    if body.pace is not None and not 0 <= body.pace <= 1_000_000:
+        raise HTTPException(400, "pace is dollars a paycheck, 0 or more")
+    if body.funded is not None and not 0 <= body.funded <= 10_000_000:
+        raise HTTPException(400, "funded is dollars put toward it, 0 or more")
+    if body.priority is not None and not 1 <= body.priority <= 100:
+        raise HTTPException(400, "priority is 1 (first) to 100")
+
+
 def _plan(session: Session) -> dict:
     snap = finance_snapshot(session, today())
     return {**goals_plan(session, today(), date.fromisoformat(snap["next_paycheck"]["date"]), snap["next_paycheck"].get("cadence") or "biweekly"), "safe_to_spend": snap["safe_to_spend"]}
@@ -45,9 +57,11 @@ def list_goals(session: Session = Depends(get_session), _: auth.Principal = Depe
 
 
 @router.post("")
+@under_writer
 def create_goal(body: GoalIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     if not body.name or body.target is None or body.target <= 0:
         raise HTTPException(400, "A goal needs a name and a target above zero")
+    _check_figures(body)
     if body.kind not in (None, "save", "paydown"):
         raise HTTPException(400, "kind is save or paydown")
     try:
@@ -62,10 +76,12 @@ def create_goal(body: GoalIn, session: Session = Depends(get_session), _: auth.P
 
 
 @router.put("/{goal_id}")
+@under_writer
 def update_goal(goal_id: int, body: GoalIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     goal = session.get(Goal, goal_id)
     if goal is None:
         raise HTTPException(404, "No such goal")
+    _check_figures(body)
     for field, value in body.model_dump(exclude_unset=True).items():
         if value is None:
             continue
@@ -84,6 +100,7 @@ def update_goal(goal_id: int, body: GoalIn, session: Session = Depends(get_sessi
 
 
 @router.post("/{goal_id}/fund")
+@under_writer
 def fund_goal(goal_id: int, body: FundIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     goal = session.get(Goal, goal_id)
     if goal is None:
@@ -95,6 +112,7 @@ def fund_goal(goal_id: int, body: FundIn, session: Session = Depends(get_session
 
 
 @router.delete("/{goal_id}")
+@under_writer
 def remove_goal(goal_id: int, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     goal = session.get(Goal, goal_id)
     if goal is None:

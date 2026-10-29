@@ -11,13 +11,13 @@ import { Failed, Loading, Said } from "../components/State";
 import { money, shortDate, when } from "../format";
 import type { ReviewRun, Snapshot } from "../types";
 import { toolWord } from "./Audit";
+import { CHAT_KEY } from "../session";
 
 const STARTERS = ["What should this paycheck go on?", "What must be paid before payday?", "Which bills could move to after payday?", "Where does my usual pace dip under the safety cushion?"];
-const STORAGE = "fa.chat.v1";
 
 function loadTurns(): ChatTurn[] {
   try {
-    const raw = localStorage.getItem(STORAGE);
+    const raw = localStorage.getItem(CHAT_KEY);
     const turns = raw ? (JSON.parse(raw) as ChatTurn[]) : [];
     // A reply cut off by a reload is dropped with its question, so the thread never ends in silence.
     while (turns.length && turns[turns.length - 1].role === "assistant" && !turns[turns.length - 1].content && !turns[turns.length - 1].error) turns.pop();
@@ -30,7 +30,7 @@ function loadTurns(): ChatTurn[] {
 
 function saveTurns(turns: ChatTurn[]) {
   try {
-    localStorage.setItem(STORAGE, JSON.stringify(turns.slice(-40)));
+    localStorage.setItem(CHAT_KEY, JSON.stringify(turns.slice(-40)));
   } catch {
     // storage may be unavailable
   }
@@ -199,7 +199,7 @@ export function Chat({ snapshot, onChanged }: { snapshot: Snapshot; onChanged: (
             patch({});
           } else if (e.type === "tool") {
             used.push({ name: e.name, rows: e.rows });
-            setTools([...used.map((u) => u.name)]);
+            setTools(used.map((u) => u.name));
             patch({});
           } else if (e.type === "done") {
             if (used.length === 0) used.push(...e.used.map((u) => ({ name: u.name, rows: u.rows })));
@@ -220,8 +220,9 @@ export function Chat({ snapshot, onChanged }: { snapshot: Snapshot; onChanged: (
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(260px, 340px)", gap: 14, alignItems: "start" }} className="chat-grid">
-      <style>{`@media (max-width: 860px) { .chat-grid { grid-template-columns: minmax(0, 1fr) !important; } }`}</style>
-      <section style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: "60vh" }}>
+      <style>{`@media (max-width: 860px) { .chat-grid { grid-template-columns: minmax(0, 1fr) !important; } .chat-main { min-height: 0 !important; } }`}</style>
+      {/* On a phone the box to type in is on the first screen: the conversation grows as it fills, not before. */}
+      <section className="chat-main" style={{ display: "flex", flexDirection: "column", gap: 10, minHeight: "60vh" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
           <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Chat</h1>
           <span style={{ fontSize: 13, color: "var(--ink-2)" }}>The advisor explains the app's plan. It cannot move money, send anything, or change a number.</span>

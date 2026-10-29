@@ -3,7 +3,7 @@
 // what the check had to cover. The trend of the gap between them is the story.
 import { money, monthDay, shortDate } from "../format";
 import type { Check } from "../paychecks";
-import { PartTip, Tip, useColours, useTip } from "./common";
+import { NoChecks, PartTip, Tip, useColours, useTip } from "./common";
 
 const W = 820;
 const H = 280;
@@ -12,7 +12,7 @@ export function Strips({ history, planned }: { history: Check[]; planned: Check[
   const colours = useColours();
   const { ref, tip, show, hide } = useTip();
   const checks = [...history, ...planned];
-  if (!checks.length) return <div style={{ fontSize: 13, color: "var(--ink-2)" }}>No checks yet: the strips fill in as paychecks arrive.</div>;
+  if (!checks.length) return <NoChecks />;
   const padL = 56;
   const padR = 12;
   const padT = 30;
@@ -35,7 +35,7 @@ export function Strips({ history, planned }: { history: Check[]; planned: Check[
         {ticks.map((t) => (
           <g key={t}>
             <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} stroke="var(--hairline)" />
-            <text x={padL - 6} y={y(t) + 4} fontSize="10.5" textAnchor="end" fill="var(--muted)">{money(t)}</text>
+            <text className="num" x={padL - 6} y={y(t) + 4} fontSize="10.5" textAnchor="end" fill="var(--muted)">{money(t)}</text>
           </g>
         ))}
         {history.length > 0 && planned.length > 0 && (
@@ -58,7 +58,7 @@ export function Strips({ history, planned }: { history: Check[]; planned: Check[
                 return <rect key={p.key} x={x} y={top} width={bw} height={h} rx={k === shown.length - 1 ? 4 : 0} fill={colours[p.key]} onMouseMove={(e) => show(e, <><div style={{ fontWeight: 800, marginBottom: 4 }}>The {shortDate(c.start)} check{c.actual ? "" : " (planned)"}</div><PartTip part={p} colour={colours[p.key]} of={c.inflow} /></>)} />;
               })}
               {c.short > 0 && <rect x={x} y={y(0)} width={bw} height={y(-c.short) - y(0)} rx={3} fill="var(--critical)" onMouseMove={(e) => show(e, <div><strong>Short {money(c.short)}</strong><div>The check did not cover the days until the next one.</div></div>)} />}
-              <text x={cx(i)} y={y(Math.max(c.inflow, acc)) - 6} fontSize="10.5" fontWeight="800" textAnchor="middle" fill="var(--ink)">{c.short > 0 ? `−${money(c.short)}` : money(c.parts.find((p) => p.key === "yours")?.amount ?? 0)}</text>
+              <text className="num" x={cx(i)} y={y(Math.max(c.inflow, acc)) - 6} fontSize="10.5" fontWeight="800" textAnchor="middle" fill="var(--ink)">{c.short > 0 ? `−${money(c.short)}` : money(c.parts.find((p) => p.key === "yours")?.amount ?? 0)}</text>
               <text x={cx(i)} y={H - padB + 16} fontSize="10.5" textAnchor="middle" fill="var(--muted)">{monthDay(c.start)}</text>
             </g>
           );

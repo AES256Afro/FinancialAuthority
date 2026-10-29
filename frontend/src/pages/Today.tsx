@@ -123,8 +123,8 @@ export function Today({ snapshot }: { snapshot: Snapshot }) {
       {s.brief.map((b, i) => (
         <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderTop: i === 0 ? 0 : "1px solid var(--surface-2)", flexWrap: "wrap" }}>
           <SeverityTag severity={b.severity} />
-          <div className={amountClass(b.text)} style={{ flex: "1 1 200px", minWidth: 0, fontSize: 14, fontWeight: b.severity === "info" ? 500 : 700 }}>{b.text}</div>
-          {b.link && b.link !== "/today" && <Link to={b.link} className="btn" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", minHeight: 36, padding: "6px 10px" }} aria-label={`Open ${placeName(b.link)}: ${b.text}`}>→</Link>}
+          <div className={amountClass(b.text)} style={{ flex: "1 1 120px", minWidth: 0, fontSize: 14, fontWeight: b.severity === "info" ? 500 : 700 }}>{b.text}</div>
+          {b.link && b.link !== "/today" && <Link to={b.link} className="btn" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", minHeight: 36, padding: "6px 10px", flexShrink: 0 }} aria-label={`Open ${placeName(b.link)}: ${b.text}`}>→</Link>}
         </div>
       ))}
     </section>

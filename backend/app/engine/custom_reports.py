@@ -60,6 +60,7 @@ def run_report(session: Session, today: date, *, rows: str = "category", period:
     totals: dict[str, float] = defaultdict(float)
     counts: dict[str, int] = defaultdict(int)
     by_month: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    once: dict[str, float] = defaultdict(float)  # each row once by month: the tag rows overlap, so their sum is not the total
     for t in txs:
         sign = -1.0 if t.is_income else 1.0
         parts: list[tuple[str, float]]
@@ -71,22 +72,26 @@ def run_report(session: Session, today: date, *, rows: str = "category", period:
             parts = [(accounts.get(t.account_id, "(unknown)"), t.amount)]
         else:
             tags = tags_of(t) or ["(no tag)"]
-            parts = [(tag, t.amount / len(tags)) for tag in tags]
+            parts = [(tag, t.amount) for tag in tags]  # a purchase belongs whole to each tag it carries; tags are not shares of it
+        hit = False
         for name, amount in parts:
             if only and name not in only:
                 continue
             totals[name] += sign * amount
             counts[name] += 1
             by_month[_month_key(t.date)][name] += sign * amount
+            hit = True
+        if hit:
+            once[_month_key(t.date)] += sign * t.amount
     months = []
     d = first.replace(day=1)
     while d <= last:
         months.append(_month_key(d))
         d = (d.replace(day=28) + timedelta(days=4)).replace(day=1)
-    grand = sum(totals.values())
+    grand = sum(once.values()) if rows == "tag" else sum(totals.values())
     items = sorted(({"name": n, "total": _money(v), "count": counts[n], "share": round(v / grand, 4) if grand else 0.0, "months": [_money(by_month[m].get(n, 0.0)) for m in months]} for n, v in totals.items()), key=lambda r: -r["total"])
     return {"rows": rows, "period": period, "from": first.isoformat(), "to": last.isoformat(), "months": months, "items": items, "total": _money(grand),
-            "month_totals": [_money(sum(by_month[m].values())) for m in months], "not_advice": NOT_ADVICE}
+            "month_totals": [_money(once[m] if rows == "tag" else sum(by_month[m].values())) for m in months], "not_advice": NOT_ADVICE}
 
 
 def saved(session: Session) -> list[dict[str, Any]]:
@@ -148,7 +153,7 @@ def tax_totals(session: Session, today: date, year: int | None = None) -> dict[s
     """What a tax return usually asks about: medical, giving, education, childcare, business, taxes paid, and
     anything the owner tagged "tax"."""
     year = year or (today.year - 1 if today.month <= 4 else today.year)
-    first, last = date(year, 1, 1), min(date(year, 12, 31), today)
+    first, last = date(year, 1, 1), min(date(year, 12, 31), max(today, date(year, 1, 1)))  # next year (the route allows it) is empty, not an error
     by_cat = run_report(session, today, rows="category", period="custom", start=first, end=last)
     tagged = run_report(session, today, rows="tag", period="custom", start=first, end=last, only=["tax"])
     lines = [i for i in by_cat["items"] if i["name"] in TAX_CATEGORIES]

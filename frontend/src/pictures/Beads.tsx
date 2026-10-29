@@ -3,10 +3,10 @@
 // new day against the lowest balance and drafts the request. The app never sends it and never moves anything.
 import { useRef, useState } from "react";
 import { api } from "../api";
-import { money, monthDay, ordinal, shortDate } from "../format";
+import { isoDay, money, monthDay, ordinal, shortDate } from "../format";
 import type { Bead } from "../paychecks";
 import { Said } from "../components/State";
-import { Tip, useColours, useTip } from "./common";
+import { NoChecks, Tip, useColours, useTip } from "./common";
 
 const W = 820;
 const H = 250;
@@ -30,7 +30,7 @@ function days(a: string, b: string): number {
 function addDays(iso: string, n: number): string {
   const d = new Date(`${iso}T12:00:00`);
   d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
+  return isoDay(d); // the local day: toISOString() would give the UTC one, a day off east of UTC+12
 }
 
 export function Beads({ spans }: { spans: { start: string; end: string; before?: boolean; items: Bead[] }[] }) {
@@ -46,7 +46,7 @@ export function Beads({ spans }: { spans: { start: string; end: string; before?:
   const svgRef = useRef<SVGSVGElement>(null);
   const { ref, tip, show, hide } = useTip();
   const span = spans[i];
-  if (!span) return null;
+  if (!span) return <NoChecks />;
   const padL = 70;
   const padR = 70;
   const total = Math.max(1, days(span.start, span.end));
@@ -111,7 +111,7 @@ export function Beads({ spans }: { spans: { start: string; end: string; before?:
         ))}
       </div>
       <div ref={ref} style={{ position: "relative", overflowX: "auto", touchAction: drag ? "none" : "auto" }} onMouseLeave={hide}>
-        <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={`Bills between ${shortDate(span.start)} and ${shortDate(span.end)}`} style={{ display: "block", maxWidth: 980, minWidth: 560, height: "auto", userSelect: "none" }}
+        <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={`Bills between ${shortDate(span.start)} and ${shortDate(span.end)}: ${items.length ? items.map((b) => `${b.name} ${money(b.amount)} on ${shortDate(b.date)}`).join(", ") : "none"}`} style={{ display: "block", maxWidth: 980, minWidth: 560, height: "auto", userSelect: "none" }}
           onPointerMove={(e) => drag && setDrag({ ...drag, x: svgX(e.clientX) })}
           onPointerUp={(e) => {
             if (!drag) return;
@@ -143,7 +143,7 @@ export function Beads({ spans }: { spans: { start: string; end: string; before?:
                 <circle cx={cx} cy={yl} r={r} fill={b.via_card ? "var(--surface)" : colour} stroke={b.via_card ? colour : "var(--surface)"} strokeWidth={b.via_card ? 3 : 2} />
                 {draggable && <circle cx={cx} cy={yl} r={r + 4} fill="none" stroke={colour} strokeWidth={1.2} strokeDasharray="2 3" />}
                 <text x={cx} y={nameY} fontSize="10.5" textAnchor="middle" fill="var(--ink-2)">{b.name.length > 16 ? `${b.name.slice(0, 15)}…` : b.name}</text>
-                <text x={cx} y={nameY + 12} fontSize="10.5" fontWeight="800" textAnchor="middle" fill="var(--ink)">{drag?.key === key ? monthDay(toDate(cx)) : money(b.amount)}</text>
+                <text className="num" x={cx} y={nameY + 12} fontSize="10.5" fontWeight="800" textAnchor="middle" fill="var(--ink)">{drag?.key === key ? monthDay(toDate(cx)) : money(b.amount)}</text>
               </g>
             );
           })}

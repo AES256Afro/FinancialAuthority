@@ -45,6 +45,16 @@ def auth_enabled() -> bool:
     return bool(settings.password)
 
 
+def open_install_problem() -> str | None:
+    """Why this copy must not start: FA_PASSWORD empty turns sign-in off, which is for a developer's machine only. An
+    installed copy (FA_INSTALL says how: boxpilot, compose, docker) would answer anyone who reaches its port as the
+    owner, so it refuses to start that way. The demo holds nothing real and may."""
+    if auth_enabled() or settings.demo or not settings.install:
+        return None
+    return (f"FA_PASSWORD is empty, so sign-in would be off on this {settings.install} install, and anyone who reaches the port would be the owner. "
+            "Set FA_PASSWORD (compose: in .env; BoxPilot generates it), or FA_DEMO=true to look around with the example household.")
+
+
 def _serializer() -> URLSafeTimedSerializer:
     secret = settings.signing_secret()
     return URLSafeTimedSerializer(secret, salt="fa-session-v1")
@@ -213,7 +223,9 @@ def principal_from_request(request: Request, session: Session) -> Principal | No
         key = lookup_key(session, token)
         if key is None:
             return None
-        return Principal(kind="key", name=key.name, scopes=key.scope_set & KEY_SCOPES, redaction=key.redaction)
+        # A key made by a second person is that person's credential: what it queues is theirs to approve, and
+        # the owner's standing allowances never cover it.
+        return Principal(kind="key", name=key.name, scopes=key.scope_set & KEY_SCOPES, redaction=key.redaction, person_id=key.person_id)
     if not auth_enabled():
         return Principal(kind="owner", name=settings.username, scopes=set(ALL_SCOPES), via_cookie=True)
     row = session_row(request, session)
@@ -292,6 +304,16 @@ def require_scope(scope: str):
         principal = principal_from_request(request, session)
         if principal is None:
             raise HTTPException(401, "Sign in, or send an API key")
+        if principal.kind == "key" and request.url.path.startswith("/api/"):
+            # Every REST call a key makes leaves a row, a refused one too (as a refused tool call does), so the log
+            # shows a key asking for more than it holds.
+            from . import services
+
+            refusal = _key_refusal(principal, scope, request.url.path)
+            services.audit(session, client=principal.name, client_kind="key", tool=f"rest {request.method} {request.url.path}"[:110] + ("_refused" if refusal else ""), args=dict(request.query_params), rows=0, redaction=principal.redaction)
+            if refusal:
+                raise HTTPException(403, refusal)
+            return principal
         if scope == "approve" and principal.kind not in ("owner", "person"):
             raise HTTPException(403, "Only a person signed in can approve")
         if principal.role == "shared" and request.url.path.rstrip("/") not in SHARED_PATHS:
@@ -305,15 +327,21 @@ def require_scope(scope: str):
                 from . import services
 
                 services.audit(session, client=principal.name, client_kind="person", tool=f"rest {request.method} {request.url.path}"[:120], args=dict(request.query_params), rows=0)
-        if principal.kind == "key" and request.url.path.startswith("/api/"):
-            if principal.redaction != "full" and request.url.path.rstrip("/") != "/api/v1/ha":
-                raise HTTPException(403, "This key hides some details, so it reads through the tools at /mcp, which hold them back; the REST routes show everything")
-            from . import services
-
-            services.audit(session, client=principal.name, client_kind="key", tool=f"rest {request.method} {request.url.path}"[:120], args=dict(request.query_params), rows=0, redaction=principal.redaction)
         return principal
 
     return dependency
+
+
+def _key_refusal(principal: Principal, scope: str, path: str) -> str | None:
+    """Why a key may not make this REST call, or None: the same checks a sign-in gets, in the same order, plus the
+    rule that a key which hides details reads through the tools, where the details are held back."""
+    if scope == "approve":
+        return "Only a person signed in can approve"
+    if not principal.has(scope):
+        return f"This needs the {scope} scope"
+    if principal.redaction != "full" and path.rstrip("/") != "/api/v1/ha":
+        return "This key hides some details, so it reads through the tools at /mcp, which hold them back; the REST routes show everything"
+    return None
 
 
 require_read = require_scope("read")
@@ -533,10 +561,10 @@ def join(body: JoinIn, request: Request, response: Response, session: Session = 
     problem = people.password_problem(person.username, body.password)
     if problem:
         raise HTTPException(400, problem)
-    person.password_hash, person.password_set_at = people.hash_password(body.password), utcnow()
-    person.invite_hash, person.invite_expires_at = "", None
-    session.add(person)
-    session.commit()
+    person = people.claim_invite(session, body.token, people.hash_password(body.password))  # used once: a second redemption at the same moment finds it gone
+    if person is None:
+        _record_failure(ip)
+        raise HTTPException(400, "This invitation has expired or was used already. Ask the person who sent it for a new one.")
     services.audit(session, client=person.display_name or person.username, client_kind="person", tool="joined", rows=0)
     clear_failures(ip)
     token = start_session(session, request, person)

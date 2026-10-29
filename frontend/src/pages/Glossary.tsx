@@ -1,6 +1,6 @@
 // The words the app uses, each in one or two plain sentences. Linked from the header on every page.
 import { useLocation } from "react-router-dom";
-import { useEffect } from "react";
+import { useJumpToHash } from "../components/State";
 
 // Each id stays as it is: other screens link to /glossary#<id>.
 export const TERMS: { id: string; word: string; means: string }[] = [
@@ -34,9 +34,7 @@ export const TERMS: { id: string; word: string; means: string }[] = [
 
 export function Glossary() {
   const { hash } = useLocation();
-  useEffect(() => {
-    if (hash) document.getElementById(hash.slice(1))?.scrollIntoView({ block: "start" });
-  }, [hash]);
+  useJumpToHash();
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 760 }}>
       <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Words</h1>

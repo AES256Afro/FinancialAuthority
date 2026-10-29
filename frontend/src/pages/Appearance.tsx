@@ -105,7 +105,7 @@ function Editor({ start, onSave, onCancel, said }: { start: Arrangement; onSave:
 }
 
 function ColourEditor({ ap, onSave, said }: { ap: AppearanceState; onSave: (colours: AppearanceState["colours"]) => Promise<boolean>; said: ReactNode }) {
-  const start = (mode: "light" | "dark") => ({ ...defaultRoleColours(mode), ...(ap.colours?.[mode] ?? {}) });
+  const start = (mode: "light" | "dark") => ({ ...defaultRoleColours(mode), ...ap.colours?.[mode] });
   const [light, setLight] = useState<Record<Role, string>>(start("light"));
   const [dark, setDark] = useState<Record<Role, string>>(start("dark"));
   const [busy, setBusy] = useState(false);

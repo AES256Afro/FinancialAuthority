@@ -266,6 +266,21 @@ def owed_advances(session: Session) -> list[dict]:
              "repaid": False, "source": f"advance:{a.id}", "sources": [f"advance:{a.id}"]} for a in rows]
 
 
+def _with_register(session: Session, pairs: list[dict]) -> list[dict]:
+    """The ledger's advance pairs, plus every advance on the register the ledger does not show (typed, confirmed
+    from the app's mail, or taken on an account the app cannot see): one picture, so the cycle and each app's
+    figures tell the same story as what stands outstanding."""
+    shown = {(p["provider"], p["taken_on"], round(p["amount"], 2)) for p in pairs}
+    out = list(pairs)
+    for a in session.exec(select(Advance).order_by(Advance.taken_on, Advance.id)).all():
+        if (a.provider, a.taken_on, round(a.amount, 2)) in shown:
+            continue
+        days = max(1, (a.repay_date - a.taken_on).days) if a.repaid else None
+        out.append({"provider": a.provider, "taken_on": a.taken_on, "amount": _money(a.amount), "fee": _money(a.fee), "repaid": a.repaid, "repay_date": a.repay_date, "days": days,
+                    "annual_rate": _money(a.fee / a.amount * 365.0 / days) if days and a.amount else None, "sources": [f"advance:{a.id}"]})
+    return out
+
+
 def borrowing_summary(session: Session, today: date) -> dict:
     """The light figures the snapshot, the brief and the watchlist carry: fees in the last ninety days, what
     stands outstanding (owed back, from the advances register), and what was taken since the last payday."""
@@ -275,13 +290,14 @@ def borrowing_summary(session: Session, today: date) -> dict:
     pay = _next_pay(session, today)
     next_payday = pay[0] if pay else None
     paired = pair_advances(advance_rows, next_payday, today, _scheduled_paydays(session, today))
+    all_pairs = _with_register(session, paired["pairs"])  # the register's advances the ledger does not show count too
     since = today - timedelta(days=WINDOW_DAYS)
-    fees = sum(p["fee"] for p in paired["pairs"] if p["taken_on"] >= since) + sum(t["amount"] for t in paired["tips"] if t["date"] >= since)
+    fees = sum(p["fee"] for p in all_pairs if p["taken_on"] >= since) + sum(t["amount"] for t in paired["tips"] if t["date"] >= since)
     outstanding = owed_advances(session)
     last_payday = previous_payday(pay[0], pay[1].cadence or "biweekly", today, income_days(pay[1])) if pay else None
-    since_payday = [p for p in paired["pairs"] if last_payday and p["taken_on"] >= last_payday and p["taken_on"] <= today]
+    since_payday = [p for p in all_pairs if last_payday and p["taken_on"] >= last_payday and p["taken_on"] <= today]
     return {
-        "fees_90d": _money(fees), "fees_month": _money(fees * 30.0 / WINDOW_DAYS), "advances_90d": len([p for p in paired["pairs"] if p["taken_on"] >= since]),
+        "fees_90d": _money(fees), "fees_month": _money(fees * 30.0 / WINDOW_DAYS), "advances_90d": len([p for p in all_pairs if p["taken_on"] >= since]),
         "outstanding_total": _money(sum(p["amount"] for p in outstanding)), "outstanding": len(outstanding),
         "since_payday": {"advances": len(since_payday), "advanced": _money(sum(p["amount"] for p in since_payday)), "providers": sorted({p["provider"] for p in since_payday})},
     }
@@ -397,8 +413,9 @@ def borrowing_overview(session: Session, today: date) -> dict:
     pay = _next_pay(session, today)
     next_payday = pay[0] if pay else None
     paired = pair_advances(advance_rows, next_payday, today, _scheduled_paydays(session, today))
+    all_pairs = _with_register(session, paired["pairs"])  # the register's advances the ledger does not show count too
     since = today - timedelta(days=WINDOW_DAYS)
-    pairs = [p for p in paired["pairs"] if p["taken_on"] >= since]
+    pairs = [p for p in all_pairs if p["taken_on"] >= since]
     tips = [t for t in paired["tips"] if t["date"] >= since]
     fees = sum(p["fee"] for p in pairs) + sum(t["amount"] for t in tips)
     advanced = sum(p["amount"] for p in pairs)
@@ -448,8 +465,8 @@ def borrowing_overview(session: Session, today: date) -> dict:
             guard += 1
         for i, pd in enumerate(paydays):
             start = paydays[i - 1] if i > 0 else since
-            taken = [p for p in paired["pairs"] if start <= p["taken_on"] < pd]
-            repaid_on = [p for p in paired["pairs"] if p["repaid"] and p["repay_date"] == pd]
+            taken = [p for p in all_pairs if start <= p["taken_on"] < pd]
+            repaid_on = [p for p in all_pairs if p["repaid"] and p["repay_date"] == pd]
             cycle.append({"payday": pd.isoformat(), "advances": len(taken), "advanced": _money(sum(p["amount"] for p in taken)), "repaid_on_payday": _money(sum(p["amount"] + p["fee"] for p in repaid_on)), "fees": _money(sum(p["fee"] for p in repaid_on))})
     advances_per_period = [c["advanced"] for c in cycle if c["payday"] <= today.isoformat()] or [c["advanced"] for c in cycle]
     typical_period = _money(statistics.median(advances_per_period)) if advances_per_period else 0.0

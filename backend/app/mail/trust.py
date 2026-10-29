@@ -45,9 +45,30 @@ def org_domain(address_or_domain: str) -> str:
     return ".".join(labels[-2:])
 
 
+# Letters from other alphabets that draw like a Latin one, as a forger writes "Capitаl One" with a Cyrillic а so the
+# name reads the same to the owner and nothing to the brand check. Folded to the letter they look like.
+CONFUSABLE = str.maketrans({
+    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "х": "x", "у": "y", "і": "i", "ј": "j", "ѕ": "s", "һ": "h", "ԁ": "d",
+    "А": "a", "В": "b", "Е": "e", "К": "k", "М": "m", "Н": "h", "О": "o", "Р": "p", "С": "c", "Т": "t", "Х": "x", "У": "y",
+    "α": "a", "ο": "o", "ρ": "p", "ι": "i", "ν": "v", "Α": "a", "Β": "b", "Ε": "e", "Η": "h", "Ι": "i", "Κ": "k", "Μ": "m",
+    "Ν": "n", "Ο": "o", "Ρ": "p", "Τ": "t", "Υ": "y", "Χ": "x", "З": "3", "І": "i",
+})
+# Characters that take no space on the screen: a zero-width space inside a word hides it from a word match.
+INVISIBLE = re.compile(r"[​-‏⁠-⁤﻿­͏᠎]")
+
+
+def fold(name: str) -> str:
+    """A display name as the owner reads it: full-width and other compatibility forms to plain letters (NFKC),
+    invisible characters out, look-alike letters to the Latin ones they draw like, lower case."""
+    import unicodedata
+
+    plain = unicodedata.normalize("NFKC", INVISIBLE.sub("", name or ""))
+    return plain.translate(CONFUSABLE).lower()
+
+
 def brand_of(name: str) -> str | None:
     """The common sender a display name claims to be, if any: "Capital One" in "Capital One Alerts"."""
-    low = f" {re.sub(r'[^a-z0-9&]+', ' ', (name or '').lower())} "
+    low = f" {re.sub(r'[^a-z0-9&]+', ' ', fold(name))} "
     for brand in sorted(KNOWN, key=len, reverse=True):
         if f" {brand} " in low:
             return brand

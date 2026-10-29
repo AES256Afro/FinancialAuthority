@@ -38,6 +38,7 @@ ACCESS_SECONDS = 24 * 3600
 REFRESH_SECONDS = 90 * 24 * 3600
 CODE_SECONDS = 600
 VALID_SCOPES = ["read", "confirm"]
+BAD_REDIRECT_SCHEMES = {"", "javascript", "data", "vbscript", "file", "blob", "about"}
 
 
 def issuer() -> str:
@@ -91,6 +92,10 @@ class AuthorityProvider(OAuthAuthorizationServerProvider[AuthorizationCode, Refr
         uris = [str(u) for u in (client_info.redirect_uris or [])]
         if len(uris) > 5 or any(len(u) > 512 for u in uris) or len(client_info.client_name or "") > 120:
             raise RegistrationError(error="invalid_client_metadata", error_description="At most five redirect addresses of 512 characters, and a name of 120")
+        # The browser is sent to the callback after Allow: a web address, a local http one, or an app's own
+        # scheme. A script, a data address or a file is never a place to send anyone.
+        if any((urlparse(u).scheme or "").lower() in BAD_REDIRECT_SCHEMES for u in uris):
+            raise RegistrationError(error="invalid_redirect_uri", error_description="A redirect address is https, http on this computer, or the app's own scheme")
         with session_scope() as session:
             # An app that registered and was never allowed within the hour is forgotten; it holds nothing.
             unused = session.exec(select(OAuthClient).where(OAuthClient.created_at < utcnow() - _td(hours=1), OAuthClient.last_used_at == None, OAuthClient.revoked_at == None)).all()  # noqa: E711
@@ -134,14 +139,19 @@ class AuthorityProvider(OAuthAuthorizationServerProvider[AuthorizationCode, Refr
             )
 
     async def exchange_authorization_code(self, client: OAuthClientInformationFull, authorization_code: AuthorizationCode) -> OAuthToken:
+        from mcp.server.auth.provider import TokenError
+        from sqlalchemy import update
+
         with session_scope() as session:
-            row = session.exec(select(OAuthCode).where(OAuthCode.code_hash == _hash(authorization_code.code))).first()
-            if row is not None:
-                row.used = True
-                session.add(row)
-            tokens = _issue(session, client.client_id, authorization_code.scopes, authorization_code.resource)
-            session.commit()
-            return tokens
+            # The code is claimed in one statement: two exchanges in the same instant both passed the SDK's unused
+            # check, and only the one that claims it here gets tokens.
+            claimed = session.exec(update(OAuthCode).where(OAuthCode.code_hash == _hash(authorization_code.code), OAuthCode.used == False, OAuthCode.client_id == client.client_id).values(used=True))  # noqa: E712
+            if claimed.rowcount == 1:
+                tokens = _issue(session, client.client_id, authorization_code.scopes, authorization_code.resource)
+                session.commit()
+                return tokens
+            session.rollback()
+        raise TokenError("invalid_grant", "the authorization code was used already")  # raised outside the session: the SDK's error is a frozen dataclass
 
     async def load_refresh_token(self, client: OAuthClientInformationFull, refresh_token: str) -> RefreshToken | None:
         with session_scope() as session:
@@ -161,15 +171,21 @@ class AuthorityProvider(OAuthAuthorizationServerProvider[AuthorizationCode, Refr
             return RefreshToken(token=refresh_token, client_id=row.client_id, scopes=row.scopes.split(), expires_at=int(row.expires_at.replace(tzinfo=timezone.utc).timestamp()) if row.expires_at else None, resource=row.resource, subject="owner")
 
     async def exchange_refresh_token(self, client: OAuthClientInformationFull, refresh_token: RefreshToken, scopes: list[str]) -> OAuthToken:
+        from mcp.server.auth.provider import TokenError
+        from sqlalchemy import update
+
         with session_scope() as session:
-            old = session.exec(select(TokenRow).where(TokenRow.token_hash == _hash(refresh_token.token))).first()
-            if old is not None:
-                old.revoked_at = utcnow()
-                session.add(old)
-            granted = [s for s in (scopes or refresh_token.scopes) if s in refresh_token.scopes] or refresh_token.scopes
-            tokens = _issue(session, client.client_id, granted, refresh_token.resource)
-            session.commit()
-            return tokens
+            # The refresh token is spent in one statement, as the authorization code is: two refreshes in the same
+            # instant both passed the load (the row was live for both), and only the one that spends it here gets a
+            # new pair. The other is refused, and is the retry the reuse rule above forgives within its minute.
+            spent = session.exec(update(TokenRow).where(TokenRow.token_hash == _hash(refresh_token.token), TokenRow.kind == "refresh", TokenRow.client_id == client.client_id, TokenRow.revoked_at == None).values(revoked_at=utcnow()))  # noqa: E711
+            if spent.rowcount == 1:
+                granted = [s for s in (scopes or refresh_token.scopes) if s in refresh_token.scopes] or refresh_token.scopes
+                tokens = _issue(session, client.client_id, granted, refresh_token.resource)
+                session.commit()
+                return tokens
+            session.rollback()
+        raise TokenError("invalid_grant", "the refresh token was used already")
 
     async def load_access_token(self, token: str) -> AccessToken | None:
         with session_scope() as session:
@@ -177,7 +193,9 @@ class AuthorityProvider(OAuthAuthorizationServerProvider[AuthorizationCode, Refr
                 key = auth.lookup_key(session, token)
                 if key is None:
                     return None
-                return AccessToken(token=token, client_id=key.name, scopes=sorted(key.scope_set & auth.KEY_SCOPES), expires_at=None, resource=issuer(), subject="owner", claims={"redaction": key.redaction, "kind": "key", "name": key.name})
+                # person_id names the second person who made the key, so a send it queues through a tool is theirs.
+                return AccessToken(token=token, client_id=key.name, scopes=sorted(key.scope_set & auth.KEY_SCOPES), expires_at=None, resource=issuer(), subject="owner",
+                                   claims={"redaction": key.redaction, "kind": "key", "name": key.name, "person_id": key.person_id})
             row = session.exec(select(TokenRow).where(TokenRow.token_hash == _hash(token), TokenRow.kind == "access")).first()
             if row is None or row.revoked_at is not None or (row.expires_at and row.expires_at.replace(tzinfo=timezone.utc) < datetime.now(timezone.utc)):
                 return None

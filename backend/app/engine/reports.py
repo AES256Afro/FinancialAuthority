@@ -8,6 +8,7 @@ from datetime import date, timedelta
 
 from sqlmodel import Session, select
 
+from ..clock import local_date
 from ..models import Account, Advance, Debt, InstallmentPlan, Transaction
 
 NOT_ADVICE = "Computed by the engine from the ledger and the registers. Not financial advice."
@@ -92,7 +93,7 @@ def spending_summary(session: Session, today: date, *, months: int = 6, by: str 
 
 def _account_out(a: Account, today: date) -> dict:
     return {"id": a.id, "name": a.name, "institution": a.institution, "kind": a.kind, "balance": a.balance, "balance_at": a.balance_at.isoformat() if a.balance_at else None, "connector": a.connector, "source": f"account:{a.id}",
-            "age_days": max(0, (today - a.balance_at.date()).days) if a.balance_at else None}
+            "age_days": max(0, (today - local_date(a.balance_at)).days) if a.balance_at else None}  # the owner's day, not UTC's
 
 
 def owed(session: Session, today: date, accounts: list[Account] | None = None) -> dict:

@@ -83,7 +83,7 @@ export function Approvals({ onChanged, onCount }: { onChanged?: () => void; onCo
   if (!data) return <Loading what="the emails waiting for your OK" card={false} />;
   if (pending.length === 0 && others.length === 0 && recent.length === 0 && data.allowances.length === 0 && !note) return null;
   return (
-    <section aria-labelledby="approvals-title" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+    <section id="approvals" aria-labelledby="approvals-title" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <h2 id="approvals-title" className="lab" style={{ margin: 0 }}>Emails waiting for your OK · {pending.length}</h2>
       {pending.map((a) => (
         <div key={a.id} className="card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>

@@ -19,7 +19,25 @@ log = logging.getLogger(__name__)
 router = APIRouter(tags=["plaid"])
 LIMIT = 120  # notices an hour per address
 MAX_BODY = 64 * 1024
+MAX_ADDRESSES = 5000  # addresses the rate table remembers; a crowd of strangers never grows it without end
 _hits: dict[str, list[float]] = {}
+
+
+def allow(ip: str, now: float) -> bool:
+    """Whether this address may send another notice now. The table forgets addresses quiet for an hour, and when a
+    crowd fills it, the least recently seen ones first, so it stays small whoever knocks."""
+    recent = [t for t in _hits.get(ip, []) if now - t < 3600]
+    if len(recent) >= LIMIT:
+        _hits[ip] = recent
+        return False
+    _hits[ip] = [*recent, now]
+    if len(_hits) > MAX_ADDRESSES:
+        for key in [k for k, v in _hits.items() if not v or now - v[-1] > 3600]:
+            _hits.pop(key, None)
+        if len(_hits) > MAX_ADDRESSES:
+            for key in sorted(_hits, key=lambda k: _hits[k][-1])[: len(_hits) - MAX_ADDRESSES]:
+                _hits.pop(key, None)
+    return True
 
 
 def _fetch_key(kid: str) -> dict:
@@ -59,12 +77,8 @@ def _sync(link_id: int) -> None:
 
 @router.post("/api/plaid/webhook", include_in_schema=False)
 async def plaid_webhook_route(request: Request) -> JSONResponse:
-    ip = auth._client_ip(request)
-    now = time.time()
-    recent = [t for t in _hits.get(ip, []) if now - t < 3600]
-    if len(recent) >= LIMIT:
+    if not allow(auth._client_ip(request), time.time()):
         return JSONResponse({"ok": False}, status_code=429)
-    _hits[ip] = [*recent, now]
     token = request.headers.get("plaid-verification", "")
     if not token:
         return JSONResponse({"ok": False}, status_code=401)

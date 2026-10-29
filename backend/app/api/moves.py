@@ -30,10 +30,12 @@ def list_moves(session: Session = Depends(get_session), _: auth.Principal = Depe
     accounts = session.exec(select(Account).where(Account.active == True)).all()  # noqa: E712
     names = {a.id: a.name for a in accounts}
     moves = session.exec(select(AccountMove).order_by(AccountMove.id.desc())).all()
+    by_move: dict[int, list[MoveItem]] = {}
+    for item in session.exec(select(MoveItem).where(MoveItem.decision == "move")).all():  # one read for every move, not one a move
+        by_move.setdefault(item.move_id, []).append(item)
     out = []
     for m in moves:
-        items = session.exec(select(MoveItem).where(MoveItem.move_id == m.id)).all()
-        moving = [i for i in items if i.decision == "move"]
+        moving = by_move.get(m.id, [])
         out.append({"id": m.id, "name": m.name, "status": m.status, "source": names.get(m.source_account_id, "?"), "target": names.get(m.target_account_id or -1, m.target_name),
                     "started_on": m.started_on.isoformat(), "finish_by": m.finish_by.isoformat() if m.finish_by else None,
                     "moving": len(moving), "confirmed": len([i for i in moving if i.status == "confirmed"])})

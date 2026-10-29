@@ -47,6 +47,32 @@ def set_today_override(value: date | None) -> None:
     _today_override = value
 
 
+WRITER_WAIT = 3.0  # seconds a register write waits for a running sync, detection or import before answering 409
+
+
+def under_writer(fn):  # noqa: ANN001, ANN201
+    """A route that writes a register (a bill, an income, a plan, a goal, a home, a rule) runs under the writer lock
+    the jobs take, so a detection or a sync mid-run never reads the registers half-changed and adds what the route is
+    adding (a bill typed during a detection came out twice). It waits a short while for a running job, then answers
+    409 rather than holding the request open; the owner tries again in a moment. Placed under the route decorator.
+    It is a decorator and not a dependency with yield because FastAPI enters and leaves such a dependency on
+    threadpool threads of its own, and the lock belongs to the thread that took it."""
+    import functools
+
+    from ..jobs import writing
+
+    @functools.wraps(fn)
+    def inner(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        if not writing._lock.acquire(timeout=WRITER_WAIT):
+            raise HTTPException(409, "A sync, a detection or an import is running; try again in a moment.")
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            writing._lock.release()
+
+    return inner
+
+
 # ---- accounts and transactions -------------------------------------------------------------
 
 
@@ -377,8 +403,12 @@ class SettingIn(BaseModel):
 def write_setting(key: str, body: SettingIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     if key not in DEFAULTS or key in ("imports.processed", "selfcheck", "appearance"):
         raise HTTPException(400, "That setting cannot be written here; appearance is saved on Settings › Appearance, which checks it")
-    if key == "buffer" and not isinstance(body.value, (int, float)):
-        raise HTTPException(400, "buffer must be a number")
+    if key == "buffer":
+        import math
+
+        # A finite amount in a sane range: NaN or infinity would poison every figure the engine works out from it.
+        if isinstance(body.value, bool) or not isinstance(body.value, (int, float)) or not math.isfinite(body.value) or not 0 <= body.value <= 1_000_000:
+            raise HTTPException(400, "buffer must be an amount between 0 and 1,000,000")
     set_setting(session, key, body.value)
     return {"ok": True, key: get_setting(session, key)}
 

@@ -17,7 +17,7 @@ from ..engine import business as biz
 from ..engine import taxcenter
 from ..engine import taxrules as R
 from ..models import Account, Business, Invoice, Transaction, Trip
-from .routes import today
+from .routes import today, under_writer
 
 router = APIRouter(prefix="/api/v1/business", tags=["business"])
 tax_router = APIRouter(prefix="/api/v1/taxes", tags=["taxes"])
@@ -65,6 +65,7 @@ def _apply(session: Session, b: Business, body: BusinessIn) -> None:
 
 
 @router.post("")
+@under_writer
 def add_business(body: BusinessIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     b = Business(name=body.name)
     _apply(session, b, body)
@@ -76,6 +77,7 @@ def add_business(body: BusinessIn, session: Session = Depends(get_session), prin
 
 
 @router.put("/{business_id}")
+@under_writer
 def change_business(business_id: int, body: BusinessIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     b = _get(session, business_id)
     _apply(session, b, body)
@@ -89,6 +91,7 @@ class TickIn(BaseModel):
 
 
 @router.post("/setup/{step}")
+@under_writer
 def tick_step(step: str, body: TickIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     if step not in {s["id"] for s in biz.guide_steps(None, {}) + biz.guide_steps(Business(name="x", kind="llc"), {})}:
         raise HTTPException(404, "No such step")
@@ -113,6 +116,7 @@ class AnswerIn(BaseModel):
 
 
 @router.post("/finder/answer")
+@under_writer
 def answer_finder(body: AnswerIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     try:
         said = biz.answer_finder(session, body.ids, body.answer, body.business_id, body.tax_line, body.share)
@@ -130,6 +134,7 @@ class MarkIn(BaseModel):
 
 
 @router.post("/mark")
+@under_writer
 def mark(body: MarkIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     if body.business_id is not None:
         _get(session, body.business_id)
@@ -196,6 +201,7 @@ def invoices(business_id: int, session: Session = Depends(get_session), _: auth.
 
 
 @router.post("/{business_id}/invoices")
+@under_writer
 def add_invoice(business_id: int, body: InvoiceIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     _get(session, business_id)
     i = Invoice(business_id=business_id, issued_on=body.issued_on)
@@ -210,6 +216,7 @@ def add_invoice(business_id: int, body: InvoiceIn, session: Session = Depends(ge
 
 
 @router.put("/invoices/{invoice_id}")
+@under_writer
 def change_invoice(invoice_id: int, body: InvoiceIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     i = session.get(Invoice, invoice_id)
     if i is None:
@@ -228,6 +235,7 @@ class PaidIn(BaseModel):
 
 
 @router.post("/invoices/{invoice_id}/paid")
+@under_writer
 def invoice_paid(invoice_id: int, body: PaidIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     i = session.get(Invoice, invoice_id)
     if i is None:
@@ -251,6 +259,7 @@ def invoice_paid(invoice_id: int, body: PaidIn, session: Session = Depends(get_s
 
 
 @router.delete("/invoices/{invoice_id}")
+@under_writer
 def remove_invoice(invoice_id: int, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     i = session.get(Invoice, invoice_id)
     if i is None:
@@ -297,6 +306,7 @@ def trips(business_id: int, year: int | None = None, session: Session = Depends(
 
 
 @router.post("/{business_id}/trips")
+@under_writer
 def add_trip(business_id: int, body: TripIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     _get(session, business_id)
     if body.day > today():
@@ -309,6 +319,7 @@ def add_trip(business_id: int, body: TripIn, session: Session = Depends(get_sess
 
 
 @router.delete("/trips/{trip_id}")
+@under_writer
 def remove_trip(trip_id: int, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     t = session.get(Trip, trip_id)
     if t is None:

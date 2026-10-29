@@ -255,7 +255,14 @@ class PlaidConnector(Connector):
                     ok = False
                     if isinstance(error, PlaidError) and error.code in SIGN_IN_CODES:
                         link.needs_login = True
-                    message = str(error) if isinstance(error, PlaidError) else f"{type(error).__name__}: {error}"
+                    if isinstance(error, PlaidError):
+                        message = str(error)
+                    elif isinstance(error, httpx.HTTPError):
+                        # The network, not the bank: a timeout, a refused connection, a dropped reply. Plain words on the
+                        # link, and the next link is read; the next sync tries this one again.
+                        message = f"Plaid could not be reached ({type(error).__name__.replace('Error', '').lower() or 'network'}); the next sync tries again"
+                    else:
+                        message = f"{type(error).__name__}: {error}"
                     finish_link(session, link, ok=False, error=message[:300])
                     notes.append(f"{link.institution}: {message[:120]}")
         flush(session)

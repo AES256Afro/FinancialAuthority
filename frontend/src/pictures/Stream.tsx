@@ -2,7 +2,7 @@
 // its band thins and what is yours widens; the shape shows the direction without a single number.
 import { money } from "../format";
 import type { Month } from "../paychecks";
-import { PartTip, Tip, useColours, useTip } from "./common";
+import { NoChecks, PartTip, Tip, useColours, useTip } from "./common";
 
 const W = 820;
 const H = 280;
@@ -11,7 +11,8 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 export function Stream({ months }: { months: Month[] }) {
   const colours = useColours();
   const { ref, tip, show, hide } = useTip();
-  if (months.length < 2) return null;
+  if (!months.length) return <NoChecks />;
+  if (months.length < 2) return <NoChecks text="The stream needs two months of checks to draw a shape; the table shows the one it has." />;
   const keys = months[0].parts.map((p) => p.key).filter((k) => k !== "aside");
   const padL = 56;
   const padR = 150;
@@ -42,7 +43,7 @@ export function Stream({ months }: { months: Month[] }) {
         {ticks.map((t) => (
           <g key={t}>
             <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} stroke="var(--hairline)" />
-            <text x={padL - 6} y={y(t) + 4} fontSize="10.5" textAnchor="end" fill="var(--muted)">{money(t)}</text>
+            <text className="num" x={padL - 6} y={y(t) + 4} fontSize="10.5" textAnchor="end" fill="var(--muted)">{money(t)}</text>
           </g>
         ))}
         {layers.map(({ k, lower, upper }) => {
@@ -64,7 +65,7 @@ export function Stream({ months }: { months: Month[] }) {
                   const part = months[i].parts.find((p) => p.key === k);
                   if (part) show(e, <><div style={{ fontWeight: 800, marginBottom: 4 }}>{MONTHS[Number(months[i].month.slice(5, 7)) - 1]} {months[i].month.slice(0, 4)}</div><PartTip part={part} colour={colours[k]} of={months[i].income} /></>);
                 }} />
-              {thick > 9 && <text x={W - padR + 8} y={mid + 4} fontSize="11.5" fontWeight="700" fill="var(--ink)">{label} <tspan fill="var(--ink-2)" fontWeight="600">{money(lastAmount)}</tspan></text>}
+              {thick > 9 && <text className="num" x={W - padR + 8} y={mid + 4} fontSize="11.5" fontWeight="700" fill="var(--ink)">{label} <tspan fill="var(--ink-2)" fontWeight="600">{money(lastAmount)}</tspan></text>}
             </g>
           );
         })}

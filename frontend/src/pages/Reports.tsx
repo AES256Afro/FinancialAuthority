@@ -1,11 +1,11 @@
 // Reports: spending by month beside income, the categories with this month against the usual, the top
 // merchants; then a report you build and save, groups of categories, the year in review and tax time.
 // Every number is the engine's; the charts draw them and add nothing.
-import { useEffect, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { useApi } from "../api";
 import { ReportBuilder, TaxTime, YearInReview } from "../components/ReportBuilder";
-import { Failed, Loading } from "../components/State";
+import { Failed, Loading, useJumpToHash, useWidth } from "../components/State";
 import { money } from "../format";
 
 const JUMPS = [
@@ -48,7 +48,9 @@ function MonthTable({ months }: { months: Spending["months"] }) {
 }
 
 function MonthBars({ months }: { months: Spending["months"] }) {
-  const w = 640;
+  // Drawn one unit per pixel of the box it sits in, so the month names and the figures read on a phone.
+  const box = useRef<HTMLDivElement>(null);
+  const w = Math.max(280, Math.min(720, useWidth(box, 640)));
   const h = 200;
   const pad = { l: 8, r: 8, t: 26, b: 26 };
   const max = Math.max(1, ...months.map((m) => Math.max(m.spent, m.income)));
@@ -57,7 +59,8 @@ function MonthBars({ months }: { months: Spending["months"] }) {
   const y = (v: number) => pad.t + (h - pad.t - pad.b) * (1 - v / max);
   const last = months.length - 1;
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} width="100%" role="img" aria-label="Spent and income by month" style={{ display: "block", maxWidth: 720 }}>
+    <div ref={box} style={{ width: "100%", maxWidth: 720 }}>
+    <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h} role="img" aria-label="Spent and income by month" style={{ display: "block", maxWidth: "100%" }}>
       {[0.5, 1].map((f) => <line key={f} x1={pad.l} x2={w - pad.r} y1={y(max * f)} y2={y(max * f)} stroke="var(--hairline)" strokeWidth={1} />)}
       {months.map((m, i) => {
         const cx = pad.l + slot * i + slot / 2;
@@ -78,6 +81,7 @@ function MonthBars({ months }: { months: Spending["months"] }) {
       })}
       <line x1={pad.l} x2={w - pad.r} y1={y(0)} y2={y(0)} stroke="var(--ink-2)" strokeWidth={1} />
     </svg>
+    </div>
   );
 }
 
@@ -90,10 +94,7 @@ export function Reports() {
   const [table, setTable] = useState(false);
   const groupMax = Math.max(1, ...(data?.groups.map((g) => Math.max(g.this_month, g.average)) ?? [1]));
   const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ block: "start", behavior: "smooth" });
-  const { hash } = useLocation();
-  useEffect(() => {
-    if (hash) document.getElementById(hash.slice(1))?.scrollIntoView({ block: "start" });
-  }, [hash]);
+  useJumpToHash();
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 980 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>

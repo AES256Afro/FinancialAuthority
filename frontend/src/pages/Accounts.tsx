@@ -2,11 +2,11 @@
 // what you owe. Below them, what you own beyond the accounts (a home, a car) at the value you give it. The engine's
 // numbers; nothing computed here. Once someone else signs in too, each account is marked shared or whose it is,
 // with a small control to change the mark.
-import { useEffect, useState, type CSSProperties } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { useState, type CSSProperties } from "react";
+import { Link } from "react-router-dom";
 import { api, useApi, type ApiError, type Loaded } from "../api";
 import { ConfirmButton } from "../components/ConfirmButton";
-import { Empty, Failed, Loading, Said } from "../components/State";
+import { Empty, Failed, Loading, Said, useJumpToHash } from "../components/State";
 import { StatusPill } from "../components/Status";
 import { localToday, money, parseIso, parseMoney, shortDate, when } from "../format";
 import { keyToMark, markKey, possessive, roleOf, type MePerson, type PeopleOut, type SharedOut } from "../types-people";
@@ -537,10 +537,7 @@ export function Accounts() {
   const { data, error, reload } = useApi<Overview>("/api/v1/accounts/overview");
   const assets = useApi<Assets>("/api/v1/assets");
   const { marks, error: marksError, retry: marksRetry } = useMarks();
-  const { hash } = useLocation();
-  useEffect(() => {
-    if (hash) document.getElementById(hash.slice(1))?.scrollIntoView({ block: "start", behavior: "smooth" });
-  }, [hash, data, assets.data]);
+  useJumpToHash(data && assets.data);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 980 }}>

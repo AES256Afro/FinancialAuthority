@@ -141,9 +141,9 @@ def test_wrong_password_is_reported_not_raised():
     with Session(engine) as session:
         account = add_account(session, password="wrong")
         result = connector().sync(session, today=TODAY)
-        assert not result.ok and "LOGIN failed" in result.summary
+        assert not result.ok and "refused the sign-in" in result.summary  # in plain words, with when it tries again
         session.refresh(account)
-        assert "LOGIN failed" in account.last_error
+        assert "refused the sign-in" in account.last_error and "Trying again at" in account.last_error
 
 
 def test_mail_api_and_fact_confirmation(owner: TestClient, monkeypatch):

@@ -6,7 +6,7 @@ import { api, useApi } from "../api";
 import { DEMO } from "../demo/shim";
 import { when } from "../format";
 import { HOURS, hourWord, ReminderSwitches, ShortcutRecipe, ThisDevice } from "../components/Reach";
-import { Failed, Loading, Said } from "../components/State";
+import { Failed, Loading, Said, useJumpToHash } from "../components/State";
 import { Where } from "../components/Where";
 import type { ReceiptReminders } from "../types-receipts";
 
@@ -91,6 +91,7 @@ function ReceiptReminderSwitches() {
 export function Notifications() {
   const state = useApi<PushState>("/api/v1/push");
   const { data, reload, error } = state;
+  useJumpToHash(data);
   const [form, setForm] = useState({ kind: "off", url: "", topic: "", token: "", brief_hour: 7 });
   const [note, setNote] = useState<{ text: string; tone: "info" | "error" } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -132,7 +133,7 @@ export function Notifications() {
       <ThisDevice />
       <ReminderSwitches />
       <ReceiptReminderSwitches />
-      <section className="card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+      <section id="push" className="card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
         <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>Or send through ntfy or Gotify</h2>
         {error && !data && <Failed error={error} what="the ntfy and Gotify settings" onRetry={reload} card={false} />}
         {!data && !error && <Loading what="the ntfy and Gotify settings" card={false} />}

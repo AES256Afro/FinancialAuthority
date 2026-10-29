@@ -11,7 +11,7 @@ import { ConfirmButton } from "../components/ConfirmButton";
 import { MovePlan } from "../components/MovePlan";
 import { Empty, Failed, Loading, Said, useWidth } from "../components/State";
 import { StatusPill } from "../components/Status";
-import { localToday, money, monthDay, parseIso, parseMoney, shortDate } from "../format";
+import { amountClass, localToday, money, monthDay, parseIso, parseMoney, shortDate } from "../format";
 import { palette } from "../looks";
 import { inkOn } from "../paychecks";
 import { getPrefs } from "../prefs";
@@ -685,7 +685,7 @@ function WhatIf() {
             </div>
             {result.verdict === "short" && result.first_passes && <div style={{ fontSize: 14, fontWeight: 700, color: "var(--safe-ink)" }}>first date that fits: {shortDate(result.first_passes)}</div>}
           </div>
-          <div style={{ fontSize: 14 }}>{result.summary}</div>
+          <div className={amountClass(result.summary)} style={{ fontSize: 14 }}>{result.summary}</div>
           <div style={{ display: "flex", gap: 18, flexWrap: "wrap", fontSize: 13, color: "var(--ink-2)" }}>
             <span>monthly change <strong className="num" style={{ color: result.monthly_change > 0 ? "var(--critical-ink)" : "var(--safe-ink)" }}>{result.monthly_change >= 0 ? "+" : ""}{money(result.monthly_change)}</strong></span>
             <span>one-offs <strong className="num">{money(result.one_offs_total)}</strong></span>

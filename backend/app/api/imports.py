@@ -65,8 +65,15 @@ def preview(file: UploadFile = File(...), kind: str = Form("checking"), _: auth.
         found = _statement(raw, kind)
         return _serial({**found, "filename": file.filename or "statement.pdf", "sample": found["rows"][:12], "rows": None})
     text = raw.decode("utf-8-sig", errors="replace")
-    found = detect(text)
+    found = _detect(text)
     return _serial({**found, "filename": file.filename or "upload", "rows": None, "positions": found.get("positions", [])[:5] if found["kind"] == "ofx" else None})
+
+
+def _detect(text: str) -> dict:
+    try:
+        return detect(text)
+    except ValueError as error:  # a CSV the reader refuses (a field past its limit) is a bad file, not a crash
+        raise HTTPException(400, str(error)) from error
 
 
 @router.post("/paystub")
@@ -92,7 +99,7 @@ def import_file(
         found, text = _statement(raw, kind), ""
     else:
         text = raw.decode("utf-8-sig", errors="replace")
-        found = detect(text)
+        found = _detect(text)
     if found["kind"] == "statement":
         rows = found["rows"]
         name = account_name.strip() or "Imported statement"
@@ -162,7 +169,7 @@ def import_holdings_file(account_id: int, file: UploadFile = File(...), as_of: s
     if account is None or account.kind != "investment":
         raise HTTPException(404, "No such investment account")
     text = _text(file)
-    found = detect(text)
+    found = _detect(text)
     positions = parse_ofx(text)["positions"] if found["kind"] == "ofx" else sniff_holdings_csv(text)["positions"]
     if not positions:
         raise HTTPException(400, "No holdings with a name and a value were found")

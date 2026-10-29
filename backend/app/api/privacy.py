@@ -134,36 +134,39 @@ def erase(body: EraseIn, request: Request, session: Session = Depends(get_sessio
             plaid.disconnect(session, api, link)
     session.commit()
     session.close()
-    erased: dict[str, int] = {}
-    with engine.begin() as connection:
-        connection.execute(text("PRAGMA foreign_keys=OFF"))
-        tables = [r[0] for r in connection.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")).all()]
-        for table in tables:
-            if table in KEEP_TABLES:
-                continue
-            if table == "settings":
-                keep = ", ".join(f"'{k}'" for k in sorted(KEEP_SETTINGS))
-                erased[table] = connection.execute(text(f"DELETE FROM settings WHERE key NOT IN ({keep})")).rowcount or 0
-            else:
-                erased[table] = connection.execute(text(f'DELETE FROM "{table}"')).rowcount or 0
-        connection.execute(text("PRAGMA foreign_keys=ON"))
-    engine.dispose()  # PRAGMA foreign_keys is ignored inside a transaction: new connections set it again
-    with engine.connect() as connection:
-        connection.execute(text("VACUUM"))  # freed pages hold the old rows until the file is rebuilt
+    from ..connectors.teller import forget_cert_files
+    from ..engine.documents import folder as documents_folder
+    from ..jobs.writing import one_writer
     from ..restore import folder
 
-    points = 0
-    for path in folder().glob("*"):
-        try:
-            path.unlink() if path.is_file() else shutil.rmtree(path)
-            points += 1
-        except OSError as error:
-            log.warning("could not remove %s: %s", path.name, error)
-    from ..engine.documents import folder as documents_folder
-
-    for path in documents_folder().glob("*.bin"):
-        path.unlink(missing_ok=True)
-    bump_version()
+    erased: dict[str, int] = {}
+    with one_writer():  # never beside a sync, a detection or an import: a job mid-write would put half its rows back
+        with engine.begin() as connection:
+            connection.execute(text("PRAGMA foreign_keys=OFF"))
+            tables = [r[0] for r in connection.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")).all()]
+            for table in tables:
+                if table in KEEP_TABLES:
+                    continue
+                if table == "settings":
+                    keep = ", ".join(f"'{k}'" for k in sorted(KEEP_SETTINGS))
+                    erased[table] = connection.execute(text(f"DELETE FROM settings WHERE key NOT IN ({keep})")).rowcount or 0
+                else:
+                    erased[table] = connection.execute(text(f'DELETE FROM "{table}"')).rowcount or 0
+            connection.execute(text("PRAGMA foreign_keys=ON"))
+        engine.dispose()  # PRAGMA foreign_keys is ignored inside a transaction: new connections set it again
+        with engine.connect() as connection:
+            connection.execute(text("VACUUM"))  # freed pages hold the old rows until the file is rebuilt
+        points = 0
+        for path in folder().glob("*"):
+            try:
+                path.unlink() if path.is_file() else shutil.rmtree(path)
+                points += 1
+            except OSError as error:
+                log.warning("could not remove %s: %s", path.name, error)
+        for path in documents_folder().glob("*.bin"):
+            path.unlink(missing_ok=True)
+        forget_cert_files()  # the Teller certificate written for the HTTP client goes with its encrypted copy
+        bump_version()
     left = ["Your sign-in: this browser's session, your passkeys and the second step.", "The people you let in, and their sign-ins (Settings › People removes them)."]
     if settings.offbox_dir:
         left.append(f"Off-box copies on their own disk, at {settings.offbox_dir}: delete them there if you want them gone too.")

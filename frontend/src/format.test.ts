@@ -7,6 +7,16 @@ describe("money", () => {
     expect(money(-231)).toBe("−$231");
     expect(money(2240, { sign: true })).toBe("+$2,240");
     expect(money(142.17, { cents: true })).toBe("$142.17");
+    expect(money(-1234.5, { cents: true })).toBe("−$1,234.50");
+    expect(money(1e15)).toBe("$1,000,000,000,000,000");
+  });
+  it("never says minus nothing or NaN", () => {
+    expect(money(-0)).toBe("$0");
+    expect(money(-0.4)).toBe("$0");
+    expect(money(-0.004, { cents: true })).toBe("$0.00");
+    expect(money(-0.5)).toBe("−$1");
+    expect(money(Number.NaN)).toBe("$0");
+    expect(money(undefined as unknown as number, { cents: true })).toBe("$0.00");
   });
 });
 

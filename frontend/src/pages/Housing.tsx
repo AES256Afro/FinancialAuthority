@@ -8,7 +8,7 @@ import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { ConfirmButton } from "../components/ConfirmButton";
 import { Documents } from "../components/Documents";
-import { Empty, Failed, Loading, Said } from "../components/State";
+import { Empty, Failed, Loading, Said, useJumpToHash } from "../components/State";
 import { StatusPill } from "../components/Status";
 import { localToday, money, ordinal, parseIso, parseMoney, shortDate } from "../format";
 import { palette } from "../looks";
@@ -1316,6 +1316,7 @@ export function Housing({ onChanged }: { onChanged?: () => void }) {
   const [docTick, setDocTick] = useState(0);
   useEffect(() => setFresh(null), [state.data]);
   const data = fresh ?? state.data;
+  useJumpToHash(data);
 
   const ctx: Ctx | null = data
     ? {
@@ -1366,9 +1367,14 @@ export function Housing({ onChanged }: { onChanged?: () => void }) {
             </div>
           ))}
           {data.move && <MoveTimeline data={data} move={data.move} />}
-          {data.homes.length === 0 && <NoHome ctx={ctx} />}
           {data.homes.length > 0 && <RentBillsNotHeld ctx={ctx} />}
-          {live.map((h) => <HomeSection key={h.id} h={h} ctx={ctx} />)}
+          {(data.homes.length === 0 || live.length > 0) && (
+            // /housing#homes: the homes you live in or move to, or the way to add the first one.
+            <div id="homes" style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
+              {data.homes.length === 0 && <NoHome ctx={ctx} />}
+              {live.map((h) => <HomeSection key={h.id} h={h} ctx={ctx} />)}
+            </div>
+          )}
           {ended.length > 0 && <EarlierHomes homes={ended} ctx={ctx} />}
           {data.utilities_unassigned.length > 0 && <LooseUtilities ctx={ctx} />}
           {utilities.error && !utilities.data && <Failed error={utilities.error} what="the utility choices and the bills a utility can take over" onRetry={utilities.reload} />}

@@ -7,6 +7,7 @@ import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { when } from "../format";
+import { clearDeviceState } from "../session";
 import type { Status } from "../guide";
 import { ownerName, roleOf, type MePerson } from "../types-people";
 import { ConfirmButton } from "../components/ConfirmButton";
@@ -441,6 +442,7 @@ function SignOutHere() {
     setError(null);
     try {
       await api("/api/auth/logout", { method: "POST" });
+      clearDeviceState();
       window.location.assign("/");
     } catch (e) {
       setError(`Not signed out: ${(e as Error).message}`);

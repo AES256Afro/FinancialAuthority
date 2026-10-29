@@ -14,7 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 os.environ.update({
-    "FA_DATA_DIR": tempfile.mkdtemp(prefix="fa-signin-"), "FA_DEMO": "true", "FA_JOBS": "false", "FA_USERNAME": "owner",
+    "FA_DATA_DIR": tempfile.mkdtemp(prefix="fa-signin-"), "FA_DEMO": "true", "TZ": "America/Chicago", "FA_JOBS": "false", "FA_USERNAME": "owner",
     "FA_PASSWORD": "correct horse battery", "FA_SESSION_SECRET": "dev-signin-session", "FA_DATA_KEY": "dev-signin-data-key", "FA_PUBLIC_URL": "",
 })
 sys.path.insert(0, str(ROOT))

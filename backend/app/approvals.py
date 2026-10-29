@@ -5,6 +5,7 @@ Every step is recorded on the approval row."""
 from __future__ import annotations
 
 import logging
+import threading
 from collections.abc import Callable
 from datetime import datetime, timezone
 
@@ -20,6 +21,9 @@ log = logging.getLogger("fa.approvals")
 
 Sender = Callable[..., str]
 SENDER: Sender = smtp.send_message  # tests replace this; nothing else does
+# One decision at a time: two requests that both read an approval as pending must not both send it. The row is read
+# again under this lock, so the second finds it decided, whatever it saw before.
+_decide = threading.Lock()
 
 
 def allowances(session: Session, person_id: int | None = None) -> list[str]:
@@ -91,7 +95,14 @@ def create(session: Session, *, to: str, subject: str, body: str, reason: str = 
     session.add(row)
     session.commit()
     session.refresh(row)
-    if to.lower() in allowances(session, for_person_id):
+    # A standing allowance covers what the owner or a second person queues themselves (the app's own pages). A draft
+    # a model or a script queued (an API key, a connected app) always waits for a tap: a hostile email read by that
+    # model could otherwise send, in the owner's name, anything to any allowed address.
+    by_a_person = created_kind in ("owner", "person")
+    if not by_a_person and to.lower() in allowances(session, for_person_id):
+        row.reason = (row.reason + " " if row.reason else "") + "(queued by a connected app or key, so the standing allowance for this address was not used)"
+        row.reason = row.reason[:300]
+    if by_a_person and to.lower() in allowances(session, for_person_id):
         row.decided_by = "allowance"
         row.decided_at = datetime.now(timezone.utc)
         row.status = "approved"
@@ -110,14 +121,38 @@ def create(session: Session, *, to: str, subject: str, body: str, reason: str = 
     return row
 
 
+def _claim(session: Session, row: Approval, status: str, decided_by: str) -> None:
+    """Move a pending approval to its decision, once: a second decision finds it decided."""
+    with _decide:
+        session.refresh(row)
+        if row.status != "pending":
+            raise ValueError(f"the approval is {row.status}, not pending")
+        row.status = status
+        row.decided_by = decided_by
+        row.decided_at = datetime.now(timezone.utc)
+        session.add(row)
+        session.commit()
+
+
+def edit_draft(session: Session, row: Approval, changed: dict[str, str]) -> Approval:
+    """Change a pending draft's recipient, subject or body, under the decision lock: an approve in the same instant
+    either sent what was there before the edit, or finds the edited draft; never a draft half of each. A draft that
+    was decided meanwhile is left as it is (ValueError)."""
+    check_draft(changed.get("to", row.to), changed.get("subject", row.subject), changed.get("body", row.body))
+    with _decide:
+        session.refresh(row)
+        if row.status != "pending":
+            raise ValueError(f"the approval is {row.status}, not pending")
+        for field, value in changed.items():
+            setattr(row, field, value)
+        session.add(row)
+        session.commit()
+    session.refresh(row)
+    return row
+
+
 def approve(session: Session, row: Approval, *, decided_by: str = "owner", allow_always: bool = False) -> Approval:
-    if row.status != "pending":
-        raise ValueError(f"the approval is {row.status}, not pending")
-    row.status = "approved"
-    row.decided_by = decided_by
-    row.decided_at = datetime.now(timezone.utc)
-    session.add(row)
-    session.commit()
+    _claim(session, row, "approved", decided_by)
     if allow_always:
         allow(session, row.to, row.for_person_id)
     send(session, row)
@@ -126,13 +161,7 @@ def approve(session: Session, row: Approval, *, decided_by: str = "owner", allow
 
 
 def deny(session: Session, row: Approval, *, decided_by: str = "owner") -> Approval:
-    if row.status != "pending":
-        raise ValueError(f"the approval is {row.status}, not pending")
-    row.status = "denied"
-    row.decided_by = decided_by
-    row.decided_at = datetime.now(timezone.utc)
-    session.add(row)
-    session.commit()
+    _claim(session, row, "denied", decided_by)
     session.refresh(row)
     return row
 

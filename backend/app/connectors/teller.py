@@ -74,6 +74,18 @@ def cert_files(certificate: str, private_key: str) -> tuple[str, str] | None:
     return str(paths[0]), str(paths[1])
 
 
+def forget_cert_files() -> None:
+    """Remove the PEMs written for the HTTP client and their folder (an erase, or the certificate replaced)."""
+    global _FOLDER
+    folder = _FOLDER
+    _FOLDER = None
+    if folder is None:
+        return
+    import shutil
+
+    shutil.rmtree(folder, ignore_errors=True)
+
+
 class TellerClient:
     def __init__(self, certificate: str = "", private_key: str = "", client_factory: ClientFactory | None = None) -> None:
         self.cert = cert_files(certificate, private_key)

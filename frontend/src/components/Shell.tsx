@@ -7,6 +7,7 @@ import { Link, NavLink, useLocation } from "react-router-dom";
 import { api, useApi } from "../api";
 import { appearance, brandMark, brandName, saveAppearance, useAppearance } from "../appearance";
 import { DEMO } from "../demo/shim";
+import { clearDeviceState } from "../session";
 import { NextStepsStrip } from "./NextSteps";
 import { daysWord, localToday, longDate, shortDate } from "../format";
 import type { Snapshot } from "../types";
@@ -80,6 +81,7 @@ function SignOut({ look }: { look: "rail" | "tab" | "header" }) {
     setError(null);
     try {
       await api("/api/auth/logout", { method: "POST" });
+      clearDeviceState();
       window.location.assign("/");
     } catch (e) {
       setError(`Not signed out: ${(e as Error).message}`);
@@ -109,7 +111,7 @@ function DemoBanner() {
     return () => window.removeEventListener("fa-demo-flash", onFlash);
   }, []);
   return (
-    <div role="status" style={{ position: "sticky", top: 0, zIndex: 20, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", padding: "6px 16px", fontSize: 12, fontWeight: 700, background: "var(--warning)", color: "#141518" }}>
+    <div role="status" className="demo-banner" style={{ position: "sticky", top: 0, zIndex: 20, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", padding: "6px 16px", fontSize: 12, fontWeight: 700, background: "var(--warning)", color: "#141518" }}>
       <span>Demo · a synthetic household · nothing here is real · changes are not kept</span>
       {flash && <span style={{ fontWeight: 500 }}>· {flash}</span>}
     </div>
@@ -166,6 +168,9 @@ export function Shell({ children, snapshot, me = null }: { children: ReactNode; 
   };
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--ground)" }}>
+    {/* The first tab stop: past the rail's links straight to the page. Focus is moved by hand, so the hash router of
+        the demo does not read "#main" as a page. */}
+    <a href="#main" className="skip" onClick={(e) => { e.preventDefault(); document.getElementById("main")?.focus(); }}>Skip to the content</a>
     {DEMO && <DemoBanner />}
     {/* The blur that "Hide amounts" puts on figures drawn inside charts (tokens.css, svg .num). */}
     <svg width="0" height="0" aria-hidden="true" focusable="false" style={{ position: "absolute" }}>
@@ -191,7 +196,7 @@ export function Shell({ children, snapshot, me = null }: { children: ReactNode; 
           {limited && <SignOut look="rail" />}
         </div>
       </nav>
-      <main style={{ flex: "999 1 320px", minWidth: 0, display: "flex", flexDirection: "column", gap: 16, boxSizing: "border-box" }} className="px-4 pt-3.5 pb-24 md:px-6 md:pb-6">
+      <main id="main" tabIndex={-1} style={{ flex: "999 1 320px", minWidth: 0, display: "flex", flexDirection: "column", gap: 16, boxSizing: "border-box", outline: "none" }} className="px-4 pt-3.5 pb-24 md:px-6 md:pb-6">
         <header style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, minHeight: 40 }}>
           <div style={{ fontSize: 13, color: "var(--ink-2)", fontWeight: 600 }}>{longDate(today)}</div>
           {snapshot && (

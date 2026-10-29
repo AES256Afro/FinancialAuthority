@@ -19,6 +19,7 @@ ENV PYTHONUNBUFFERED=1 \
     FA_IMPORT_DIR=/imports \
     FA_HOST=0.0.0.0 \
     FA_PORT=8000 \
+    FA_INSTALL=docker \
     FA_OLLAMA_URL=http://host.docker.internal:11434
 
 # tesseract-ocr and poppler-utils read photos and scanned PDFs on this server (M49): free, and nothing leaves it.
@@ -34,7 +35,9 @@ COPY backend/ ./
 RUN uv sync --frozen --no-dev
 COPY --from=web /web/dist /app/frontend/dist
 
-RUN useradd --create-home --uid 1000 app && mkdir -p /data /imports && chown -R app:app /data /imports /app
+# The app runs as its own user, which owns the data and import folders only: the code and the virtual environment
+# stay root-owned and read-only to it, so nothing that runs in the app can change what the app is.
+RUN useradd --create-home --uid 1000 app && mkdir -p /data /imports && chown -R app:app /data /imports
 USER app
 
 EXPOSE 8000

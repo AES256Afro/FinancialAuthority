@@ -19,6 +19,14 @@ def is_spendable(a: Account) -> bool:
     return bool(a.spendable) if a.spendable is not None else a.kind in SPENDABLE_KINDS
 
 
+def household_accounts(session) -> list[Account]:  # noqa: ANN001 - a Session
+    """The active accounts the plan spends and counts: the owner's own and the shared ones. An account marked as a
+    second person's own is theirs (Settings › People): it never feeds the owner's cash, low point or safe to spend."""
+    from sqlmodel import select
+
+    return [a for a in session.exec(select(Account).where(Account.active == True)).all() if a.shared or a.person_id is None]  # noqa: E712
+
+
 def cash_of(accounts: list[Account]) -> tuple[float, float]:
     """(cash to spend, all cash including savings)."""
     spend = sum((a.balance or 0.0) for a in accounts if is_spendable(a))
@@ -145,6 +153,8 @@ def build_events(bills: list[Bill], plans: list[InstallmentPlan], advances: list
             events.append({"date": d, "window_date": d, "name": f"{p.merchant} {p.count - left + 1} of {p.count}", "amount": _money(p.installment), "kind": "installment", "autopay": True, "source": f"plan:{p.id}", "line": "debt", "from_kind": plan_kind, "from_account_id": getattr(p, "pay_from_account_id", None)})
             d, left = d + timedelta(days=p.cadence_days), left - 1
     for a in advances:
+        if a.repay_date < today:
+            continue  # the app took it back on the day it set: the balance since then already lacks it, so it is not due again (sync_borrowing retires the row)
         events.append({"date": a.repay_date, "name": f"{a.provider} repays", "amount": _money(a.amount + a.fee), "kind": "advance", "autopay": True, "source": f"advance:{a.id}", "line": "debt"})
     events.sort(key=lambda e: e["date"])
     return events

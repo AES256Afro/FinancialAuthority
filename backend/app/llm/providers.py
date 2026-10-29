@@ -40,6 +40,32 @@ def plain_error(who: str, status: int, detail: str, model: str) -> str:
         return f"{who} is limiting requests right now; try again in a minute. ({message[:120]})"
     return f"{who} answered {status}: {message[:200]}"
 TIMEOUT = httpx.Timeout(120.0, connect=10.0)
+MAX_STREAM_BYTES = 2_000_000  # an answer is a few kilobytes; a stream past this is cut, whatever the server sends
+MAX_ERROR_BYTES = 600
+
+
+class StreamTooLong(RuntimeError):
+    pass
+
+
+async def _lines(response: httpx.Response) -> AsyncIterator[str]:
+    """The event lines of a streamed answer, up to MAX_STREAM_BYTES; past that the stream is dropped."""
+    seen = 0
+    async for line in response.aiter_lines():
+        seen += len(line) + 1
+        if seen > MAX_STREAM_BYTES:
+            raise StreamTooLong(f"the answer passed {MAX_STREAM_BYTES // 1_000_000} MB and was cut off")
+        yield line
+
+
+async def _head(response: httpx.Response, limit: int = MAX_ERROR_BYTES) -> str:
+    """The first bytes of an error body, without reading a body of any size into memory."""
+    got = b""
+    async for chunk in response.aiter_bytes():
+        got += chunk
+        if len(got) >= limit:
+            break
+    return got[:limit].decode("utf-8", "replace")
 
 
 @dataclass
@@ -140,10 +166,10 @@ class OpenAICompatible(Provider):
             try:
                 async with client.stream("POST", f"{self.base_url}/chat/completions", headers=self.headers(), json=body) as response:
                     if response.status_code >= 400:
-                        detail = (await response.aread()).decode("utf-8", "replace")[:600]
+                        detail = await _head(response)
                         yield Event("error", message=plain_error(self.base_url, response.status_code, detail, self.model))
                         return
-                    async for line in response.aiter_lines():
+                    async for line in _lines(response):
                         if not line.startswith("data:"):
                             continue
                         data = line[5:].strip()
@@ -170,6 +196,9 @@ class OpenAICompatible(Provider):
                                     slot["arguments"] += fn["arguments"]
             except httpx.HTTPError as error:
                 yield Event("error", message=f"{self.base_url}: {type(error).__name__}: {error}")
+                return
+            except StreamTooLong as error:
+                yield Event("error", message=f"{self.base_url}: {error}")
                 return
         for index in sorted(calls):
             slot = calls[index]
@@ -273,10 +302,10 @@ class Anthropic(Provider):
             try:
                 async with client.stream("POST", f"{self.base_url}/v1/messages", headers=self.headers(), json=body) as response:
                     if response.status_code >= 400:
-                        detail = (await response.aread()).decode("utf-8", "replace")[:600]
+                        detail = await _head(response)
                         yield Event("error", message=plain_error("Anthropic", response.status_code, detail, self.model))
                         return
-                    async for line in response.aiter_lines():
+                    async for line in _lines(response):
                         if not line.startswith("data:"):
                             continue
                         try:
@@ -302,6 +331,9 @@ class Anthropic(Provider):
                             return
             except httpx.HTTPError as error:
                 yield Event("error", message=f"Anthropic: {type(error).__name__}: {error}")
+                return
+            except StreamTooLong as error:
+                yield Event("error", message=f"Anthropic: {error}")
                 return
         for index in sorted(blocks):
             block = blocks[index]

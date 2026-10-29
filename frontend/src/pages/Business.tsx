@@ -97,7 +97,7 @@ export function NeverList({ items }: { items: NeverItem[] }) {
           <li key={n.what} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 14 }}>
             <Ban size={15} aria-hidden="true" style={{ flexShrink: 0, marginTop: 3, color: "var(--muted)" }} />
             <div style={{ minWidth: 0 }}>
-              <strong>{n.what}.</strong> {n.why}
+              <strong>{n.what}.</strong> <span className={amountClass(n.why)}>{n.why}</span>
               <SourceLine source={n.source} style={{ marginTop: 2 }} />
             </div>
           </li>
@@ -169,7 +169,7 @@ function NoBusiness({ o, onAdded }: { o: BusinessOverview; onAdded: (id: number)
       <p className={amountClass(o.guide.bare_minimum)} style={{ margin: 0, fontSize: 15, fontWeight: 800, lineHeight: 1.5, maxWidth: "70ch" }}>{o.guide.bare_minimum}</p>
       <section className="card" style={CARD} aria-labelledby="add-title">
         <h2 id="add-title" style={H2}>Add your business</h2>
-        <div style={{ fontSize: 13, color: "var(--ink-2)" }}>{o.guide.said}</div>
+        <div className={amountClass(o.guide.said)} style={{ fontSize: 13, color: "var(--ink-2)" }}>{o.guide.said}</div>
         <BusinessForm start={null} lines={o.lines} onSaved={onAdded} />
       </section>
       {o.guide.steps.length > 0 && (
@@ -363,7 +363,7 @@ function WithBusiness({ o, business, choose }: { o: BusinessOverview; business: 
         <Ring done={g.done} total={g.total} />
         <div style={{ flex: "1 1 150px", minWidth: 0, display: "flex", flexDirection: "column", gap: 4 }}>
           <h2 id="setup-title" style={H2}>Setting it up</h2>
-          <div style={{ fontSize: 15, fontWeight: 700 }}>{g.said}</div>
+          <div className={amountClass(g.said)} style={{ fontSize: 15, fontWeight: 700 }}>{g.said}</div>
           {next ? <div style={{ fontSize: 13, color: "var(--ink-2)" }}>Next: {next.title}</div> : <div><Pill Icon={CircleCheck} word="Every step done" tone="good" /></div>}
         </div>
       </section>

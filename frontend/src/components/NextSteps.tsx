@@ -49,7 +49,7 @@ export function NextStepsStrip() {
           <strong style={{ whiteSpace: "nowrap" }}>{s.action} →</strong>
         </Link>
       ))}
-      {rest > 0 && <Link to="/today#steps" style={{ color: "var(--ink-2)" }}>+{rest} more</Link>}
+      {rest > 0 && <Link to="/today#steps" style={{ color: "var(--ink-2)", display: "inline-flex", alignItems: "center", minHeight: 32, padding: "0 6px" }}>+{rest} more</Link>}
     </nav>
   );
 }

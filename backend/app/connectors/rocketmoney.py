@@ -50,11 +50,15 @@ def parse_amount(s: str) -> float | None:
 
 def parse_csv(text: str, source_file: str = "upload.csv") -> list[dict] | None:
     """Rows from an export, or None when the file is not a Rocket Money transactions export."""
-    reader = csv.DictReader(io.StringIO(text))
-    if not REQUIRED_COLUMNS.issubset(reader.fieldnames or []):
+    try:
+        reader = csv.DictReader(io.StringIO(text))
+        if not REQUIRED_COLUMNS.issubset(reader.fieldnames or []):
+            return None
+        raw_rows = list(reader)
+    except csv.Error:  # a field past the reader's limit: not an export Rocket Money made
         return None
     rows: list[dict] = []
-    for r in reader:
+    for r in raw_rows:
         d, amount = parse_date(r.get("Date", "")), parse_amount(r.get("Amount", ""))
         if d is None or amount is None:
             continue

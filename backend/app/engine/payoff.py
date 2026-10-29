@@ -52,6 +52,8 @@ def simulate(debts: list[dict[str, Any]], extra: float, order: str, start: date)
             d["balance"] += interest
             pay = min(d["balance"], d["minimum"])
             d["balance"] -= pay
+            if order != "minimums":
+                freed += d["minimum"] - pay  # the part of a minimum its debt no longer needs, the month it is paid off, rolls on too
         if order != "minimums":
             pot = extra + freed
             targets = sorted((d for d in live if d["balance"] > 0.005), key=(lambda d: (-d["apr"], d["balance"])) if order == "avalanche" else (lambda d: (d["balance"], -d["apr"])))
@@ -65,10 +67,12 @@ def simulate(debts: list[dict[str, Any]], extra: float, order: str, start: date)
             if d["balance"] <= 0.005 and d["paid_on"] is None:
                 d["paid_on"] = _add_months(start, month)
     done = all(d["balance"] <= 0.005 for d in live)
+    # A way that never finishes (a minimum under the month's interest) has no interest figure: the sum to the
+    # cap is a fiction in the billions, so it is None and "grows" says why; the page says the balance grows.
     return {
         "order": order, "months": month if done else None, "debt_free": _add_months(start, month).isoformat() if done else None,
-        "interest": _money(sum(d["interest"] for d in live)),
-        "debts": [{"name": d["name"], "source": d["source"], "paid_on": d["paid_on"].isoformat() if d["paid_on"] else None, "interest": _money(d["interest"])} for d in live],
+        "interest": _money(sum(d["interest"] for d in live)) if done else None, "grows": not done,
+        "debts": [{"name": d["name"], "source": d["source"], "paid_on": d["paid_on"].isoformat() if d["paid_on"] else None, "interest": _money(d["interest"]) if d["paid_on"] else None} for d in live],
     }
 
 
@@ -102,8 +106,8 @@ def payoff_plan(session: Session, today: date, extra: float = 0.0) -> dict[str, 
     base = simulate(debts, 0.0, "minimums", start)
     ways = {o: simulate(debts, extra, o, start) for o in ("avalanche", "snowball")}
     for w in ways.values():
-        w["interest_saved"] = _money(base["interest"] - w["interest"]) if base["months"] is not None else None
-    best = min(ways.values(), key=lambda w: (w["interest"], w["months"] or MAX_MONTHS))
+        w["interest_saved"] = _money(base["interest"] - w["interest"]) if base["months"] is not None and w["months"] is not None else None
+    best = min(ways.values(), key=lambda w: (w["interest"] if w["interest"] is not None else float("inf"), w["months"] or MAX_MONTHS))
     return {
         "as_of": today.isoformat(), "extra": _money(extra), "debts": [{k: v for k, v in d.items()} for d in debts],
         "minimums_only": base, "avalanche": ways["avalanche"], "snowball": ways["snowball"], "cheapest": best["order"],

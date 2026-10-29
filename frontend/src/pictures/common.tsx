@@ -45,10 +45,15 @@ export function PartTip({ part, colour, of }: { part: Part; colour: string; of?:
         </div>
       ))}
       {part.items.length > 5 && <div style={{ color: "var(--muted)" }}>and {part.items.length - 5} more</div>}
-      {part.key === "yours" && part.everyday !== undefined ? <div style={{ color: "var(--muted)" }}>everyday spending {money(part.everyday)}{part.kept !== undefined ? `, kept ${money(part.kept)}` : ""}</div> : null}
+      {part.key === "yours" && part.everyday !== undefined ? <div className="num" style={{ color: "var(--muted)" }}>everyday spending {money(part.everyday)}{part.kept !== undefined ? `, kept ${money(part.kept)}` : ""}</div> : null}
       {part.riding && part.riding.length > 0 ? <div style={{ color: "var(--muted)" }}>charged to the card: {part.riding.slice(0, 3).map((r) => r.name).join(", ")}</div> : null}
     </div>
   );
+}
+
+/** What a picture says when there is no check to draw: the same line in every mode. */
+export function NoChecks({ text = "No checks yet: the picture fills in as paychecks arrive." }: { text?: string }) {
+  return <div style={{ fontSize: 13, color: "var(--ink-2)" }}>{text}</div>;
 }
 
 export function Legend({ parts, colours }: { parts: { key: PartKey; label: string }[]; colours: Record<PartKey, string> }) {

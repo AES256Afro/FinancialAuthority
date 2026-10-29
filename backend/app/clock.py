@@ -3,7 +3,7 @@ date. A payday, a due date or a day's bucket of calls belongs to the owner's day
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .config import settings
@@ -23,3 +23,12 @@ def local_now() -> datetime:
 
 def local_today() -> date:
     return local_now().date()
+
+
+def local_date(when: datetime) -> date:
+    """The owner's date of a stored moment (UTC; SQLite gives it back naive): a balance read at 9 pm in Chicago is
+    stamped the next day in UTC and is still today's, never tomorrow's."""
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    z = zone()
+    return (when.astimezone(z) if z else when.astimezone()).date()

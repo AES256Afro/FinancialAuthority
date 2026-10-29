@@ -119,6 +119,8 @@ a { color: var(--paycheck-ink); }
 .btn.dark { background: var(--ink); color: var(--inverse); border-color: var(--ink); }
 .btn.dark:hover { opacity: .9; background: var(--ink); }
 .btn:disabled { opacity: .5; cursor: default; }
+/* On a phone a button is at least 40px tall, whatever a page sets for a desktop's density (a thumb, not a pointer). */
+@media (max-width: 767px) { .btn { min-height: 40px !important; } }
 .input { font: inherit; font-size: 14px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--hairline); background: var(--surface); color: var(--ink); min-height: 40px; box-sizing: border-box; }
 .lab { font-size: 11px; font-weight: 800; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; vertical-align: -1px; margin-right: 6px; }
@@ -160,7 +162,11 @@ table.ledger td { padding: 7px 8px 7px 0; border-top: 1px solid var(--surface-2)
 
 /* Keyboard reach: every control shows where focus is. */
 :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible { outline: 2px solid var(--paycheck); outline-offset: 2px; border-radius: 6px; }
-.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+/* The skip link: off screen until it has focus, then a dark chip at the top left. */
+.skip { position: absolute; left: 8px; top: -60px; z-index: 30; padding: 8px 12px; border-radius: 8px; background: var(--ink); color: var(--inverse); font-weight: 800; font-size: 13px; text-decoration: none; }
+.skip:focus { top: 8px; }
+/* left: 0 keeps it inside the page: at its own spot in a table wider than a phone it would push the page sideways. */
+.sr-only { position: absolute; left: 0; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 
 /* A field never pushes the page sideways on a phone. */
 .input { max-width: 100%; }
@@ -175,3 +181,13 @@ select.input { text-overflow: ellipsis; }
 /* A reading-friendly face: wide letters that are hard to mistake (Il1, O0), with a little more space. */
 :root[data-font="readable"] { --font: Verdana, Tahoma, "Segoe UI", system-ui, sans-serif; }
 :root[data-font="readable"] body { letter-spacing: .01em; word-spacing: .06em; }
+
+/* On paper: the page's content alone, at the paper's width. The rail, the tab bar, the next-steps strip, the demo
+   banner and the skip link are the app around the page, not the page. A card is not cut in two across sheets. */
+@media print {
+  nav.rail, nav.tabs, nav[aria-label="Next steps"], .demo-banner, .skip { display: none !important; }
+  #root { zoom: 1; }
+  main { padding: 0 !important; }
+  .card { break-inside: avoid; }
+  body { background: #fff; color: #000; }
+}

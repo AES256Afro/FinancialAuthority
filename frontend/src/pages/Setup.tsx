@@ -7,6 +7,7 @@ import { Link } from "react-router-dom";
 import { useApi } from "../api";
 import { SetupChecklist, type Check } from "../components/SetupChecklist";
 import { StatusPill } from "../components/Status";
+import { useJumpToHash } from "../components/State";
 import { Where } from "../components/Where";
 
 // Which of the app's own checks speak for each step. Mail and banks have one check per mailbox or link.
@@ -77,6 +78,8 @@ export function Setup() {
   const about = useApi<{ version: string; public_url: string | null; install?: string; data_key_set?: boolean }>("/api/v1/about");
   const check = useApi<{ checks: Check[] }>("/api/v1/setup/check");
   const checks = check.data?.checks;
+  // A next step's link names a section (#publish, #mail): the page opens there, on its first control.
+  useJumpToHash(about.data !== null);
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const publicUrl = about.data?.public_url || origin;
   return (
