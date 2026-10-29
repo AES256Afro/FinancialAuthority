@@ -133,6 +133,9 @@ def _account_for(session: Session, r: dict, cache: dict[tuple, Account]) -> Acco
     if "__live__" not in cache:
         cache["__live__"] = _live_accounts_by_last4(session)  # type: ignore[assignment]
     live = cache["__live__"].get(r["account_number"])  # type: ignore[union-attr]
+    if live is None and r["account_number"]:
+        # The app's own export names an account by the id its link gave it: back beside that link, it is that account.
+        live = session.exec(select(Account).where(Account.active == True, Account.connector != "rocketmoney", Account.external_id == r["account_number"])).first()  # noqa: E712
     if live is not None and (not r["institution"] or not live.institution or r["institution"].lower().split()[0] in live.institution.lower()):
         cache[key] = live
         return live
@@ -150,6 +153,13 @@ def _account_for(session: Session, r: dict, cache: dict[tuple, Account]) -> Acco
         cache.setdefault("__reopened__", set()).add(row.id)  # type: ignore[union-attr]
     cache[key] = row
     return row
+
+
+def _tags(text: str) -> str:
+    """The export's tags as the ledger keeps them (its own words, lower case, comma-separated)."""
+    from ..engine.edits import clean_tags
+
+    return ",".join(clean_tags(text.split(",")))
 
 
 MERGE_DAYS = 3  # an export's date and a connector's can differ by posting; within this many days they are one
@@ -201,7 +211,7 @@ def import_rows(session: Session, rows: list[dict], source_file: str = "upload.c
             account_id=account.id, date=r["date"], posted_date=r["original_date"], merchant=r["merchant"], raw_name=r["name"], description=r["description"],
             amount=r["amount"], category=r["category"], note=r["note"],
             is_transfer=r["category"] in TRANSFER_CATEGORIES, is_card_payment=r["category"] == "Credit Card Payment",
-            is_income=r["category"] == "Income", is_ignored=bool(r["ignored_from"]), source="rocketmoney", source_ref=source_file, row_hash=h, import_id=batch.id,
+            is_income=r["category"] == "Income", is_ignored=bool(r["ignored_from"]), tags=_tags(r["tags"]), source="rocketmoney", source_ref=source_file, row_hash=h, import_id=batch.id,
         )
         apply_rules(rules, row)
         session.add(row)
@@ -219,6 +229,7 @@ def import_rows(session: Session, rows: list[dict], source_file: str = "upload.c
 
 def export_csv(session: Session) -> str:
     """The ledger in Rocket Money's column shape, so it can go wherever that file goes."""
+    from ..engine.edits import tags_of
     from ..exports import safe
 
     out = io.StringIO()
@@ -232,7 +243,7 @@ def export_csv(session: Session) -> str:
             "Account Type": {"checking": "Cash", "card": "Credit Card", "loan": "Loan", "investment": "Investment", "savings": "Savings"}.get(a.kind if a else "", "Cash"),
             "Account Name": a.name if a else "", "Account Number": a.external_id if a else "", "Institution Name": a.institution if a else "",
             "Name": t.raw_name or t.merchant, "Custom Name": t.merchant if t.merchant != t.raw_name else "", "Amount": f"{t.amount:.2f}",
-            "Description": t.description, "Category": t.category, "Note": t.note, "Ignored From": "ignored" if t.is_ignored else "", "Tax Deductible": "", "Transaction Tags": "",
+            "Description": t.description, "Category": t.category, "Note": t.note, "Ignored From": "ignored" if t.is_ignored else "", "Tax Deductible": "", "Transaction Tags": ", ".join(tags_of(t)),
         }))
     return out.getvalue()
 

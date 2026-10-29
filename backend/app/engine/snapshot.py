@@ -74,7 +74,8 @@ def _mail_facts(session: Session, today: date) -> dict:
         r = refs.get(f.message_ref_id)
         fields = json.loads(f.fields or "{}")
         return {"id": f.id, "kind": f.kind, "fields": fields, "confidence": f.confidence, "status": f.status, "sender_name": _from_mail(r.sender_name if r else fields.get("sender_name", ""), 60),
-                "subject": _from_mail(r.subject if r else "", 100), "date": r.date.date().isoformat() if r and r.date else fields.get("message_date"), "source": f"fact:{f.id}", "from_mail": True}
+                "subject": _from_mail(r.subject if r else "", 100), "date": r.date.date().isoformat() if r and r.date else fields.get("message_date"), "source": f"fact:{f.id}", "from_mail": True,
+                "forged": bool(r and r.trust == "crit")}  # the brief leaves a forged sender's notice to the data check
 
     return {"pending": [out(f) for f in pending_rows], "pending_count": pending_count, "alerts": [out(f) for f in alert_rows]}
 

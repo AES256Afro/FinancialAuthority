@@ -13,6 +13,9 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Authority" />
     <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- The app's first question (who is signed in) leaves with the page, not after the script has loaded: on a slow
+         line that is one round trip less before the plan can be asked for. -->
+    <link rel="preload" href="/api/auth/me" as="fetch" crossorigin="anonymous" />
     <title>FinancialAuthority</title>
   </head>
   <body>

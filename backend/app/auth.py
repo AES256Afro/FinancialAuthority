@@ -69,6 +69,7 @@ class Principal:
     via_cookie: bool = False
     person_id: int | None = None  # the second person, when kind is person
     role: str = ""  # a person's role: everything | shared
+    via_oauth: bool = False  # a connected app's OAuth token, rather than a key the owner made
 
     def has(self, scope: str) -> bool:
         return scope in self.scopes or "admin" in self.scopes and scope != "approve"
@@ -222,7 +223,7 @@ def principal_from_oauth(session: Session, token: str) -> Principal | None:
     row.last_used_at = utcnow()
     session.add(row)
     session.commit()
-    return Principal(kind="key", name=client.name or row.client_id, scopes=set(row.scopes.split()) & KEY_SCOPES, redaction=client.redaction)
+    return Principal(kind="key", name=client.name or row.client_id, scopes=set(row.scopes.split()) & KEY_SCOPES, redaction=client.redaction, via_oauth=True)
 
 
 def principal_from_request(request: Request, session: Session) -> Principal | None:

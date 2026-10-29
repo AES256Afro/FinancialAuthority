@@ -11,14 +11,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 
 from .inputs import In
-from .. import auth, crypto
+from .. import auth, crypto, services
 from ..connectors import CONNECTORS
 from ..connectors.mail import MailConnector, account_password, folder_list, safe_folder, test_account
 from ..db import get_session
+from ..engine import facts
 from ..engine.recurring import merchant_key
 from ..mail.box import box_untrusted
 from ..mail.imap import check_credential, parse_message
-from ..models import Account, Bill, ExtractedFact, InstallmentPlan, MailAccount, MessageRef, utcnow
+from ..models import Account, Bill, ExtractedFact, InstallmentPlan, MailAccount, MessageRef
 from .routes import today
 
 router = APIRouter(prefix="/api/v1", tags=["mail"])
@@ -324,7 +325,8 @@ def list_facts_rows(session: Session, status: str | None, limit: int) -> list[di
     query = select(ExtractedFact)
     if status:
         query = query.where(ExtractedFact.status == status)
-    rows = session.exec(query.order_by(ExtractedFact.created_at.desc()).limit(limit)).all()
+    newest = ExtractedFact.resolved_at.desc() if status in ("applied", "confirmed") else ExtractedFact.created_at.desc()  # answered: the latest answer first
+    rows = session.exec(query.order_by(newest, ExtractedFact.id.desc()).limit(limit)).all()
     refs = {r.id: r for r in session.exec(select(MessageRef).where(MessageRef.id.in_([f.message_ref_id for f in rows if f.message_ref_id]))).all()} if rows else {}
     out = [fact_out(f, refs.get(f.message_ref_id)) for f in rows]
     notices = [(item, f) for item, f in zip(out, rows) if f.kind in ("bill_due", "past_due", "price_change") and f.status == "pending"]
@@ -352,8 +354,14 @@ def list_facts_rows(session: Session, status: str | None, limit: int) -> list[di
 
 
 @router.get("/facts")
-def list_facts(status: str | None = "pending", limit: int = Query(50, ge=1, le=500), session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+def list_facts(status: str | None = "pending", limit: int = Query(50, ge=1, le=500), session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
     rows = list_facts_rows(session, status, limit)
+    if status in ("applied", "confirmed"):
+        for item in rows:  # who answered, worded for the screen, and whether Undo is worth offering
+            fact = session.get(ExtractedFact, item["id"])
+            item["resolved_by"] = facts.worded(session, fact.resolved_by, principal)
+            item["resolved_at"] = fact.resolved_at.isoformat() if fact.resolved_at else None
+            item["undoable"] = facts.undoable(fact)
     pending = len(session.exec(select(ExtractedFact.id).where(ExtractedFact.status == "pending")).all())
     return {"facts": rows, "pending": pending}
 
@@ -372,6 +380,13 @@ class ConfirmIn(In):
     warranty_until: date | None = None
 
 
+def refuse_forged(ref: MessageRef | None, *, owner: bool) -> None:
+    """A message judged forged (mail/trust.py) waits for the owner: a key or a connected app never confirms what it
+    says, since the model behind it may be reading that very message's instructions."""
+    if not owner and ref is not None and ref.trust == "crit":
+        raise HTTPException(403, "Only the owner confirms what a message that looks forged says; it waits on Needs you with the reason")
+
+
 def apply_fact(session: Session, fact: ExtractedFact, ref: MessageRef | None, body: ConfirmIn, *, owner: bool = False) -> str:
     """What a confirmed fact changes in the registers. Returns the applied_to tag.
 
@@ -379,6 +394,7 @@ def apply_fact(session: Session, fact: ExtractedFact, ref: MessageRef | None, bo
     more: no export is fetched, no name is overridden, an amount may move a quarter at most and a date six weeks
     at most, and only a bill of exactly the same name is updated."""
     fields = json.loads(fact.fields or "{}")
+    refuse_forged(ref, owner=owner)
     if not owner:
         if fact.kind == "export":
             raise HTTPException(403, "Only the owner, signed in, imports an export from mail")
@@ -567,11 +583,10 @@ def confirm_fact(fact_id: int, body: ConfirmIn, session: Session = Depends(get_s
         if fact.status != "pending":
             raise HTTPException(409, f"This one was {fact.status} already; nothing changed.")
         ref = session.get(MessageRef, fact.message_ref_id) if fact.message_ref_id else None
+        refuse_forged(ref, owner=principal.full)
+        b = facts.watermark(session)
         applied = apply_fact(session, fact, ref, body, owner=principal.full) if body.apply else ""
-        fact.status = "applied" if applied else "confirmed"
-        fact.applied_to = applied
-        fact.resolved_at = utcnow()
-        session.add(fact)
+        facts.resolve_fact(session, fact, "applied" if applied else "confirmed", applied_to=applied, by=facts.who(principal), before=b)
         session.commit()
         session.refresh(fact)
     if applied:
@@ -587,8 +602,33 @@ def confirm_fact(fact_id: int, body: ConfirmIn, session: Session = Depends(get_s
     return out
 
 
+@router.post("/facts/{fact_id}/unconfirm")
+def unconfirm(fact_id: int, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_owner)) -> dict:
+    """Take a confirmation back: a person signed in only, never a key or a connected app."""
+    from ..jobs.writing import one_writer
+
+    with one_writer():  # claimed as a confirmation claims it, so nothing confirms or syncs beside it
+        fact = session.get(ExtractedFact, fact_id)
+        if fact is None:
+            raise HTTPException(404, "No such fact")
+        session.refresh(fact)
+        tag = fact.applied_to
+        try:
+            out = facts.unconfirm_fact(session, fact_id, by=facts.who(principal))
+        except ValueError as error:
+            session.rollback()
+            services.audit(session, client=principal.name, client_kind=principal.kind, tool="facts_unconfirm_refused", args={"fact_id": fact_id}, rows=0)
+            raise HTTPException(409, str(error)) from error
+    services.audit(session, client=principal.name, client_kind=principal.kind, tool="facts_unconfirm", args={"fact_id": fact_id, "undone": tag}, rows=1)
+    if tag:
+        from ..llm.reviewer import mark_pending
+
+        mark_pending(session, f"{fact.kind} confirmation taken back")
+    return {"ok": True, "said": out["said"], "undone": out["undone"]}
+
+
 @router.post("/facts/{fact_id}/reject")
-def reject_fact(fact_id: int, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_scope("confirm"))) -> dict:
+def reject_fact(fact_id: int, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_scope("confirm"))) -> dict:
     from ..jobs.writing import one_writer
 
     with one_writer():
@@ -598,8 +638,6 @@ def reject_fact(fact_id: int, session: Session = Depends(get_session), _: auth.P
         session.refresh(fact)
         if fact.status != "pending":
             raise HTTPException(409, f"This one was {fact.status} already; nothing changed.")
-        fact.status = "rejected"
-        fact.resolved_at = utcnow()
-        session.add(fact)
+        facts.resolve_fact(session, fact, "rejected", by=facts.who(principal))
         session.commit()
     return {"ok": True}

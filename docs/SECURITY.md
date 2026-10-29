@@ -221,3 +221,23 @@ Every route with a body, query or path input (200 of 296) and every MCP tool was
 | A second person's strip counted only the owner's waiting sends; a Shared person was blurred by someone else's Hide amounts with no way out; a session ended mid-use landed on sign-in with no sentence | low | counts follow whoever reads them; Shared is never blurred by others; the sign-in says why |
 
 Held: integrity checks after every kill, no lock left on disk, every listed restore point whole, the Plaid cursor stored with its rows, two job threads beside owner taps for a week with every answer a success or a 4xx sentence; the network failures in the browser (timeouts, a proxy's 502, the writer lock's 409, offline) each end in a sentence and a retry.
+
+## The eleventh sweep, the MCP protocol, a model that obeys the mail, and round trips, 2026-10-29
+
+The MCP endpoint was driven with raw JSON-RPC and the SDK client: sessions crossed between credentials, resumed from another stream, cancelled mid-write, flooded, batched and sent methods outside the tools. A scripted model that does whatever the latest untrusted text says drove the chat, the reviewer and a confirm-scoped connected app against hostile mail, a lease and a merchant name. Every export format was taken out and brought back into an empty install. Tests: `backend/tests/test_sweep15_*.py`.
+
+| Found | Severity | Control now |
+|---|---|---|
+| One leaked read key could open ten thousand MCP sessions and lock every other client, the owner's included, out for half an hour | medium | sixteen sessions per credential; the seventeenth ends the oldest |
+| A figure inside a merchant name, a sender name or a subject counted as an engine number, so a model repeating it passed the citation check | medium | text from third parties is never an engine number, in the chat and in the reviewer |
+| A confirm-scoped app steered by a forged email could confirm the facts that very email made | medium | facts from mail judged forged are the owner's to confirm |
+| Two keys with the same name shared MCP sessions | low | a session is tied to the credential itself |
+| A cancelled `facts_confirm` or `mail_send_request` answered "cancelled" and committed anyway | low | the tool checks for cancellation before it writes, and the audit log says so |
+| Refused chat tools and unknown MCP tools wrote no audit row; `prompts/get` answered error code 0 with a traceback | low | `<tool>_refused` rows; clean JSON-RPC errors |
+| The push for a model-queued send did not say a model queued it; a connected app's confirmation was never pushed | low | both are pushed and named |
+| A confirmed fact kept no record of who confirmed it, and nothing could take a confirmation back | low | each answer records you, a person, a key, a connected app, a rule or the data check, and Needs you offers Undo where nothing has been built on it since |
+| A past-due notice from a forged sender still reached the brief and the reviewer by name | low | left to the data check |
+
+What a confirm-scoped connected app can be made to do by mail alone, after this round: confirm a pending fact from mail that is not judged forged, exactly as the message stated it, which the owner sees pushed and can undo; and queue sends, which always wait for a tap, ignore standing allowances and say which app asked. Nothing else: not the buffer, the rules, the reviewer's notes or an approval.
+
+Round trips (not security, recorded here because they decide what "take your data back" means): the off-box copy and a restore point come back whole; the app's own transactions CSV, OFX and Rocket Money exports read back exactly and add nothing when read twice or beside the bank link (before this round the CSV flipped every sign and the Rocket Money file doubled the ledger); splits and business marks do not travel in CSV; JSON, XLSX, QIF, Beancount and Ledger are ways out, not ways back, and say so.

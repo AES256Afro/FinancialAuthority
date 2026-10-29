@@ -56,7 +56,9 @@ def build_brief(snap: dict) -> list[dict]:
         if what in ("overdraft", "declined"):
             amount = alert["fields"].get("amount")
             items.append({"severity": "critical", "text": f"{alert['sender_name'] or 'The bank'} sent {'an overdraft' if what == 'overdraft' else 'a declined-charge'} alert on {when(alert['date']) if alert.get('date') else 'a recent day'}{f' for {money(amount)}' if amount else ''}.", "link": "/mail"})
-    past_due_notices = [f for f in mail.get("pending", []) if f["kind"] == "past_due"]
+    # A notice from a sender the trust check found forged is not said by name (the brief, and the reviewer's prompt
+    # built from it): a forged "you are past due" is the bait. The data check raises it, with the reason.
+    past_due_notices = [f for f in mail.get("pending", []) if f["kind"] == "past_due" and not f.get("forged")]
     if past_due_notices:
         names = ", ".join(f["sender_name"] or f["subject"] for f in past_due_notices[:3])
         items.append({"severity": "critical", "text": f"Past-due notice{'s' if len(past_due_notices) > 1 else ''} in the mail from {names}.", "link": "/confirm"})

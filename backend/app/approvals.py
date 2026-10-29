@@ -113,12 +113,13 @@ def create(session: Session, *, to: str, subject: str, body: str, reason: str = 
         session.commit()
         send(session, row)
     else:
-        title = "A send waits for you"
+        # Said in the push itself, not only on the screen: a draft a model queued may be a message's instructions.
+        title = "A send waits for you" if by_a_person else f"{(created_by or 'A connected app')[:60]} (a connected app or key) asks to send; it waits for you"
         if for_person_id is not None:
             from .models import Person
 
             person = session.get(Person, for_person_id)
-            title = f"A send waits for {(person.display_name or person.username) if person else 'the second person'}"
+            title = f"A send waits for {(person.display_name or person.username) if person else 'the second person'}" + ("" if by_a_person else f", asked for by {(created_by or 'a connected app')[:60]} (a connected app or key)")
         notify.send(session, title, f"To {to}: {row.subject}\n{reason or body[:140]}", priority="high", tags=["envelope"], link=None)
     session.refresh(row)
     return row

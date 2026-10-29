@@ -166,6 +166,33 @@ def _tool(server: "MCPServer", **kwargs: Any):  # noqa: ANN202
     return wrap
 
 
+def _cancelled() -> bool:
+    """Whether the client cancelled the call under way. A tool runs in a worker thread that a cancellation cannot stop,
+    so a write tool asks before it commits: a call the client was told is cancelled must not land."""
+    import anyio.from_thread
+
+    try:
+        anyio.from_thread.check_cancelled()
+    except RuntimeError:  # not in a worker thread (a direct call): nothing to cancel
+        return False
+    except BaseException:  # noqa: BLE001 - the backend's cancellation exception
+        return True
+    return False
+
+
+def _told_owner(client: str, kind: str, fact_id: int, applied: str) -> None:
+    """A fact a key or a connected app confirmed is pushed to the owner, with where it went, so a confirmation the
+    owner did not make is seen the day it happens and can be undone (the bill, plan or paystub it made)."""
+    from . import notify
+
+    what = {"bill_due": "a bill", "paystub": "a paystub", "installment": "a pay-later plan", "investment_balance": "a statement balance", "receipt": "a receipt"}.get(kind, f"a {kind.replace('_', ' ')}")
+    try:
+        with session_scope() as session:
+            notify.send(session, f"{client[:60]} confirmed {what} from the mail", f"Fact {fact_id}{f' became {applied}' if applied else ' was marked confirmed'}. If you did not want it, remove it on its page; the activity log lists every call.", tags=["memo"], link="/confirm")
+    except Exception:  # noqa: BLE001 - a push that fails never undoes or fails the confirmation
+        log.warning("could not push the confirmation of fact %s", fact_id)
+
+
 def build_server() -> MCPServer:
     base = issuer()
     server = MCPServer(
@@ -185,6 +212,33 @@ def build_server() -> MCPServer:
         ),
         log_level="WARNING",
     )
+
+    async def no_prompts(name: str, arguments: dict | None = None, context: Any = None) -> Any:
+        """The app offers tools only. The SDK answered a prompt it does not hold with error code 0 and a traceback in the
+        log for every request; this is the JSON-RPC answer for a name that does not exist, and nothing is logged."""
+        from mcp.shared.exceptions import MCPError
+
+        raise MCPError(-32602, "No such prompt; this server offers tools only")
+
+    server.get_prompt = no_prompts  # type: ignore[method-assign]
+
+    listed_call = server.call_tool
+
+    async def call_tool(name: str, arguments: dict[str, Any], context: Any = None) -> Any:
+        """A call to a tool the server does not have (one a message named, say) is answered by the SDK's own error, and
+        leaves a `_refused` row like any other refused call, so the owner sees the attempt."""
+        if server._tool_manager.get_tool(name) is None:
+            import anyio.to_thread
+
+            def note() -> None:
+                client, level = _caller()
+                with session_scope() as session:
+                    services.audit(session, client=client, client_kind="key", tool=f"{re.sub(r'[^A-Za-z0-9_.-]', '', str(name))[:60]}_refused", args={}, rows=0, redaction=level)
+
+            await anyio.to_thread.run_sync(note)
+        return await listed_call(name, arguments, context)
+
+    server.call_tool = call_tool  # type: ignore[method-assign]
 
     @_tool(server, name="finance_snapshot", annotations=READ_ONLY)
     def finance_snapshot_tool() -> dict:
@@ -951,8 +1005,10 @@ def build_server() -> MCPServer:
 
         from fastapi import HTTPException
 
-        from .api.mail import ConfirmIn, apply_fact
-        from .models import ExtractedFact, MessageRef, utcnow
+        from . import auth
+        from .api.mail import ConfirmIn, apply_fact, refuse_forged
+        from .engine import facts
+        from .models import ExtractedFact, MessageRef
 
         token = get_access_token()
         scopes = set(token.scopes or []) if token else set()
@@ -961,6 +1017,8 @@ def build_server() -> MCPServer:
         from .jobs.writing import one_writer
 
         client, redaction = _caller()
+        claims = (getattr(token, "claims", None) or {}) if token else {}
+        by = facts.who(auth.Principal(kind="key", name=client), app=claims.get("kind") == "oauth")
         with session_scope() as session, one_writer():  # claimed as the facts route claims it: one confirmation at a time, read again under the lock
             fact = session.get(ExtractedFact, fact_id)
             if fact is not None:
@@ -969,17 +1027,25 @@ def build_server() -> MCPServer:
                 return {"error": "no such pending fact"}
             ref = session.get(MessageRef, fact.message_ref_id) if fact.message_ref_id else None
             body = ConfirmIn(apply=apply, name=name, amount=amount, due_date=_date.fromisoformat(due_date) if due_date else None)
+            b = facts.watermark(session)
             try:
+                refuse_forged(ref, owner=False)
                 applied = apply_fact(session, fact, ref, body, owner=False) if apply else ""
             except HTTPException as error:
                 session.rollback()
                 _audit(session, client=client, client_kind="key", tool="facts_confirm_refused", args={"fact_id": fact_id}, rows=0, redaction=redaction)
                 return {"error": str(error.detail)}
-            fact.status, fact.applied_to, fact.resolved_at = ("applied" if applied else "confirmed"), applied, utcnow()
-            session.add(fact)
+            if _cancelled():
+                # The client gave up on the call: nothing lands, so "cancelled" is the truth rather than a write it never saw.
+                session.rollback()
+                _audit(session, client=client, client_kind="key", tool="facts_confirm_cancelled", args={"fact_id": fact_id}, rows=0, redaction=redaction)
+                return {"error": "cancelled; nothing was confirmed"}
+            facts.resolve_fact(session, fact, "applied" if applied else "confirmed", applied_to=applied, by=by, before=b)
+            kind = fact.kind
             session.commit()
             _audit(session, client=client, client_kind="key", tool="facts_confirm", args={"fact_id": fact_id}, rows=1, redaction=redaction)
-            return {"ok": True, "status": fact.status, "applied_to": applied}
+        _told_owner(client, kind, fact_id, applied)
+        return {"ok": True, "status": "applied" if applied else "confirmed", "applied_to": applied}
 
     @_tool(server, name="mail_send_request")
     def mail_send_request(to: str, subject: str, body: str, reason: str = "") -> dict:
@@ -1000,6 +1066,8 @@ def build_server() -> MCPServer:
         if "confirm" not in scopes:
             return {"error": "queuing a send needs a client holding the confirm scope"}
         client, redaction = _caller()
+        if _cancelled():
+            return {"error": "cancelled; nothing was queued"}
         with session_scope() as session:
             try:
                 # A key a second person made queues that person's own sends: their approval, their allowances, never the owner's.
@@ -1039,6 +1107,29 @@ def build_server() -> MCPServer:
 mcp_server = build_server()
 
 
+SESSIONS_PER_CREDENTIAL = 16  # a client opens one per conversation; claude.ai keeps a few, a script one
+
+
+def _bound_sessions(manager) -> None:  # noqa: ANN001
+    """At most SESSIONS_PER_CREDENTIAL open MCP sessions for one key or one app's tokens: opening one more ends that
+    credential's oldest, which then answers 404 (the client starts a new one). The SDK caps all sessions together
+    (10,000) and nothing per credential, so one leaked read key could fill the table and leave every other client,
+    the owner's own included, refused with 503 until the sessions idled out half an hour later."""
+    admit = manager._admit_session
+
+    def admit_bounded(requestor):  # noqa: ANN001, ANN202
+        if requestor is not None:
+            mine = [sid for sid, owner in list(manager._session_owners.items()) if owner == requestor]
+            for sid in mine[: max(0, len(mine) - SESSIONS_PER_CREDENTIAL + 1)]:
+                transport = manager._server_instances.pop(sid, None)
+                manager._session_owners.pop(sid, None)
+                if transport is not None and manager._task_group is not None:
+                    manager._task_group.start_soon(transport.terminate)
+        return admit(requestor)
+
+    manager._admit_session = admit_bounded
+
+
 def asgi_routes():
     """The MCP endpoint, the OAuth endpoints and the metadata documents, as routes to add to the main app.
 
@@ -1049,6 +1140,7 @@ def asgi_routes():
         streamable_http_path="/mcp",
         transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
     )
+    _bound_sessions(mcp_server.session_manager)
     routes = []
     for route in app.routes:
         if getattr(route, "path", "") == "/mcp":

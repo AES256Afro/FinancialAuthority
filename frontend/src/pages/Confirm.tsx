@@ -647,6 +647,55 @@ function Pairs({ state, onChanged }: { state: Loaded<PairsOut>; onChanged: () =>
   );
 }
 
+/** The last confirmations that changed something, with who gave each, and Undo where it can be taken back. */
+function RecentlyConfirmed({ state, onChanged }: { state: Loaded<{ facts: FactRow[] }>; onChanged: () => void }) {
+  const [said, setSaid] = useState<{ text: string; tone: "info" | "error" } | null>(null);
+  const saidRef = useFocusOnSaid(said);
+  const rows = state.data?.facts ?? [];
+  if (rows.length === 0 && !said) return null;
+  async function undo(f: FactRow) {
+    try {
+      const r = await api<{ said: string }>(`/api/v1/facts/${f.id}/unconfirm`, { method: "POST" });
+      setSaid({ text: r.said, tone: "info" });
+      onChanged(); // asks this list, the waiting ones and the counts again
+    } catch (e) {
+      setSaid({ text: (e as Error).message, tone: "error" });
+    }
+  }
+  return (
+    <section style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <h2 className="lab" style={{ margin: "6px 0 0" }}>Recently confirmed</h2>
+      <div ref={saidRef} tabIndex={-1}><Said text={said?.text ?? null} tone={said?.tone} /></div>
+      {rows.length > 0 && (
+        <div className="card" style={{ padding: "4px 16px", fontSize: 13, display: "flex", flexDirection: "column" }}>
+          {rows.map((f, i) => {
+            const name = String(f.fields.name || f.fields.provider || f.fields.employer || f.message?.sender_name || "");
+            return (
+              <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: "8px 0", borderTop: i === 0 ? 0 : "1px solid var(--surface-2)" }}>
+                <div style={{ flex: "1 1 240px", minWidth: 0, display: "flex", flexDirection: "column", gap: 2 }}>
+                  <span style={{ fontWeight: 700 }}>{FACT_LABEL[f.kind] ?? f.kind}{name ? ` · ${name}` : ""}</span>
+                  <span style={{ fontSize: 12, color: "var(--muted)" }}>Confirmed{f.resolved_by ? ` by ${f.resolved_by}` : ""}{f.resolved_at ? `, ${when(f.resolved_at)}` : ""}</span>
+                </div>
+                {f.undoable && (
+                  <ConfirmButton
+                    label="Undo"
+                    name={`Undo ${FACT_LABEL[f.kind] ?? f.kind}${name ? ` ${name}` : ""}`}
+                    style={{ minHeight: 32, padding: "4px 10px" }}
+                    question="Undo? What confirming it added is taken out, and it waits for an answer again."
+                    yes="Yes, undo it"
+                    no="Keep it"
+                    onConfirm={() => undo(f)}
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 const CADENCE: Record<string, string> = { weekly: "every week", biweekly: "every two weeks", semimonthly: "twice a month", monthly: "monthly", quarterly: "every three months", semiannual: "every six months", yearly: "yearly" };
 const LEFT_HINT = "Type how many payments are left, like 4. The lender's app shows it.";
 
@@ -739,9 +788,14 @@ function Row({ s, onDone }: { s: SeriesRow; onDone: (done: Done) => void }) {
   );
 }
 
+// Repeating charges come thirty at a time, largest first: a first detection over years of transactions can find
+// hundreds, and every one of them at once was thousands of elements on a phone.
+const SERIES_STEP = 30;
+
 export function Confirm({ onChanged }: { onChanged: () => void }) {
   const { data, reload, error } = useApi<{ series: SeriesRow[]; pending: number }>("/api/v1/recurring");
   const facts = useApi<{ facts: FactRow[]; pending: number }>("/api/v1/facts?status=pending");
+  const confirmed = useApi<{ facts: FactRow[] }>("/api/v1/facts?status=applied&limit=20");
   const pairs = useApi<PairsOut>("/api/v1/pairs");
   // The app's grouped count, asked again after any answer anywhere in the app.
   const needs = useApi<NeedsYouOut>("/api/v1/needs-you", { live: true });
@@ -752,6 +806,7 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
   const [looked, setLooked] = useState<{ text: string; tone: "info" | "error" } | null>(null);
   const [factSaid, setFactSaid] = useState<Done | null>(null);
   const [seriesSaid, setSeriesSaid] = useState<Done | null>(null);
+  const [seriesShown, setSeriesShown] = useState(SERIES_STEP);
   // A next step links to #approvals, #facts or #series: the jump waits until all three lists are on the page.
   useJumpToHash(data && facts.data && approvalsWaiting !== null);
   // Your own emails waiting are counted from the list below, as the tab badge does; the rest is the engine's count.
@@ -779,6 +834,7 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
   // An answer about mail, a document or a bill changes the grouped count: it is asked again with the list.
   const factAnswered = () => {
     facts.reload();
+    confirmed.reload();
     needs.reload();
     onChanged();
   };
@@ -824,6 +880,7 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
         </section>
       )}
       <DoneLine done={factSaid} />
+      <RecentlyConfirmed state={confirmed} onChanged={factAnswered} />
       <PaidQuestions state={needs} onAnswered={onChanged} />
       <Pairs state={pairs} onChanged={onChanged} />
       {error && !data && <Failed error={error} what="the repeating charges" onRetry={reload} />}
@@ -832,7 +889,7 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
         <section id="series" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <h2 className="lab" style={{ margin: "6px 0 0" }}>From your transactions · {data.pending}</h2>
           <DoneLine done={seriesSaid} />
-          {data.series.map((s) => (
+          {data.series.slice(0, seriesShown).map((s) => (
             <Row
               key={s.id}
               s={s}
@@ -844,6 +901,11 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
               }}
             />
           ))}
+          {data.series.length > seriesShown && (
+            <button type="button" className="btn" style={{ alignSelf: "flex-start" }} onClick={() => setSeriesShown((n) => n + SERIES_STEP)}>
+              Show {Math.min(SERIES_STEP, data.series.length - seriesShown)} more ({data.series.length - seriesShown} not shown)
+            </button>
+          )}
         </section>
       ) : (
         <DoneLine done={seriesSaid} />

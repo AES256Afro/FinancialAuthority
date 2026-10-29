@@ -88,6 +88,11 @@ export interface FactRow {
   message: { id: number; sender: string; sender_name: string; subject: string; date: string | null; trust?: string; trust_why?: string } | null;
   /** A bill notice from someone the app already counts another way: where (Housing, Debts, Borrowing). */
   counted_elsewhere?: string | null;
+  /** On an answered one: who answered, worded ("you", a person's name, an app's name, "a rule", "the data check"). */
+  resolved_by?: string;
+  resolved_at?: string | null;
+  /** Whether Undo is worth offering; the server may still refuse, with its reason. */
+  undoable?: boolean;
 }
 
 export interface PaystubRow {

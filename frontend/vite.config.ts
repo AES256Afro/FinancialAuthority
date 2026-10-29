@@ -41,6 +41,12 @@ export default defineConfig({
       "/mcp": "http://localhost:8000",
     },
   },
-  build: { outDir: process.env.VITE_STATIC_DEMO === "1" ? "dist-demo" : "dist", sourcemap: false },
+  build: {
+    outDir: process.env.VITE_STATIC_DEMO === "1" ? "dist-demo" : "dist",
+    sourcemap: false,
+    // What the first page needs comes as one file. Left to itself the bundler split it into some twenty small shared
+    // pieces (an icon, a formatter), and a phone on a slow line fetched them six at a time before the app could start.
+    rolldownOptions: { output: { codeSplitting: { groups: [{ name: "app", tags: ["$initial"] }] } } },
+  },
   test: { environment: "node", include: ["src/**/*.test.ts"] },
 });
