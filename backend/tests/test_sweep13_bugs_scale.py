@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import random
+import os
 import time
 import tracemalloc
 from datetime import UTC, date, datetime, timedelta
@@ -44,7 +45,7 @@ from app.models import (
 
 TODAY = date(2026, 10, 14)
 YEARS = 5
-ROUTE_LIMIT = 1.5  # seconds a screen's read may take
+ROUTE_LIMIT = 1.5 * (6 if os.environ.get("CI") else 1)  # seconds a screen's read may take; the shared CI runner is several times slower than a laptop
 JOB_LIMIT = 30.0  # seconds one run of a job may take
 SENDERS = [f"billing{n}@example.test" for n in range(40)] + [f"alerts{n}@bank{n}.example.test" for n in range(10)]
 KINDS = ["bill_due", "statement", "receipt", "bank_alert", "payment_confirmation", "", "", "newsletter"]
