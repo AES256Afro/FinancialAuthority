@@ -105,7 +105,7 @@ export function BorrowingPlan() {
                 <tbody>
                   {p.loans.map((l) => (
                     <tr key={l.id}>
-                      <td><span aria-hidden="true" style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: colour.get(l.id), marginRight: 6 }} />{l.label ?? l.name}<div style={{ fontSize: 11, color: "var(--muted)" }}>{l.apr ? `${l.apr}% a year` : "0%"} · ends {shortDate(l.ends)}{l.per_month !== undefined ? ` · ${money(l.per_month, { cents: true })} a month` : ""}</div></td>
+                      <td><span aria-hidden="true" style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: colour.get(l.id), marginRight: 6 }} />{l.label ?? l.name}<div className="num" style={{ fontSize: 11, color: "var(--muted)" }}>{l.apr ? `${l.apr}% a year` : "0%"} · ends {shortDate(l.ends)}{l.per_month !== undefined ? ` · ${money(l.per_month, { cents: true })} a month` : ""}</div></td>
                       <td className="num">{shortDate(l.next_date)}<div style={{ fontSize: 11, color: "var(--muted)" }}>{money(l.next_amount, { cents: true })}</div>
                         <button type="button" className="btn" aria-label={`I paid ${l.label ?? l.name}`} onClick={() => paid(l.id)} style={{ minHeight: 28, padding: "2px 8px", fontSize: 11, marginTop: 4, whiteSpace: "nowrap" }}>I paid it</button></td>
                       <td className="num" style={{ textAlign: "right" }}>{money(l.left_to_pay, { cents: true })}<div style={{ fontSize: 11, color: "var(--muted)" }}>{l.payments_left} payment{l.payments_left === 1 ? "" : "s"}</div></td>

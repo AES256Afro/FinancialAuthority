@@ -50,17 +50,22 @@ struct GlanceWidgetView: View {
         if let g = entry.glance {
             switch family {
             case .accessoryInline:
+                // Lock Screen and watch faces are seen by whoever holds the device: the figures are privacy
+                // sensitive, so iOS and watchOS draw them redacted while the device is locked or the wrist is down.
                 Text(g.safe_to_spend.map { "\(Format.money($0)) safe · payday \(Format.paydayWords(g.payday.days))" } ?? "Payday \(Format.paydayWords(g.payday.days))")
+                    .privacySensitive()
             case .accessoryCircular:
                 VStack(spacing: 0) {
                     Text(g.safe_to_spend.map { Format.money($0) } ?? "?").font(.system(.caption, design: .rounded).weight(.heavy)).minimumScaleFactor(0.5)
                         .accessibilityLabel(Format.safe(g.safe_to_spend))
+                        .privacySensitive()
                     Text("\(g.payday.days)d").font(.caption2)
                 }
             case .accessoryRectangular:
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Safe to spend").font(.caption2)
                     Text(Format.safe(g.safe_to_spend)).font(.headline.weight(.heavy)).minimumScaleFactor(0.6)
+                        .privacySensitive()
                     Text("Payday \(Format.paydayWords(g.payday.days))").font(.caption2)
                 }
             #if os(iOS)
@@ -71,6 +76,7 @@ struct GlanceWidgetView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         StateBadge(status: g.status)
                         Text(g.one_thing).font(.caption).lineLimit(4)
+                            .privacySensitive()
                     }
                     .frame(maxWidth: 160, alignment: .leading)
                 }
@@ -88,6 +94,7 @@ struct GlanceWidgetView: View {
             Text("Safe to spend").font(.caption).foregroundStyle(.secondary)
             Text(Format.safe(g.safe_to_spend)).font(.system(.title, design: .rounded).weight(.heavy)).lineLimit(1).minimumScaleFactor(0.4)
                 .foregroundStyle((g.safe_to_spend ?? 0) < 0 ? .red : .primary)
+                .privacySensitive()
             Text("through \(Format.shortDay(g.through))").font(.caption2).foregroundStyle(.secondary)
             Spacer(minLength: 2)
             Text("Payday \(Format.paydayWords(g.payday.days))").font(.caption2.weight(.semibold)).foregroundStyle(.blue)

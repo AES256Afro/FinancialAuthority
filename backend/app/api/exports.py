@@ -180,7 +180,7 @@ def feed_revoke(session: Session = Depends(get_session), principal: auth.Princip
 
 
 _hits: dict[str, list[float]] = {}
-FEED_LIMIT = 60  # requests an hour: wrong addresses per caller, and the right one on its own count
+FEED_LIMIT = 60  # requests an hour per caller: wrong addresses on one count, the right one on its own
 
 
 def _allow(key: str, now: float) -> bool:
@@ -202,11 +202,12 @@ def _allow(key: str, now: float) -> bool:
 def feed(token: str, request: Request, session: Session = Depends(get_session)) -> Response:
     # A wrong address is counted per caller: the forwarded one behind a proxy the owner named, else the peer (or, with
     # a forwarding header and no proxy named, one shared count), so a guesser is slowed wherever it guesses from. The
-    # right address has a count of its own: counted with the guesses, a stranger's sixty wrong tries an hour through
-    # the same proxy (all one "forwarded" caller) shut the owner's own calendar out.
+    # right address has counts of its own, per caller too: counted with the guesses, a stranger's sixty wrong tries an
+    # hour through the same proxy (all one "forwarded" caller) shut the owner's calendar out; counted as one, a phone
+    # and a laptop on the same feed would share an hour's limit.
     feed_cfg = get_setting(session, FEED_KEY, {}) or {}
     right = bool(feed_cfg.get("hash")) and len(token) >= 30 and secrets.compare_digest(_hash(token), feed_cfg["hash"])
-    if not _allow("feed:the-feed" if right else "feed:" + auth._client_ip(request), time.time()):
+    if not _allow(("feed:right:" if right else "feed:") + auth._client_ip(request), time.time()):
         raise HTTPException(429, "Too many requests")
     if not right:
         raise HTTPException(404, "Not found")

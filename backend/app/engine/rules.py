@@ -33,14 +33,17 @@ def forget(session: Session) -> None:
     session.info.pop(CACHE_KEY, None)
 
 
-NESTED_QUANTIFIER = re.compile(r"\([^)]*(?:[*+?}]|\|)[^)]*\)\s*[*+?{]")
+NESTED_QUANTIFIER = re.compile(r"\([^)]*(?:[*+?}]|\|)[^)]*\)[*+?{]")  # the quantifier right after the group: one after a space quantifies the space (sweep 23)
 
 
 @lru_cache(maxsize=256)
 def _rule_regex(source: str) -> re.Pattern | None:
     """A saved rule's pattern, compiled once. A quantified group that holds a quantifier or an alternation (the shape
     that backtracks without end) is refused, as is one that does not compile."""
-    if NESTED_QUANTIFIER.search(source):
+    shape = re.sub(r"\(\?(?:[:>=!]|<[=!]|P?<\w+>)", "(", source)  # a group's own "(?:" is no quantifier (sweep 23)
+    if re.search(r"\(\?[a-zA-Z]*x", source):
+        shape = re.sub(r"\s+", "", shape)  # verbose mode: a space between the group and its quantifier is no space
+    if NESTED_QUANTIFIER.search(shape):
         return None
     try:
         return re.compile(source, re.IGNORECASE)

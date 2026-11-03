@@ -186,6 +186,8 @@ export default function App() {
         <Route path="/settings/models" element={<Models />} />
         <Route path="/settings/notifications" element={<Notifications />} />
         <Route path="/settings/connectors" element={<Connectors />} />
+        {/* The engine's "link a bank" steps (the brief, the one thing, the data check) say /settings/banks: the banks are a part of Connections. */}
+        <Route path="/settings/banks" element={<Navigate to="/settings/connectors#banks" replace />} />
         <Route path="/settings/jobs" element={<Jobs />} />
         <Route path="/data-check" element={<DataCheck />} />
         <Route path="/settings/audit" element={<Audit />} />

@@ -30,10 +30,22 @@ function stampServiceWorker(): Plugin {
   };
 }
 
+// The static demo answers every call from its recorded data and has no server: the page's early ask for who is
+// signed in (index.html) would go to the host serving the files and fail in the console, so the demo leaves it out.
+function demoWithoutServerPreload(): Plugin {
+  return {
+    name: "fa-demo-without-server-preload",
+    apply: "build",
+    transformIndexHtml(html) {
+      return process.env.VITE_STATIC_DEMO === "1" ? html.replace(/\s*<!--[^>]*?first question[\s\S]*?-->\s*<link rel="preload" href="\/api\/auth\/me"[^>]*>/, "") : html;
+    },
+  };
+}
+
 export default defineConfig({
   // The static demo is published as files beside one page, so its asset paths are relative.
   base: process.env.VITE_STATIC_DEMO === "1" ? "./" : "/",
-  plugins: [react(), tailwindcss(), stampServiceWorker()],
+  plugins: [react(), tailwindcss(), stampServiceWorker(), demoWithoutServerPreload()],
   server: {
     port: 5173,
     proxy: {

@@ -269,10 +269,10 @@ class MailQuarter(Quarter):
                          pdf=(f"paystub-{d.isoformat()}.pdf", pdf_of(paystub_lines(d, n))))
         for key, plan in PLANS.items():
             if d == plan["sent"]:
-                self.deliver("Affirm", "affirm-confirmation@affirm.test", "Your loan confirmation", loan_confirmation(plan), tag=f"affirm:{key}", expect="installment")
+                self.deliver("Affirm", "affirm-confirmation@affirm.com", "Your loan confirmation", loan_confirmation(plan), tag=f"affirm:{key}", expect="installment")
         if d.day == 1 and d > START:
             period_end = d - timedelta(days=1)
-            self.deliver("Affirm", "statements@affirm.test", "Your Affirm Loans Statement is ready", f"Your Affirm Loans Statement for {period_end:%B} is attached.\n", tag=f"affirm_statement:{period_end.isoformat()}", expect="affirm_statement",
+            self.deliver("Affirm", "statements@affirm.com", "Your Affirm Loans Statement is ready", f"Your Affirm Loans Statement for {period_end:%B} is attached.\n", tag=f"affirm_statement:{period_end.isoformat()}", expect="affirm_statement",
                          pdf=(f"affirm-statement-{period_end:%Y-%m}.pdf", pdf_of(affirm_statement_lines(period_end))))  # the PDF is not read from mail (reported); the mail reads as a bill notice
         if d.weekday() == 0:  # Monday: a purchase alert for a card charge the bank posts tomorrow
             tomorrow = next((t for t in self.rows.get(d + timedelta(days=1), []) if t["account"] == "card" and t["amount"] > 0), None)

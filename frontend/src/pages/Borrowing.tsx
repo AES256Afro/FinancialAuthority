@@ -166,7 +166,7 @@ function StreamRow({ s, onDone }: { s: Stream; onDone: () => void }) {
   const canSet = s.status === "bill" || s.status === "pending";
   return (
     <tr>
-      <td><strong>{s.provider}</strong><div style={{ fontSize: 11, color: "var(--muted)" }}>{CADENCE[s.cadence_days] ?? `every ${s.cadence_days} days`}{s.cadence_assumed ? " (assumed from one payment)" : ""} · {s.payments_seen} paid, {money(s.paid_so_far)} so far{s.last_date ? `, last ${shortDate(s.last_date)}` : " · payment dates not known"}</div></td>
+      <td><strong>{s.provider}</strong><div className="num" style={{ fontSize: 11, color: "var(--muted)" }}>{CADENCE[s.cadence_days] ?? `every ${s.cadence_days} days`}{s.cadence_assumed ? " (assumed from one payment)" : ""} · {s.payments_seen} paid, {money(s.paid_so_far)} so far{s.last_date ? `, last ${shortDate(s.last_date)}` : " · payment dates not known"}</div></td>
       <td className="num" style={{ textAlign: "right" }}>{money(s.amount, { cents: true })}</td>
       <td>{s.next_date ? shortDate(s.next_date) : "date not known"}</td>
       <td>

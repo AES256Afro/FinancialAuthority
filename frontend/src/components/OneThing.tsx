@@ -9,7 +9,7 @@ import { NAV_ITEMS } from "./Shell";
 import { Failed, Loading } from "./State";
 import { StatusPill } from "./Status";
 
-const PLACES: Record<string, string> = { "/settings/connectors": "Connections", "/settings/setup": "Setting up", "/settings/appearance": "Appearance", "/settings/notifications": "Notifications", "/checkin": "Weekly check-in", "/welcome": "Setup steps", "/glossary": "Words" };
+const PLACES: Record<string, string> = { "/settings/connectors": "Connections", "/settings/banks": "Connections", "/settings/setup": "Setting up", "/settings/appearance": "Appearance", "/settings/notifications": "Notifications", "/checkin": "Weekly check-in", "/welcome": "Setup steps", "/glossary": "Words" };
 
 /** The name of the screen a link opens, so a button can say where it goes: "Open Bills". */
 export function placeName(link: string): string {

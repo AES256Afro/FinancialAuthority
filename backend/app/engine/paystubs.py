@@ -174,13 +174,17 @@ def lines_moved(p: Paystub, before: Paystub | None) -> list[dict]:
 
 
 def paystubs_overview(session: Session, limit: int = 8) -> dict:
-    rows = session.exec(select(Paystub).order_by(Paystub.pay_date.desc()).limit(limit + 1)).all()
+    rows = session.exec(select(Paystub).order_by(Paystub.pay_date.desc(), Paystub.id.desc()).limit(limit + 4)).all()
+    income = session.exec(select(Income).where(Income.active == True)).first()  # noqa: E712
     older = rows[1:]
     rows = rows[:limit]
     out = []
     for i, p in enumerate(rows):
         row = paystub_out(p)
-        row["moved"] = lines_moved(p, older[i] if i < len(older) else None)  # PLAN 7: a discrepancy is flagged with the lines that moved
+        # Against the last stub in the same position of the month, as expected_net judges it: a semi-monthly end check
+        # read against the mid check named the lines that differ every month (sweep 23).
+        before = next((o for o in older[i:] if _position(income, o.pay_date) == _position(income, p.pay_date)), None)
+        row["moved"] = lines_moved(p, before)  # PLAN 7: a discrepancy is flagged with the lines that moved
         kept = session.exec(select(Document).where(Document.attach_to == f"paystub:{p.id}")).first()
         row["document_id"] = kept.id if kept else None
         usual = expected_net(session, p.pay_date)  # judged afresh, by position of the month, against what is known now

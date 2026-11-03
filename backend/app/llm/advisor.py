@@ -24,6 +24,11 @@ from .providers import Event, Provider, ToolSpec
 # Tools that return third-party words (mail, documents, what was read from them): their figures never verify a reply.
 UNTRUSTED_TOOLS = {"mail_search", "mail_read", "mail_attachment", "facts_pending", "documents_search", "document_read"}
 CHAT_TOOLS = ["finance_snapshot", "accounts_list", "transactions_search", "spending_summary", "debts_list", "borrowing", "scenario_run", "readiness", "accounts_cover", "saving_plan", "today_one_thing", "weekly_checkin", "paycheck_views", "billing_date_check", "glance", "account_move", "investments_list", "outlook", "where_to_put", "purchase_check", "billing_dates_suggest", "watchlist", "recurring_list", "bills_list", "payments_list", "paystubs_list", "brief_today", "next_steps", "mail_search", "mail_read", "mail_attachment", "facts_pending", "jobs_status", "housing_overview", "documents_search", "document_read", "receipts_list"]
+# Tools that hand over a message's body, an attachment or a document's text. A model behind a cloud key (Anthropic,
+# an OpenAI-compatible server) is never offered them: the owner was told those servers get the plan and never the
+# mail (docs/SECURITY.md, the BoxPilot manifest), and at "full" the chat sent whole messages there (sweep 23).
+BODY_TOOLS = {"mail_read", "mail_attachment", "document_read", "documents_search"}
+CLOUD_PROVIDERS = {"anthropic", "openai"}
 MAX_ROUNDS = 6
 MAX_TOOL_CHARS = 14000
 
@@ -182,7 +187,8 @@ async def advise(
 
     system, allowed, quotes = await asyncio.to_thread(prepare)  # the plan is worked out off the event loop
     messages: list[dict] = [{"role": "system", "content": system}, *history]
-    specs = tool_specs() if tools else []
+    offered = [t for t in CHAT_TOOLS if provider.id not in CLOUD_PROVIDERS or t not in BODY_TOOLS]
+    specs = tool_specs(offered) if tools else []
     reply_parts: list[str] = []
     used: list[dict] = []
     input_tokens = output_tokens = 0
@@ -213,7 +219,7 @@ async def advise(
             "tool_calls": [{"id": c.id, "type": "function", "function": {"name": c.name, "arguments": json.dumps(c.arguments)}} for c in calls],
         })
         for call in calls:
-            if call.name not in CHAT_TOOLS:
+            if call.name not in offered:
                 payload: Any = {"error": f"{call.name} is not available in the chat"}
                 await asyncio.to_thread(_refused, call.name, call.arguments)  # an attempt is in the activity log, whatever the tool
             else:
