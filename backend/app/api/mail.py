@@ -390,9 +390,11 @@ class ConfirmIn(In):
 
 def refuse_forged(ref: MessageRef | None, *, owner: bool) -> None:
     """A message judged forged (mail/trust.py) waits for the owner: a key or a connected app never confirms what it
-    says, since the model behind it may be reading that very message's instructions."""
-    if not owner and ref is not None and ref.trust == "crit":
-        raise HTTPException(403, "Only the owner confirms what a message that looks forged says; it waits on Needs you with the reason")
+    says, since the model behind it may be reading that very message's instructions. Nor one the trust check could
+    not vouch for ("warn": a brand's name from a domain that only looks like its own, replies sent elsewhere, a
+    server that could not confirm the sender): a look-alike that passes DMARC is exactly that (sweep 23)."""
+    if not owner and ref is not None and ref.trust in ("crit", "warn"):
+        raise HTTPException(403, "Only the owner confirms what a message that may be forged says: the trust check could not vouch for its sender. It waits on Needs you with the reason")
 
 
 def apply_fact(session: Session, fact: ExtractedFact, ref: MessageRef | None, body: ConfirmIn, *, owner: bool = False) -> str:

@@ -78,11 +78,15 @@ export function useWidth(box: RefObject<HTMLElement | null>, start = 720): numbe
 /** Lands on the part of the page a link named (#id): scrolls it into view once `ready` is there, and puts focus on
  * its first control, so a next step's tap ends on the exact button and the keyboard starts there too. */
 export function useJumpToHash(ready: unknown = true): void {
-  const { hash } = useLocation();
+  const { hash, key } = useLocation();
+  // Once per arrival: a page that loads its data again after a save (a new `ready`) must not pull the screen and the
+  // focus back to the named part, away from the control just used. Following the link again is a new arrival.
+  const landed = useRef<string | null>(null);
   useEffect(() => {
-    if (!hash || !ready) return;
+    if (!hash || !ready || landed.current === key) return;
     const el = document.getElementById(hash.slice(1));
     if (!el) return;
+    landed.current = key;
     el.scrollIntoView({ block: "start" });
     const control = el.querySelector<HTMLElement>("button, a[href], input:not([type=hidden]), select, textarea, summary, [tabindex]");
     if (control) control.focus({ preventScroll: true });
@@ -90,7 +94,7 @@ export function useJumpToHash(ready: unknown = true): void {
       if (!el.hasAttribute("tabindex")) el.tabIndex = -1;
       el.focus({ preventScroll: true });
     }
-  }, [hash, ready]);
+  }, [hash, key, ready]);
 }
 
 /** A save's outcome, next to the button that caused it. */

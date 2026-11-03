@@ -3589,7 +3589,7 @@
    "stranger": 401
   },
   "PUT /api/v1/push": {
-   "everything": 200,
+   "everything": 403,
    "key_confirm": 403,
    "key_confirm_aggregates": 403,
    "key_read": 403,

@@ -57,10 +57,14 @@ def _match_in_month(bill: Bill, bill_key: list[str], series_key: str | None, due
     for t in transactions:
         if t.id in used or t.date > today or (t.date.year, t.date.month) != (due.year, due.month):
             continue
-        if any(d != due and d - timedelta(days=BEFORE_DAYS) <= t.date <= d + timedelta(days=max(AFTER_DAYS, bill.grace_days)) for d in others):
-            continue  # it sits near another period's day (rent due the 2nd paid on the 28th before): that period's payment, never a missed month's
-        if abs(t.amount - bill.amount) <= tolerance and _looks_like(bill_key, series_key, merchant_key(t.merchant)):
-            return t
+        if not (abs(t.amount - bill.amount) <= tolerance and _looks_like(bill_key, series_key, merchant_key(t.merchant))):
+            continue
+        near = [d for d in others if d != due and d - timedelta(days=BEFORE_DAYS) <= t.date <= d + timedelta(days=max(AFTER_DAYS, bill.grace_days))]
+        # It sits near another period's day (rent due the 2nd paid on the 28th before): that period's payment, never a
+        # missed month's; unless that period has its own row, when this one is the late month's (sweep 23).
+        if any(_match_for(bill, bill_key, series_key, d, [u for u in transactions if u.id != t.id], used) is None for d in near):
+            continue
+        return t
     return None
 
 
@@ -127,7 +131,7 @@ def match_payments(session: Session, today: date) -> dict:
             else:
                 match = _match_for(bill, bill_key, series_key, due, transactions, used)
                 if match is None and monthly and due < today:
-                    match = _match_in_month(bill, bill_key, series_key, due, transactions, used | set(released), today, dues)
+                    match = _match_in_month(bill, bill_key, series_key, due, transactions, used | set(released), today, [d for d in dues if not (existing.get((bill.id, d)) and existing[(bill.id, d)].status == "paid")])  # a period already paid needs no row
             if match is not None:
                 status, paid_date, tx_id, amount, evidence = "paid", match.date, match.id, match.amount, f"transaction:{match.id}"
                 used.add(match.id)

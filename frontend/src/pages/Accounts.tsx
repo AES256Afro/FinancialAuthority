@@ -75,8 +75,10 @@ const SMALL: CSSProperties = { minHeight: 32, padding: "4px 10px", fontSize: 12 
 const FIELD: CSSProperties = { display: "flex", flexDirection: "column", gap: 4 };
 const DAYS_A_MONTH = 30.44;
 
-function freshness(at: string | null | undefined, days: number | null | undefined): string {
-  if (!at || days === null || days === undefined) return "no balance yet";
+// `has`: the row shows a balance. One with no date on it (the demo's, or a source that gives none) says so, never
+// "no balance yet" beside the figure.
+function freshness(at: string | null | undefined, days: number | null | undefined, has = false): string {
+  if (!at || days === null || days === undefined) return has ? "date not given" : "no balance yet";
   if (days <= 0) return "today";
   if (days === 1) return "yesterday";
   return `${days} days ago`;
@@ -265,7 +267,7 @@ function Group({ title, items, total, tone, marks }: { title: string; items: Ite
                 <td style={{ color: "var(--ink-2)" }} title={a.balance_at ? when(a.balance_at) : undefined}>
                   {a.other && a.balance_at
                     ? <span style={{ display: "inline-flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>set {shortDate(a.balance_at.slice(0, 10))}{a.needs_update && <StatusPill status="warn">Update the value</StatusPill>}</span>
-                    : a.connector ? freshness(a.balance_at, a.age_days) : "—"}
+                    : a.connector ? freshness(a.balance_at, a.age_days, a.balance !== null && a.balance !== undefined) : "—"}
                 </td>
                 {marks && <td>{id !== null ? <MarkControl id={id} name={a.name} marks={marks} /> : <span style={{ color: "var(--muted)" }}>—</span>}</td>}
                 <td className="num" style={{ textAlign: "right", fontWeight: 700 }}>{a.balance === null || a.balance === undefined ? "—" : money(a.balance)}</td>

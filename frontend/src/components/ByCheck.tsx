@@ -77,7 +77,7 @@ export function ByCheck({ s }: { s: Snapshot }) {
         <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
           <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>{noPayday(s) ? "Now" : "Before your next paycheck"}</h3>
           <span style={{ fontSize: 12, color: "var(--ink-2)" }}>{noPayday(s) ? "bills due by" : "through"} {shortDate(s.safe_to_spend.through)} · {noBalance(s) ? "no balance from your bank yet" : <>from <span className="num">{cashFigure(s)}</span> in checking</>}</span>
-          <span className="num" style={{ marginLeft: "auto", fontWeight: 800 }}>{money(before.total)} due · {noBalance(s) || s.safe_to_spend.amount === null ? "no balance yet" : `${money(s.safe_to_spend.amount)} safe`}</span>
+          <span className="num" style={{ marginLeft: "auto", fontWeight: 800 }}>{money(before.total)} due{noBalance(s) || s.safe_to_spend.amount === null ? "" : ` · ${money(s.safe_to_spend.amount)} safe`}</span>
         </div>
         <Bar parts={beforeParts} total={s.cash === null ? before.total + s.buffer : Math.max(s.cash, before.total + s.buffer)} />
         <Lines items={beforeItems} c={c} />

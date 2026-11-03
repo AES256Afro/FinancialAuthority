@@ -79,8 +79,10 @@ def build_brief(snap: dict) -> list[dict]:
         moved = "; ".join((f"hours {m['before']:g} to {m['after']:g}" if m["name"] == "Hours" else f"{m['name'].lower()} {money(m['before'])} to {money(m['after'])}") for m in (stub.get("moved") or [])[:3])  # PLAN 7: with the lines that moved
         items.append({"severity": "warning", "text": f"The {when(stub['pay_date'])} paystub was {money(-stub['difference'])} under the usual net of {money(stub['expected_net'])}." + (f" What moved: {moved}." if moved else ""), "link": "/paystubs"})
     payments = snap.get("payments", {})
-    if payments.get("past_due"):
-        due = payments["past_due"]  # the count is said, Needs you's own where it is longer, so the two give one number (sweep 21)
+    # Needs you's own list (ninety days): the register's forty-five-day list named fewer periods than the count said,
+    # and none when all were older (sweep 23).
+    due = snap.get("past_due_waiting") or payments.get("past_due") or []
+    if due:
         n = max(len(due), int((snap.get("pending") or {}).get("past_due") or 0))
         names = _first_three([f"{p['name']} {money(p['amount'])}" for p in due], n)
         items.append({"severity": "critical", "text": f"{n} bill period{'s' if n != 1 else ''} past due with no payment seen: {names}.", "link": "/bills"})

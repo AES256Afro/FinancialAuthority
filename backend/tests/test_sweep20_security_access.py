@@ -70,6 +70,7 @@ OWNER_ONLY = {
     ("GET", "/api/v1/people"), ("POST", "/api/v1/people"), ("PUT", "/api/v1/people/{person_id}"), ("POST", "/api/v1/people/{person_id}/invite"),
     ("DELETE", "/api/v1/people/{person_id}"), ("POST", "/api/v1/privacy/erase"), ("POST", "/api/v1/restore-points/{name}/restore"),
     ("PUT", "/api/v1/restore-points/offbox"), ("POST", "/api/v1/restore-points/offbox/copy"),
+    ("PUT", "/api/v1/push"),  # where the owner's notifications go (sweep 23)
 }
 # Deciding on a send queued by someone else: the approval the run sends is the owner's draft, so a second person is
 # refused it ("each person approves only their own sends").

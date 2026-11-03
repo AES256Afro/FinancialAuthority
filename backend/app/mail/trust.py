@@ -27,7 +27,7 @@ KNOWN: dict[str, tuple[str, ...]] = {
     "verizon": ("verizon.com", "verizonwireless.com"), "at&t": ("att.com", "att.net"), "t-mobile": ("t-mobile.com", "tmobile.com"),
     "state farm": ("statefarm.com", "statefarmservice.com"), "geico": ("geico.com",), "progressive": ("progressive.com",),
     "rocket money": ("rocketmoney.com", "truebill.com"), "experian": ("experian.com",), "equifax": ("equifax.com",), "transunion": ("transunion.com",),
-    "irs": ("irs.gov",), "social security": ("ssa.gov",), "schwab": ("schwab.com",), "vanguard": ("vanguard.com",), "fidelity": ("fidelity.com",),
+    "irs": ("irs.gov",), "social security": ("ssa.gov",), "schwab": ("schwab.com",), "vanguard": ("vanguard.com", "vanguardretirement.com"), "fidelity": ("fidelity.com",),
 }
 LEET = str.maketrans({"0": "o", "1": "l", "3": "e", "4": "a", "5": "s", "7": "t", "$": "s"})
 # Words a forger adds to a brand to make a domain look official ("capitalone-alerts", "paypal-secure").
@@ -86,11 +86,20 @@ def _results(auth_results: str) -> dict[str, str]:
 
 
 def _owns(org: str, own: str) -> bool:
-    """A domain the sender owns besides its main one: the same name with more to it (vanguardretirement.com for
-    vanguard.com) or the brand's own ending (notifications.health.amazon for amazon.com)."""
+    """A domain the sender may own besides its main one: the same name with more to it (capitalonebank.com for
+    capitalone.com) or the brand's own ending (notifications.health.amazon for amazon.com). Only the brand's ending
+    is proof (nobody else registers under .amazon); the longer name is anyone's to register, so `_vouched` keeps it
+    to a warning."""
     own_label = own.split(".")[0]
     label, tld = org.split(".")[0], org.rsplit(".", 1)[-1]
     return org == own or tld == own_label or (len(own_label) >= 4 and label.startswith(own_label) and not any(b in label for b in BAIT))
+
+
+def _vouched(org: str, own: str) -> bool:
+    """The brand's own domain for certain: listed, learned from its earlier verified mail, marked genuine by the owner,
+    or under the brand's own ending. A domain that only starts with the name (capitalonebank.test) is not: a forger
+    registers one, signs it and passes DMARC (sweep 23)."""
+    return org == own or org.rsplit(".", 1)[-1] == own.split(".")[0]
 
 
 def lookalike(domain: str) -> str | None:
@@ -131,6 +140,10 @@ def judge(sender: str, sender_name: str, auth_results: str = "", reply_to: str =
         own = set(KNOWN[brand]) | (learned or {}).get(brand, set())
         if not any(_owns(org, d) for d in own):
             return "crit", f"It calls itself {sender_name.strip()}, but it comes from {org}, not {', '.join(sorted(own)[:2])}."
+        if not any(_vouched(org, d) for d in own) and res.get("dmarc") != "fail":
+            # A name that starts like the brand's is anyone's to register and sign: never "confirmed" (and so never
+            # learned as the brand's), until the owner marks it genuine.
+            return "warn", f"It calls itself {sender_name.strip()} and comes from {org}, which is not one of its known domains ({', '.join(sorted(own)[:2])}). Mark it genuine if it is."
     if res.get("dmarc") == "pass" or res.get("dkim") == "pass":
         if reply_to and "@" in reply_to and org_domain(reply_to) != org and brand and not any(_owns(org_domain(reply_to), d) for d in set(KNOWN[brand]) | (learned or {}).get(brand, set())):
             return "warn", f"It is from {org}, but replies would go to {org_domain(reply_to)}."

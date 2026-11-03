@@ -95,13 +95,21 @@ def _answer_one(session: Session, fid: int, action: str, steps: dict, principal:
     if step["do"] != "apply":
         failed.append({"id": fid, "error": step["why"]})
         return
+    ref = session.get(MessageRef, fact.message_ref_id) if fact.message_ref_id else None
     if step.get("record"):
-        # A notice that changes nothing in the plan is kept as read; nothing is applied.
+        # A notice that changes nothing in the plan is kept as read; nothing is applied. Not by a key or an app when
+        # the trust check could not vouch for the sender: marked read, it left the owner's queue (sweep 23).
+        from .mail import refuse_forged
+
+        try:
+            refuse_forged(ref, owner=principal.full)
+        except HTTPException as error:
+            failed.append({"id": fid, "error": str(error.detail)})
+            return
         facts.resolve_fact(session, fact, "confirmed", applied_to="read: changes nothing in the plan", by=facts.who(principal))
         session.commit()
         done.append({"id": fid, "applied_to": ""})
         return
-    ref = session.get(MessageRef, fact.message_ref_id) if fact.message_ref_id else None
     b = facts.watermark(session)
     try:
         applied = apply_fact(session, fact, ref, ConfirmIn(apply=True), owner=principal.full)

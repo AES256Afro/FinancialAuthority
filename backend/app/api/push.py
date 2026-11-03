@@ -28,7 +28,12 @@ def get_push(session: Session = Depends(get_session), _: auth.Principal = Depend
 
 
 @router.put("")
-def put_push(body: PushIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+def put_push(body: PushIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
+    # Where the owner's notifications go is the owner's: every warning a key, an app or a second person's send gives
+    # rides on it, so a second person pointing it at a server of their own both silenced the owner and read the
+    # brief (sweep 23).
+    if principal.kind != "owner":
+        raise HTTPException(403, "Only the owner, signed in, sets where the notifications go")
     try:
         notify.save_push(session, body.model_dump(exclude_unset=True))
     except ValueError as error:
@@ -85,9 +90,13 @@ def subscribe_device(body: SubscribeIn, request: Request, session: Session = Dep
 
 
 @router.delete("/devices/{device_id}")
-def remove_device(device_id: str, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_owner)) -> dict:
+def remove_device(device_id: str, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_owner)) -> dict:
     from .. import webpush
 
+    if principal.kind != "owner" and any(d["id"] == device_id and d.get("person_id") != principal.person_id for d in webpush._subs(session)):
+        # A second person removes the devices they added, never the owner's: the owner's phone is where the warnings
+        # land (sweep 23).
+        raise HTTPException(403, "A second person removes only the devices they added")
     webpush.unsubscribe(session, device_id)
     return {"devices": webpush.subscriptions(session)}
 

@@ -153,7 +153,10 @@ def _finance_snapshot(session: Session, today: date) -> dict:
     pairs_waiting = len(session.exec(select(TransactionPair.id).where(TransactionPair.status == "pending")).all())
     from .needsyou import past_due_waiting as _past_due_waiting
 
-    past_due_waiting = len(_past_due_waiting(session, today))  # the page's own list (90 days), not the register's shorter span, so badge and page agree
+    past_due_rows = _past_due_waiting(session, today)
+    past_due_waiting = len(past_due_rows)  # the page's own list (90 days), not the register's shorter span, so badge and page agree
+    bill_names = {b.id: b.name for b in session.exec(select(Bill).where(Bill.id.in_({p.bill_id for p in past_due_rows}))).all()} if past_due_rows else {}
+    past_due_list = [{"name": bill_names.get(p.bill_id, "?"), "amount": _money(p.amount), "due_date": p.due_date.isoformat(), "source": f"payment:{p.id}"} for p in past_due_rows]
 
     from .planned import open_planned, planned_events, planned_out, planned_to_cards
 
@@ -318,6 +321,7 @@ def _finance_snapshot(session: Session, today: date) -> dict:
         "next_paycheck": {"date": next_payday.isoformat(), "days": (next_payday - today).days, "amount": _money(expected_net), "source": f"income:{next_pay[1].id}" if next_pay else None, "known": next_pay is not None, "cadence": cadence,
                           "pay_days": schedule["days"]["pay_days"], "pay_day": schedule["days"]["pay_day"]},
         "payday": payday,
+        "past_due_waiting": past_due_list,  # Needs you's own list, so the brief names what its count counts (sweep 23)
         "paydays": [{"date": d.isoformat(), "amount": _money(net_for(d))} for d in paydays[:4]],
         "caveats": caveats,
         "due_before_payday": {"total": _money(due_before), "items": [{**e, "date": e["date"].isoformat()} for e in before], "groups": due_groups, "next_check": next_check},

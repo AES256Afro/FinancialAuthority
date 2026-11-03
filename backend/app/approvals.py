@@ -193,7 +193,24 @@ def send(session: Session, row: Approval) -> Approval:
     session.add(row)
     session.commit()
     session.refresh(row)
+    if row.status == "sent" and row.for_person_id is not None:
+        _tell_owner_of_send(session, row, account)
     return row
+
+
+def _tell_owner_of_send(session: Session, row: Approval, account: MailAccount | None) -> None:
+    """A second person's send went out through a household mailbox, approved by them or by their own standing
+    allowance: the owner hears of each one, since it leaves in the mailbox's name (sweep 23: after one approval with
+    "always", every later send to that address went with no word to anyone)."""
+    from .models import Person
+
+    person = session.get(Person, row.for_person_id)
+    who = (person.display_name or person.username) if person else "The second person"
+    try:
+        notify.send(session, f"{who[:60]} sent mail from {(account.label if account else 'a mailbox')[:60]}", f"To {row.to}: {row.subject}\nThe activity log lists every send.",
+                    tags=["envelope"], link=None)
+    except Exception:  # noqa: BLE001 - a push that fails never undoes or fails the send
+        log.warning("could not push a second person's send")
 
 
 def out(row: Approval) -> dict:

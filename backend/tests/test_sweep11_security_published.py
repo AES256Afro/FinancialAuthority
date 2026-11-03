@@ -231,12 +231,13 @@ def test_the_calendar_feed_limit_counts_the_forwarded_address(published: str):
         assert c.get(path).status_code == 429
     with via_proxy(published, address="198.51.100.22") as c:
         assert c.get(path).status_code == 200, "one address's limit closed the feed for another"
-    # a guesser behind the proxy is slowed by the same count, whatever token each try carries
+    # a guesser behind the proxy is slowed by its own count, whatever token each try carries; the guesses never use up
+    # the right address's count, even from the same caller
     with via_proxy(published, address="198.51.100.23") as c:
         for i in range(exports_api.FEED_LIMIT):
             assert c.get(f"/api/calendar/{secrets.token_urlsafe(32)}.ics").status_code == 404
         assert c.get(f"/api/calendar/{secrets.token_urlsafe(32)}.ics").status_code == 429
-        assert c.get(path).status_code == 429
+        assert c.get(path).status_code == 200
 
 
 def test_a_spoofed_cf_connecting_ip_without_the_proxy_named_does_not_reset_the_counts(client: TestClient, monkeypatch):
