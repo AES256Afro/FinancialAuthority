@@ -26,6 +26,7 @@ from typing import Any
 
 from sqlmodel import Session, select
 
+from ..mail.trust import UNVOUCHED
 from ..models import Account, Bill, Debt, ExtractedFact, Home, MessageRef, Payment, Transaction, utcnow
 from ..store import get_setting, set_setting
 
@@ -192,8 +193,8 @@ def findings(session: Session, today: date) -> list[dict[str, Any]]:
     for f in pending:
         waiting[f.message_ref_id].append(f)  # type: ignore[index]
     if waiting:
-        for ref in session.exec(select(MessageRef).where(MessageRef.id.in_(list(waiting)), MessageRef.trust == "crit")).all():  # type: ignore[union-attr]
-            out.append({"key": f"sender:{ref.id}", "kind": "sender", "severity": "crit",
+        for ref in session.exec(select(MessageRef).where(MessageRef.id.in_(list(waiting)), MessageRef.trust.in_(UNVOUCHED))).all():  # type: ignore[union-attr]
+            out.append({"key": f"sender:{ref.id}", "kind": "sender", "severity": "crit" if ref.trust == "crit" else "warn",
                         "title": f"Check the sender: {ref.sender_name or ref.sender}",
                         "why": f"{ref.trust_why} Its {len(waiting[ref.id])} waiting item{'s are' if len(waiting[ref.id]) != 1 else ' is'} kept out of “answer together”.",
                         "items": [_item(ref.subject or "(no subject)", f"from {ref.sender}" + (f", {ref.date:%a %b} {ref.date.day}" if ref.date else ""), f"message:{ref.id}", f"/mail?message={ref.id}")],
@@ -320,7 +321,7 @@ def answer(session: Session, key: str, action: str, today: date) -> str:
             ref.trust, ref.trust_why = "ok", "You marked this sender as genuine."
             session.add(ref)
             session.commit()
-        return "Marked genuine. Mail from this address is trusted from now on."
+        return "Marked genuine. Later mail from it is judged the same way, and asks again if the mail server cannot confirm it."
     raise ValueError("Unknown answer")
 
 

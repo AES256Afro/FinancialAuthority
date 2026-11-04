@@ -1,5 +1,6 @@
 // Settings › Privacy: a map of where your data goes, drawn first; then each model with what it sees and a switch,
 // who can read the plan, Hide amounts, everything as one file, and, set apart, deleting everything.
+import { OwnerLocked as ModelSwitches } from "../components/OwnerLocked";
 import { Download, Eye, EyeOff, Server, Trash2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
@@ -122,6 +123,7 @@ function Models({ page, onPage }: { page: PrivacyPage; onPage: (p: PrivacyPage) 
     <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <h2 style={h2}>Models</h2>
       <p style={intro}>The app does the maths; a model only explains it. Each switch turns one use of a model off or on.</p>
+      <ModelSwitches what="these switches">
       <div className="card" style={{ padding: "4px 14px" }}>
         {page.models.map((m, i) => (
           <div key={m.role} style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap", padding: "12px 0", borderTop: i ? "1px solid var(--surface-2)" : 0 }}>
@@ -138,6 +140,7 @@ function Models({ page, onPage }: { page: PrivacyPage; onPage: (p: PrivacyPage) 
           </div>
         ))}
       </div>
+      </ModelSwitches>
     </section>
   );
 }

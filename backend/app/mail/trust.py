@@ -172,6 +172,11 @@ def lookalike(domain: str) -> str | None:
     return None
 
 
+# The verdicts nothing is taken on without the owner's word: not said by name in the brief, not answered in bulk, not
+# counted as the newest notice for a bill. A "warn" belongs here too: a domain an attacker registered and signed is one.
+UNVOUCHED = ("crit", "warn")
+
+
 def judge(sender: str, sender_name: str, auth_results: str = "", reply_to: str = "", learned: dict[str, set[str]] | None = None, name_domains: set[str] | None = None) -> tuple[str, str]:
     """The verdict and why, in plain words. `name_domains` are the domains earlier verified mail under this same display
     name came from, for a name the table of common senders does not hold (the owner's own lender, say)."""

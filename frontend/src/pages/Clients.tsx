@@ -1,5 +1,6 @@
 // API keys for models and scripts. A key is shown once; the owner keeps it in the client, never in chat.
 // Home Assistant and widgets (M35) read a few figures with such a key; the setup is shown here, address filled in.
+import { OwnerLocked, useViewer } from "../components/OwnerLocked";
 import { CalendarDays, Copy, Gauge, Inbox, Receipt, Wallet } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
@@ -13,6 +14,7 @@ import { Where } from "../components/Where";
 
 interface KeyRow {
   id: number;
+  person_id?: number | null;
   name: string;
   prefix: string;
   scopes: string[];
@@ -246,8 +248,9 @@ function ConnectedApps() {
   return (
     <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <h2 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>Connected apps</h2>
+      <OwnerLocked what="the connected apps">
       <p style={{ margin: 0, color: "var(--ink-2)", fontSize: 13 }}>
-        Apps that signed in through the consent page: claude.ai on the phone or the web, Claude Code, Open WebUI. Revoking an app signs it out everywhere.
+        Apps that signed in through the consent page: claude.ai on the phone or the web, Claude Code, Open WebUI. Revoking an app signs it out everywhere. A phone and its watch sign in apart, so each has its own row.
       </p>
       <Where id="claude_connect" fill={{ url: `${window.location.origin}/mcp` }} />
       {state.error && !data && <Failed error={state.error} what="the connected apps" onRetry={reload} />}
@@ -275,12 +278,14 @@ function ConnectedApps() {
           </table>
         </div>
       )}
+      </OwnerLocked>
     </section>
   );
 }
 
 export function Clients() {
   const state = useApi<{ keys: KeyRow[] }>("/api/v1/keys");
+  const viewer = useViewer();
   const { data, reload, error } = state;
   const [name, setName] = useState("");
   const [redaction, setRedaction] = useState("full");
@@ -357,7 +362,7 @@ export function Clients() {
                   <td>{scopesInWords(k.scopes)}</td>
                   <td>{SEES[k.redaction] ?? k.redaction}</td>
                   <td style={{ color: "var(--ink-2)", whiteSpace: "nowrap" }}>{k.last_used_at ? when(k.last_used_at) : "never"}</td>
-                  <td style={{ textAlign: "right" }}>{!k.revoked && <ConfirmButton label="Revoke" question={`Revoke ${k.name}? Anything using this key stops reading at once.`} yes="Yes, revoke it" no="Keep it" onConfirm={() => revoke(k.id)} />}</td>
+                  <td style={{ textAlign: "right" }}>{!k.revoked && (viewer.owner || k.person_id === viewer.personId) && <ConfirmButton label="Revoke" question={`Revoke ${k.name}? Anything using this key stops reading at once.`} yes="Yes, revoke it" no="Keep it" onConfirm={() => revoke(k.id)} />}</td>
                 </tr>
               ))}
               {data.keys.length === 0 && <tr><td colSpan={6} style={{ color: "var(--ink-2)" }}>No keys yet.</td></tr>}

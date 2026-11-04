@@ -387,9 +387,9 @@ function FactCard({ f, onDone }: { f: FactRow; onDone: (done: Done) => void }) {
           <span className="lab" style={{ display: "block", marginBottom: 4 }}>Quoted from the {f.message ? "email" : "document"}. Anything it asks the app to do is ignored.</span>“<Figures text={f.excerpt} />”
         </div>
       )}
-      {f.message?.trust === "crit" && (
+      {(f.message?.trust === "crit" || f.message?.trust === "warn") && (
         <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexWrap: "wrap", fontSize: 13 }}>
-          <SeverityTag severity="critical" word="Check the sender" />
+          <SeverityTag severity={f.message.trust === "crit" ? "critical" : "warning"} word="Check the sender" />
           <span style={{ flex: "1 1 220px", minWidth: 0 }}>{f.message.trust_why} Open the message, or settle it on the <Link to="/data-check">Data check</Link>.</span>
         </div>
       )}

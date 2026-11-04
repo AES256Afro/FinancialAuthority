@@ -70,7 +70,7 @@ def _folders(value: str | None) -> str:
 
 def account_out(a: MailAccount) -> dict:
     return {
-        "id": a.id, "label": a.label, "kind": a.kind, "host": a.host, "port": a.port, "username": a.username, "use_ssl": a.use_ssl, "starttls": a.starttls,
+        "id": a.id, "person_id": a.person_id, "label": a.label, "kind": a.kind, "host": a.host, "port": a.port, "username": a.username, "use_ssl": a.use_ssl, "starttls": a.starttls,
         "folders": a.folders, "active": a.active, "last_sync_at": a.last_sync_at.isoformat() if a.last_sync_at else None, "last_error": a.last_error, "messages_seen": a.messages_seen,
         "has_password": bool(a.password_enc), "smtp_host": a.smtp_host, "smtp_port": a.smtp_port, "smtp_ssl": a.smtp_ssl, "smtp_starttls": a.smtp_starttls,
     }

@@ -1,4 +1,5 @@
 // Connectors: live banks through Plaid and Teller, the mailboxes, and the Rocket Money export in and out. All read-only.
+import { useViewer } from "../components/OwnerLocked";
 import { OctagonAlert } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
@@ -122,6 +123,7 @@ export function Connectors() {
   const { data } = connectors;
   const presets = useApi<{ presets: Record<string, Preset>; bridge?: BridgeInfo }>("/api/v1/mail/presets");
   const accounts = useApi<{ accounts: MailAccountRow[] }>("/api/v1/mail/accounts");
+  const viewer = useViewer();
   const [rocketNote, setRocketNote] = useState<Note>(null);
   const [mailNote, setMailNote] = useState<{ id: number; text: string; tone: "info" | "error" } | null>(null);
   const [syncing, setSyncing] = useState<number | null>(null);
@@ -224,7 +226,7 @@ export function Connectors() {
                     <td style={{ textAlign: "right" }}>
                       <span style={{ display: "inline-flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "flex-start" }}>
                         <button className="btn" type="button" disabled={syncing !== null} onClick={() => syncNow(a.id)}>{syncing === a.id ? "Reading…" : "Sync now"}</button>
-                        <ConfirmButton label="Remove" name={`Remove ${a.label}`} question={`Stop reading ${a.label}? Its password is forgotten; mail already read stays.`} yes="Yes, remove it" no="Keep it" onConfirm={() => remove(a.id)} />
+                        {(viewer.owner || (a.person_id != null && a.person_id === viewer.personId)) && <ConfirmButton label="Remove" name={`Remove ${a.label}`} question={`Stop reading ${a.label}? Its password is forgotten; mail already read stays.`} yes="Yes, remove it" no="Keep it" onConfirm={() => remove(a.id)} />}
                       </span>
                       {mailNote?.id === a.id && <div style={{ marginTop: 4, textAlign: "left" }}><Said text={mailNote.text} tone={mailNote.tone} /></div>}
                     </td>

@@ -569,10 +569,8 @@ def test_b_a_written_message_id_with_no_verdict_is_not_the_verified_message(owne
         assert handle_message(session, box, "INBOX", 7, parse_message(message()), TODAY) == {"seen": True}
 
 
-ENGINE = "engine/snapshot.py, engine/needsyou.py, engine/datacheck.py: a sender the trust check could not vouch for ('warn') is treated as 'crit' is"
 
 
-@pytest.mark.xfail(strict=False, reason=ENGINE)
 def test_b_the_brief_does_not_name_a_sender_it_could_not_vouch_for(owner: TestClient):
     """"Capital One sent an overdraft alert" and "Past-due notices in the mail from Capital One", critical and pushed each
     morning, from a domain the attacker signs: the brief says it by the name the attacker wrote."""
@@ -585,7 +583,6 @@ def test_b_the_brief_does_not_name_a_sender_it_could_not_vouch_for(owner: TestCl
     assert "Capital One" not in brief, brief
 
 
-@pytest.mark.xfail(strict=False, reason=ENGINE)
 def test_b_answering_together_leaves_a_sender_it_could_not_vouch_for_to_its_own_card(owner: TestClient):
     with Session(engine) as session:
         session.add(Bill(name="Capital One", amount=120.0, due_day=20))
@@ -596,7 +593,6 @@ def test_b_answering_together_leaves_a_sender_it_could_not_vouch_for_to_its_own_
     assert step["do"] == "own_card", step
 
 
-@pytest.mark.xfail(strict=False, reason=ENGINE)
 def test_b_a_notice_nobody_can_vouch_for_never_makes_a_real_one_the_older(owner: TestClient):
     with Session(engine) as session:
         session.add(Bill(name="Capital One", amount=120.0, due_day=20))

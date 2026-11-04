@@ -1,5 +1,6 @@
 // Live bank links through Plaid (Trial plan) and Teller (developer tier): the bank's own login page opens in
 // the vendor's window; the app receives a token and reads with it. Nothing here ever asks for a bank password.
+import { OwnerLocked } from "../components/OwnerLocked";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { AlertTriangle, CheckCircle2, OctagonAlert } from "lucide-react";
@@ -290,6 +291,7 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
               <span><strong>{p.keys.result === "ok" ? "Keys accepted" : "Keys refused"}</strong> · {p.keys.message}</span>
             </div>
           )}
+          <OwnerLocked what="the Plaid keys">
           <Field label="Client id"><input className="input" value={plaid.client_id} onChange={(e) => setPlaid({ ...plaid, client_id: e.target.value })} placeholder={p?.client_id || ""} autoComplete="off" /></Field>
           <Field label={`Secret · ${p?.secret_set ? "set" : "not set"}`}><input className="input" type="password" value={plaid.secret} onChange={(e) => setPlaid({ ...plaid, secret: e.target.value })} placeholder={p?.secret_set ? "Paste a new one to replace it" : "Paste the secret"} autoComplete="new-password" /></Field>
           <Field label="Environment">
@@ -298,8 +300,9 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
               <option value="production">production (real banks)</option>
             </select>
           </Field>
+          <button className="btn dark" type="button" disabled={busy !== null} style={{ alignSelf: "flex-start" }} onClick={savePlaid}>{busy === "plaid-save" ? "Saving…" : "Save"}</button>
+          </OwnerLocked>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button className="btn dark" type="button" disabled={busy !== null} onClick={savePlaid}>{busy === "plaid-save" ? "Saving…" : "Save"}</button>
             <button className="btn" type="button" disabled={!p?.configured || busy !== null} style={highlight(wanted.connect === "plaid")} onClick={() => connectPlaid()}>{busy === "plaid-connect" ? "Opening…" : "Connect a bank through Plaid"}</button>
             <button className="btn" type="button" disabled={!p?.configured || busy !== null} onClick={() => connectPlaid(undefined, "investments")}>Connect a 401(k) or brokerage</button>
           </div>
@@ -312,6 +315,7 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
             {t?.configured ? <StatusPill status="good">Ready · {t.environment}</StatusPill> : <span style={{ fontSize: 12, color: "var(--ink-2)", fontWeight: 700 }}>not set up</span>}
           </div>
           <Where id="teller" />
+          <OwnerLocked what="the Teller keys">
           <Field label="Application id"><input className="input" value={teller.application_id} onChange={(e) => setTeller({ ...teller, application_id: e.target.value })} placeholder={t?.application_id || "app_…"} autoComplete="off" /></Field>
           <Field label={`Certificate (PEM) · ${t?.certificate_set ? "set" : "not set"}`}><textarea className="input" rows={3} value={teller.certificate} onChange={(e) => setTeller({ ...teller, certificate: e.target.value })} placeholder="-----BEGIN CERTIFICATE-----" style={{ fontFamily: "ui-monospace, monospace", fontSize: 11 }} /></Field>
           <Field label={`Private key (PEM) · ${t?.private_key_set ? "set" : "not set"}`}><textarea className="input" rows={3} value={teller.private_key} onChange={(e) => setTeller({ ...teller, private_key: e.target.value })} placeholder="-----BEGIN PRIVATE KEY-----" style={{ fontFamily: "ui-monospace, monospace", fontSize: 11 }} /></Field>
@@ -322,8 +326,9 @@ export function Banks({ onChanged }: { onChanged?: () => void }) {
               <option value="production">production</option>
             </select>
           </Field>
+          <button className="btn dark" type="button" disabled={busy !== null} style={{ alignSelf: "flex-start" }} onClick={saveTeller}>{busy === "teller-save" ? "Saving…" : "Save"}</button>
+          </OwnerLocked>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button className="btn dark" type="button" disabled={busy !== null} onClick={saveTeller}>{busy === "teller-save" ? "Saving…" : "Save"}</button>
             <button className="btn" type="button" disabled={!t?.configured || busy !== null} style={highlight(wanted.connect === "teller")} onClick={() => connectTeller()}>{busy === "teller-connect" ? "Opening…" : "Connect a bank through Teller"}</button>
           </div>
           {!t?.configured && <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Connect opens once the application id, certificate and private key are saved here.</div>}

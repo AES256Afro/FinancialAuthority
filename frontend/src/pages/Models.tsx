@@ -1,5 +1,6 @@
 // Settings › Models: the advisor and the reviewer, their providers, keys that are stored encrypted and never
 // shown again, the owner's standing rules and goals.
+import { OwnerLocked } from "../components/OwnerLocked";
 import { AlertTriangle, Check, CheckCircle2, OctagonAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
@@ -326,9 +327,11 @@ export function Models() {
       {!data && !error && <Loading what="the model settings" />}
       {data && (
         <>
+          <OwnerLocked what="where the models run or their keys">
           <RoleCard role="advisor" conf={data.roles.advisor} providers={data.providers} defaults={data.defaults} onSaved={reload} />
           <RoleCard role="reviewer" conf={data.roles.reviewer} providers={data.providers} defaults={data.defaults} onSaved={reload} />
           <Secrets state={data.secrets} canStore={data.can_store_secrets} onSaved={reload} />
+          </OwnerLocked>
           <Rules />
         </>
       )}
