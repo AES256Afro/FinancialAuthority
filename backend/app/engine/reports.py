@@ -124,10 +124,19 @@ def owed(session: Session, today: date, accounts: list[Account] | None = None) -
                "balance": _money(p.balance) if p.balance else _money(p.installment * p.remaining), "apr": p.apr if p.apr is not None else 0.0, "minimum": _plan_month(p), "installment": _money(p.installment), "every_days": p.cadence_days,
                "minimum_word": f"about ${_plan_month(p):,.2f} a month: ${p.installment:,.2f} every {p.cadence_days} days" if p.cadence_days and p.cadence_days != 30 else f"${p.installment:,.2f} a month",
                "source": f"plan:{p.id}", "finance_charge": p.finance_charge, "interest_paid": p.interest_paid,
-               "ends": (p.next_date + timedelta(days=p.cadence_days * max(0, p.remaining - 1))).isoformat(), "balance_at": p.balance_at.isoformat() if p.balance_at else None, "loan_id": p.loan_id} for p in plans if p.remaining > 0 or (p.balance or 0) > 0]
+               "ends": plan_ends(p), "balance_at": p.balance_at.isoformat() if p.balance_at else None, "loan_id": p.loan_id} for p in plans if p.remaining > 0 or (p.balance or 0) > 0]
     items += [{"id": a.id, "name": f"{a.provider} advance", "kind": "advance", "balance": _money(a.amount + a.fee), "apr": None, "minimum": None, "source": f"advance:{a.id}"} for a in advances]
     return {"total": _money(sum((d["balance"] or 0.0) for d in items)), "items": items,
             "words": "everything owed: cards, loans, pay-later plans and advance apps, each counted once"}
+
+
+def plan_ends(p: InstallmentPlan) -> str:
+    """The day a pay-later plan's last payment falls: the lender's own last date where there is a schedule (stepped by a
+    round thirty days, a loan on the 5th of each month read six days early in its first year: sweep 25), else by its cadence."""
+    from .projection import _schedule_of
+
+    schedule = _schedule_of(p)
+    return schedule[-1]["date"] if schedule else (p.next_date + timedelta(days=p.cadence_days * max(0, p.remaining - 1))).isoformat()
 
 
 def _plan_month(p: InstallmentPlan) -> float:
@@ -149,7 +158,7 @@ def net_worth(session: Session, today: date) -> dict:
                 "age_days": max(0, (today - date.fromisoformat(o["value_on"])).days), "other": True, "needs_update": o["needs_update"]} for o in others["items"]]
     assets_total = sum((a["balance"] or 0.0) for a in assets)
     debts_total = debts_owed["total"]
-    stale = [a["name"] for a in assets if not a.get("other") and a["balance_at"] and date.fromisoformat(a["balance_at"][:10]) < today - timedelta(days=3)]
+    stale = [a["name"] for a in assets if not a.get("other") and a["balance_at"] and a["age_days"] > 3]  # by the owner's day, as age_days is
     return {
         "as_of": today.isoformat(),
         "assets": {"total": _money(assets_total), "items": assets},

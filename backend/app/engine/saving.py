@@ -11,9 +11,9 @@ from datetime import date, timedelta
 
 from sqlmodel import Session, select
 
-from ..models import Account, InstallmentPlan
+from ..models import Account, Income, InstallmentPlan
 from ..store import get_setting, set_setting
-from .cadence import next_paydays
+from .cadence import income_days, next_paydays, next_unpaid_payday
 from .projection import CASH_KINDS, is_spendable
 NOT_ADVICE = "Computed by the engine from your registers and the ledger. Not financial advice."
 
@@ -115,7 +115,9 @@ def saving_plan(session: Session, today: date, *, snap: dict | None = None) -> d
         asides.insert(0, {"start": today.isoformat(), "set_aside": pay["set_aside"]})
 
     # The rollover: a plan's payment, freed when it ends, keeps going into the ladder.
-    check_days = 365.0 / CHECKS_PER_YEAR.get(cadence, 26)
+    # Every paycheck's checks: along the next one's cadence alone, what a plan frees per check, and each rung's date, changed each payday (sweep 25).
+    incomes = session.exec(select(Income).where(Income.active == True)).all()  # noqa: E712
+    check_days = 365.0 / (sum(CHECKS_PER_YEAR.get(i.cadence or "biweekly", 26) for i in incomes) or CHECKS_PER_YEAR.get(cadence, 26))
     from .projection import paid_by_household
 
     plans = paid_by_household(session, session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all())  # noqa: E712 - a second person's payment is never freed into the owner's ladder (sweep 24)
@@ -132,6 +134,8 @@ def saving_plan(session: Session, today: date, *, snap: dict | None = None) -> d
     p1 = date.fromisoformat(snap["next_paycheck"]["date"])
     days = {k: snap["next_paycheck"][k] for k in ("pay_days", "pay_day") if k in snap["next_paycheck"]}
     checks = next_paydays(p1, cadence, CHECKS_AHEAD, **days) if snap["next_paycheck"].get("known", True) else []
+    if len(incomes) > 1:
+        checks = sorted({d for i in incomes for d in next_paydays(next_unpaid_payday(session, i, today), i.cadence or "biweekly", CHECKS_AHEAD, **income_days(i))})[:CHECKS_AHEAD]
 
     def simulate(pct: int, with_rollover: bool) -> list[str | None]:
         """The date each rung is reached, keeping `pct` percent of what each check leaves (the first check

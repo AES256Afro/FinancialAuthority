@@ -5,6 +5,7 @@ import { ArrowDown, ArrowRight, ExternalLink } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useApi } from "../api";
+import { useViewer } from "../components/OwnerLocked";
 import { SetupChecklist, type Check } from "../components/SetupChecklist";
 import { StatusPill } from "../components/Status";
 import { useJumpToHash } from "../components/State";
@@ -77,6 +78,7 @@ function Map() {
 export function Setup() {
   const about = useApi<{ version: string; public_url: string | null; install?: string; data_key_set?: boolean }>("/api/v1/about");
   const check = useApi<{ checks: Check[] }>("/api/v1/setup/check");
+  const viewer = useViewer();
   const checks = check.data?.checks;
   // A next step's link names a section (#publish, #mail): the page opens there, on its first control.
   useJumpToHash(about.data !== null);
@@ -87,14 +89,14 @@ export function Setup() {
       <div>
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Setting up</h1>
         <p style={{ margin: "4px 0 0", color: "var(--ink-2)", maxWidth: "80ch" }}>
-          What only you can do, in order. When a step says <strong>on the server</strong>, it means the machine FinancialAuthority is installed on (a BoxPilot box, an Ubuntu server, a Windows or Mac with Docker), reached from your computer over SSH; not the phone or computer you are reading this on.
+          {viewer.owner ? "What only you can do, in order." : `How the app is set up, in order. Most of these steps are for ${viewer.ownerWord}, who installed it; you can see where each one stands.`} When a step says <strong>on the server</strong>, it means the machine FinancialAuthority is installed on (a BoxPilot box, an Ubuntu server, a Windows or Mac with Docker), reached from your computer over SSH; not the phone or computer you are reading this on.
         </p>
       </div>
       <SetupChecklist />
       <Map />
 
       <Section id="secrets" title="1. The app's own secrets" checks={checks}>
-        <span>Three values set when the app is installed: <code>FA_PASSWORD</code> (your sign-in), <code>FA_SESSION_SECRET</code> and <code>FA_DATA_KEY</code>. <code>FA_DATA_KEY</code> encrypts the passwords and keys you paste into the app; keep a copy somewhere safe, because a database restored without it keeps your transactions and bills but loses those.</span>
+        <span>Three values set when the app is installed: <code>FA_PASSWORD</code> ({viewer.owner ? "your sign-in" : "the owner's sign-in"}), <code>FA_SESSION_SECRET</code> and <code>FA_DATA_KEY</code>. <code>FA_DATA_KEY</code> encrypts the passwords and keys you paste into the app; keep a copy somewhere safe, because a database restored without it keeps your transactions and bills but loses those.</span>
         <span><strong>On BoxPilot:</strong> it makes all three when it installs the app; they are on the app's card, under its settings.</span>
         <span><strong>With Docker Compose:</strong> in the folder with <code>docker-compose.yml</code>, copy <code>.env.example</code> to <code>.env</code> and fill each with a long random value, for example from this command on the server:</span>
         <code style={{ display: "block", padding: "6px 8px", background: "var(--surface-2)", borderRadius: 6 }}>openssl rand -hex 32</code>

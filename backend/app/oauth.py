@@ -244,6 +244,9 @@ def revoke_client(session, client_id: str) -> int:  # noqa: ANN001
         session.add(token)
         count += 1
     session.commit()
+    from . import approvals
+
+    approvals.cancel_queued_by(session, row.name or client_id, "app revoked")
     return count
 
 

@@ -168,6 +168,36 @@ def paid_periods(session: Session, today: date) -> set[tuple[int, date]]:
     return {(bill_id, due) for bill_id, due in rows}
 
 
+def minimums_paid(session: Session, today: date, cards: list, debts: list) -> set[tuple[int, date]]:
+    """The (card account, due date) pairs whose coming minimum the ledger already shows paid, on the due day or before
+    it: since the statement that set it when the statement day is known, else from six days before, as a bill's payment is
+    looked for. That money has left checking, so holding the minimum back as well took it twice until the due day had
+    gone, and safe to spend came back with no event to explain it (sweep 25)."""
+    from .projection import _debt_of, next_due
+
+    out: set[tuple[int, date]] = set()
+    carried = [(a, d) for a, d in ((a, _debt_of(a, debts)) for a in cards) if d is not None and (d.minimum or 0) > 0 and d.due_day]
+    if not carried:
+        return out
+    for card, debt in carried:
+        due = next_due(int(debt.due_day), today)
+        since = due - timedelta(days=BEFORE_DAYS)
+        if debt.statement_day:
+            closed = next_due(int(debt.statement_day), due - timedelta(days=31))
+            while (later := next_due(int(debt.statement_day), closed + timedelta(days=1))) < due:
+                closed = later
+            since = closed
+        rows = session.exec(select(Transaction).where(Transaction.date >= since, Transaction.date <= today)).all()
+        payments = [t for t in rows if t.is_card_payment or (t.category or "").strip().lower() == "credit card payment"]
+        on_card = -sum(t.amount for t in payments if t.account_id == card.id and t.amount < 0)
+        names = {n.strip().lower() for n in (card.name, debt.name) if n and len(n.strip()) >= 3}
+        kinds = {a.id for a in cards}
+        from_cash = sum(t.amount for t in payments if t.amount > 0 and t.account_id not in kinds and (len(cards) == 1 or any(n in f"{t.merchant} {t.raw_name} {t.description}".lower() for n in names)))
+        if max(on_card, from_cash) >= float(debt.minimum) - 0.005:
+            out.add((card.id, due))
+    return out
+
+
 def unposted_periods(session: Session, today: date) -> set[tuple[int, date]]:
     """The (bill, due date) periods whose due date passed in the last few days, while a payment can still post (four
     days, or the bill's own grace), with no payment in the ledger yet. That money has not left the account: the plan

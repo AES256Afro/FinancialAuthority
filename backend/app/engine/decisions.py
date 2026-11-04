@@ -191,10 +191,13 @@ def _low_finder(session: Session, today: date):
     planned_map = planned_to_cards(session, today)
     extra = pending_rows + planned_events(session, today)
     by_id = {a.id: a for a in accounts}
+    from .payments import minimums_paid
+
+    card_minimums_paid = minimums_paid(session, today, [a for a in accounts if a.kind == "card"], debts_rows)
 
     def low_for(due_days: dict[int, int]) -> dict:
         events = assemble(bills=bills, plans=plans, advances=advances, today=today, accounts=by_id, paydays=paydays, card_mode=card_mode, debts=debts_rows, planned=planned_map, extra=extra, card_pace_by_account=pace["per_day_by_account"], due_days=due_days,
-                          paid=paid, pay_days=schedule["pay_days"], late=late, judge_until=judge_until, checks_by_day=schedule["semimonthly"])["math"]
+                          paid=paid, pay_days=schedule["pay_days"], late=late, judge_until=judge_until, checks_by_day=schedule["semimonthly"], minimums_paid=card_minimums_paid)["math"]
         windows = split_windows(events, today, next_payday, following, paydays[2])
         path = project(today, cash=cash, buffer=buffer, expected_net=expected_net, pay_dates=pay_dates, set_aside=windows["set_aside"], events=events, per_day=pace["per_day_cash"], days=line_days, pay_amounts=pay_amounts, reserved_for={(e.get("source"), e["date"]) for e in windows["next_window"]})
         judged = [p for p in path if judge_until is None or p["date"] < judge_until.isoformat()] or path

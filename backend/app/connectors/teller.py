@@ -311,13 +311,15 @@ class TellerConnector(Connector):
         session.commit()
         return inserted, updated, ids
 
-    def connect(self, session: Session, access_token: str, enrollment_id: str, institution: str) -> BankLink:
+    def connect(self, session: Session, access_token: str, enrollment_id: str, institution: str, person_id: int | None = None) -> BankLink:
         if clean_id(enrollment_id) is None or clean_id(access_token, 500) is None:
             raise ValueError("That is not a Teller enrollment")
         institution = clean_text(institution, MAX_NAME_CHARS)
         link = session.exec(select(BankLink).where(BankLink.provider == "teller", BankLink.external_id == enrollment_id)).first()
         if link is None:
             link = BankLink(provider="teller", external_id=enrollment_id, institution=institution)
+        if not link.active or link.id is None:
+            link.person_id = person_id  # whoever made it live; the same sign-in linked again does not take a live link from its maker
         link.institution = institution or link.institution
         link.access_token_enc = crypto.encrypt(access_token)
         link.active = True

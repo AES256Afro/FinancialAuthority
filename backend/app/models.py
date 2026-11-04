@@ -833,6 +833,7 @@ class BankLink(SQLModel, table=True):
     last_error: str = ""
     webhook: str = ""  # the address Plaid sends this item's notices to, once registered
     bank_updated_at: dt.datetime | None = None  # when the vendor last got new data from the bank (its own schedule), not when the app asked
+    person_id: int | None = None  # the second person who linked it: it ends with their access (none: the owner's)
 
 
 class Approval(SQLModel, table=True):

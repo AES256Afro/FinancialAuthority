@@ -188,17 +188,52 @@ def _landed(session, income, start: date, end: date, expected: float) -> bool:  
     from ..models import RecurringSeries, Transaction
     from .recurring import merchant_key
 
-    query = select(Transaction.amount, Transaction.merchant).where(Transaction.date >= start, Transaction.date <= end, Transaction.amount < 0, Transaction.is_income == True, Transaction.pending == False)  # noqa: E712
+    query = select(Transaction.amount, Transaction.merchant, Transaction.date).where(Transaction.date >= start, Transaction.date <= end, Transaction.amount < 0, Transaction.is_income == True, Transaction.pending == False)  # noqa: E712
     series = session.get(RecurringSeries, income.series_id) if getattr(income, "series_id", None) else None
     key = series.merchant_key if series is not None else ""
     if not key and getattr(income, "account_id", None):
         query = query.where(Transaction.account_id == income.account_id)
-    for amount, merchant in session.exec(query).all():
+    rows = session.exec(query).all()
+    if not key and not rows:
+        return False
+    for amount, merchant, posted in rows:
         if key:
             mine = merchant_key(merchant)
             if not mine or not (mine == key or mine.startswith(key) or key.startswith(mine)):
                 continue
+        elif _another_checks(session, income, merchant, posted, abs(amount), start + timedelta(days=2), expected):
+            continue
         if abs(abs(amount) - expected) <= max(50.0, expected * 0.4):
+            return True
+    return False
+
+
+def _another_checks(session, income, merchant: str, posted: date, amount: float, payday: date, expected: float) -> bool:  # noqa: ANN001 - a Session and an Income
+    """Whether a deposit into this income's account is another paycheck's: it carries that paycheck's name and not this
+    one's, or that paycheck's payday is nearer to it and its amount fits that one at least as well. Two checks into one
+    account, days apart: the other job's deposit two days before this payday took this check off the plan (sweep 25)."""
+    from sqlmodel import select
+
+    from ..models import Income, RecurringSeries
+    from .recurring import merchant_key
+
+    def named(key: str) -> bool:
+        return bool(key and row_key and (row_key == key or row_key.startswith(key) or key.startswith(row_key)))
+
+    row_key = merchant_key(merchant)
+    if named(merchant_key(income.name)):
+        return False
+    for other in session.exec(select(Income).where(Income.active == True, Income.id != income.id)).all():  # noqa: E712
+        series = session.get(RecurringSeries, other.series_id) if other.series_id else None
+        if named(merchant_key(other.name)) or (series is not None and named(series.merchant_key)):
+            return True
+        days = income_days(other)
+        cadence = other.cadence or "biweekly"
+        near = [scheduled_payday(other, posted), *previous_paydays(other.next_date, cadence, 2, **days)]
+        when = min(near, key=lambda d: abs((d - posted).days))
+        net = income_net(other, when)
+        closer, fits = abs((when - posted).days) - abs((payday - posted).days), abs(amount - net) - abs(amount - expected)
+        if abs(amount - net) <= max(50.0, net * 0.4) and ((closer < 0 and fits <= 0) or (closer == 0 and fits < 0)):
             return True
     return False
 

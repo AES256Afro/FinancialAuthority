@@ -63,12 +63,13 @@ def _templates(session: Session) -> list[dict]:
 
 
 @router.get("/api/v1/exports")
-def exports_catalog(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_owner)) -> dict:
+def exports_catalog(session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_owner)) -> dict:
     feed = get_setting(session, FEED_KEY, {}) or {}
     return {
         **catalog(), "formats": [{"id": k, **v} for k, v in data_formats.FORMATS.items()],
         "sections": [{"id": k, "name": v, "default": k in DEFAULT_SECTIONS} for k, v in SECTIONS], "templates": _templates(session),
-        "feed": {"active": bool(feed.get("hash")), "amounts": bool(feed.get("amounts")), "created": feed.get("created")},
+        "feed": {"active": bool(feed.get("hash")), "amounts": bool(feed.get("amounts")), "created": feed.get("created"),
+                 "mine": principal.kind == "owner" or not feed.get("hash") or feed.get("person_id") == principal.person_id},  # as _own_feed decides
     }
 
 

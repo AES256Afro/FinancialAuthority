@@ -165,6 +165,8 @@ def erase(body: EraseIn, request: Request, session: Session = Depends(get_sessio
             connection.execute(text("PRAGMA secure_delete=ON"))  # a deleted row's bytes are overwritten in its page, not left in the free space
             tables = [r[0] for r in connection.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")).all()]
             for table in tables:
+                if table == "people":
+                    connection.execute(text("UPDATE people SET allowances = '[]'"))  # the addresses the household writes to, as the owner's own list
                 if table in KEEP_TABLES:
                     continue
                 if table == "settings":
@@ -197,6 +199,9 @@ def erase(body: EraseIn, request: Request, session: Session = Depends(get_sessio
             path.unlink(missing_ok=True)
         forget_cert_files()  # the Teller certificate written for the HTTP client goes with its encrypted copy
         bump_version()
+        from ..engine.datacheck import _forget_learned
+
+        _forget_learned()  # the senders and domains it knew were the household's too
     left = ["Your sign-in: this browser's session, your passkeys and the second step.", "The people you let in, and their sign-ins (Settings › People removes them)."]
     if offbox_folder:
         left.append(f"Off-box copies on their own disk, at {offbox_folder}: delete them there if you want them gone too.")

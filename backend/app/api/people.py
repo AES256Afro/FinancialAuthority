@@ -113,8 +113,12 @@ def remove_person(person_id: int, session: Session = Depends(get_session), princ
     people.end_access(session, person.id)
     for key in session.exec(select(Passkey).where(Passkey.person_id == person.id)).all():
         session.delete(key)
-    from ..models import Approval
+    from ..connectors.mail import forget_mailbox
+    from ..models import Approval, MailAccount
 
+    for box in session.exec(select(MailAccount).where(MailAccount.person_id == person.id)).all():
+        box.person_id = -person.id  # as an approval's: a new person given the same number never inherits it
+        forget_mailbox(session, box)  # their mail's words, and what it left waiting, go with them
     for row in session.exec(select(Approval).where(Approval.for_person_id == person.id)).all():
         row.for_person_id = -person.id  # theirs in the history; a new person given the same number never inherits it
         session.add(row)

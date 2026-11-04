@@ -195,12 +195,12 @@ def plaid_link_token(body: LinkTokenIn | None = None, session: Session = Depends
 
 
 @router.post("/plaid/exchange")
-def plaid_exchange(body: ExchangeIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+def plaid_exchange(body: ExchangeIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     api = plaid().api(session)
     if api is None:
         raise HTTPException(409, "Plaid is not configured")
     try:
-        link = plaid().connect(session, api, body.public_token, body.institution)
+        link = plaid().connect(session, api, body.public_token, body.institution, person_id=principal.person_id)
     except PlaidError as error:
         raise HTTPException(502, str(error)) from error
     except httpx.HTTPError as error:
@@ -230,11 +230,11 @@ def _undo_duplicate(session: Session, link: BankLink, result) -> dict:  # noqa: 
 
 
 @router.post("/teller/enroll")
-def teller_enroll(body: EnrollIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+def teller_enroll(body: EnrollIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     if teller().api(session) is None:
         raise HTTPException(409, "Teller is not configured: paste the application id first")
     try:
-        link = teller().connect(session, body.access_token, body.enrollment_id, body.institution)
+        link = teller().connect(session, body.access_token, body.enrollment_id, body.institution, person_id=principal.person_id)
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
     except crypto.DataKeyMissing as error:

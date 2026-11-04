@@ -96,7 +96,7 @@ def checks(session: Session) -> list[dict[str, Any]]:
     devices = subscriptions(session)
     push = push_state(session)
     if devices or push["configured"]:
-        out.append(_check("phone", "Your phone", OK, f"{len(devices)} device{'s' if len(devices) != 1 else ''} get the app's own notifications" + (f"; {push['kind']} is set up too." if push["configured"] else "."), "", "/settings/notifications"))
+        out.append(_check("phone", "Your phone", OK, f"{len(devices)} device{'s get' if len(devices) != 1 else ' gets'} the app's own notifications" + (f"; {push['kind']} is set up too." if push["configured"] else "."), "", "/settings/notifications"))
     else:
         out.append(_check("phone", "Your phone", TODO, "No phone gets the morning brief or reminders yet.", "Add the app to your Home Screen, then turn on notifications.", "/settings/notifications"))
 

@@ -145,6 +145,20 @@ def _claim(session: Session, row: Approval, status: str, decided_by: str) -> Non
         session.commit()
 
 
+def cancel_queued_by(session: Session, name: str, why: str) -> int:
+    """The drafts a key or an app left waiting, denied when it is revoked: it was revoked because it is not to be believed,
+    and a draft it queued may be a hostile message's words, one tap from going out. Names are not unique: another key of
+    the same name loses its drafts too, and queues them again if it means them."""
+    cancelled = 0
+    for row in session.exec(select(Approval).where(Approval.status == "pending", Approval.created_by == name, Approval.created_kind.in_(("key", "oauth")))).all():  # type: ignore[attr-defined]
+        try:
+            _claim(session, row, "denied", why)
+        except ValueError:
+            continue
+        cancelled += 1
+    return cancelled
+
+
 def edit_draft(session: Session, row: Approval, changed: dict[str, str]) -> Approval:
     """Change a pending draft's recipient, subject or body, under the decision lock: an approve in the same instant
     either sent what was there before the edit, or finds the edited draft; never a draft half of each. A draft that

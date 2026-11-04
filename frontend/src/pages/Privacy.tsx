@@ -1,6 +1,6 @@
 // Settings › Privacy: a map of where your data goes, drawn first; then each model with what it sees and a switch,
 // who can read the plan, Hide amounts, everything as one file, and, set apart, deleting everything.
-import { OwnerLocked as ModelSwitches } from "../components/OwnerLocked";
+import { OwnerLocked as ModelSwitches, useViewer } from "../components/OwnerLocked";
 import { Download, Eye, EyeOff, Server, Trash2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
@@ -158,6 +158,7 @@ function Tile({ value, word }: { value: number; word: string }) {
 
 function Readers({ page }: { page: PrivacyPage }) {
   const { apps, keys } = page.readers;
+  const viewer = useViewer();
   return (
     <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
       <h2 style={h2}>Who else can read your plan</h2>
@@ -167,7 +168,7 @@ function Readers({ page }: { page: PrivacyPage }) {
       </div>
       <span style={intro}>
         {apps === 0 && keys === 0 ? "Nothing outside this app can read your plan. " : "Each one can read your plan; one you gave the confirm choice can also confirm details on Needs you. None can approve a send or move money. "}
-        <Link to="/settings/clients" style={{ fontWeight: 700 }}>See or revoke them on Apps and keys</Link>
+        <Link to="/settings/clients" style={{ fontWeight: 700 }}>{viewer.owner ? "See or revoke them on Apps and keys" : "See them, and revoke your own keys, on Apps and keys"}</Link>
       </span>
     </section>
   );

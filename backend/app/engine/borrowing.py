@@ -391,6 +391,10 @@ def sync_borrowing(session: Session, today: date) -> dict:
     bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
     series_rows = session.exec(select(RecurringSeries)).all()
     streams = [s for s in installment_streams(installment_rows, today) if s["active"]]
+    # A plan paid to its end leaves its own payments behind it for a few weeks: they are that plan, not a new stream with
+    # payments still to come, which held its installment back on days nothing was due. A payment past the plan's end is new (sweep 25).
+    finished = [p for p in session.exec(select(InstallmentPlan).where(InstallmentPlan.active == False, InstallmentPlan.remaining <= 0)).all()]  # noqa: E712
+    streams = [s for s in streams if not any(plan_provider(p).lower() == s["provider"].lower() and abs(p.installment - s["amount"]) < 1.0 and s["last_date"] <= _last_due(p) + timedelta(days=5) for p in finished)]
     for stream in streams:
         known = any(plan_provider(p).lower() == stream["provider"].lower() and abs(p.installment - stream["amount"]) < 1.0 for p in plans)
         known = known or any(provider_of(b.name, INSTALLMENT_PROVIDERS) == stream["provider"] and abs(b.amount - stream["amount"]) < 1.0 for b in bills)
@@ -418,6 +422,7 @@ def borrowing_overview(session: Session, today: date) -> dict:
     """The picture: what advances and installments cost, the cycle they run in, what stands outstanding, and
     the steps that end it. Everything here is read from the ledger and the registers."""
     from .cadence import income_days
+    from .reports import _plan_month, plan_ends
 
     advance_rows, installment_rows = _rows(session, today)
     pay = _next_pay(session, today)
@@ -496,13 +501,11 @@ def borrowing_overview(session: Session, today: date) -> dict:
         installments.append({
             **{k: (v.isoformat() if isinstance(v, date) else v) for k, v in s.items()},
             "status": status, "plan_id": plan.id if plan else None, "bill_id": bill.id if bill else None, "series_id": series.id if series else None,
-            "remaining": plan.remaining if plan else None, "ends": (plan.next_date + timedelta(days=plan.cadence_days * max(0, plan.remaining - 1))).isoformat() if plan else None,
+            "remaining": plan.remaining if plan else None, "ends": plan_ends(plan) if plan else None,
             "per_month": _money(s["amount"] * 30.0 / s["cadence_days"]),
         })
     # A plan on the register that no lender-named ledger stream shows (a plan read from mail or typed) still runs:
     # it is listed with the same monthly figure Debts and the report give it, so one plan has one figure (sweep 21).
-    from .reports import _plan_month
-
     shown = {i["plan_id"] for i in installments if i["plan_id"]}
     for p in plans:
         if p.id in shown or (p.remaining or 0) <= 0:
@@ -510,7 +513,7 @@ def borrowing_overview(session: Session, today: date) -> dict:
         installments.append({"provider": plan_provider(p), "merchant": p.merchant, "amount": _money(p.installment), "cadence_days": p.cadence_days, "cadence_assumed": False, "payments_seen": max(0, (p.count or 0) - (p.remaining or 0)),
                              "first_date": None, "last_date": None, "next_date": p.next_date.isoformat(), "active": True, "paid_so_far": _money(p.installment * max(0, (p.count or 0) - (p.remaining or 0))), "sources": [f"plan:{p.id}"],
                              "status": "plan", "plan_id": p.id, "bill_id": None, "series_id": None, "remaining": p.remaining,
-                             "ends": (p.next_date + timedelta(days=p.cadence_days * max(0, p.remaining - 1))).isoformat(), "per_month": _plan_month(p)})
+                             "ends": plan_ends(p), "per_month": _plan_month(p)})
     # One plan, one row and one figure, whatever the ledger shows of it: two streams around a rounding edge counted its
     # month twice, and a stream gone quiet (paid from an account the app cannot see) not at all, while the plan runs (sweep 24).
     by_plan: dict[int, dict] = {}
@@ -885,28 +888,46 @@ def refresh_plan_progress(session: Session, today: date, *, commit: bool = True)
     for t in rows:
         provider = provider_of(_text(t), INSTALLMENT_PROVIDERS)
         if provider:
-            paid_to.setdefault(provider, []).append((t.date, float(t.amount)))
-    for p in plans:
+            paid_to.setdefault(provider, []).append((t.date, float(t.amount), t.id))
+
+    def start_of(p: InstallmentPlan, first: date) -> date:
+        return max(first - timedelta(days=30), p.schedule_as_of) if p.schedule_as_of else first - timedelta(days=5)
+
+    # One payment pays one plan. Two loans of one lender at one amount each counted every payment of that amount and ran
+    # ahead of their schedules (sweep 25): so a payment near a plan's date is first that plan's own, oldest plan first, and
+    # only what no date claims is left to count as paid ahead. A lone plan sees every row, as ever.
+    by_first = sorted(plans, key=lambda p: (min(s["date"] for s in json.loads(p.schedule)), p.id or 0))
+    paid_off = [p for p in session.exec(select(InstallmentPlan).where(InstallmentPlan.active == False, InstallmentPlan.remaining <= 0)).all() if p.schedule and p.schedule != "[]"] if plans else []  # noqa: E712 - a finished loan's payments stay its own
+    owner: dict[int, int] = {}
+    for p in sorted([*by_first, *paid_off], key=lambda p: (min(s["date"] for s in json.loads(p.schedule)), p.id or 0)):
+        schedule = sorted(json.loads(p.schedule), key=lambda s: s["date"])
+        start = start_of(p, date.fromisoformat(schedule[0]["date"]))
+        for s in schedule:
+            due = date.fromisoformat(s["date"])
+            hit = next((row for row in sorted(paid_to.get(plan_provider(p), []), key=lambda r: r[0]) if row[2] not in owner and row[0] >= start and due - timedelta(days=5) <= row[0] and abs(row[1] - s["amount"]) <= 0.05), None)
+            if hit is not None:
+                owner[hit[2]] = p.id or 0
+    taken_rows: set[int] = set()
+    for p in by_first:
         schedule = sorted(json.loads(p.schedule), key=lambda s: s["date"])
         first = date.fromisoformat(schedule[0]["date"])
         amounts = [s["amount"] for s in schedule]
         matched = 0
-        start = first - timedelta(days=5)
-        if p.schedule_as_of:
-            start = max(first - timedelta(days=30), p.schedule_as_of)
-        real = [row for row in paid_to.get(plan_provider(p), []) if row[0] >= start]
+        start = start_of(p, first)
+        real = [row for row in paid_to.get(plan_provider(p), []) if row[0] >= start and owner.get(row[2], p.id or 0) == (p.id or 0) and row[2] not in taken_rows]
         for c in claims.get(str(p.id), []):
             on, amount = date.fromisoformat(c["on"]), float(c["amount"])
-            if not any(abs(a - amount) <= 0.05 and abs((d - on).days) <= CLAIM_MATCH_DAYS for d, a in real):
-                real.append((on, amount))  # the owner's word, until the bank's row arrives
+            if not any(abs(a - amount) <= 0.05 and abs((d - on).days) <= CLAIM_MATCH_DAYS for d, a, _id in real):
+                real.append((on, amount, None))  # the owner's word, until the bank's row arrives
         pool = sorted(real, key=lambda r: r[0])
         used: set = set()
         for i, target in enumerate(amounts):
-            hit = next((j for j, (d, a) in enumerate(pool) if j not in used and abs(a - target) <= 0.05), None)
+            hit = next((j for j, (d, a, _id) in enumerate(pool) if j not in used and abs(a - target) <= 0.05), None)
             if hit is None:
                 break
             used.add(hit)
             matched += 1
+        taken_rows.update(pool[j][2] for j in used if pool[j][2] is not None)
         remaining = max(0, len(schedule) - matched)
         upcoming = schedule[len(schedule) - remaining:] if remaining else []
         next_date = date.fromisoformat(upcoming[0]["date"]) if upcoming else date.fromisoformat(schedule[-1]["date"])
@@ -921,6 +942,15 @@ def refresh_plan_progress(session: Session, today: date, *, commit: bool = True)
     elif changed or claims_changed:
         session.flush()
     return changed
+
+
+def _last_due(plan: InstallmentPlan) -> date:
+    """The last payment's day of a plan paid to its end: its schedule's last, else the step before its next date, which
+    moved on past the last payment when that payment ticked."""
+    from .projection import _schedule_of
+
+    schedule = _schedule_of(plan)
+    return date.fromisoformat(schedule[-1]["date"]) if schedule else plan.next_date - timedelta(days=plan.cadence_days or 14)
 
 
 def _told_after(session: Session, plan: InstallmentPlan, day: date) -> bool:

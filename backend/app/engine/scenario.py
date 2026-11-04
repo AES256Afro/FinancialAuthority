@@ -42,7 +42,7 @@ def load_inputs(session: Session, today: date, horizon_days: int = HORIZON) -> d
     def net_for(payday: date) -> float:
         return schedule["amounts"].get(payday, 0.0)
 
-    from .payments import paid_periods, unposted_periods
+    from .payments import minimums_paid, paid_periods, unposted_periods
 
     from .projection import paid_by_household
 
@@ -59,7 +59,7 @@ def load_inputs(session: Session, today: date, horizon_days: int = HORIZON) -> d
     return {
         "today": today, "cash": cash, "buffer": buffer, "has_income": schedule["known"], "cadence": schedule["cadence"], "paydays": paydays, "net_for": net_for, "pay_amounts": {d: net_for(d) for d in paydays},
         "pay_days": schedule["pay_days"], "payday_today": any(scheduled_payday(i, today) == today for i in incomes), "paid": paid_periods(session, today),
-        "late": unposted_periods(session, today), "checks_by_day": schedule["semimonthly"],
+        "late": unposted_periods(session, today), "checks_by_day": schedule["semimonthly"], "minimums_paid": minimums_paid(session, today, [a for a in accounts if a.kind == "card"], debts),
         "bills": bills, "plans": plans, "advances": advances, "debts": debts, "accounts": by_id, "card_mode": card_mode,
         "planned": planned_to_cards(session, today), "extra": pending_installment_events(pending_streams, today, horizon_days=horizon_days, plans=plans) + planned_events(session, today), "pace": pace, "horizon_days": horizon_days,
     }
@@ -69,7 +69,7 @@ def assembled(inp: dict, horizon_days: int | None = None) -> dict:
     """The registers as the plan counts them, from the inputs above: assemble with every input it takes."""
     return assemble(bills=inp["bills"], plans=inp["plans"], advances=inp["advances"], today=inp["today"], accounts=inp["accounts"], paydays=inp["paydays"], card_mode=inp["card_mode"], debts=inp["debts"], planned=inp["planned"],
                     extra=inp["extra"], card_pace_by_account=inp["pace"]["per_day_by_account"], horizon_days=horizon_days or inp["horizon_days"], paid=inp["paid"], pay_days=inp["pay_days"],
-                    late=inp.get("late"), checks_by_day=inp.get("checks_by_day", True))
+                    late=inp.get("late"), checks_by_day=inp.get("checks_by_day", True), minimums_paid=inp.get("minimums_paid"))
 
 
 def baseline_events(inp: dict) -> list[dict]:

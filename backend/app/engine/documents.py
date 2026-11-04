@@ -174,11 +174,10 @@ def suggested(doc: Document, today: Any = None) -> dict[str, Any] | None:
     not. Never applied on its own."""
     if doc.kind != "receipt" or (doc.amount is not None and doc.bought_on is not None):
         return None
-    from datetime import date as _date
-
+    from ..clock import local_today
     from ..ocr import receipt_reading
 
-    got = receipt_reading("\n".join(pages_of(doc)), today or _date.today())
+    got = receipt_reading("\n".join(pages_of(doc)), today or local_today())  # the owner's day: the server's runs ahead in the evening
     out = {k: v for k, v in (("amount", got.get("total")), ("bought_on", got.get("bought_on"))) if v is not None and getattr(doc, k) is None}
     return out or None
 

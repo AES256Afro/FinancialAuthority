@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api, useApi } from "../api";
 import { DEMO } from "../demo/shim";
 import { ConfirmButton } from "../components/ConfirmButton";
+import { useViewer } from "../components/OwnerLocked";
 import { Failed, Loading, Said } from "../components/State";
 import { Where } from "../components/Where";
 
@@ -17,7 +18,7 @@ interface Catalog {
   palettes: { id: string; name: string }[];
   sections: { id: string; name: string; default: boolean }[];
   templates: Template[];
-  feed: { active: boolean; amounts: boolean; created: string | null };
+  feed: { active: boolean; amounts: boolean; created: string | null; mine?: boolean };
 }
 
 interface Template {
@@ -73,6 +74,7 @@ export function Exports() {
     };
   }, []);
   const [note, setNote] = useState<{ at: Area; text: string; tone: "info" | "error" } | null>(null);
+  const viewer = useViewer();
   const [feedUrl, setFeedUrl] = useState<string | null>(null);
   // Null until the owner ticks or unticks it: the box starts from the feed's own setting.
   const [amountsPicked, setAmounts] = useState<boolean | null>(null);
@@ -286,11 +288,12 @@ export function Exports() {
         <span style={{ fontSize: 13, color: "var(--ink-2)", maxWidth: "75ch" }}>A private address your calendar app subscribes to; it refreshes on its own. Anyone with the address can read it, so amounts stay off unless you turn them on. Making a new address stops the old one.</span>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <span style={{ fontSize: 13 }}>{c.feed.active ? `A feed is active${c.feed.amounts ? ", with amounts" : ", names and dates only"}.` : "No feed yet."}</span>
-          <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13, minHeight: 32 }}><input type="checkbox" checked={amounts} onChange={(e) => setAmounts(e.target.checked)} style={{ width: 18, height: 18 }} />{c.feed.active ? "Include amounts in the next address" : "Include amounts"}</label>
-          {c.feed.active
+          {c.feed.mine === false && <span style={{ fontSize: 13, color: "var(--ink-2)" }}>Only {viewer.ownerWord} or the person who made it can replace it or turn it off.</span>}
+          {c.feed.mine !== false && <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13, minHeight: 32 }}><input type="checkbox" checked={amounts} onChange={(e) => setAmounts(e.target.checked)} style={{ width: 18, height: 18 }} />{c.feed.active ? "Include amounts in the next address" : "Include amounts"}</label>}
+          {c.feed.mine === false ? null : c.feed.active
             ? <ConfirmButton label="Make a new address" question="Make a new address? The old one stops working, so every calendar using it must subscribe again." yes="Yes, make a new one" no="Keep the old one" onConfirm={makeFeed} className="btn dark" />
             : <button type="button" className="btn dark" onClick={firstFeed} disabled={DEMO}>Make the address</button>}
-          {c.feed.active && <ConfirmButton label="Turn the feed off" question="Turn the feed off? Calendars subscribed to it stop updating." yes="Yes, turn it off" no="Keep it on" onConfirm={feedOff} />}
+          {c.feed.active && c.feed.mine !== false && <ConfirmButton label="Turn the feed off" question="Turn the feed off? Calendars subscribed to it stop updating." yes="Yes, turn it off" no="Keep it on" onConfirm={feedOff} />}
           {said("feed")}
         </div>
         {feedUrl && (

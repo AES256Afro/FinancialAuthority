@@ -66,7 +66,9 @@ def _mail_facts(session: Session, today: date) -> dict:
     # The count is every fact waiting, not the thirty listed for the screen.
     pending_count = int(session.exec(select(func.count()).select_from(ExtractedFact).where(ExtractedFact.status == "pending")).one())
     since = datetime.combine(today - timedelta(days=3), datetime.min.time(), tzinfo=timezone.utc)
-    alert_rows = session.exec(select(ExtractedFact).where(ExtractedFact.kind == "bank_alert", ExtractedFact.created_at >= since).order_by(ExtractedFact.created_at.desc()).limit(20)).all()
+    # Left out before the twenty are taken: taken first, twenty forged alerts pushed a real one off the list (sweep 25).
+    unvouched = select(MessageRef.id).where(MessageRef.trust.in_(UNVOUCHED))  # type: ignore[union-attr]
+    alert_rows = session.exec(select(ExtractedFact).where(ExtractedFact.kind == "bank_alert", ExtractedFact.created_at >= since, (ExtractedFact.message_ref_id == None) | ExtractedFact.message_ref_id.not_in(unvouched)).order_by(ExtractedFact.created_at.desc()).limit(20)).all()  # type: ignore[union-attr]  # noqa: E711
     ids = [f.message_ref_id for f in [*pending_rows, *alert_rows] if f.message_ref_id]
     refs = {r.id: r for r in session.exec(select(MessageRef).where(MessageRef.id.in_(ids))).all()} if ids else {}
     # An alert from a sender the trust check could not vouch for (mail/trust.py) never reaches the brief: a message is data, and a
@@ -170,7 +172,9 @@ def _finance_snapshot(session: Session, today: date) -> dict:
     # seventy-five days stopped short of it when the next payday was more than a few days out, and for a monthly check left
     # the third and fourth windows with no bills at all (sweep 10).
     horizon_days = max(HORIZON_DAYS, (paydays[min(5, len(paydays) - 1)] - today).days)
-    assembled = assemble(bills=bills, plans=plans, advances=advances, today=today, accounts=by_id, paydays=paydays, card_mode=card_mode, debts=debts, planned=planned_to_cards(session, today),
+    from .payments import minimums_paid
+
+    assembled = assemble(bills=bills, plans=plans, advances=advances, today=today, accounts=by_id, paydays=paydays, card_mode=card_mode, debts=debts, planned=planned_to_cards(session, today), minimums_paid=minimums_paid(session, today, [a for a in accounts if a.kind == "card"], debts),
                          extra=pending_installment_events(pending_streams, today, horizon_days=horizon_days, plans=plans) + planned_rows, card_pace_by_account=pace["per_day_by_account"], paid=paid, pay_days=schedule["pay_days"],
                          late=late, checks_by_day=schedule["semimonthly"], horizon_days=horizon_days)
     events, display_events, card_bills, payoffs = assembled["math"], assembled["display"], assembled["card_bills"], assembled["payoffs"]

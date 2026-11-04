@@ -361,6 +361,7 @@ def restore(name: str) -> dict[str, Any]:
             _copy(path, staged, standalone=False)
             _upgrade(staged)  # a point from an older version gains the columns this version added
             _carry_forward(folder() / before["name"], staged)
+            _forget_ended(staged)
             engine.dispose()
             _copy(staged, settings.db_path, standalone=False)
         finally:
@@ -370,6 +371,9 @@ def restore(name: str) -> dict[str, Any]:
         from .db import bump_version
 
         bump_version()  # every computed plan is of the database that was just replaced
+        from .engine.datacheck import _forget_learned
+
+        _forget_learned()  # and every sender the trust check learned from it: a mark undone by this restore stays undone
     with (folder() / "restores.log").open("a", encoding="utf-8") as log:
         log.write(json.dumps({"at": datetime.now(UTC).isoformat(), "restored": name, "before": before["name"]}) + "\n")
     try:
@@ -391,6 +395,22 @@ def _upgrade(db: Path) -> None:
     try:
         SQLModel.metadata.create_all(other)
         add_missing_columns(other)
+    finally:
+        other.dispose()
+
+
+def _forget_ended(db: Path) -> None:
+    """Mail is data and comes back with the point, but a mailbox ended since stays ended: a removed person's words do not
+    come back, and what an ended mailbox said does not wait again."""
+    from sqlalchemy import create_engine
+    from sqlmodel import Session
+
+    from .connectors.mail import forget_ended_mailboxes
+
+    other = create_engine(f"sqlite:///{db}")
+    try:
+        with Session(other) as session:
+            forget_ended_mailboxes(session)
     finally:
         other.dispose()
 
@@ -433,7 +453,7 @@ def _carry_bank_links(con: sqlite3.Connection) -> None:
     if not mine or not {"provider", "external_id", "active", "access_token_enc"} <= theirs:
         return
     same = "n.provider = main.bank_links.provider AND n.external_id = main.bank_links.external_id"
-    for column in ("active", "access_token_enc", "needs_login", "webhook", "environment"):
+    for column in ("active", "access_token_enc", "needs_login", "webhook", "environment", "person_id"):
         if column in mine and column in theirs:
             con.execute(f'UPDATE main.bank_links SET "{column}" = (SELECT n."{column}" FROM now.bank_links n WHERE {same}) '
                         f"WHERE EXISTS (SELECT 1 FROM now.bank_links n WHERE {same})")

@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { DEMO } from "../demo/shim";
 import { when } from "../format";
+import { OwnerLocked, useViewer } from "../components/OwnerLocked";
 import { HOURS, hourWord, ReminderSwitches, ShortcutRecipe, ThisDevice } from "../components/Reach";
 import { Failed, Loading, Said, useJumpToHash } from "../components/State";
 import { Where } from "../components/Where";
@@ -90,6 +91,7 @@ function ReceiptReminderSwitches() {
 
 export function Notifications() {
   const state = useApi<PushState>("/api/v1/push");
+  const viewer = useViewer();
   const { data, reload, error } = state;
   useJumpToHash(data);
   const [form, setForm] = useState({ kind: "off", url: "", topic: "", token: "", brief_hour: 7 });
@@ -139,6 +141,7 @@ export function Notifications() {
         {!data && !error && <Loading what="the ntfy and Gotify settings" card={false} />}
         {/* The form shows only once the saved settings are in, so Save can never write the blank defaults over them. */}
         {data && <>
+        <OwnerLocked what="where the notifications go">
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(180px, 100%), 1fr))", gap: 10 }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <span className="lab">Service</span>
@@ -169,11 +172,12 @@ export function Notifications() {
             </select>
           </label>
         </div>
+        </OwnerLocked>
         <span style={{ fontSize: 12, color: "var(--ink-2)" }}>The morning brief goes once a day, from this hour, to this device and to ntfy or Gotify. Reminders have their own hour, under Reminders above.</span>
         {form.kind === "ntfy" && <Where id="ntfy" />}
         {form.kind === "gotify" && <Where id="gotify" />}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <button className="btn dark" type="button" disabled={busy} onClick={save}>{busy ? "Working…" : "Save"}</button>
+          <button className="btn dark" type="button" disabled={busy || !viewer.owner} onClick={save}>{busy ? "Working…" : "Save"}</button>
           <button className="btn" type="button" disabled={busy || !data.configured} onClick={() => test("/api/v1/push/test")}>Send a test</button>
           <button className="btn" type="button" disabled={busy} onClick={() => test("/api/v1/push/brief")}>Send today's brief now</button>
           {note && <Said text={note.text} tone={note.tone} />}

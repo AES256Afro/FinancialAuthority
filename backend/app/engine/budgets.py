@@ -34,9 +34,10 @@ def paycheck_span(session: Session, today: date) -> dict[str, Any]:
         return {"known": False, "start": start, "end": today, "next_payday": today + timedelta(days=1), "previous_start": start - timedelta(days=14), "cadence": "biweekly"}
     next_payday, income = upcoming[0]
     cadence = income.cadence or "biweekly"
-    back = previous_paydays(next_payday, cadence, 2, **income_days(income))
-    start = back[0] if back[0] <= today else today
-    return {"known": True, "start": start, "end": next_payday - timedelta(days=1), "next_payday": next_payday, "previous_start": back[1], "cadence": cadence}
+    # Every paycheck is one schedule: the span starts at the last payday of any of them. Counted back along the next
+    # check's own cadence, a second job's check fell inside the span and each span took days of the one before (sweep 25).
+    back = sorted({min(d, today) for first, i in upcoming for d in previous_paydays(first, i.cadence or "biweekly", 2, **income_days(i))}, reverse=True)
+    return {"known": True, "start": back[0], "end": next_payday - timedelta(days=1), "next_payday": next_payday, "previous_start": back[1], "cadence": cadence, "per_year": sum(PAYCHECKS_PER_YEAR.get(i.cadence or "biweekly", 26) for _, i in upcoming)}
 
 
 def _spent(session: Session, start: date, end: date) -> dict[str, float]:
@@ -59,7 +60,7 @@ def budget_plan(session: Session, today: date) -> dict[str, Any]:
     days_gone = max(0, min(days_total, (today - start).days + 1))
     now = _spent(session, start, today)
     before = _spent(session, span["previous_start"], start - timedelta(days=1))
-    per_year = PAYCHECKS_PER_YEAR.get(span["cadence"], 26)
+    per_year = span.get("per_year") or PAYCHECKS_PER_YEAR.get(span["cadence"], 26)
     recent = _spent(session, today - timedelta(days=SUGGEST_DAYS), today - timedelta(days=1))
     windows_in_recent = SUGGEST_DAYS / (365.0 / per_year)
     budgets = session.exec(select(CategoryBudget).where(CategoryBudget.active == True).order_by(CategoryBudget.category)).all()  # noqa: E712
