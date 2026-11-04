@@ -14,6 +14,8 @@ from sqlmodel import Session, select
 
 from ..models import HealthSample, JobRun
 
+# The Bridge from the IMAP answer alone (engine/sources.py); fixed words, so they may go in a note.
+BRIDGE_WORDS = {"not_running": "the Bridge is not running", "no_account": "the Bridge is running with no account signed in", "password_refused": "the Bridge refused the password", "signed_in": "the Bridge is signed in"}
 RANK = {"none": 0, "good": 1, "warn": 2, "crit": 3}
 MAIL_STALE_HOURS = 3  # mail is read every fifteen minutes
 BANK_STALE_HOURS = 26  # a bank link is read at least daily
@@ -24,7 +26,7 @@ JOB_WORDS = {
     "detect_recurring": "finding repeating charges", "match_payments": "matching bills to payments", "review_if_due": "the reviewer's notes",
     "morning_brief": "the morning brief", "reminders": "your reminders", "moves_verify": "checking a bank switch", "balance_history": "keeping balances",
     "self_check": "the self-check", "restore_point_daily": "the daily copy", "offbox_copy": "the off-box copy", "restore_drill": "the restore drill",
-    "prune_job_runs": "tidying job records", "app_watch": "telling the phone",
+    "prune_job_runs": "tidying job records", "app_watch": "telling the phone", "source_watch": "telling the phone about a source",
 }
 
 
@@ -40,11 +42,13 @@ def _age_hours(iso: str | None, now: datetime) -> float | None:
     return max(0.0, (now - at).total_seconds() / 3600)
 
 
-def job_checks(session: Session, specs: dict[str, Any], words: dict[str, str] | None = None) -> dict[str, Any]:
+def job_checks(session: Session, specs: dict[str, Any], words: dict[str, str] | None = None, *, explained: set[str] | None = None) -> dict[str, Any]:
     """The jobs as one part: failing when a job's last run failed and it runs rarely (six hours or more apart), or
-    its last two runs failed."""
+    its last two runs failed. `explained`: jobs whose failures another part already shows (a mailbox that cannot be read)."""
     failing = []
     for name, spec in specs.items():
+        if name in (explained or ()):
+            continue
         runs = session.exec(select(JobRun).where(JobRun.name == name).order_by(JobRun.started_at.desc()).limit(2)).all()
         if not runs or runs[0].ok is not False:
             continue
@@ -73,7 +77,7 @@ def checks_from_report(report: dict[str, Any], backup_age_hours: float | None, j
         limit = MAIL_STALE_HOURS if mail else BANK_STALE_HOURS
         age = _age_hours(s.get("last_ok"), now)
         if s.get("error"):
-            state, note = "crit", "could not be read" if mail else "could not be read; it may need a new sign-in"
+            state, note = "crit", ("could not be read" + (f": {BRIDGE_WORDS[s['bridge']]}" if s.get("bridge") in BRIDGE_WORDS else "")) if mail else "could not be read; it may need a new sign-in"
         elif age is None:
             state, note = "warn", "not read yet"
         elif age > limit:

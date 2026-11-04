@@ -40,10 +40,6 @@ def next_steps(session: Session, today: date, *, person_id: int | None = None) -
         for ext in (link.accounts or "").split(","):
             if ext:
                 link_by_account[f"{link.provider}:{ext}"] = link
-        if link.needs_login:
-            steps.append(_step(f"link-signin-{link.id}", "critical", f"{link.institution or 'A bank'} wants a new sign-in before it can be read again.", "Sign in again", f"/settings/connectors?signin={link.id}", f"link:{link.id}"))
-        elif link.last_error:
-            steps.append(_step(f"link-error-{link.id}", "warning", f"{link.institution or 'A bank'} did not sync: {link.last_error[:90]}", "Sync now", f"/settings/connectors?sync={link.id}", f"link:{link.id}"))
     banks = get_setting(session, "banks.secrets", {}) or {}
     plaid_ready = bool((banks.get("plaid") or {}).get("client_id") and (banks.get("plaid") or {}).get("secret"))
     teller_ready = bool((banks.get("teller") or {}).get("application_id"))
@@ -65,11 +61,12 @@ def next_steps(session: Session, today: date, *, person_id: int | None = None) -
     mailboxes = session.exec(select(MailAccount).where(MailAccount.active == True)).all()  # noqa: E712
     if not mailboxes:
         steps.append(_step("mail-connect", "info", "Connect a mailbox so bills, statements and paystubs read themselves.", "Add a mailbox", "/settings/connectors#mail", "mail"))
-    for m in mailboxes:
-        if m.last_error and m.host == "bridge" and m.last_error.startswith("The Bridge is not running"):
-            steps.append(_step(f"bridge-signin-{m.id}", "warning", "Proton Mail waits on the Bridge: sign in to it once on the server, with your Proton password and code, then paste the password it prints. The commands are under Mailboxes.", "Connectors", "/settings/connectors#mail", f"mailbox:{m.id}"))
-        elif m.last_error:
-            steps.append(_step(f"mail-error-{m.id}", "warning", f"{m.label} could not be read: {m.last_error[:90]}", "Fix the mailbox", "/settings/connectors#mail", f"mailbox:{m.id}"))
+    # One step per source that needs the owner, the same one Needs you shows (engine/sources.py).
+    from .sources import down
+
+    for card in down(session):
+        said = f" ({card['detail'][:90]})" if card["failure"] == "other" and card["detail"] else ""
+        steps.append(_step(card["card_id"], card["severity"], f"{card['text']}{said} {card['step']}", card["action"], card["link"], card["source"]))
 
     investments = session.exec(select(Account).where(Account.active == True, Account.kind == "investment")).all()  # noqa: E712
     if not investments:
@@ -169,7 +166,10 @@ def next_steps(session: Session, today: date, *, person_id: int | None = None) -
         steps.append(_step("publish", "info", "Publish the app to reach it, and let Claude reach it, from anywhere.", "How", "/settings/setup#publish", "public_url"))
     if get_setting(session, "review.pending", None) and (models.get("reviewer") or {}).get("provider", "none") != "none":
         steps.append(_step("review-due", "info", "A review is due after the last change; it runs within the hour, or now.", "Review now", "/chat", "review"))
-    for i, problem in enumerate((get_setting(session, "selfcheck", {}) or {}).get("problems", [])[:4]):
+    report = get_setting(session, "selfcheck", {}) or {}
+    # The self-check lists each source that failed too; those have their step above, or are still mending themselves.
+    told = {f"{s.get('name')}: {s.get('error')}" for s in report.get("sources", []) if s.get("error")}
+    for i, problem in enumerate([p for p in report.get("problems", []) if p not in told][:4]):
         steps.append(_step(f"selfcheck-{i}", "warning", f"Self-check: {problem}", "Jobs", "/settings/jobs", "selfcheck"))
 
     steps.sort(key=lambda s: ORDER[s["severity"]])

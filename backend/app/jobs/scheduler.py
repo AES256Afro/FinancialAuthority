@@ -140,13 +140,18 @@ def self_check() -> str:
                 stale.append(a.name)  # a link should have refreshed it: that is a problem
             else:
                 typed.append({"name": a.name, "days": (now - known).days})  # typed or imported: only the owner can update it
+        from ..connectors import health
         from ..models import BankLink, MailAccount
 
         sources = []
         for m in session.exec(select(MailAccount).where(MailAccount.active == True)).all():  # noqa: E712
-            sources.append({"kind": "mail", "name": m.label, "last_ok": m.last_sync_at.isoformat() if m.last_sync_at and not m.last_error else None, "error": m.last_error})
+            kept = health.read(session, health.mail_key(m.id))
+            sources.append({"kind": "mail", "name": m.label, "last_ok": m.last_sync_at.isoformat() if m.last_sync_at and not m.last_error else None, "error": m.last_error, "failure": kept.get("failure") if m.last_error else None,
+                            # The Bridge's state, from the IMAP answer alone; None until it has been asked once.
+                            "bridge": (kept.get("bridge") if m.last_error else "signed_in" if m.last_sync_at else None) if m.host == "bridge" else None})
         for l in session.exec(select(BankLink).where(BankLink.active == True)).all():  # noqa: E712
-            sources.append({"kind": l.provider, "name": l.institution, "last_ok": l.last_sync_at.isoformat() if l.last_sync_at and not l.last_error else None, "error": l.last_error or ("needs a new sign-in" if l.needs_login else "")})
+            sources.append({"kind": l.provider, "name": l.institution, "last_ok": l.last_sync_at.isoformat() if l.last_sync_at and not l.last_error else None, "error": l.last_error or ("needs a new sign-in" if l.needs_login else ""),
+                            "failure": health.SIGNIN if l.needs_login else health.read(session, health.bank_key(l.id)).get("failure") if l.last_error else None})
         reachable = None
         seen_outside = None
         if settings.public_url:
@@ -210,7 +215,9 @@ def self_check() -> str:
         # The hour's sample of every part, for the health strips and for telling the phone (app_watch).
         from ..engine import apphealth
 
-        checks = apphealth.checks_from_report(report, backup_age, apphealth.job_checks(session, jobs.specs), now, copy_due=copy_due)
+        # A source that cannot be read fails its job's runs too: that is the source's part, not a second broken part.
+        explained = ({"mail_sync"} if any(s["error"] and s["kind"] == "mail" for s in sources) else set()) | ({"bank_sync"} if any(s["error"] and s["kind"] != "mail" for s in sources) else set())
+        checks = apphealth.checks_from_report(report, backup_age, apphealth.job_checks(session, jobs.specs, explained=explained), now, copy_due=copy_due)
         checks.append(apphealth.datacheck_part(get_setting(session, "datacheck.last", None)))
         apphealth.record(session, report, checks, backup_age, utcnow())
         return f"{report['free_gb']} GB free · db {report['db_mb']} MB · last transaction {report['last_transaction']} · {len(problems)} problem(s)" + (": " + "; ".join(problems) if problems else "")
@@ -414,7 +421,7 @@ def mail_sync() -> str:
     if not result.ok:
         # A mailbox that could not be read is a failed run on the Jobs page, never a quiet "ok".
         raise RuntimeError(result.summary or "a mailbox could not be read")
-    return result.summary
+    return f"not due: {result.summary}" if result.details.get("only_waited") else result.summary
 
 
 jobs.register("mail_sync", mail_sync, 900, "Read every connected mailbox for new messages", writes=False)  # the mailbox read takes long; its matching takes the lock
@@ -448,8 +455,7 @@ def bank_sync() -> str:
     """Every live bank link whose interval has passed, through its connector; a link that fails does not stop the
     others. The interval is the owner's (Connectors › Banks › How fresh); reading more often costs nothing more,
     since Plaid bills transactions by the month per bank login, not by the read."""
-    from datetime import UTC, datetime, timedelta
-
+    from ..connectors import health
     from ..models import BankLink
     from ..store import get_setting
 
@@ -461,8 +467,11 @@ def bank_sync() -> str:
         if not links:
             return "no bank links"
         every = timedelta(hours=float((get_setting(session, "banks.freshness", {}) or {}).get("sync_every_hours", 4)))
-        now = datetime.now(UTC)
-        due = [link for link in links if link.last_sync_at is None or now - (link.last_sync_at if link.last_sync_at.tzinfo else link.last_sync_at.replace(tzinfo=UTC)) >= every - timedelta(minutes=5)]
+        now = health.now_utc()
+        due = [link for link in links if link.last_sync_at is None or now - (link.last_sync_at if link.last_sync_at.tzinfo else link.last_sync_at.replace(tzinfo=timezone.utc)) >= every - timedelta(minutes=5)]
+        # A link whose sign-in was refused also waits out its back-off (connectors/health.py): whichever is longer.
+        # Sync now on Connectors comes through the connector, not this job, and always tries.
+        due = [link for link in due if health.waiting_until(session, health.bank_key(link.id), now) is None]
         if not due:
             return "not due yet"
         for link in due:
@@ -632,7 +641,9 @@ def app_watch() -> str:
         if latest is None:
             return "not due: no health sample yet"
         prior = get_setting(session, OPEN, {}) or {}
-        messages, state = apphealth.plan_alerts(prior, json.loads(latest.checks or "[]"), datetime.now(timezone.utc))
+        # A source that cannot be read is told by source_watch, once, with its step; here it would be told again each day.
+        parts = [c for c in json.loads(latest.checks or "[]") if not (c["key"].startswith("source:") and c["state"] == "crit")]
+        messages, state = apphealth.plan_alerts(prior, parts, datetime.now(timezone.utc))
         if not messages:
             set_setting(session, OPEN, state)
             return f"nothing new: {len(state)} part{'s' if len(state) != 1 else ''} still need{'s' if len(state) == 1 else ''} a look" if state else "nothing new"
@@ -650,6 +661,41 @@ def app_watch() -> str:
 
 
 jobs.register("app_watch", app_watch, 3600, "Tell your phone when a part of the app itself breaks, daily while it stays broken, and when it is fixed", writes=False)
+
+def source_watch() -> str:
+    """Tell the phone once when a mailbox or bank link starts to need the owner, and once when it is back, and keep what
+    the brief says about it. The cards themselves are worked out live (engine/sources.py); this only tells."""
+    from .. import notify
+    from ..connectors import health
+    from ..engine import sources
+
+    now = health.now_utc()
+    with session_scope() as session:
+        cards = sources.down(session, now)
+        messages, state, ended = sources.plan_telling(get_setting(session, sources.OPEN, {}) or {}, cards, sources.active_keys(session), now)
+        out = messages if len(messages) <= sources.MAX_PUSHES else [{"title": f"{len(messages)} sources changed", "body": " ".join(m["body"] for m in messages), "link": "/confirm#sources", "keys": [m["key"] for m in messages if m["kind"] == "down"]}]
+        failed = ""
+        told = 0
+        for m in out:
+            result = notify.send(session, m["title"], m["body"], link=m["link"], tags=["warning"], priority="high" if m.get("kind") == "down" else "default")
+            if result.get("skipped"):
+                break  # nothing to send to, so nothing counts as told: setting push up later tells what is open then
+            if not result.get("ok"):
+                failed = str(result.get("detail") or result.get("reason") or "the push channel refused it")
+                continue
+            told += 1
+            for key in m.get("keys") or ([m["key"]] if m.get("kind") == "down" else []):
+                state[key] = {**state[key], "told": now.isoformat(), "told_this": True}
+        sources.keep(session, state, ended, now)
+    if failed:
+        raise RuntimeError(f"told {told} of {len(out)}: {failed}")  # never silent; the next run tries the ones not told
+    if not messages and not ended:
+        return "nothing new"
+    return f"{len(cards)} waiting, {len(ended)} back, told the phone {told}"
+
+
+jobs.register("source_watch", source_watch, 300, "Tell your phone once when a mailbox or bank link needs you, and once when it is back", writes=False)
+
 
 IDLE = ("nothing new", "not due", "reviewer off", "sent 0", "today's copy is there", "no off-box folder", "not due yet")
 
