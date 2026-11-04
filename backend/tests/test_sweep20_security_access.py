@@ -76,6 +76,7 @@ OWNER_ONLY = {
     ("PUT", "/api/v1/models/{role}"), ("PUT", "/api/v1/models/secrets"), ("POST", "/api/v1/models/catalog"), ("PUT", "/api/v1/mail/accounts/{account_id}"), ("DELETE", "/api/v1/mail/accounts/{account_id}"),
     ("PUT", "/api/v1/oauth/clients/{client_id}"), ("DELETE", "/api/v1/oauth/clients/{client_id}"), ("DELETE", "/api/v1/keys/{key_id}"), ("PUT", "/api/v1/accounts/{account_id}/sharing"),
     ("POST", "/api/v1/privacy/models/{role}"), ("PUT", "/api/v1/banks/plaid/settings"), ("PUT", "/api/v1/banks/teller/settings"),  # the models' switch and whose bank keys (sweep 24)
+    ("PUT", "/api/v1/needs-you/rules/{name}"), ("POST", "/api/v1/needs-you/rules/senders"),  # a rule on is the app answering in the owner's name (M62)
 }
 # Deciding on a send queued by someone else: the approval the run sends is the owner's draft, so a second person is
 # refused it ("each person approves only their own sends").
@@ -93,7 +94,7 @@ CONFIRM = {
 # built-in chat, a document's file (the owner's), what is the owner's to hand out (exports, the calendar feed), and
 # the shared person's own page (it is drawn for a person signed in).
 KEY_NEVER_READS = re.compile(r"^/api/v1/(keys|shared|oauth/clients|audit|models|banks|push.*|restore-points.*|imports/history|exports.*|calendar/feed|people|chat"
-                             r"|documents/\{doc_id\}/file|business/invoices/\{invoice_id\}/print|reports/custom/tax/pack)$")
+                             r"|documents/\{doc_id\}/file|business/invoices/\{invoice_id\}/print|reports/custom/tax/pack|needs-you/rules)$")
 # Reads that are not "read": they compute, never write, so a read key may send them.
 READ_POSTS = {("POST", "/api/v1/ledger/rules/preview"), ("POST", "/api/v1/scenarios/run")}
 

@@ -42,6 +42,7 @@ const Debts = lazy(() => import("./pages/Debts").then((m) => ({ default: m.Debts
 const Connectors = lazy(() => import("./pages/Connectors").then((m) => ({ default: m.Connectors })));
 const Investments = lazy(() => import("./pages/Investments").then((m) => ({ default: m.Investments })));
 const Jobs = lazy(() => import("./pages/Jobs").then((m) => ({ default: m.Jobs })));
+const Rules = lazy(() => import("./pages/Rules").then((m) => ({ default: m.Rules })));
 const DataCheck = lazy(() => import("./pages/DataCheck").then((m) => ({ default: m.DataCheck })));
 const Mail = lazy(() => import("./pages/Mail").then((m) => ({ default: m.Mail })));
 const Models = lazy(() => import("./pages/Models").then((m) => ({ default: m.Models })));
@@ -191,6 +192,7 @@ export default function App() {
         {/* The engine's "link a bank" steps (the brief, the one thing, the data check) say /settings/banks: the banks are a part of Connections. */}
         <Route path="/settings/banks" element={<Navigate to="/settings/connectors#banks" replace />} />
         <Route path="/settings/jobs" element={<Jobs />} />
+        <Route path="/settings/rules" element={<Rules />} />
         <Route path="/data-check" element={<DataCheck />} />
         <Route path="/settings/audit" element={<Audit />} />
         <Route path="/settings/backups" element={<Backups me={me.data} />} />

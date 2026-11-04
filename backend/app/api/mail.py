@@ -393,6 +393,7 @@ def list_facts(status: str | None = "pending", limit: int = Query(50, ge=1, le=5
             item["resolved_by"] = facts.worded(session, fact.resolved_by, principal)
             item["resolved_at"] = fact.resolved_at.isoformat() if fact.resolved_at else None
             item["undoable"] = facts.undoable(fact)
+            item["rule_why"] = fact.rule_why
     pending = len(session.exec(select(ExtractedFact.id).where(ExtractedFact.status == "pending")).all())
     if principal.kind == "key":  # a key or a connected app reads the sender's words boxed, as facts_list frames them
         return {"facts": [box_fields(item, f"fact {item['id']}") for item in rows], "pending": pending, "how": MAIL_WORDS}

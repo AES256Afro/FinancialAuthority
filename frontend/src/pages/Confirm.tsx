@@ -43,7 +43,8 @@ const alreadyDone = (e: unknown): Done | null => ((e as ApiError).status === 409
 // What waits, as the app groups it (M44). Every count here is the app's; the screen only lays them out.
 interface NeedsGroup { kind: string; words: string; count: number; complete: number; one_at_a_time: boolean; items: (FactRow & { complete: boolean })[] }
 interface SourceCard { key: string; label: string; severity: string; text: string; step: string; action: string; link: string; detail?: string; since: string | null; retry_at: string | null; retry: string }
-interface NeedsYouOut { as_of: string; groups: NeedsGroup[]; past_due: PastDueRow[]; total: number; word: string; sources?: SourceCard[] }
+interface OlderBatch { count: number; token: string; oldest: string; newest: string; kinds: { kind: string; words: string; count: number }[]; said: string; asks: string }
+interface NeedsYouOut { as_of: string; groups: NeedsGroup[]; past_due: PastDueRow[]; total: number; word: string; sources?: SourceCard[]; older?: OlderBatch | null; skipped?: { batch: number; count: number; at: string | null }[]; kept_by_rules?: number }
 interface ManyOut { done: { id: number; applied_to: string }[]; failed: { id: number; error: string }[]; said: string }
 interface ManyPlan { apply: number; set_aside: number; own_card: number; updates: string[]; adds: string[]; said: string }
 // A long list goes in parts, so one answer never waits on a hundred mail fetches; the server judges each part
@@ -168,6 +169,51 @@ function DataCheckLine() {
       <span className={amountClass(check.data?.said)} style={{ flex: "1 1 220px", minWidth: 0 }}>{check.data?.said}</span>
       <Link to="/data-check" className="btn" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Open the data check</Link>
     </div>
+  );
+}
+
+/** How many a rule answered, one line, so nothing a rule did is out of sight: its page lists each, with Undo. */
+function RulesLine({ state }: { state: Loaded<NeedsYouOut> }) {
+  const n = state.data?.kept_by_rules ?? 0;
+  if (!n) return null;
+  return <div style={{ fontSize: 13, color: "var(--ink-2)" }}>Rules answered {n} without asking. <Link to="/settings/rules" style={{ fontWeight: 700 }}>See each, undo any, or switch one off</Link></div>;
+}
+
+/** What has waited more than two months with nothing newer to replace it, as one batch with one Skip all, which asks
+ * first. The same facts stay in the lists below and the count holds them once. A skip can be brought back. */
+function OlderCard({ state, onAnswered }: { state: Loaded<NeedsYouOut>; onAnswered: () => void }) {
+  const [said, setSaid] = useState<{ text: string; tone: "info" | "error" } | null>(null);
+  const ref = useFocusOnSaid(said);
+  const older = state.data?.older;
+  const skipped = state.data?.skipped ?? [];
+  if (!older && skipped.length === 0 && !said) return null;
+  async function send(path: string, body: unknown) {
+    try {
+      const r = await api<{ said: string }>(path, { method: "POST", body: JSON.stringify(body) });
+      setSaid({ text: r.said, tone: "info" });
+    } catch (e) {
+      setSaid({ text: (e as Error).message, tone: "error" });
+    } finally {
+      onAnswered();
+    }
+  }
+  return (
+    <section id="older" className="card" style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+      {older && (
+        <>
+          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{older.said}</h3>
+          <div style={{ fontSize: 13, color: "var(--ink-2)" }}>{older.kinds.map((k) => `${k.words} ${k.count}`).join(" · ")}, from {shortDate(older.oldest)} to {shortDate(older.newest)}.</div>
+          <div><ConfirmButton label={`Skip all ${older.count}`} question={older.asks} yes="Yes, skip them" no="Not yet" onConfirm={() => send("/api/v1/needs-you/older/skip", { token: older.token })} /></div>
+        </>
+      )}
+      <div ref={ref} tabIndex={-1}><Said text={said?.text ?? null} tone={said?.tone} /></div>
+      {skipped.map((b) => (
+        <div key={b.batch} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 13 }}>
+          <span style={{ flex: "1 1 200px", minWidth: 0 }}>Skipped {b.count}{b.at ? `, ${when(b.at)}` : ""}.</span>
+          <button type="button" className="btn" onClick={() => send("/api/v1/needs-you/older/back", { batch: b.batch })}>Bring them back</button>
+        </div>
+      ))}
+    </section>
   );
 }
 
@@ -922,6 +968,7 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
       </div>
       <NeedsPicture state={needs} />
       <DataCheckLine />
+      <RulesLine state={needs} />
       <p style={{ margin: 0, color: "var(--ink-2)", fontSize: 13 }}>First: emails waiting for your OK. Then: details read from your mail and from documents you added. Then: bills with no payment seen. Then: money that moved between your accounts. Then: repeating charges found in your transactions. Once you answer one, every screen uses it.</p>
       <SourceCards state={needs} onAnswered={() => { needs.reload(); onChanged(); }} />
       <Approvals onChanged={onChanged} onCount={setApprovalsWaiting} />
@@ -929,6 +976,7 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
       {facts.data && facts.data.facts.length > 0 && (
         <section id="facts" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <h2 className="lab" style={{ margin: 0 }}>From your mail and documents · {facts.data.pending}</h2>
+          <OlderCard state={needs} onAnswered={factAnswered} />
           <Together state={needs} onAnswered={factAnswered} onSaid={(text) => setFactSaid({ text })} />
           {facts.data.facts.map((f) =>
             f.kind === "receipt" ? (
@@ -953,6 +1001,7 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
           )}
         </section>
       )}
+      {facts.data && facts.data.facts.length === 0 && <OlderCard state={needs} onAnswered={factAnswered} />}
       <DoneLine done={factSaid} />
       <RecentlyConfirmed state={confirmed} onChanged={factAnswered} />
       <PaidQuestions state={needs} onAnswered={onChanged} />

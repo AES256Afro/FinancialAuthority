@@ -623,6 +623,22 @@ def data_check() -> str:
 jobs.register("data_check", data_check, 6 * 3600, "Look for anything counted twice or mail that may not be genuine; set aside what is certainly doubled and ask about the rest")
 
 
+def keep_by_rule() -> str:
+    """Answer what waits only where a ledger row or a bank link already says the same, or where the owner's own answers
+    earned it and nothing changes (engine/autokeep.py). Each answer carries its rule and can be undone on Settings › Rules."""
+    from ..engine import autokeep
+
+    with session_scope() as session:
+        out = autokeep.run(session, _today())
+    if out["failed"] and not out["total"]:
+        raise RuntimeError(f"{out['failed']} waiting fact{'s' if out['failed'] != 1 else ''} could not be read")
+    said = ", ".join(f"{n} by {autokeep.RULES[name]['title'].lower()}" for name, n in out["kept"].items()) or "nothing to answer"
+    return said + (f"; {out['failed']} could not be read" if out["failed"] else "")
+
+
+jobs.register("keep_by_rule", keep_by_rule, 3600, "Answer what the mail says where a ledger row or a bank link already says the same; every answer is on Settings › Rules and can be undone")
+
+
 ALERTS = "watch.app.alerts"  # telling the phone about the app's own health: on unless the owner turns it off
 OPEN = "watch.app.open"  # what is broken now and when the phone was last told
 
