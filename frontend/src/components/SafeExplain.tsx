@@ -48,6 +48,12 @@ export function safeFigure(s: Snapshot): string {
   return noBalance(s) || s.safe_to_spend.amount === null ? "No balance yet" : money(s.safe_to_spend.amount);
 }
 
+/** The big figure's size: the figure a person usually sees at full size, one in the millions small enough to stay on a
+ * phone at the largest text size. */
+export function heroSize(text: string, full: number): number {
+  return text.length <= 7 ? full : text.length <= 9 ? Math.min(full, 40) : text.length <= 12 ? Math.min(full, 30) : Math.min(full, 24);
+}
+
 /** What checking holds as it is shown: the engine's figure, or words when no bank has said. */
 export function cashFigure(s: Snapshot): string {
   return noBalance(s) || s.cash === null ? "No balance yet" : money(s.cash);

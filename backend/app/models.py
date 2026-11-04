@@ -774,6 +774,7 @@ class Paystub(SQLModel, table=True):
     expected_net: float | None = None
     difference: float | None = None
     stub_hash: str = Field(index=True, unique=True)
+    income_before: str = ""  # JSON {id, field, before, after}: what this stub moved on the paycheck, so taking it back puts it back
     created_at: dt.datetime = Field(default_factory=utcnow)
 
 

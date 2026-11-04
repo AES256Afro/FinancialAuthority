@@ -8,7 +8,7 @@ import { amountClass, money, shortDate } from "../format";
 import type { WatchFinding, WatchOut } from "../types";
 import { ConfirmButton } from "./ConfirmButton";
 import { placeName } from "./OneThing";
-import { Failed, Loading, Said } from "./State";
+import { Failed, Loading, LongText, Said } from "./State";
 import { SeverityTag } from "./Status";
 
 interface Item {
@@ -32,7 +32,7 @@ export function Watchlist() {
       {data.items.map((i, k) => (
         <div key={k} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: k === 0 ? 0 : "1px solid var(--surface-2)", flexWrap: "wrap" }}>
           <SeverityTag severity={i.severity} />
-          <div className={amountClass(i.text)} style={{ flex: "1 1 200px", minWidth: 0, fontSize: 13, fontWeight: i.severity === "info" ? 500 : 700 }}>{i.text}</div>
+          <LongText text={i.text} className={amountClass(i.text)} style={{ flex: "1 1 200px", minWidth: 0, fontSize: 13, fontWeight: i.severity === "info" ? 500 : 700 }} />
           {i.link && <Link to={i.link} className="btn" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", minHeight: 32, padding: "4px 10px" }} aria-label={`Open ${placeName(i.link)}: ${i.text}`}>→</Link>}
         </div>
       ))}

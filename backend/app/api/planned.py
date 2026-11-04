@@ -31,7 +31,8 @@ class PlannedIn(In):
 
 @router.get("")
 def list_planned(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
-    settle_planned(session, today())
+    # Nothing settled here: a read that wrote made Today's figures change because Bills was opened (sweep 26). A plan
+    # settles when it is added, when a row arrives (detection) and each night.
     rows = session.exec(select(PlannedPayment).order_by(PlannedPayment.done, PlannedPayment.date)).all()
     cards = session.exec(select(Account).where(Account.active == True, Account.kind == "card")).all()  # noqa: E712
     return {"items": [planned_out(p) for p in rows], "cards": [{"id": a.id, "name": a.name, "balance": a.balance} for a in cards]}
@@ -48,6 +49,7 @@ def add_planned(body: PlannedIn, session: Session = Depends(get_session), _: aut
     row = PlannedPayment(name=body.name.strip()[:80] or "Planned payment", amount=round(body.amount, 2), date=body.date, kind=body.kind, to_account_id=body.to_account_id, note=body.note[:200])
     session.add(row)
     session.commit()
+    settle_planned(session, today())  # its payment may be in the ledger already
     session.refresh(row)
     mark_pending(session, f"planned payment: {row.name}")
     return planned_out(row)

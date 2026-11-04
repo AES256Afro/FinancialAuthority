@@ -81,10 +81,11 @@ def watchlist(session: Session, today: date) -> dict:
         by_theme.setdefault(theme, []).append(b)
     for theme, group in by_theme.items():
         if theme and len(group) >= 2:
-            names = ", ".join(sorted(b.name for b in group))
+            ordered = sorted(b.name for b in group)
+            names = ", ".join(ordered[:5]) + (f" and {len(ordered) - 5} more" if len(ordered) > 5 else "")
             items.append({
                 "kind": "duplicates", "severity": "info",
-                "text": f"{len(group)} {theme} subscriptions ({names}): {sum(b.amount for b in group):,.2f} a month together. One could go.",
+                "text": f"{len(group)} {theme} subscriptions ({names}): ${sum(b.amount for b in group):,.2f} a month together. One could go.",
                 "amount": round(sum(b.amount for b in group), 2), "sources": [f"bill:{b.id}" for b in group], "link": "/bills",
             })
 

@@ -429,7 +429,7 @@ def projection_caveats(*, has_income: bool, bills: int, unnamed: int, pending_in
     caveat says so."""
     out: list[str] = []
     if not has_income:
-        out.append("No paycheck is on file, so no income is counted and the windows are anchored two weeks out; name your paycheck on Needs you.")
+        out.append("No paycheck is on file, so no income is counted and the windows are anchored two weeks out; add your paycheck on Paystubs.")
     if bills == 0:
         out.append("No bills are on the register yet, so none are counted.")
     if unnamed:

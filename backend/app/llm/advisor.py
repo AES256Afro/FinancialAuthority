@@ -35,6 +35,7 @@ CLOUD_PROVIDERS = {"anthropic", "openai"}
 # gets them as a client that hides details does: the state, not the names.
 HOSTS_IN_WORDS = {"jobs_status", "next_steps"}
 MAX_ROUNDS = 6
+ENDED = "This sign-in has ended, so the answer stopped here."
 MAX_CALLS_PER_ROUND = 24  # one answer asks for a few; a provider asking for thousands (2 MB of them fit one stream) gets the first
 MAX_TOOL_CHARS = 14000
 
@@ -197,8 +198,10 @@ async def advise(
     session_factory: Callable[[], AbstractContextManager[Session]],
     today: date,
     tools: bool = True,
+    still_allowed: Callable[[], bool] | None = None,
 ) -> AsyncIterator[dict]:
-    """Run one turn of the chat: the model, its tool calls, its reply; yield events for the screen."""
+    """Run one turn of the chat: the model, its tool calls, its reply; yield events for the screen. `still_allowed` says
+    whether the one asking may still read: asked before each round and each tool, since a turn can last minutes."""
     import asyncio
 
     def prepare() -> tuple[str, set[float], set[str], bool]:
@@ -213,6 +216,9 @@ async def advise(
     used: list[dict] = []
     input_tokens = output_tokens = 0
     for _round in range(MAX_ROUNDS):
+        if _round and still_allowed and not await asyncio.to_thread(still_allowed):
+            yield {"type": "error", "message": ENDED}
+            return
         text_parts: list[str] = []
         calls: list[Event] = []
         failed = False
@@ -242,6 +248,9 @@ async def advise(
             "tool_calls": [{"id": c.id, "type": "function", "function": {"name": c.name, "arguments": json.dumps(c.arguments)}} for c in calls],
         })
         for call in calls:
+            if still_allowed and not await asyncio.to_thread(still_allowed):
+                yield {"type": "error", "message": ENDED}
+                return
             ran = False
             if call.name not in offered:
                 payload: Any = {"error": f"{call.name} is not available in the chat"}

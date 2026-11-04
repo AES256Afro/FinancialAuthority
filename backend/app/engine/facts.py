@@ -9,12 +9,13 @@ refuses, with a sentence saying why and what to do, where taking it back would l
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from sqlalchemy import func
 from sqlmodel import Session, select
 
-from ..models import Bill, Document, ExtractedFact, Home, HomeCharge, HomeCost, InstallmentPlan, MoveItem, Payment, Paystub, Utility, utcnow
+from ..models import Bill, Document, ExtractedFact, Home, HomeCharge, HomeCost, Income, InstallmentPlan, MoveItem, Payment, Paystub, Utility, utcnow
 
 TABLES = {"bill": Bill, "plan": InstallmentPlan, "paystub": Paystub}
 
@@ -150,11 +151,18 @@ def _paystub(session: Session, fact: ExtractedFact, stub_id: int) -> str:
     if stub is None:
         return "The paystub it kept is already gone; it waits for an answer again."
     if stub.fact_id != fact.id:
-        raise ValueError("That paystub was kept before this message was confirmed; it stays.")
+        return "That paystub was kept apart from this message, so confirming it changed nothing; the paystub stays, and this one waits for an answer again."
+    if _changed_since(session, fact, f"paystub:{stub_id}"):  # the same stub in a second message: gone, that one would name nothing (sweep 26)
+        raise ValueError("Another message confirmed names this paystub too; it stays. Take that one back first.")
     if stub.transaction_id is not None:
         raise ValueError("That paystub is matched to its deposit since; it stays. Remove it on Paystubs if it is not yours.")
     for doc in session.exec(select(Document).where(Document.attach_to == f"paystub:{stub_id}")).all():
         doc.attach_to = ""  # the file is kept, with nothing to belong to
         session.add(doc)
+    moved = json.loads(stub.income_before or "{}")
+    income = session.get(Income, int(moved["id"])) if moved else None
+    if income is not None and getattr(income, moved["field"]) == moved["after"]:  # changed since (by hand, by a later stub): that stands
+        setattr(income, moved["field"], moved["before"])
+        session.add(income)
     session.delete(stub)
-    return "The paystub is gone; the usual net it may have set on your paycheck stays (change it on Paystubs if it is wrong). It waits for an answer again."
+    return "The paystub is gone, and the usual net it set on your paycheck is back as it was. It waits for an answer again."

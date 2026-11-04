@@ -19,6 +19,7 @@ from sqlmodel import Session, select
 
 from .. import crypto
 from ..clock import zone
+from ..jobs import writing
 from ..mail.box import clean
 from ..mail.classify import classify, excerpt_for, extract
 from ..mail.imap import ImapClient, Parsed, parse_message
@@ -100,6 +101,21 @@ COME_BACK_WORDS = re.compile(r"\[UNAVAILABLE\]|temporar|try again later", re.IGN
 # the server answered, so trying every quarter hour only trips its own lockout ("too many login attempts") and fills
 # the Jobs page. Sync now from Connectors always tries, and a read that succeeds clears the wait.
 BACKOFF_HOURS = health.BACKOFF_HOURS
+
+
+class SourceEnded(Exception):
+    """The mailbox ended, or the data was erased or restored, while it was being read: nothing more is written for it."""
+
+
+def _still_reading(session: Session, account: MailAccount, era: int) -> None:
+    """Asked under the writer lock before each write of a sync. The job takes that lock only to write, since its read takes
+    long, and it wrote on through the batch after a removal: what had just been deleted, or set aside as no longer to be
+    believed, came back as a record and a fact waiting to be confirmed, and an erase got the folder's mark back (sweep 26)."""
+    if writing.era() != era:
+        raise SourceEnded
+    session.refresh(account)
+    if not account.active:
+        raise SourceEnded
 
 
 class ServerStopped(RuntimeError):
@@ -558,7 +574,9 @@ class MailConnector(Connector):
         total_new = 0
         ok = True
         waited = 0
+        era = writing.era()
         for account in accounts:
+            label = account.label
             if account_id is None and (until := waiting_until(session, account.id)) is not None:
                 # A scheduled run after a refused sign-in: nothing is tried until the wait ends, and nothing
                 # fails, since the mailbox's error is already on the row, the self-check and Needs you.
@@ -566,27 +584,42 @@ class MailConnector(Connector):
                 waited += 1
                 continue
             try:
-                new, facts = self._sync_account(session, account, today)
+                new, facts = self._sync_account(session, account, today, era)
                 total_new += new
-                account.last_error = ""
-                account.last_sync_at = utcnow()
-                account.messages_seen += new
-                clear_refusals(session, account.id)
-                notes.append(f"{account.label}: {new} new, {facts} facts")
+                with writing.one_writer():
+                    _still_reading(session, account, era)
+                    account.last_error = ""
+                    account.last_sync_at = utcnow()
+                    account.messages_seen += new
+                    clear_refusals(session, account.id)
+                    session.add(account)
+                    session.commit()
+                notes.append(f"{label}: {new} new, {facts} facts")
+            except SourceEnded:
+                session.rollback()
+                notes.append(f"{label}: stopped, since it ended while being read")
             except Exception as error:  # noqa: BLE001
                 session.rollback()
                 ok = False
-                account.last_error = explain_error(account.host, error)[:300]
-                until = note_failure(session, account, error)
-                if until is not None:
-                    account.last_error = f"{account.last_error} Trying again at {at_words(until)}."[:300]
-                notes.append(f"{account.label}: {account.last_error}")
-                log.warning("mail sync failed for %s: %s", account.label, error)
-            session.add(account)
-            session.commit()
+                try:
+                    with writing.one_writer():
+                        _still_reading(session, account, era)
+                        account.last_error = explain_error(account.host, error)[:300]
+                        until = note_failure(session, account, error)
+                        if until is not None:
+                            account.last_error = f"{account.last_error} Trying again at {at_words(until)}."[:300]
+                        session.add(account)
+                        session.commit()
+                except SourceEnded:
+                    session.rollback()
+                    ok = True  # nothing to read any more, so nothing owed
+                    notes.append(f"{label}: stopped, since it ended while being read")
+                    continue
+                notes.append(f"{label}: {account.last_error}")
+                log.warning("mail sync failed for %s: %s", label, error)
         return SyncResult(ok=ok, summary="; ".join(notes), inserted=total_new, at=utcnow(), details={"only_waited": waited == len(accounts)})
 
-    def _sync_account(self, session: Session, account: MailAccount, today: date) -> tuple[int, int]:
+    def _sync_account(self, session: Session, account: MailAccount, today: date, era: int) -> tuple[int, int]:
         client = self.client_factory(account.host, account.port, account.username, account_password(account), account.use_ssl, account.starttls)
         folders = folder_list(account.folders)  # refused before anything is sent: a bad name is this mailbox's error
         client.connect()
@@ -616,31 +649,44 @@ class MailConnector(Connector):
                     except (OSError, EOFError, imaplib.IMAP4.abort) as error:
                         # The connection, not the message: a timeout or a dropped line. The folder stops at the last
                         # message read, so this one and the rest of the batch are read next time, and the run fails.
-                        set_setting(session, uid_key(account.id, folder), last)
+                        with writing.one_writer():
+                            _still_reading(session, account, era)
+                            set_setting(session, uid_key(account.id, folder), last)
                         raise ServerStopped(f"the mail server stopped answering in {folder} ({type(error).__name__}); the next sync reads on from there") from error
                     try:
-                        outcome = handle_message(session, account, folder, uid, parse_message(raw), today, self.fetch)
+                        parsed = parse_message(raw)
                     except Exception as error:  # noqa: BLE001 - one unreadable message never blocks the mailbox
-                        session.rollback()
                         log.warning("message %s in %s could not be read: %s", uid, folder, error)
-                        outcome = {}
-                    last = max(last, uid)
-                    # No savepoint: under pysqlite a SAVEPOINT opens a deferred transaction that fails at once beside
-                    # another writer. Each message commits on its own, inside the job's lock, with the folder's last UID
-                    # in the same commit; a commit that fails ends the run with the UID where it was, so the message is
-                    # read again next time rather than skipped.
-                    _stage_setting(session, uid_key(account.id, folder), last)
-                    session.commit()
+                        parsed = None
+                    with writing.one_writer():
+                        _still_reading(session, account, era)
+                        try:
+                            outcome = handle_message(session, account, folder, uid, parsed, today, self.fetch) if parsed is not None else {}
+                        except Exception as error:  # noqa: BLE001 - one unreadable message never blocks the mailbox
+                            session.rollback()
+                            log.warning("message %s in %s could not be read: %s", uid, folder, error)
+                            outcome = {}
+                        last = max(last, uid)
+                        # No savepoint: under pysqlite a SAVEPOINT opens a deferred transaction that fails at once beside
+                        # another writer. Each message commits on its own, under the writer lock, with the folder's last UID
+                        # in the same commit; a commit that fails ends the run with the UID where it was, so the message is
+                        # read again next time rather than skipped.
+                        _stage_setting(session, uid_key(account.id, folder), last)
+                        session.commit()
                     if outcome and not outcome.get("seen"):
                         new += 1
                     if outcome.get("fact") or outcome.get("imported"):
                         facts += 1
-                set_setting(session, uid_key(account.id, folder), last)
-                if validity:
-                    # Written with the last UID it goes with, once the folder is read: a sync that fails before this
-                    # finds the numbering still new next time and reads the folder again from the start.
-                    set_setting(session, uid_key(account.id, folder) + ".validity", validity)
-                session.commit()
+                with writing.one_writer():
+                    _still_reading(session, account, era)
+                    set_setting(session, uid_key(account.id, folder), last)
+                    if validity:
+                        # Written with the last UID it goes with, once the folder is read: a sync that fails before this
+                        # finds the numbering still new next time and reads the folder again from the start.
+                        set_setting(session, uid_key(account.id, folder) + ".validity", validity)
+                    session.commit()
+        except SourceEnded:
+            raise
         except Exception as error:
             error.signed_in = True  # type: ignore[attr-defined]  # it let the app in: whatever this says, it is no refused sign-in
             raise

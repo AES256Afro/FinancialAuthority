@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
 
@@ -15,7 +16,7 @@ from ..config import settings
 from ..db import get_session, session_scope
 from ..engine.snapshot import finance_snapshot
 from ..llm import reviewer
-from ..llm.advisor import advise
+from ..llm.advisor import ENDED, advise
 from ..llm.providers import Anthropic, Ollama, OpenAICompatible, ProviderError
 from ..llm.roles import DEFAULT_MODELS, PROVIDER_IDS, ROLES, SECRET_NAMES, provider_for, role_settings, save_role, save_secret, secret, secrets_state
 from ..models import ReviewRun
@@ -23,6 +24,7 @@ from ..store import get_setting, set_setting
 from .routes import today
 
 router = APIRouter(prefix="/api/v1", tags=["models"])
+STILL_ALLOWED_EVERY = 0.25  # seconds between looks at whether a chat's sign-in still stands, while its words stream
 
 
 class RoleIn(In):
@@ -170,7 +172,7 @@ def put_rules(body: RulesIn, session: Session = Depends(get_session), _: auth.Pr
 
 
 @router.post("/chat")
-async def chat(body: ChatIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> StreamingResponse:
+async def chat(body: ChatIn, request: Request, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> StreamingResponse:
     if not principal.full:
         raise HTTPException(403, "The built-in chat is for a person signed in; a connected app talks to its own model through /mcp")
     if not body.messages or len(body.messages) > 60:
@@ -196,6 +198,13 @@ async def chat(body: ChatIn, session: Session = Depends(get_session), principal:
             {"type": "done", "unverified": [], "used": [{"name": "brief_today", "arguments": {}, "rows": len(brief)}], "usage": {"input": 0, "output": 0}, "model": "engine", "provider": "engine"},
         ]
 
+    def still_allowed() -> bool:
+        """The door's check, again: a turn holds its stream for minutes, and a person moved to "shared" or a lost computer
+        signed out from Settings went on being answered from every account until the model was done."""
+        with session_scope() as s:
+            who = auth.principal_from_request(request, s)
+        return who is not None and who.full
+
     async def stream():
         if provider is None:
             for event in engine_voice("No advisor is configured. Choose one on Settings › Models."):
@@ -203,7 +212,13 @@ async def chat(body: ChatIn, session: Session = Depends(get_session), principal:
             return
         first = True
         try:
-            async for event in advise(history, provider=provider, session_factory=session_scope, today=day, tools=body.tools):
+            looked = time.monotonic()
+            async for event in advise(history, provider=provider, session_factory=session_scope, today=day, tools=body.tools, still_allowed=still_allowed):
+                if time.monotonic() - looked >= STILL_ALLOWED_EVERY:  # the words as well as the tools, a few times a second at most
+                    looked = time.monotonic()
+                    if not await asyncio.to_thread(still_allowed):
+                        yield "data: " + json.dumps({"type": "error", "message": ENDED}) + "\n\n"
+                        return
                 if first and event["type"] == "error":
                     for fallback in engine_voice(f"The advisor did not answer ({event['message'][:160]})."):
                         yield "data: " + json.dumps(fallback) + "\n\n"

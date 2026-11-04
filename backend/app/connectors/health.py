@@ -5,6 +5,7 @@ wait: the server never said no, so nothing is locked out by asking again. A read
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -17,6 +18,10 @@ SIGNIN = "signin"  # the source answered and said no: only a new password or a n
 NETWORK = "network"  # the source was not reached, or said to come back later: it mends itself
 OTHER = "other"  # anything else (a folder that will not open, keys refused): the owner should see it now
 BACKOFF_HOURS = (1, 4, 24)
+# A record is read, changed and written whole, from the jobs, Sync now, the webhook and the owner's new password alike: two
+# refused reads at once counted as one, and on a first failure the second write hit the first's row and raised out of the
+# sync with the mailbox's own error unsaved (sweep 26).
+_one_change = threading.Lock()
 
 
 def now_utc() -> datetime:
@@ -45,6 +50,13 @@ def read(session: Session, key: str) -> dict[str, Any]:
     return state if isinstance(state, dict) else {}
 
 
+def _read_again(session: Session, key: str) -> dict[str, Any]:
+    known = session.identity_map.get(Session.identity_key(Setting, key))
+    if known is not None:
+        session.expire(known)  # this session's copy may be older than another's write, or of a row since deleted
+    return read(session, key)
+
+
 def waiting_until(session: Session, key: str, now: datetime) -> datetime | None:
     """When the next scheduled read of this source may try again, or None when it may try now."""
     until = moment(read(session, key).get("until"))
@@ -54,27 +66,31 @@ def waiting_until(session: Session, key: str, now: datetime) -> datetime | None:
 def note_failure(session: Session, key: str, failure: str, now: datetime, *, back_off: bool = True, **extra: Any) -> datetime | None:
     """One more failed read. Only a refused sign-in waits, and the wait grows along BACKOFF_HOURS; the time it ends is
     returned. An outage keeps the time it began, however its failures change."""
-    state = read(session, key)
-    fails = int(state.get("fails", 0) or 0)
-    until = None
-    if failure == SIGNIN and back_off:
-        fails += 1
-        until = now + timedelta(hours=BACKOFF_HOURS[min(fails, len(BACKOFF_HOURS)) - 1])
-    set_setting(session, key, {"fails": fails, "until": until.isoformat() if until else None, "failure": failure, "since": state.get("since") or now.isoformat(), **extra})
+    with _one_change:
+        state = _read_again(session, key)
+        fails = int(state.get("fails", 0) or 0)
+        until = None
+        if failure == SIGNIN and back_off:
+            fails += 1
+            until = now + timedelta(hours=BACKOFF_HOURS[min(fails, len(BACKOFF_HOURS)) - 1])
+        set_setting(session, key, {"fails": fails, "until": until.isoformat() if until else None, "failure": failure, "since": state.get("since") or now.isoformat(), **extra})
     return until
 
 
 def note_ok(session: Session, key: str) -> None:
     """A read went through: the record goes, leaving nothing behind (a failed run read again ends as a clean one does)."""
-    row = session.get(Setting, key)
-    if row is not None:
-        session.delete(row)
-        session.commit()
+    with _one_change:
+        _read_again(session, key)
+        row = session.get(Setting, key)
+        if row is not None:
+            session.delete(row)
+            session.commit()
 
 
 def allow_now(session: Session, key: str) -> None:
     """Something changed that may mend it (a new password, the vendor saying the login is repaired): the next read need
     not wait, and the count starts over. The outage still stands until a read succeeds."""
-    state = read(session, key)
-    if state.get("until") or state.get("fails"):
-        set_setting(session, key, {**state, "until": None, "fails": 0})
+    with _one_change:
+        state = _read_again(session, key)
+        if state.get("until") or state.get("fails"):
+            set_setting(session, key, {**state, "until": None, "fails": 0})

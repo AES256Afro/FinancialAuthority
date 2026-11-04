@@ -5,7 +5,7 @@ import { AlertTriangle, Check, CheckCircle2, OctagonAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
-import { money } from "../format";
+import { amountClass, money } from "../format";
 import { ConfirmButton } from "../components/ConfirmButton";
 import { Failed, Loading, Said, useJumpToHash } from "../components/State";
 import { Where } from "../components/Where";
@@ -298,11 +298,11 @@ function Rules() {
         <>
       <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         <span className="lab">Standing rules</span>
-        <textarea className="input" rows={5} value={rules} onChange={(e) => { setTyped(true); setRules(e.target.value); }} placeholder={"- Never let checking go under $100.\n- Pay the advances first, always."} style={{ resize: "vertical" }} />
+        <textarea className={`input ${amountClass(rules) ?? ""}`} rows={5} value={rules} onChange={(e) => { setTyped(true); setRules(e.target.value); }} placeholder={"- Never let checking go under $100.\n- Pay the advances first, always."} style={{ resize: "vertical" }} />
       </label>
       <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         <span className="lab">Goals</span>
-        <textarea className="input" rows={3} value={goals} onChange={(e) => { setTyped(true); setGoals(e.target.value); }} placeholder="Clear the advance apps by spring. Then a $1,000 safety cushion." style={{ resize: "vertical" }} />
+        <textarea className={`input ${amountClass(goals) ?? ""}`} rows={3} value={goals} onChange={(e) => { setTyped(true); setGoals(e.target.value); }} placeholder="Clear the advance apps by spring. Then a $1,000 safety cushion." style={{ resize: "vertical" }} />
       </label>
         </>
       )}

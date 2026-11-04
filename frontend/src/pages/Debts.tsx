@@ -194,7 +194,7 @@ function OrderColumn({ way, kind, scale, cheapest }: { way: PayoffWay; kind: "av
         {rows.map((d) => (
           <div key={d.source} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, flexWrap: "wrap" }}>
-              <strong style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={d.name}>{d.name}</strong>
+              <strong style={{ minWidth: 0, overflowWrap: "anywhere" }} title={d.name}>{d.name}</strong>
               <span className="num" style={{ color: "var(--ink-2)" }}>{d.paid_on ? `paid off ${monthYear(d.paid_on)} · ${money(d.interest ?? 0)} interest` : "not paid off within 50 years: the balance grows"}</span>
             </div>
             <div role="img" aria-label={`${d.name}: ${d.paid_on ? `paid off ${monthYear(d.paid_on)}, ${money(d.interest ?? 0)} in interest` : "not paid off within 50 years, the balance grows"}`} style={{ position: "relative", height: 12, background: "var(--surface-2)", borderRadius: 4, overflow: "hidden" }}>
@@ -591,7 +591,7 @@ export function Debts() {
       {!data && !error && <Loading what="your debts" />}
       {data && (
         <>
-          <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+          {data.items.length > 0 && <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ display: "flex", gap: 22, flexWrap: "wrap", alignItems: "baseline" }}>
               <div><div className="lab">Owed in all</div><div className="num" style={{ fontSize: 34, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.1 }}>{money(data.total)}</div></div>
               <div><div className="lab">Minimums each month</div><div className="num" style={{ fontSize: 22, fontWeight: 800 }}>{money(data.minimums_month)}</div></div>
@@ -603,7 +603,7 @@ export function Debts() {
                 <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><span className="sw" style={{ background: KIND_TONE[k], margin: 0 }} />{word}</span>
               ))}
             </div>
-          </section>
+          </section>}
 
           {data.items.some((d) => d.kind === "bnpl") && (
             <section className="card" style={{ padding: 14, display: "flex", gap: 22, flexWrap: "wrap", alignItems: "baseline" }}>

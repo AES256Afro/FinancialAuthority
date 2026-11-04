@@ -5,10 +5,10 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { money, parseMoney } from "../format";
-import { Said } from "./State";
+import { Failed, Said } from "./State";
 
 export function Cushion({ onSaved }: { onSaved?: () => void }) {
-  const { data, reload } = useApi<{ buffer: number }>("/api/v1/settings");
+  const { data, error, reload } = useApi<{ buffer: number }>("/api/v1/settings");
   const [text, setText] = useState("");
   const [said, setSaid] = useState<{ text: string; tone: "info" | "error" } | null>(null);
   useEffect(() => {
@@ -35,14 +35,15 @@ export function Cushion({ onSaved }: { onSaved?: () => void }) {
       <div style={{ fontSize: 13, color: "var(--ink-2)", maxWidth: "70ch" }}>
         Money kept in checking that the plan never spends, for the surprise you did not see coming. Safe to spend is worked out with it already taken off. <Link to="/glossary#buffer">What the cushion is</Link>
       </div>
-      <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+      {/* Until the figure on file has loaded the box would be empty with a live Save, as if no cushion were set. */}
+      {error && !data ? <Failed error={error} what="your safety cushion" onRetry={reload} card={false} /> : <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
         <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <span className="lab">Cushion, in dollars</span>
-          <input className="input" inputMode="decimal" value={text} onChange={(e) => setText(e.target.value)} style={{ width: 140 }} />
+          <input className="input num" inputMode="decimal" value={text} onChange={(e) => setText(e.target.value)} style={{ width: 140 }} />
         </label>
-        <button type="button" className="btn dark" onClick={save}>Save the cushion</button>
+        <button type="button" className="btn dark" disabled={!data} onClick={save}>Save the cushion</button>
         {said && <Said text={said.text} tone={said.tone} />}
-      </div>
+      </div>}
     </section>
   );
 }

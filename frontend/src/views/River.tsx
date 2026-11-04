@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { OctagonAlert } from "lucide-react";
 import { Link } from "react-router-dom";
 import { ByCheck } from "../components/ByCheck";
@@ -8,7 +8,9 @@ import { amountClass, daysWord, eventDay, money, moneyOr, shortDate } from "../f
 import { getPrefs } from "../prefs";
 import type { Window } from "../types";
 import type { ViewProps } from "./index";
-import { PlanCaveats, SafeExplain, SafePill, SafeSentence, cashFigure, noBalance, noPayday, safeFigure, safeTitle } from "../components/SafeExplain";
+import { PlanCaveats, SafeExplain, SafePill, SafeSentence, cashFigure, heroSize, noBalance, noPayday, safeFigure, safeTitle } from "../components/SafeExplain";
+
+const BILLS_AT_FIRST = 12;
 
 function Tile({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
@@ -64,13 +66,17 @@ export function River({ snapshot }: ViewProps) {
   const before = s.due_before_payday.items;
   const spendingAccounts = s.accounts.filter((a) => ["checking", "cash"].includes(a.kind)).length;
   const first = noPayday(s) ? undefined : s.windows[0];
+  // A new install: no paycheck and no bill. A $0 here would read as a fact about the person's money.
+  const bare = noPayday(s) && before.length === 0 && s.window.items.length === 0;
+  const [allBills, setAllBills] = useState(false);
+  const billRows = allBills ? s.window.items : s.window.items.slice(0, BILLS_AT_FIRST);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <section style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "stretch" }}>
-        <div className="card" style={{ flex: "1 1 420px", padding: "18px 22px", display: "flex", flexDirection: "column", gap: 6 }}>
+        <div className="card" style={{ flex: "1 1 420px", minWidth: 0, padding: "18px 22px", display: "flex", flexDirection: "column", gap: 6 }}>
           <div style={{ fontSize: 13, color: "var(--ink-2)", fontWeight: 600 }}>{safeTitle(s)}</div>
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-            <div className="num" style={{ fontSize: noBalance(s) ? 30 : 52, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1 }}>{safeFigure(s)}</div>
+            <div className="num" style={{ fontSize: noBalance(s) ? 30 : heroSize(safeFigure(s), 52), fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1, minWidth: 0, overflowWrap: "anywhere" }}>{safeFigure(s)}</div>
             <SafePill s={s} />
           </div>
           <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
@@ -84,13 +90,13 @@ export function River({ snapshot }: ViewProps) {
         </div>
         <Tile
           label={noPayday(s) ? `Due by ${shortDate(s.safe_to_spend.through)}` : "Due before payday"}
-          value={money(s.due_before_payday.total)}
+          value={bare ? "None yet" : money(s.due_before_payday.total)}
           sub={
             s.due_before_payday.groups && s.due_before_payday.groups.length > 0
               ? `${s.due_before_payday.groups.map((g) => `${g.label.toLowerCase()} ${money(g.total)}`).join(" · ")}${s.due_before_payday.next_check && s.due_before_payday.next_check.total > 0 ? ` · ${money(s.due_before_payday.next_check.total)} waits for the ${shortDate(s.due_before_payday.next_check.start)} check` : ""}`
               : before.length
                 ? `${before.filter((e) => !e.via_card).map((e) => e.name).slice(0, 2).join(", ") || "only items charged to a card"} · ${shortDate(before[0].date)}`
-                : "Nothing before payday"
+                : bare ? "No bills on file yet" : "Nothing before payday"
           }
         />
         <Tile label="In checking now" value={cashFigure(s)} sub={s.savings ? `savings of ${money(s.savings)} kept apart` : `${spendingAccounts} account${spendingAccounts === 1 ? "" : "s"}`} />
@@ -105,14 +111,14 @@ export function River({ snapshot }: ViewProps) {
           <div style={{ fontSize: 12, color: "var(--muted)" }}>Next 60 days · the floor line is your <span className="num">{money(s.buffer)}</span> safety cushion</div>
         </div>
         <RiverChart snapshot={s} look={look} />
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 18px", fontSize: 12, color: "var(--ink-2)", fontWeight: 600, padding: "0 4px" }}>
+        {!noBalance(s) && <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 18px", fontSize: 12, color: "var(--ink-2)", fontWeight: 600, padding: "0 4px" }}>
           <span><span className="sw" style={{ background: "var(--paycheck)" }} />Paycheck</span>
           <span><span className="sw" style={{ background: "var(--bill)" }} />Bill</span>
           <span><span className="sw" style={{ background: "var(--debt)" }} />Advance or installment</span>
           <span><span className="sw" style={{ background: "var(--safe)", opacity: 0.5 }} />At your usual spending</span>
           <span><span className="sw" style={{ background: "var(--ink-2)", height: 2, verticalAlign: 3 }} />If nothing else is spent</span>
           <span><span className="sw" style={{ background: "var(--buffer)", height: 2, verticalAlign: 3 }} />Safety cushion <span className="num">{money(s.buffer)}</span></span>
-        </div>
+        </div>}
       </section>
 
       <ByCheck s={s} />
@@ -134,13 +140,16 @@ export function River({ snapshot }: ViewProps) {
           <div className="card" style={{ padding: "14px 18px", display: "flex", flexDirection: "column", gap: 8 }}>
             <h2 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>Bills this paycheck pays, by date</h2>
             {s.window.items.length === 0 && <div style={{ color: "var(--muted)" }}>Nothing due. <Link to="/bills">Add bills</Link> or <Link to="/settings/connectors#import">import a statement</Link>.</div>}
-            {s.window.items.map((e, i) => (
+            {billRows.map((e, i) => (
               <div key={`${e.source}-${i}`} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
                 <span className="sw" style={{ background: e.kind === "installment" ? "var(--debt)" : "var(--bill)" }} />
                 <span style={{ flexGrow: 1, minWidth: 0 }}>{e.name} <span style={{ color: "var(--muted)" }}>· {eventDay(e)}{e.autopay ? " · autopay" : ""}{e.via_card ? " · charged to the card" : ""}{e.planned ? " · already sent" : ""}{e.pending ? " · payments left not set" : ""}</span></span>
                 <strong className="num">{money(e.amount)}</strong>
               </div>
             ))}
+            {s.window.items.length > BILLS_AT_FIRST && (
+              <button type="button" className="btn" onClick={() => setAllBills(!allBills)} style={{ alignSelf: "flex-start", minHeight: 32, padding: "4px 12px" }}>{allBills ? "Show fewer" : `Show all ${s.window.items.length}`}</button>
+            )}
           </div>
           <Watchlist />
         </div>

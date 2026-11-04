@@ -87,6 +87,11 @@ def subscribe_device(body: SubscribeIn, request: Request, session: Session = Dep
         raise HTTPException(400, str(error)) from error
     except crypto.DataKeyMissing as error:
         raise HTTPException(409, str(error)) from error
+    from .. import people
+
+    if people.access_ended(session, principal):
+        webpush.drop_person(session, principal.person_id)
+        raise HTTPException(403, "Your access has ended.")
     return {"device": row, "devices": webpush.subscriptions(session)}
 
 

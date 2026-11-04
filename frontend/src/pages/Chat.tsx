@@ -51,11 +51,11 @@ function EngineTable({ s }: { s: Snapshot }) {
     <section className="card" style={{ padding: "12px 14px" }}>
       <h2 className="lab" style={{ margin: "0 0 6px" }}>The app's figures · as of {shortDate(s.as_of)}</h2>
       <Row label="Cash to spend (checking)" value={cashFigure(s)} />
-      <Row label={`Due before payday (${s.due_before_payday.items.length})`} value={money(s.due_before_payday.total)} tone="var(--bill-ink)" />
-      <Row label={s.next_paycheck.known === false ? "Payday (none on file)" : `Payday ${shortDate(s.next_paycheck.date)}`} value={money(s.next_paycheck.amount)} tone="var(--paycheck-ink)" />
-      <Row label={`Advance apps take back (${s.advances.items.length})`} value={money(s.advances.total)} tone="var(--debt-ink)" />
-      <Row label={`Bills this paycheck pays (${s.window.items.length})`} value={money(s.window.total)} tone="var(--bill-ink)" />
-      <Row label="Kept for the next paycheck's bills" value={money(s.set_aside.total)} />
+      <Row label={`Due before payday (${s.due_before_payday.items.length})`} value={s.due_before_payday.items.length ? money(s.due_before_payday.total) : "None"} tone="var(--bill-ink)" />
+      <Row label={s.next_paycheck.known === false ? "Payday (none on file)" : `Payday ${shortDate(s.next_paycheck.date)}`} value={s.next_paycheck.known === false ? "None yet" : money(s.next_paycheck.amount)} tone={s.next_paycheck.known === false ? undefined : "var(--paycheck-ink)"} />
+      <Row label={`Advance apps take back (${s.advances.items.length})`} value={s.advances.items.length ? money(s.advances.total) : "None"} tone="var(--debt-ink)" />
+      <Row label={`Bills this paycheck pays (${s.window.items.length})`} value={s.window.items.length ? money(s.window.total) : "None"} tone="var(--bill-ink)" />
+      <Row label="Kept for the next paycheck's bills" value={s.set_aside.total ? money(s.set_aside.total) : "None"} />
       <Row label={<><Link to="/glossary#buffer">Safety cushion</Link> (buffer)</>} value={money(s.buffer)} />
       <Row label={`Safe to spend through ${shortDate(s.safe_to_spend.through)}`} value={safeFigure(s)} tone={noBalance(s) ? undefined : safeShort(s) ? "var(--critical-ink)" : "var(--safe-ink)"} />
       {s.usual_pace.per_day > 0 && <Row label="Usual pace, a day" value={money(s.usual_pace.per_day)} />}

@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .jobs import writing
+
 MAX_BODY = 60 * 1024 * 1024  # uploads are refused above 50 MB by their routes; this stops anything larger early
 MAX_JSON = 1024 * 1024  # every other body: a form or a JSON object is never near a megabyte
 UPLOAD_PREFIXES = ("/api/v1/imports", "/api/v1/borrowing/statement", "/api/v1/imports/rocketmoney", "/api/v1/documents")  # multipart files only; JSON keeps MAX_JSON
@@ -88,6 +90,12 @@ class SecurityMiddleware:
             await send({"type": "http.response.start", "status": 403, "headers": [(b"content-type", b"application/json"), *COMMON, *API_ONLY]})
             await send({"type": "http.response.body", "body": b'{"detail":"Another site asked for this; it answers the app only"}'})
             return
+        writing_request = scope.get("method", "GET") not in ("GET", "HEAD", "OPTIONS")
+        if writing_request and not writing.enter_write():
+            # Told plainly, and nothing happened: what is written now would be undone by the restore that is running.
+            await send({"type": "http.response.start", "status": 409, "headers": [(b"content-type", b"application/json"), *COMMON]})
+            await send({"type": "http.response.body", "body": b'{"detail":"A restore or an erase is running; nothing was changed. Try again in a moment."}'})
+            return
         https = _is_https(scope)
         state = {"received": 0, "refused": False, "started": False}
 
@@ -131,4 +139,8 @@ class SecurityMiddleware:
                 message = {**message, "headers": headers}
             await send(message)
 
-        await self.app(scope, counted_receive, wrapped)
+        try:
+            await self.app(scope, counted_receive, wrapped)
+        finally:
+            if writing_request:
+                writing.leave_write()

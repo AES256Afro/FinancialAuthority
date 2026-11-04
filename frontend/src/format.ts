@@ -23,7 +23,7 @@ export function flow(value: number, opts: { cents?: boolean } = {}): string {
 
 /** "num" when a sentence holds a dollar figure, so "Hide amounts" blurs it (a sentence from the server, a label). */
 export function amountClass(text: string | null | undefined): string | undefined {
-  return text && /\$\s?\d/.test(text) ? "num" : undefined;
+  return text && (/\$\s?\d/.test(text) || /\b\d[\d,]*\.\d{2}\b/.test(text)) ? "num" : undefined;
 }
 
 /** A long text (a message, an instruction) cut around its dollar figures: the odd pieces are the figures. A screen

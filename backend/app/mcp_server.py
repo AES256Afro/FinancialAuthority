@@ -1088,6 +1088,12 @@ def build_server() -> MCPServer:
                 row = approvals_service.create(session, to=to, subject=subject, body=body, reason=reason, created_by=client, created_kind="key", for_person_id=int(person_id) if person_id is not None else None)
             except ValueError as error:
                 return {"error": str(error)}
+            from . import auth
+
+            # Read after the commit, as on REST: a draft queued as its credential was revoked landed after the revoke's sweep.
+            if token and row.status == "pending" and not auth.credential_alive(session, token.token):
+                approvals_service.deny(session, row, decided_by="access ended")
+                return {"error": "this credential has ended; the draft was not kept"}
             _audit(session, client=client, client_kind="key", tool="mail_send_request", args={"to": to}, rows=1, redaction=redaction)
             out = approvals_service.out(row)
             out["note"] = "Queued. The owner must approve it on Needs you before anything is sent." if row.status == "pending" else f"The recipient is always allowed; status {row.status}."
@@ -1098,6 +1104,7 @@ def build_server() -> MCPServer:
         """Whether the app is healthy: the scheduled jobs, their last runs, and the last self-check."""
         client, redaction = _caller()
         with session_scope() as session:
+            from .engine.sources import check_words, run_words
             from .store import get_setting
 
             _audit(session, client=client, client_kind="key", tool="jobs_status", rows=0, redaction=redaction)
@@ -1106,10 +1113,12 @@ def build_server() -> MCPServer:
             if redaction != "full":
                 # A run's summary and the self-check name accounts, mailboxes and hosts; a redacted client gets the state alone.
                 check = {"at": check.get("at"), "free_gb": check.get("free_gb"), "problems": len(check.get("problems") or []), "stale_accounts": len(check.get("stale_accounts") or [])}
+            else:
+                check = check_words(check)
             return {
                 "scheduler": "running" if jobs.scheduler else "stopped",
                 "jobs": [{"name": s.name, "every_seconds": s.seconds, "description": s.description} for s in jobs.specs.values()],
-                "recent_runs": [{"name": r.name, "started_at": r.started_at.isoformat(), "ok": r.ok, "summary": r.summary if redaction == "full" else ""} for r in runs],
+                "recent_runs": [{"name": r.name, "started_at": r.started_at.isoformat(), "ok": r.ok, "summary": run_words(r.name, r.ok, r.summary) if redaction == "full" else ""} for r in runs],
                 "self_check": check,
                 "version": __version__,
             }

@@ -11,7 +11,7 @@ from datetime import date
 from sqlalchemy import func
 from sqlmodel import Session, select
 
-from .models import Account, AuditEntry, Transaction
+from .models import Account, AuditEntry, BalanceSnapshot, ImportBatch, Transaction
 
 
 def list_accounts(session: Session) -> list[dict]:
@@ -146,11 +146,12 @@ def audit(session: Session, *, client: str, client_kind: str, tool: str, args: d
         logging.getLogger(__name__).warning("an activity row for %s could not be written: %s", tool, type(error).__name__)
 
 
-def apply_statement_balances(session: Session, text: str, account_id: int | None) -> list[dict]:
+def apply_statement_balances(session: Session, text: str, account_id: int | None, import_id: int | None = None) -> list[dict]:
     """The balance an imported OFX/QFX statement states, into the account its rows landed in: an owner with files only
     otherwise never has a balance, and the plan cannot say what is safe to spend. A bank-linked account keeps its
     feed's balance; a balance newer than the statement's day (a typed one, a later file) stands. A file with several
-    statements finds each account by the last four digits of the number it names. Returns what was set."""
+    statements finds each account by the last four digits of the number it names. Written into the import that brought
+    the file, so undoing it puts the balance back (sweep 26). Returns what was set."""
     from datetime import datetime, time, timezone
 
     from .clock import local_date
@@ -162,6 +163,7 @@ def apply_statement_balances(session: Session, text: str, account_id: int | None
         return []
     accounts = [a for a in session.exec(select(Account).where(Account.active == True)).all()]  # noqa: E712
     set_: list[dict] = []
+    undo: list[dict] = []
     for i, f in enumerate(found):
         digits = "".join(ch for ch in f["account"] if ch.isdigit())[-4:]
         account = next((a for a in accounts if len(found) > 1 and len(digits) == 4 and (a.name.endswith(digits) or (a.external_id or "").endswith(digits))), None)
@@ -175,11 +177,18 @@ def apply_statement_balances(session: Session, text: str, account_id: int | None
         # statement. The statement's own stamp is noon, not midnight UTC, which is the evening before on the owner's day (sweep 25).
         if account.balance is not None and account.balance_at is not None and local_date(account.balance_at) >= on:
             continue  # a balance as new as the statement's, or newer, is already there (typed, or a later file)
+        kept_day = session.exec(select(BalanceSnapshot).where(BalanceSnapshot.account_id == account.id, BalanceSnapshot.date == on)).first()
+        undo.append({"op": "balance_set", "id": account.id, "before": {"balance": account.balance, "balance_at": account.balance_at.isoformat() if account.balance_at else None},
+                     "after": {"balance": amount}, "day": on.isoformat(), "day_before": kept_day.balance if kept_day else None})
         account.balance, account.balance_at = amount, datetime.combine(on, time(12), tzinfo=timezone.utc)
         session.add(account)
         record_balance(session, account, amount, on, commit=False)
         if account.kind == "card":
             sync_card_debt(session, account)
         set_.append({"account_id": account.id, "balance": amount, "as_of": on.isoformat()})
+    batch = session.get(ImportBatch, import_id) if import_id and undo else None
+    if batch is not None:
+        batch.changes = json.dumps(json.loads(batch.changes or "[]") + undo, default=str)
+        session.add(batch)
     session.commit()
     return set_

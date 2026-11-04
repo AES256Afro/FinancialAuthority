@@ -138,7 +138,7 @@ function ColourEditor({ ap, onSave, said }: { ap: AppearanceState; onSave: (colo
                 {reports[k].checks.map((c) => (
                   <div key={c.name} style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", gap: 8 }}>
                     <StateIcon state={c.state} />
-                    <span style={{ color: "var(--ink-2)" }}><strong style={{ color: "var(--ink)" }}>{c.name}.</strong> {c.detail}</span>
+                    <span style={{ color: "var(--ink-2)", minWidth: 0, overflowWrap: "anywhere" }}><strong style={{ color: "var(--ink)" }}>{c.name}.</strong> {c.detail}</span>
                   </div>
                 ))}
               </div>

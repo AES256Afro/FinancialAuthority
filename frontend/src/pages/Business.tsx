@@ -6,7 +6,7 @@ import { ArrowLeft, Ban, Building2, Car, ChevronDown, ChevronRight, Circle, Circ
 import { Fragment, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, useApi, type Loaded } from "../api";
-import { Empty, Said, Show } from "../components/State";
+import { Empty, Failed, Said, Show } from "../components/State";
 import { amountClass, money, monthDay } from "../format";
 import type { Books, Business as BusinessRow, BusinessIn, BusinessKind, BusinessOverview, CompareRow, NeverItem, SetupStep, Source, TaxLine } from "../types-business";
 
@@ -312,6 +312,7 @@ function BusinessForm({ start, lines, onSaved, onCancel }: { start: BusinessRow 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         <label style={{ ...FIELD, flex: "2 1 240px" }}>
           <span className="lab">The account kept for the business</span>
+          {accounts.error && !accounts.data && <Failed error={accounts.error} what="your accounts" onRetry={accounts.reload} card={false} />}
           <select className="input" value={account} onChange={(e) => setAccount(e.target.value)}>
             <option value="">None yet</option>
             {accountList.map((a) => <option key={a.id} value={a.id}>{a.institution ? `${a.institution} · ` : ""}{a.name}</option>)}

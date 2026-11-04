@@ -97,6 +97,7 @@ function BillStrip() {
   for (const e of shown) byDay.set(e.date, [...(byDay.get(e.date) ?? []), e]);
   const bills = shown.filter((e) => e.kind !== "paycheck");
   const paydays = [...new Set(shown.filter((e) => e.kind === "paycheck").map((e) => e.date))];
+  if (bills.length === 0 && paydays.length === 0) return null; // nothing to draw: five weeks of empty columns are not a picture
   const top = Math.max(1, ...bills.map((e) => e.amount));
   const dueOn = (d: string) => (byDay.get(d) ?? []).filter((e) => e.kind !== "paycheck");
   const said = [
@@ -202,6 +203,8 @@ function PayerSelect({ b, e, accounts }: { b: Bill; e: Editor; accounts: Account
   return (
     <select className="input" value={e.payer} onChange={(x) => e.setPayer(x.target.value)} aria-label={`Which account ${b.name} is charged to`} style={{ width: "100%" }}>
       <option value="">checking (not set)</option>
+      {/* The accounts did not load: what is kept is shown as kept, never as "not set". */}
+      {e.payer && !accounts.some((a) => String(a.id) === String(e.payer)) && <option value={e.payer}>the account on file</option>}
       {accounts.filter((a) => ["checking", "savings", "cash", "card"].includes(a.kind)).map((a) => <option key={a.id} value={a.id}>{a.kind === "card" ? `${a.name} (card)` : a.name}</option>)}
     </select>
   );
@@ -263,7 +266,7 @@ function BillTableRow({ b, accounts, choices, onSaved }: { b: Bill; accounts: Ac
       <td style={{ minWidth: 150 }}><CadenceSelect b={b} e={e} /></td>
       <td style={{ minWidth: e.monthly ? 0 : 150 }}><DueInput b={b} e={e} /></td>
       <td><PayerSelect b={b} e={e} accounts={accounts} /></td>
-      <td><PaidFromSelect b={b} e={e} choices={choices} /></td>
+      <td style={{ minWidth: 150 }}><PaidFromSelect b={b} e={e} choices={choices} /></td>
       <td><input type="checkbox" checked={e.autopay} onChange={(x) => e.setAutopay(x.target.checked)} aria-label={`Autopay: ${b.name}`} style={{ width: 18, height: 18 }} /></td>
       <td><input type="checkbox" checked={e.movable} onChange={(x) => e.setMovable(x.target.checked)} aria-label={`Date can move: ${b.name}`} style={{ width: 18, height: 18 }} /></td>
       <td style={{ textAlign: "right" }}>
@@ -314,15 +317,20 @@ function watchWide(onChange: () => void): () => void {
   return () => query.removeEventListener("change", onChange);
 }
 
+// A row is a whole form; two hundred of them at once were over 8,000 elements.
+const PAGE_OF_BILLS = 50;
+
 export function Bills({ onChanged }: { onChanged: () => void }) {
   const state = useApi<BillsOut>("/api/v1/bills");
   const { data, reload } = state;
   // A next step's /bills#planned lands on the planned payments once the list above them is drawn.
   useJumpToHash(data);
-  const { data: accounts } = useApi<{ accounts: AccountRow[] }>("/api/v1/accounts");
+  const { data: accounts, error: accountsError, reload: reloadAccounts } = useApi<{ accounts: AccountRow[] }>("/api/v1/accounts");
   const choices = usePaidFromChoices(data);
   // Bills with no payment seen, to answer here: Today's "Pay X; it was due" opens this page.
   const needs = useApi<{ past_due: PastDueRow[] }>("/api/v1/needs-you", { live: true });
+  const [find, setFind] = useState("");
+  const [limit, setLimit] = useState(PAGE_OF_BILLS);
   const [name, setName] = useState("");
   const [amount, setAmount] = useState("");
   const [cadence, setCadence] = useState("monthly");
@@ -369,7 +377,7 @@ export function Bills({ onChanged }: { onChanged: () => void }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 1100 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Bills</h1>
-        <span className="num" style={{ fontSize: 13, color: "var(--ink-2)" }}>{data ? `${data.bills.length} bills and subscriptions · about ${money(total)} a month today, each counted by how often it comes` : ""}</span>
+        <span className="num" style={{ fontSize: 13, color: "var(--ink-2)" }}>{!data ? "" : data.bills.length === 0 ? "None yet" : `${data.bills.length} bills and subscriptions · about ${money(total)} a month today, each counted by how often it comes`}</span>
       </div>
       {data && ((data.one_time?.items.length ?? 0) > 0 || (data.starting_later?.items.length ?? 0) > 0) && (
         <div style={{ fontSize: 13, color: "var(--ink-2)", display: "flex", flexDirection: "column", gap: 2 }}>
@@ -381,6 +389,8 @@ export function Bills({ onChanged }: { onChanged: () => void }) {
           )}
         </div>
       )}
+      {accountsError && !accounts && <Failed error={accountsError} what="the accounts a bill can be charged to" onRetry={reloadAccounts} />}
+      {needs.error && !needs.data && <Failed error={needs.error} what="the bills with no payment seen" onRetry={needs.reload} />}
       <section id="paid" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <PaidQuestions state={needs} onAnswered={changed} here="bills" />
       </section>
@@ -391,22 +401,40 @@ export function Bills({ onChanged }: { onChanged: () => void }) {
         isEmpty={(d) => d.bills.length === 0}
         empty={<Empty>No bills yet. Add one below, <Link to="/settings/connectors#import">import a bills list</Link>, or name repeating charges on <Link to="/confirm">Needs you</Link>.</Empty>}
       >
-        {(d) => (
+        {(d) => {
+          const q = find.trim().toLowerCase();
+          const matching = q ? d.bills.filter((b) => `${b.name} ${b.category ?? ""} ${b.kind}`.toLowerCase().includes(q)) : d.bills;
+          const showing = matching.slice(0, limit);
+          return (
           <>
+            {d.bills.length > PAGE_OF_BILLS && (
+              <label style={{ display: "flex", flexDirection: "column", gap: 4, maxWidth: 420 }}>
+                <span className="lab">Find a bill</span>
+                <input className="input" type="search" value={find} onChange={(e) => { setFind(e.target.value); setLimit(PAGE_OF_BILLS); }} placeholder="By its name or its category" />
+              </label>
+            )}
+            {q && matching.length === 0 && <Empty>No bill matches that.</Empty>}
             {wide ? (
               <div className="card" style={{ padding: "6px 14px", overflowX: "auto" }}>
                 <table className="ledger">
                   <thead><tr><th>Bill</th><th>Amount</th><th>How often</th><th>Due day or next date</th><th>Charged to</th><th>Paid from</th><th>Autopay</th><th>Date can move</th><th><span className="sr-only">Save or remove</span></th></tr></thead>
-                  <tbody>{d.bills.map((b) => <BillTableRow key={b.id} b={b} accounts={accountRows} choices={choices} onSaved={changed} />)}</tbody>
+                  <tbody>{showing.map((b) => <BillTableRow key={b.id} b={b} accounts={accountRows} choices={choices} onSaved={changed} />)}</tbody>
                 </table>
               </div>
             ) : (
               <ul aria-label="Your bills" style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-                {d.bills.map((b) => <BillCard key={b.id} b={b} accounts={accountRows} choices={choices} onSaved={changed} />)}
+                {showing.map((b) => <BillCard key={b.id} b={b} accounts={accountRows} choices={choices} onSaved={changed} />)}
               </ul>
             )}
+            {matching.length > showing.length && (
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", fontSize: 13, color: "var(--ink-2)" }}>
+                <span>Showing {showing.length} of {matching.length}.</span>
+                <button type="button" className="btn" onClick={() => setLimit(limit + PAGE_OF_BILLS)}>Show {Math.min(PAGE_OF_BILLS, matching.length - showing.length)} more</button>
+              </div>
+            )}
           </>
-        )}
+          );
+        }}
       </Show>
       <form onSubmit={add} className="card" style={{ padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end" }}>
         <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "1 1 200px" }}><span className="lab">Add a bill: its name</span><input className="input" value={name} onChange={(e) => setName(e.target.value)} required /></label>

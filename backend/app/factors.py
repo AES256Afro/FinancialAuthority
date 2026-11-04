@@ -19,6 +19,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
+import threading
 import time
 from typing import Any
 from urllib.parse import urlsplit
@@ -31,7 +32,7 @@ from .api.inputs import In
 from . import auth, crypto
 from .config import settings
 from .db import get_session
-from .models import Passkey, Person, utcnow
+from .models import Passkey, Person, Setting, utcnow
 from .store import get_setting, set_setting
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -40,6 +41,10 @@ LAST_STEP_KEY = "auth.totp.last_step"
 TICKET_SECONDS = 300
 CHALLENGE_SECONDS = 300
 _challenges: dict[str, tuple[float, bytes, str]] = {}
+# One spending of a code at a time, the state read again under it: "accepted once" was a read, a compare and a write, so
+# one code sent twice at once signed in twice, two recovery codes at once brought one back, and a code being checked
+# wrote "on" back over the owner's turning the second step off (sweep 26). The slow scrypt runs outside it.
+_spending = threading.Lock()
 
 
 # ---- the authenticator code -------------------------------------------------------------------------------------
@@ -129,6 +134,14 @@ def _matches(kept: str, code: str) -> bool:
     return hmac.compare_digest(kept, _legacy_hash(code))
 
 
+def _read_again(session: Session, person_id: int | None) -> dict[str, Any]:
+    rows = [session.get(Setting, key) for key in (TOTP_KEY, LAST_STEP_KEY)] if person_id is None else [session.get(Person, person_id)]
+    for row in rows:
+        if row is not None:
+            session.refresh(row)
+    return _state(session, person_id)
+
+
 def check_code(session: Session, code: str, person_id: int | None = None) -> bool:
     """A current authenticator code (once only) or an unused recovery code. A recovery code is used up."""
     state = _state(session, person_id)
@@ -138,18 +151,25 @@ def check_code(session: Session, code: str, person_id: int | None = None) -> boo
     if code.isdigit() and len(code) == 6:
         totp = _totp(crypto.decrypt(state["secret_enc"]))
         now = int(time.time())
-        last = _last_step(session, person_id)
-        for drift in (0, -1, 1):
-            step = now // 30 + drift
-            if step > last and hmac.compare_digest(totp.at(step * 30), code):
-                _set_last_step(session, person_id, step)
-                return True
+        with _spending:
+            if not _read_again(session, person_id).get("enabled"):
+                return False
+            last = _last_step(session, person_id)
+            for drift in (0, -1, 1):
+                step = now // 30 + drift
+                if step > last and hmac.compare_digest(totp.at(step * 30), code):
+                    _set_last_step(session, person_id, step)
+                    return True
         return False
-    left = list(state.get("recovery", []))
-    for kept in left:
+    for kept in list(state.get("recovery", [])):
         if _matches(kept, code):
-            left.remove(kept)
-            _save_state(session, person_id, {**state, "recovery": left})
+            with _spending:
+                state = _read_again(session, person_id)
+                left = list(state.get("recovery", []))
+                if not state.get("enabled") or kept not in left:
+                    return False  # spent a moment ago, or the second step was turned off
+                left.remove(kept)
+                _save_state(session, person_id, {**state, "recovery": left})
             return True
     return False
 
@@ -219,7 +239,8 @@ def totp_disable(body: CodeIn, request: Request, session: Session = Depends(get_
     who = _owner(request, session)
     if not check_code(session, body.code, who.person_id):
         raise HTTPException(400, "That code does not match. Type the code your app shows, or a recovery code.")
-    _save_state(session, who.person_id, {"enabled": False})
+    with _spending:
+        _save_state(session, who.person_id, {"enabled": False})
     return {"ok": True}
 
 
@@ -257,10 +278,10 @@ def login_second(body: SecondIn, request: Request, response: Response, session: 
             raise HTTPException(401, "Sign in with your password again.")
     elif data.get("u") != settings.username:
         raise HTTPException(401, "Sign in with your password again.")
-    if auth._account_wait(data["u"]) > 0:
+    counted, _wait = auth.begin_try(ip, data["u"])
+    if counted is None:
         raise HTTPException(429, "Too many failed sign-ins. Wait a minute, then try again.")
     if not check_code(session, body.code, person.id if person else None):
-        auth._record_failure(ip, username=data["u"])
         raise HTTPException(401, "That code does not match. Type the code your app shows now, or a recovery code.")
     auth.clear_failures(ip, data["u"])
     _set_cookie(response, request, auth.start_session(session, request, person))

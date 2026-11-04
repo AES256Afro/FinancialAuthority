@@ -110,15 +110,32 @@ export default function App() {
     askMe();
   }), [askMe]);
 
+  // Someone else signing in over a page left open starts afresh: nothing the first person had on screen carries over.
+  const signedInAs = useRef<string | null>(null);
+  const whoNow = me.data ? `${me.data.name}/${me.data.person_id ?? ""}` : null;
+  useEffect(() => {
+    if (whoNow === null) return;
+    if (signedInAs.current !== null && signedInAs.current !== whoNow) window.location.reload();
+    signedInAs.current = whoNow;
+  }, [whoNow]);
+
   if (joining) return <Suspense fallback={<Loading text="Opening…" />}><Join /></Suspense>;
   // Only the first answer holds the app back: asked again mid-session, the page stays (with what the person typed and
   // what it said) until the answer says the sign-in is gone.
   if (me.loading && !me.data) return <Loading text="Opening…" />;
-  if (me.error && me.error.status === 401) return <SignIn ended={ended} onDone={() => { setEnded(false); me.reload(); }} />;
+  // A session that ended with a page open: the sign-in goes over the page instead of in its place, so what was typed in
+  // a form is still there afterwards. The cover is opaque and the page under it is out of reach and hidden. No page is
+  // open only when this browser never had a session, and then the sign-in is the whole app.
+  const lapsed = Boolean(me.error && me.error.status === 401 && me.data);
+  if (me.error && me.error.status === 401 && !me.data) return <SignIn ended={ended} onDone={() => { setEnded(false); me.reload(); }} />;
   if (me.error && !me.data) return <div style={{ padding: 24, maxWidth: 640 }}><Failed error={me.error} what="the app" onRetry={me.reload} /></div>;
 
+  const cover = lapsed ? <SessionCover onDone={() => { setEnded(false); me.reload(); snapshot.reload(); }} /> : null;
   if (role === "shared") {
     return (
+      <>
+      {cover}
+      <div inert={lapsed} style={{ display: "contents", visibility: lapsed ? "hidden" : undefined }}>
       <Shell snapshot={null} me={me.data}>
         <ErrorBoundary resetKey={pathname}>
         <Suspense fallback={<Loading text="Opening…" />}>
@@ -130,6 +147,8 @@ export default function App() {
         </Suspense>
         </ErrorBoundary>
       </Shell>
+      </div>
+      </>
     );
   }
 
@@ -142,6 +161,9 @@ export default function App() {
 
   // A page that breaks shows a card with Try again in its place; the header and the menu stay.
   return (
+    <>
+    {cover}
+    <div inert={lapsed} style={{ display: "contents", visibility: lapsed ? "hidden" : undefined }}>
     <Shell snapshot={snap} me={me.data} planError={snapshot.error} onRetryPlan={snapshot.reload}>
       <ErrorBoundary resetKey={pathname}>
       <Suspense fallback={<Loading text="Opening…" />}>
@@ -200,5 +222,16 @@ export default function App() {
       </Suspense>
       </ErrorBoundary>
     </Shell>
+    </div>
+    </>
+  );
+}
+
+/** The sign-in over a page whose session ended. */
+function SessionCover({ onDone }: { onDone: () => void }) {
+  return (
+    <div role="dialog" aria-modal="true" aria-label="Sign in again" style={{ position: "fixed", inset: 0, zIndex: 1000, overflowY: "auto", background: "var(--ground)" }}>
+      <SignIn ended kept onDone={onDone} />
+    </div>
   );
 }

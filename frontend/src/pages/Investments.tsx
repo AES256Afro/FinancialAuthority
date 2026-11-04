@@ -191,6 +191,7 @@ export function Investments() {
   const [form, setForm] = useState({ name: "", institution: "", subtype: "401k", balance: "", as_of: "" });
   const [balances, setBalances] = useState<Record<number, string>>({});
   const [note, setNote] = useState<string | null>(null);
+  const [noteFailed, setNoteFailed] = useState(false);
   const [formNote, setFormNote] = useState<string | null>(null);
   const [rowNotes, setRowNotes] = useState<Record<number, Note>>({});
   const [busy, setBusy] = useState(false);
@@ -208,10 +209,12 @@ export function Investments() {
   async function connect() {
     setBusy(true);
     setNote(null);
+    setNoteFailed(false);
     try {
       await openPlaidLink({ purpose: "investments", onNote: (m) => setNote(m), onDone: (m) => { setNote(m); reload(); }, onExit: (m) => { if (m) setNote(m); setBusy(false); } });
     } catch (e) {
       setNote((e as Error).message);
+      setNoteFailed(true);
     } finally {
       setBusy(false);
     }
@@ -288,7 +291,7 @@ export function Investments() {
       {error && !d && <Failed error={error} what="your investments" onRetry={reload} />}
       {gains.error && !gains.data && <Failed error={gains.error} what="the gain against cost" onRetry={gains.reload} />}
       {!d && !error && <Loading what="your investments" />}
-      {note && <div className="card" role="status" style={{ padding: 10, fontSize: 13 }}>{note}</div>}
+      {note && (noteFailed ? <Failed error={note} what="the connection" onRetry={connect} /> : <div className="card" role="status" style={{ padding: 10, fontSize: 13 }}>{note}</div>)}
       {adding && (
         <form id="add" onSubmit={add} className="card" style={{ padding: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "end" }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: "1 1 160px" }}><span className="lab">Name</span><input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Work 401(k)" required /></label>
@@ -302,7 +305,7 @@ export function Investments() {
       )}
       {d && (
         <>
-          <section className="card" style={{ padding: 16, display: "flex", gap: 24, flexWrap: "wrap", alignItems: "flex-start" }}>
+          {d.items.length > 0 && <section className="card" style={{ padding: 16, display: "flex", gap: 24, flexWrap: "wrap", alignItems: "flex-start" }}>
             <div><div className="lab">Invested in all</div><div className="num" style={{ fontSize: 34, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.1 }}>{money(d.total)}</div></div>
             <div><div className="lab">Retirement</div><div className="num" style={{ fontSize: 22, fontWeight: 800, color: "var(--paycheck-ink)" }}>{money(d.retirement)}</div></div>
             <div><div className="lab">Taxable</div><div className="num" style={{ fontSize: 22, fontWeight: 800 }}>{money(d.taxable)}</div></div>
@@ -316,7 +319,7 @@ export function Investments() {
             )}
             <div style={{ flex: "1 1 260px" }}><Line points={d.history} /></div>
             {returns && returns.accounts.length > 0 && <div style={{ flexBasis: "100%", fontSize: 12, color: "var(--muted)" }}>{returns.note}</div>}
-          </section>
+          </section>}
           {d.allocation.length > 0 && (
             <section className="card" style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
               <h2 className="lab" style={{ margin: 0 }}>Allocation, by what the holdings are</h2>

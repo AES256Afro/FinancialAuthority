@@ -8,7 +8,7 @@ import { PurchaseCheck } from "../components/PurchaseCheck";
 import { Goals } from "../components/Goals";
 import { CoverPanel, coverSummary, coverTone } from "../components/Cover";
 import { OneThing, placeName } from "../components/OneThing";
-import { Show } from "../components/State";
+import { LongText, Show } from "../components/State";
 import { SeverityTag, StatusPill, Why } from "../components/Status";
 import { useApi } from "../api";
 import { useAppearance } from "../appearance";
@@ -19,7 +19,7 @@ import { NextStepsCard } from "../components/NextSteps";
 import { Watchlist, WorthALook } from "../components/Watchlist";
 import { amountClass, money, shortDate, when } from "../format";
 import type { Snapshot } from "../types";
-import { noBalance, PlanCaveats, SafeExplain, safeFigure, SafePill, SafeSentence, safeTitle } from "../components/SafeExplain";
+import { heroSize, noBalance, PlanCaveats, SafeExplain, safeFigure, SafePill, SafeSentence, safeTitle } from "../components/SafeExplain";
 import { BankShows } from "../components/BankShows";
 
 const TITLE = { margin: 0, fontSize: 14, fontWeight: 700 } as const;
@@ -93,7 +93,7 @@ export function Today({ snapshot }: { snapshot: Snapshot }) {
     <section className="card" aria-labelledby="safe-title" style={{ padding: "18px 18px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
       <h2 id="safe-title" style={{ margin: 0, fontSize: 13, color: "var(--ink-2)", fontWeight: 700 }}>{safeTitle(s)}</h2>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <div className="num" style={{ fontSize: noBalance(s) ? 30 : 54, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1 }}>{safeFigure(s)}</div>
+        <div className="num" style={{ fontSize: noBalance(s) ? 30 : heroSize(safeFigure(s), 54), fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1, minWidth: 0, overflowWrap: "anywhere" }}>{safeFigure(s)}</div>
         <SafePill s={s} />
       </div>
       <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
@@ -124,7 +124,7 @@ export function Today({ snapshot }: { snapshot: Snapshot }) {
       {s.brief.map((b, i) => (
         <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderTop: i === 0 ? 0 : "1px solid var(--surface-2)", flexWrap: "wrap" }}>
           <SeverityTag severity={b.severity} />
-          <div className={amountClass(b.text)} style={{ flex: "1 1 120px", minWidth: 0, fontSize: 14, fontWeight: b.severity === "info" ? 500 : 700 }}>{b.text}</div>
+          <LongText text={b.text} className={amountClass(b.text)} style={{ flex: "1 1 120px", minWidth: 0, fontSize: 14, fontWeight: b.severity === "info" ? 500 : 700 }} />
           {b.link && b.link !== "/today" && <Link to={b.link} className="btn" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", minHeight: 36, padding: "6px 10px", flexShrink: 0 }} aria-label={`Open ${placeName(b.link)}: ${b.text}`}>→</Link>}
         </div>
       ))}
@@ -176,13 +176,14 @@ export function Today({ snapshot }: { snapshot: Snapshot }) {
     { key: "cash", label: "Cash today", more: true, node: (
     <section className="card" style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
       <h2 style={TITLE}>Cash today</h2>
+      {!s.accounts.some((a) => ["checking", "savings", "cash"].includes(a.kind)) && <div style={{ fontSize: 13, color: "var(--ink-2)" }}>No account yet. <Link to="/settings/connectors#banks" style={{ fontWeight: 700 }}>Link your bank</Link></div>}
       {s.accounts.filter((a) => ["checking", "savings", "cash"].includes(a.kind)).map((a) => (
         <div key={a.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 13 }}>
           <span>{a.name} <span style={{ color: "var(--muted)" }}>· {a.institution}</span></span>
           <strong className="num">{a.balance === null ? "—" : money(a.balance)}</strong>
         </div>
       ))}
-      <div style={{ fontSize: 12 }}><Link to="/" style={{ minHeight: 32, display: "inline-flex", alignItems: "center" }}>Open Home</Link></div>
+      {s.accounts.length > 0 && <div style={{ fontSize: 12 }}><Link to="/" style={{ minHeight: 32, display: "inline-flex", alignItems: "center" }}>Open Home</Link></div>}
     </section>
     ) },
     { key: "links", label: "Check-in and setup", more: true, node: (

@@ -336,6 +336,7 @@ class AlreadyAnswered(ValueError):
 
 
 OPEN_STATUSES = ("past_due", "late", "scheduled")
+STOPPED = "the owner: this bill has stopped"
 
 
 def answer_payment(session: Session, payment: Payment, answer: str, today: date, *, transaction_id: int | None = None, paid_on: date | None = None) -> str:
@@ -350,12 +351,45 @@ def answer_payment(session: Session, payment: Payment, answer: str, today: date,
         return _answer_payment(session, payment, answer, today, transaction_id=transaction_id, paid_on=paid_on)
 
 
+def undo_payment_answer(session: Session, payment: Payment, today: date) -> str:
+    """Take back "paid" or "stopped": the period is open again, as if never answered, and the matcher places it as it would
+    have (a row of the ledger that really pays it still does). The bill's end goes back to the latest stop still standing."""
+    from ..jobs.writing import one_writer
+    from .payments import match_payments
+
+    with one_writer():
+        session.refresh(payment)
+        stopped = payment.status == "missed" and payment.evidence == STOPPED
+        if payment.status != "paid" and not stopped:
+            raise ValueError("This one has no answer to take back")
+        bill = session.get(Bill, payment.bill_id)
+        if bill is None:
+            raise ValueError("That bill is gone")
+        payment.status, payment.paid_date, payment.transaction_id, payment.amount, payment.evidence = "scheduled", None, None, bill.amount, ""
+        session.add(payment)
+        if stopped and bill.ends_on == payment.due_date - timedelta(days=1):
+            still = session.exec(select(Payment).where(Payment.bill_id == bill.id, Payment.status == "missed", Payment.evidence == STOPPED, Payment.id != payment.id).order_by(Payment.due_date.desc())).first()
+            bill.ends_on = still.due_date - timedelta(days=1) if still else None
+            session.add(bill)
+        name, due, period_id = bill.name, payment.due_date, payment.id
+        session.commit()
+        match_payments(session, today)
+        session.expire_all()
+        payment = session.get(Payment, period_id)  # gone when the bill no longer comes due that day: the period was only ever the mark
+    if payment is not None and payment.status == "paid":
+        return f"Taken back, but your bank's row on {payment.paid_date:%a %b} {payment.paid_date.day} pays {name}; it counts as paid."
+    return f"Taken back: {name} for {due:%a %b} {due.day} is not marked paid."
+
+
 def _answer_payment(session: Session, payment: Payment, answer: str, today: date, *, transaction_id: int | None = None, paid_on: date | None = None) -> str:
     bill = session.get(Bill, payment.bill_id)
     if answer == "paid":
         tx = session.get(Transaction, transaction_id) if transaction_id else None
         if transaction_id and tx is None:
             raise ValueError("No such transaction")
+        if tx is not None and session.exec(select(Payment.id).where(Payment.transaction_id == tx.id, Payment.id != payment.id)).first() is not None:
+            # One row of the ledger is one payment: named again, it paid two periods and the second bill stood settled by money already counted (sweep 26).
+            raise ValueError("That payment is already matched to another bill")
         if paid_on and paid_on > today:
             raise ValueError("The day you paid cannot be after today")
         payment.status = "paid"
@@ -375,7 +409,7 @@ def _answer_payment(session: Session, payment: Payment, answer: str, today: date
         if bill is not None:
             bill.ends_on = payment.due_date - timedelta(days=1)
             session.add(bill)
-        payment.status, payment.evidence = "missed", "the owner: this bill has stopped"
+        payment.status, payment.evidence = "missed", STOPPED
         session.add(payment)
         session.commit()
         return f"{bill.name if bill else 'The bill'} is no longer counted from {payment.due_date:%a %b} {payment.due_date.day} on."

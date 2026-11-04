@@ -72,6 +72,18 @@
    "shared": 403,
    "stranger": 401
   },
+  "DELETE /api/v1/borrowing/plans/{plan_id}": {
+   "everything": 200,
+   "key_confirm": 403,
+   "key_confirm_aggregates": 403,
+   "key_read": 403,
+   "key_read_merchants": 403,
+   "oauth_confirm": 403,
+   "oauth_read": 403,
+   "owner": 200,
+   "shared": 403,
+   "stranger": 401
+  },
   "DELETE /api/v1/budgets/{category}": {
    "everything": 200,
    "key_confirm": 403,
@@ -2769,6 +2781,18 @@
    "oauth_confirm": 403,
    "oauth_read": 403,
    "owner": 200,
+   "shared": 403,
+   "stranger": 401
+  },
+  "POST /api/v1/needs-you/payments/{payment_id}/undo": {
+   "everything": 400,
+   "key_confirm": 403,
+   "key_confirm_aggregates": 403,
+   "key_read": 403,
+   "key_read_merchants": 403,
+   "oauth_confirm": 403,
+   "oauth_read": 403,
+   "owner": 400,
    "shared": 403,
    "stranger": 401
   },

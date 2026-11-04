@@ -177,6 +177,11 @@ def feed_create(body: FeedIn, request: Request, session: Session = Depends(get_s
     _own_feed(session, principal)
     token = secrets.token_urlsafe(32)
     set_setting(session, FEED_KEY, {"hash": _hash(token), "amounts": body.amounts, "created": datetime.now(timezone.utc).isoformat(), "person_id": principal.person_id})
+    from .. import people
+
+    if people.access_ended(session, principal):
+        set_setting(session, FEED_KEY, {})
+        raise HTTPException(403, "Your access has ended.")
     services.audit(session, client=principal.name, client_kind=principal.kind, tool="calendar_feed_create", args={"amounts": body.amounts}, rows=1)
     base = (settings.public_url or str(request.base_url)).rstrip("/")
     return {"url": f"{base}/api/calendar/{token}.ics", "amounts": body.amounts, "note": "Shown once. Add it in the phone's calendar as a subscription; make a new one and this stops working."}

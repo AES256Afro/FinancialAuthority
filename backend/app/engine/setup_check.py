@@ -116,7 +116,7 @@ def checks(session: Session) -> list[dict[str, Any]]:
         hours = round(b["latest_age_hours"] or 0)
         newest = "under an hour" if hours < 1 else f"{hours} hour{'s' if hours != 1 else ''}"
         detail = (f"{b['count']} {'copy' if b['count'] == 1 else 'copies'}; the newest is {newest} old. The database passes its check."
-                  if state == OK else f"The database did not pass its check: {b['database']['result']}." if not b["database"]["ok"] else "No copy in the last two days.")
+                  if state == OK else f"The database did not pass its check: {b['database']['result']}." if not b["database"]["ok"] else "No copy yet: the first daily copy is taken on its own, or take one now." if not b["count"] else "No copy in the last two days.")
         out.append(_check("backups", "Backups", state, detail, "" if state == OK else "Open Backups and take a copy now; check Settings › Jobs for restore_point_daily.", "/settings/backups"))
     except Exception as error:  # noqa: BLE001 - a check that cannot run is itself the answer
         out.append(_check("backups", "Backups", ERROR, f"The copies could not be read: {error}", "Check the data folder's free space and permissions.", "/settings/backups"))

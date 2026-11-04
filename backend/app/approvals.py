@@ -47,22 +47,35 @@ def _store(session: Session, person_id: int | None, values: list[str]) -> None:
     from .models import Person
 
     person = session.get(Person, person_id)
+    if person is None:
+        return  # removed in this moment; what they allowed went with them
     person.allowances = json.dumps(values)
     session.add(person)
     session.commit()
 
 
+def _read_list_again(session: Session, person_id: int | None) -> list[str]:
+    from .models import Person, Setting
+
+    row = session.get(Setting, "send.allowances") if person_id is None else session.get(Person, person_id)
+    if row is not None:
+        session.refresh(row)
+    return allowances(session, person_id)
+
+
 def allow(session: Session, recipient: str, person_id: int | None = None) -> list[str]:
-    current = allowances(session, person_id)
-    if recipient.lower() not in current:
-        current.append(recipient.lower())
-    _store(session, person_id, current)
+    with _decide:  # read and written whole: one removed in the same moment came back, and sends to it went with no tap
+        current = _read_list_again(session, person_id)
+        if recipient.lower() not in current:
+            current.append(recipient.lower())
+        _store(session, person_id, current)
     return current
 
 
 def disallow(session: Session, recipient: str, person_id: int | None = None) -> list[str]:
-    current = [a for a in allowances(session, person_id) if a != recipient.lower()]
-    _store(session, person_id, current)
+    with _decide:
+        current = [a for a in _read_list_again(session, person_id) if a != recipient.lower()]
+        _store(session, person_id, current)
     return current
 
 
@@ -113,11 +126,13 @@ def create(session: Session, *, to: str, subject: str, body: str, reason: str = 
         row.reason = (row.reason + " " if row.reason else "") + "(queued by a connected app or key, so the standing allowance for this address was not used)"
         row.reason = row.reason[:300]
     if by_a_person and to.lower() in allowances(session, for_person_id):
-        row.decided_by = "allowance"
-        row.decided_at = datetime.now(timezone.utc)
-        row.status = "approved"
-        session.add(row)
-        session.commit()
+        # Claimed as a tap claims it: the row has been visible since the commit above, and one approved in this moment went
+        # twice, and one denied in this moment went anyway.
+        try:
+            _claim(session, row, "approved", "allowance")
+        except ValueError:
+            session.refresh(row)
+            return row
         send(session, row)
     else:
         # Said in the push itself, not only on the screen: a draft a model queued may be a message's instructions.
@@ -132,12 +147,27 @@ def create(session: Session, *, to: str, subject: str, body: str, reason: str = 
     return row
 
 
+def version(row: Approval) -> str:
+    """Which words of a draft these are: what a screen read, and what its tap says it read."""
+    import hashlib
+
+    return hashlib.sha256("\x00".join((row.to, row.subject, row.body, str(row.account_id))).encode()).hexdigest()[:16]
+
+
 def _claim(session: Session, row: Approval, status: str, decided_by: str) -> None:
     """Move a pending approval to its decision, once: a second decision finds it decided."""
+    _claim_seen(session, row, status, decided_by, None)
+
+
+def _claim_seen(session: Session, row: Approval, status: str, decided_by: str, seen: str | None) -> None:
+    """As _claim, and with `seen` only if the draft still says what the one deciding read: an edit from another tab in
+    between sent words the tap never saw."""
     with _decide:
         session.refresh(row)
         if row.status != "pending":
             raise ValueError(f"the approval is {row.status}, not pending")
+        if seen and seen != version(row):
+            raise ValueError("this draft changed after you read it; nothing was sent. Read it again, then approve")
         row.status = status
         row.decided_by = decided_by
         row.decided_at = datetime.now(timezone.utc)
@@ -176,8 +206,11 @@ def edit_draft(session: Session, row: Approval, changed: dict[str, str]) -> Appr
     return row
 
 
-def approve(session: Session, row: Approval, *, decided_by: str = "owner", allow_always: bool = False) -> Approval:
-    _claim(session, row, "approved", decided_by)
+def approve(session: Session, row: Approval, *, decided_by: str = "owner", allow_always: bool = False, seen: str | None = None) -> Approval:
+    if seen:
+        _claim_seen(session, row, "approved", decided_by, seen)
+    else:
+        _claim(session, row, "approved", decided_by)
     if allow_always:
         allow(session, row.to, row.for_person_id)
     send(session, row)
@@ -239,5 +272,5 @@ def out(row: Approval) -> dict:
         "id": row.id, "kind": row.kind, "status": row.status, "to": row.to, "subject": row.subject, "body": row.body, "reason": row.reason, "source": row.source,
         "created_by": row.created_by, "created_kind": row.created_kind, "created_at": row.created_at.isoformat(), "decided_by": row.decided_by,
         "decided_at": row.decided_at.isoformat() if row.decided_at else None, "sent_at": row.sent_at.isoformat() if row.sent_at else None, "error": row.error, "account_id": row.account_id,
-        "for_person_id": row.for_person_id,
+        "for_person_id": row.for_person_id, "version": version(row),
     }

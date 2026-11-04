@@ -20,7 +20,7 @@ from ..connectors import CONNECTORS
 from ..db import session_scope
 from ..models import Account, JobRun, Transaction, utcnow
 from ..store import get_setting, set_setting
-from .writing import one_writer
+from .writing import STOPPED, job_era, job_outlived, one_writer
 
 log = logging.getLogger("fa.jobs")
 
@@ -58,14 +58,19 @@ class Jobs:
             ok, summary = False, f"the run before this one was still going after {BUSY_SECONDS // 60} minutes; this one did not start"
         else:
             try:
-                if spec.writes:
-                    with one_writer():
-                        summary = spec.func() or ""
-                else:
-                    summary = spec.func() or ""
-            except Exception as error:  # noqa: BLE001  (a job must never take the scheduler down)
-                ok, summary = False, f"{type(error).__name__}: {error}"
-                log.exception("job %s failed", name)
+                with job_era():
+                    try:
+                        if spec.writes:
+                            with one_writer():
+                                summary = spec.func() or ""
+                        else:
+                            summary = spec.func() or ""
+                    except Exception as error:  # noqa: BLE001  (a job must never take the scheduler down)
+                        ok, summary = False, f"{type(error).__name__}: {error}"
+                        if not job_outlived():
+                            log.exception("job %s failed", name)
+                    if job_outlived():  # erased or restored under it: what it found, and its record of that, are of the old data
+                        ok, summary = True, STOPPED
             finally:
                 mine.release()
         # The run is written once, after the work, so a busy database at the start never loses the record.
@@ -333,7 +338,7 @@ def _import_table(session, path) -> str:  # noqa: ANN001 - a Session and a Path
             if result is not None:
                 from ..services import apply_statement_balances
 
-                apply_statement_balances(session, text, (result.details or {}).get("account_id"))  # the statement's own balance: files alone then give a real safe to spend
+                apply_statement_balances(session, text, (result.details or {}).get("account_id"), (result.details or {}).get("import_id"))  # the statement's own balance: files alone then give a real safe to spend
         elif found["kind"] == "bills":
             result = import_bills(session, parse_bills_rows(text, found["mapping"]), source_file=path.name, today=_today())
         else:

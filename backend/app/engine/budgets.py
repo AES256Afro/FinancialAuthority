@@ -37,7 +37,9 @@ def paycheck_span(session: Session, today: date) -> dict[str, Any]:
     # Every paycheck is one schedule: the span starts at the last payday of any of them. Counted back along the next
     # check's own cadence, a second job's check fell inside the span and each span took days of the one before (sweep 25).
     back = sorted({min(d, today) for first, i in upcoming for d in previous_paydays(first, i.cadence or "biweekly", 2, **income_days(i))}, reverse=True)
-    return {"known": True, "start": back[0], "end": next_payday - timedelta(days=1), "next_payday": next_payday, "previous_start": back[1], "cadence": cadence, "per_year": sum(PAYCHECKS_PER_YEAR.get(i.cadence or "biweekly", 26) for _, i in upcoming)}
+    # A first payday more than a pay period off (a new job's) has no last payday yet: both land on today, and the span before is one pay period back.
+    previous = back[1] if len(back) > 1 else back[0] - timedelta(days=round(365 / PAYCHECKS_PER_YEAR.get(cadence, 26)))
+    return {"known": True, "start": back[0], "end": next_payday - timedelta(days=1), "next_payday": next_payday, "previous_start": previous, "cadence": cadence, "per_year": sum(PAYCHECKS_PER_YEAR.get(i.cadence or "biweekly", 26) for _, i in upcoming)}
 
 
 def _spent(session: Session, start: date, end: date) -> dict[str, float]:

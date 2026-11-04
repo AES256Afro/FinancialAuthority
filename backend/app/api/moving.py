@@ -94,6 +94,23 @@ def plan_payment_paid(plan_id: int, body: PaidIn, session: Session = Depends(get
     return {**borrowing_plan(session, today()), "said": said}
 
 
+@exit_router.delete("/plans/{plan_id}")
+@under_writer
+def end_plan(plan_id: int, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
+    """A plan that is not the owner's, or is over: it stops counting. A confirmation refused on Needs you sends the owner here."""
+    from ..engine.borrowing_plan import borrowing_plan
+    from ..models import InstallmentPlan
+
+    plan = session.get(InstallmentPlan, plan_id)
+    if plan is None or not plan.active:
+        raise HTTPException(404, "No such plan, or it is paid off")
+    plan.active = False
+    session.add(plan)
+    session.commit()
+    services.audit(session, client=principal.name, client_kind=principal.kind, tool="plan_end", args={"plan": plan_id}, rows=1)
+    return borrowing_plan(session, today())
+
+
 @exit_router.get("/plan")
 def get_borrowing_plan(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
     """The pay-later loans as one plan with its reasons (M54): the monthly stairs, the finish line, the interest
