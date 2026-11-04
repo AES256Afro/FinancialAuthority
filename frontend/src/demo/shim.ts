@@ -226,7 +226,7 @@ const DEMO_CANNOT = [
   /^\/api\/v1\/restore-points$/, /^\/api\/v1\/restore-points\/offbox\/copy$/, /^\/api\/v1\/restore-points\/[^/]+\/restore$/,
   /^\/api\/v1\/exports\/templates(\/|$)/, /^\/api\/v1\/calendar\/feed$/, /^\/api\/v1\/scenarios\/run$/, /^\/api\/v1\/move\/plan\//,
   /^\/api\/v1\/ledger\/rules\/preview$/, /^\/api\/v1\/documents$/, /^\/api\/auth\/totp\//, /^\/api\/v1\/recurring\/\d+\/classify$/,
-  /^\/api\/v1\/business\/\d+\/trips$/, /^\/api\/v1\/facts\/\d+\/confirm$/,
+  /^\/api\/v1\/business\/\d+\/trips$/, /^\/api\/v1\/facts\/\d+\/confirm$/, /^\/api\/v1\/needs-you\/rules(\/|$)/, /^\/api\/v1\/needs-you\/older\//,
 ];
 const NOT_KEPT = "In the demo, changes are not kept.";
 

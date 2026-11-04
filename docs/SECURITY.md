@@ -28,6 +28,8 @@ It never holds a bank password, a card number in the clear, or a government iden
 
 No tool, job or button initiates a payment, a transfer or an email. Push notifications go to the owner's own ntfy or Gotify.
 
+The rules that answer what mail says (M62, `engine/autokeep.py`, Settings › Rules) act only on a message the trust check called "ok" through the owner's own mailbox, and only where nothing the plan counts changes or a ledger row or a bank link says the same. Each answer names its rule and can be undone. Only the owner turns a rule or a sender on or off: not a second person with "everything", and a key or a connected app neither changes them nor reads the list.
+
 ## What could go wrong, and the control
 
 ### A hostile email tries to steer a model

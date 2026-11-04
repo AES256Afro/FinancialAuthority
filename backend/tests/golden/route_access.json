@@ -1236,6 +1236,18 @@
    "shared": 403,
    "stranger": 401
   },
+  "GET /api/v1/needs-you/rules": {
+   "everything": 200,
+   "key_confirm": 403,
+   "key_confirm_aggregates": 403,
+   "key_read": 403,
+   "key_read_merchants": 403,
+   "oauth_confirm": 403,
+   "oauth_read": 403,
+   "owner": 200,
+   "shared": 403,
+   "stranger": 401
+  },
   "GET /api/v1/next_steps": {
    "everything": 200,
    "key_confirm": 200,
@@ -2760,8 +2772,44 @@
    "shared": 403,
    "stranger": 401
   },
+  "POST /api/v1/needs-you/older/back": {
+   "everything": 409,
+   "key_confirm": 403,
+   "key_confirm_aggregates": 403,
+   "key_read": 403,
+   "key_read_merchants": 403,
+   "oauth_confirm": 403,
+   "oauth_read": 403,
+   "owner": 409,
+   "shared": 403,
+   "stranger": 401
+  },
+  "POST /api/v1/needs-you/older/skip": {
+   "everything": 409,
+   "key_confirm": 403,
+   "key_confirm_aggregates": 403,
+   "key_read": 403,
+   "key_read_merchants": 403,
+   "oauth_confirm": 403,
+   "oauth_read": 403,
+   "owner": 409,
+   "shared": 403,
+   "stranger": 401
+  },
   "POST /api/v1/needs-you/payments/{payment_id}": {
    "everything": 200,
+   "key_confirm": 403,
+   "key_confirm_aggregates": 403,
+   "key_read": 403,
+   "key_read_merchants": 403,
+   "oauth_confirm": 403,
+   "oauth_read": 403,
+   "owner": 200,
+   "shared": 403,
+   "stranger": 401
+  },
+  "POST /api/v1/needs-you/rules/senders": {
+   "everything": 403,
    "key_confirm": 403,
    "key_confirm_aggregates": 403,
    "key_read": 403,
@@ -3549,6 +3597,18 @@
    "oauth_confirm": 403,
    "oauth_read": 403,
    "owner": 200,
+   "shared": 403,
+   "stranger": 401
+  },
+  "PUT /api/v1/needs-you/rules/{name}": {
+   "everything": 403,
+   "key_confirm": 403,
+   "key_confirm_aggregates": 403,
+   "key_read": 403,
+   "key_read_merchants": 403,
+   "oauth_confirm": 403,
+   "oauth_read": 403,
+   "owner": 404,
    "shared": 403,
    "stranger": 401
   },

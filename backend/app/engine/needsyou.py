@@ -324,8 +324,11 @@ def triage(session: Session, today: date) -> dict[str, Any]:
     total = read + len(past) + series + pairs + len(sources)
     parts = (([f"{len(sources)} source{'s' if len(sources) != 1 else ''} to fix"] if sources else []) + ([f"{read} from your mail and documents"] if read else []) + ([f"{len(past)} bill{'s' if len(past) != 1 else ''} with no payment seen"] if past else [])
              + ([f"{series} recurring charge{'s' if series != 1 else ''} to name"] if series else []) + ([f"{pairs} pair{'s' if pairs != 1 else ''} of rows to settle"] if pairs else []))
+    from .autokeep import kept_count, older_batch, skipped_batches
+
     return {
         "as_of": today.isoformat(), "groups": out_groups, "past_due": past, "total": total, "series": series, "pairs": pairs, "sources": sources,
+        "older": older_batch(session, today), "skipped": skipped_batches(session), "kept_by_rules": kept_count(session),  # the older batch is among the groups' own items: it adds nothing to the total
         "word": ("Nothing from your mail, documents or bills waits." if total == 0 else
                  f"{total} {'thing waits' if total == 1 else 'things wait'} here: {', '.join(parts[:-1]) + ' and ' + parts[-1] if len(parts) > 1 else parts[0]}."),
     }

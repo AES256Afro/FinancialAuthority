@@ -44,12 +44,20 @@ def worded(session: Session, by: str, viewer: Any = None) -> str:
         return (person.display_name or person.username) if person is not None else "a second person"
     if kind in ("app", "key"):
         return rest or ("a connected app" if kind == "app" else "a key")
+    if kind == "rule" and rest:
+        from .autokeep import RULES
+
+        return f"a rule: {RULES[rest]['title']}" if rest in RULES else "a rule"
     return {"rule": "a rule", "datacheck": "the data check"}.get(kind, "")
 
 
 def undoable(fact: ExtractedFact) -> bool:
     """Whether the Undo button is worth showing: unconfirm_fact may still refuse, with its reason, where something
     happened to what the confirmation made since."""
+    from .autokeep import rule_of
+
+    if rule_of(fact) is not None:  # whatever a named rule did, the owner can take back
+        return True
     if fact.status == "confirmed":
         return True
     if fact.status != "applied":
@@ -88,12 +96,18 @@ def unconfirm_fact(session: Session, fact_id: int, by: str = "") -> dict[str, An
     fact = session.get(ExtractedFact, fact_id)
     if fact is None:
         raise ValueError("No such fact")
-    if fact.status not in ("applied", "confirmed"):
+    from .autokeep import rule_of
+    from .autokeep import undo as undo_rule
+
+    ruled = rule_of(fact) is not None  # a rule's answer, whatever it was, a set-aside among them, can be taken back
+    if fact.status not in ("applied", "confirmed") and not ruled:
         raise ValueError(f"This one is {fact.status}; there is no confirmation to take back.")
     tag = fact.applied_to or ""
     kind, _, rest = tag.partition(":")
     said = "Nothing in the plan had changed; it waits for an answer again."
-    if fact.status == "applied":
+    if ruled:
+        said = undo_rule(session, fact)
+    elif fact.status == "applied":
         if kind == "paystub" and rest.isdigit():
             said = _paystub(session, fact, int(rest))
         elif kind in ("bill", "plan") and fact.made.split(":")[:2] == [kind, rest]:
@@ -102,7 +116,8 @@ def unconfirm_fact(session: Session, fact_id: int, by: str = "") -> dict[str, An
             raise ValueError(f"Confirming it changed a {kind} you already had; change that {kind} back where it is kept, then reject this one if you like.")
         else:
             raise ValueError("What confirming it did cannot be taken back here; change it where it is kept.")
-    fact.status, fact.applied_to, fact.resolved_at, fact.resolved_by, fact.made = "pending", "", None, "", ""
+    fact.status, fact.applied_to, fact.resolved_at, fact.resolved_by, fact.made, fact.rule_why = "pending", "", None, "", "", ""
+    fact.rule_hold = True  # taken back: a person answers it now, or a rule would only answer it again
     session.add(fact)
     session.commit()
     return {"ok": True, "undone": tag, "by": by, "said": said}

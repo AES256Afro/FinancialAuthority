@@ -10,7 +10,7 @@ from sqlmodel import Session, select
 from .inputs import In
 from .. import auth, services
 from ..db import get_session
-from ..engine import facts
+from ..engine import autokeep, facts
 from ..engine.needsyou import AlreadyAnswered, answer_payment, plan_many, triage
 from ..jobs.writing import one_writer
 from ..models import ExtractedFact, MessageRef, Payment
@@ -132,6 +132,89 @@ def _answer_one(session: Session, fid: int, action: str, steps: dict, principal:
     facts.resolve_fact(session, fact, "applied" if applied else "confirmed", applied_to=applied, by=facts.who(principal), before=b)
     session.commit()
     done.append({"id": fid, "applied_to": applied})
+
+
+# ---- the rules that answer for the owner (M62) ----------------------------------------------------------------------
+
+
+def _only_the_owner(session: Session, principal: auth.Principal, what: dict) -> None:
+    """A rule on is the app answering in the owner's name. Turning one on or off is the owner's, as marking a sender
+    genuine is: not a second person's with everything, and never a key's or an app's (require_owner refused those)."""
+    if principal.kind != "owner":
+        services.audit(session, client=principal.name, client_kind=principal.kind, tool="rules_switch_refused", args=what, rows=0)
+        raise HTTPException(403, "Only the owner turns a rule on or off")
+
+
+@router.get("/rules")
+def rules_overview(session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_owner)) -> dict:
+    """Every rule, its switch, the earned senders and what was done. A person signed in looks; a key or an app cannot, since it names senders and subjects."""
+    return {**autokeep.overview(session, today()), "can_change": principal.kind == "owner"}
+
+
+class RuleSwitch(In):
+    on: bool
+
+
+@router.put("/rules/{name}")
+def switch_rule(name: str, body: RuleSwitch, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_owner)) -> dict:
+    _only_the_owner(session, principal, {"rule": name, "on": body.on})
+    if name not in autokeep.RULES:
+        raise HTTPException(404, "There is no such rule")
+    with one_writer():
+        autokeep.set_rule(session, name, body.on)
+    services.audit(session, client=principal.name, client_kind=principal.kind, tool="rules_switch", args={"rule": name, "on": body.on}, rows=1)
+    return {**autokeep.overview(session, today()), "can_change": True}
+
+
+class SenderSwitch(In):
+    sender: str
+    on: bool
+
+
+@router.post("/rules/senders")
+def switch_sender(body: SenderSwitch, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_owner)) -> dict:
+    _only_the_owner(session, principal, {"on": body.on})
+    try:
+        with one_writer():
+            autokeep.set_sender(session, body.sender, body.on)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    services.audit(session, client=principal.name, client_kind=principal.kind, tool="rules_switch_sender", args={"on": body.on}, rows=1)
+    return {**autokeep.overview(session, today()), "can_change": True}
+
+
+class SkipIn(In):
+    token: str
+
+
+@router.post("/older/skip")
+def skip_older(body: SkipIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_owner)) -> dict:
+    """Skip all: what was shown, by its token, and nothing that came since. A person signed in, never a key or an app."""
+    try:
+        with one_writer():
+            out = autokeep.skip_older(session, body.token, facts.who(principal), today())
+    except LookupError as error:
+        raise HTTPException(409, str(error)) from error
+    services.audit(session, client=principal.name, client_kind=principal.kind, tool="facts_skip_older", args={"batch": out["batch"]}, rows=out["count"])
+    from ..llm.reviewer import mark_pending
+
+    mark_pending(session, f"{out['count']} older facts skipped")
+    return {**out, "triage": triage(session, today())}
+
+
+class BackIn(In):
+    batch: int
+
+
+@router.post("/older/back")
+def bring_back(body: BackIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_owner)) -> dict:
+    try:
+        with one_writer():
+            out = autokeep.bring_back(session, body.batch)
+    except LookupError as error:
+        raise HTTPException(409, str(error)) from error
+    services.audit(session, client=principal.name, client_kind=principal.kind, tool="facts_bring_back", args={"batch": body.batch}, rows=out["count"])
+    return {**out, "triage": triage(session, today())}
 
 
 class PaidIn(In):
