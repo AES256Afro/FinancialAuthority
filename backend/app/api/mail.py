@@ -102,7 +102,7 @@ def presets(_: auth.Principal = Depends(auth.require_read)) -> dict:
 
 @router.get("/mail/accounts")
 def list_accounts(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
-    return {"accounts": [account_out(a) for a in session.exec(select(MailAccount).order_by(MailAccount.id)).all()]}
+    return {"accounts": [account_out(a) for a in session.exec(select(MailAccount).order_by(MailAccount.id)).all() if a.person_id is None or a.person_id >= 0]}  # a removed person's is kept only for what names it
 
 
 def _may_change(account: MailAccount, principal: auth.Principal) -> None:
@@ -187,6 +187,10 @@ def remove_account(account_id: int, session: Session = Depends(get_session), pri
     account.active = False
     account.password_enc = ""
     session.add(account)
+    if account.person_id is not None:
+        from ..connectors.mail import set_aside_waiting
+
+        set_aside_waiting(session, account.id)  # the owner's mail stays waiting; a server a second person chose speaks no further
     session.commit()
     return {"ok": True}
 

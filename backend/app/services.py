@@ -153,6 +153,7 @@ def apply_statement_balances(session: Session, text: str, account_id: int | None
     statements finds each account by the last four digits of the number it names. Returns what was set."""
     from datetime import datetime, time, timezone
 
+    from .clock import local_date
     from .connectors.banks import record_balance, sync_card_debt
     from .parsers.ofx_balance import balance_to_count, statement_balances
 
@@ -170,9 +171,11 @@ def apply_statement_balances(session: Session, text: str, account_id: int | None
         if account is None or figure is None or figure[1] is None or account.connector in ("plaid", "teller"):
             continue
         amount, on = figure
-        if account.balance is not None and account.balance_at is not None and account.balance_at.date() >= on:
+        # By the owner's day: typed at 9 pm in Chicago a balance is stamped tomorrow in UTC, and read as new as tomorrow's
+        # statement. The statement's own stamp is noon, not midnight UTC, which is the evening before on the owner's day (sweep 25).
+        if account.balance is not None and account.balance_at is not None and local_date(account.balance_at) >= on:
             continue  # a balance as new as the statement's, or newer, is already there (typed, or a later file)
-        account.balance, account.balance_at = amount, datetime.combine(on, time(0), tzinfo=timezone.utc)
+        account.balance, account.balance_at = amount, datetime.combine(on, time(12), tzinfo=timezone.utc)
         session.add(account)
         record_balance(session, account, amount, on, commit=False)
         if account.kind == "card":

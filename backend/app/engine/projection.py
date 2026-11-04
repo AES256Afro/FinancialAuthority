@@ -283,11 +283,12 @@ def _debt_of(a: Account, debts: list | None):  # noqa: ANN202 - a Debt or None
     return next((d for d in (debts or []) if (getattr(d, "account_id", None) == a.id) or (d.name or "").strip().lower() == (a.name or "").strip().lower()), None)
 
 
-def card_payoffs(cards: list[Account], paydays: list[date], mode: str, today: date, debts: list | None, planned: dict[int, float] | None, card_bills: list[dict], card_pace_by_account: dict[int, float] | None, horizon_days: int = HORIZON_DAYS) -> list[dict]:
+def card_payoffs(cards: list[Account], paydays: list[date], mode: str, today: date, debts: list | None, planned: dict[int, float] | None, card_bills: list[dict], card_pace_by_account: dict[int, float] | None, horizon_days: int = HORIZON_DAYS, minimums_paid: set[tuple[int, date]] | None = None) -> list[dict]:
     """The card payments across the horizon, as the owner pays the card. Each carries what the card holds by
     then: its share of today's balance, the bills charged to it since the last payment, and the usual card
     spend over those days. A planned payment already counted nets off the balance. A card the owner carries
-    (a minimum on file, or the minimum mode) reserves its minimum on its due day instead."""
+    (a minimum on file, or the minimum mode) reserves its minimum on its due day instead, but for a due day whose
+    payment the ledger already shows (`minimums_paid`, as (card account id, due date))."""
     events: list[dict] = []
     if not paydays or mode == "off":
         return events
@@ -301,6 +302,9 @@ def card_payoffs(cards: list[Account], paydays: list[date], mode: str, today: da
             # A carried card owes its minimum every month, on its due day, for as long as the horizon runs.
             due = next_due(int(debt.due_day or paydays[0].day), today)
             while due <= horizon:
+                if (a.id, due) in (minimums_paid or ()):
+                    due = next_due(int(debt.due_day or paydays[0].day), due + timedelta(days=1))
+                    continue
                 events.append({"date": due, "window_date": due, "name": f"{a.name} minimum", "amount": _money(min(float(debt.minimum), balance)), "kind": "card_payment", "autopay": False, "source": f"debt:{debt.id}", "line": "debt", "paid_from": "due", "from_kind": "cash", "parts": {"balance": _money(min(float(debt.minimum), balance)), "bills": 0.0, "spend": 0.0}})
                 due = next_due(int(debt.due_day or paydays[0].day), due + timedelta(days=1))
             continue
@@ -326,7 +330,7 @@ def card_payoffs(cards: list[Account], paydays: list[date], mode: str, today: da
 
 
 def assemble(*, bills: list[Bill], plans: list[InstallmentPlan], advances: list[Advance], today: date, accounts: dict[int, Account], paydays: list[date], card_mode: str, debts: list | None, planned: dict[int, float] | None, extra: list[dict], card_pace_by_account: dict[int, float] | None, due_days: dict[int, int] | None = None, horizon_days: int = HORIZON_DAYS,
-             paid: set[tuple[int, date]] | None = None, pay_days: str = "", late: set[tuple[int, date]] | None = None, judge_until: date | None = None, checks_by_day: bool = True) -> dict:
+             paid: set[tuple[int, date]] | None = None, pay_days: str = "", late: set[tuple[int, date]] | None = None, judge_until: date | None = None, checks_by_day: bool = True, minimums_paid: set[tuple[int, date]] | None = None) -> dict:
     """Everything the windows and the daily path count, with the card done right. `math` is what leaves
     checking: cash bills, plans, advances, planned payments and the card payments. `display` adds the bills
     that ride the card, marked via_card, so the picture still names them. A card whose payment is kept as a
@@ -337,7 +341,7 @@ def assemble(*, bills: list[Bill], plans: list[InstallmentPlan], advances: list[
     cash = [e for e in events if e.get("from_kind") != "card"]
     cards = [a for a in accounts.values() if a.kind == "card" and a.active]
     covered = cards_paid_by_bills(bills, cards, debts)
-    payoffs = card_payoffs([a for a in cards if a.id not in covered], paydays, card_mode, today, debts, planned, card_bills, card_pace_by_account, horizon_days=horizon_days)
+    payoffs = card_payoffs([a for a in cards if a.id not in covered], paydays, card_mode, today, debts, planned, card_bills, card_pace_by_account, horizon_days=horizon_days, minimums_paid=minimums_paid)
     for e in card_bills:
         e["via_card"] = True
     math = sorted(cash + payoffs, key=lambda e: e["date"])

@@ -155,10 +155,47 @@ def end_sessions(session: Session, person_id: int) -> int:
     return ended
 
 
+def _end_bank_links(session: Session, person_id: int) -> int:
+    """The banks a person linked: their sign-in, read through the owner's vendor keys every few hours. Each is ended at
+    the vendor and its accounts become history, kept with their rows and no longer counted (a balance nothing refreshes
+    would go on counting in the plan); linking the bank again brings them back."""
+    import logging
+
+    from .connectors import CONNECTORS
+    from .connectors.banks import sync_card_debt
+    from .models import BankLink
+
+    ended = 0
+    for link in session.exec(select(BankLink).where(BankLink.person_id == person_id, BankLink.active == True)).all():  # noqa: E712
+        ids = [i for i in (link.accounts or "").split(",") if i]
+        provider = link.provider
+        try:
+            if provider == "plaid":
+                CONNECTORS["plaid"].disconnect(session, CONNECTORS["plaid"].api(session), link)  # type: ignore[attr-defined]
+            else:
+                CONNECTORS["teller"].disconnect(session, link)  # type: ignore[attr-defined]
+        except Exception as error:  # noqa: BLE001 - the vendor's trouble never keeps a link alive here
+            logging.getLogger("fa.people").warning("could not end a bank link at its vendor: %s", type(error).__name__)
+            link.active, link.access_token_enc = False, ""
+            session.add(link)
+        if ids:
+            for a in session.exec(select(Account).where(Account.connector == provider, Account.external_id.in_(ids))).all():  # type: ignore[attr-defined]
+                if a.active:
+                    a.active = False
+                    session.add(a)
+                    if a.kind == "card":
+                        sync_card_debt(session, a)
+        ended += 1
+    session.commit()
+    return ended
+
+
 def end_access(session: Session, person_id: int) -> dict:
     """Everything a person set up that reaches the household from outside the app: their sessions, the API keys they
-    made, their phones and computers for notifications, the calendar feed if they made it. Their pending sends are
-    cancelled, so no draft of theirs can be sent by anyone after them."""
+    made, their phones and computers for notifications, the calendar feed if they made it, the banks they linked. Their
+    pending sends are cancelled, so no draft of theirs can be sent by anyone after them; what a mailbox of theirs said
+    stops waiting; their standing allowances go, so a new role starts with none."""
+    from .connectors.mail import set_aside_waiting
     from .models import ApiKey, Approval, MailAccount
     from .store import get_setting, set_setting
     from .webpush import drop_person
@@ -173,7 +210,12 @@ def end_access(session: Session, person_id: int) -> dict:
     for box in session.exec(select(MailAccount).where(MailAccount.person_id == person_id, MailAccount.active == True)).all():  # noqa: E712
         box.active, box.password_enc = False, ""  # read no further: mail from a server of theirs is theirs to write
         session.add(box)
+        set_aside_waiting(session, box.id)
         boxes += 1
+    person = session.get(Person, person_id)
+    if person is not None:
+        person.allowances = "[]"
+        session.add(person)
     feed = get_setting(session, "calendar.feed", {}) or {}
     feed_ended = bool(feed.get("hash")) and feed.get("person_id") == person_id
     if feed_ended:
@@ -188,7 +230,7 @@ def end_access(session: Session, person_id: int) -> dict:
             continue
         cancelled += 1
     session.commit()
-    return {"sessions": ended, "keys": keys, "devices": drop_person(session, person_id), "feed": feed_ended, "sends_cancelled": cancelled, "mailboxes": boxes}
+    return {"sessions": ended, "keys": keys, "devices": drop_person(session, person_id), "feed": feed_ended, "sends_cancelled": cancelled, "mailboxes": boxes, "banks": _end_bank_links(session, person_id)}
 
 
 def reset_sign_in(session: Session, person: Person) -> str:

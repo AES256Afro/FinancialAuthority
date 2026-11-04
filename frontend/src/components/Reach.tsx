@@ -7,11 +7,12 @@ import { api, useApi } from "../api";
 import { DEMO } from "../demo/shim";
 import { amountClass, when } from "../format";
 import { ConfirmButton } from "./ConfirmButton";
+import { useViewer } from "./OwnerLocked";
 import { Failed, Figures, Loading, Said } from "./State";
 
 interface Devices {
   public_key: string;
-  devices: { id: string; label: string; created: string | null; last_ok: string | null; last_error: string }[];
+  devices: { id: string; label: string; created: string | null; last_ok: string | null; last_error: string; person_id?: number | null }[];
 }
 
 interface Reminders {
@@ -52,6 +53,7 @@ function standalone(): boolean {
 
 export function ThisDevice() {
   const dev = useApi<Devices>("/api/v1/push/devices");
+  const viewer = useViewer();
   const [note, setNote] = useState<Note>(null);
   const [busy, setBusy] = useState(false);
   const supported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
@@ -122,9 +124,11 @@ export function ThisDevice() {
             <div key={d.id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, padding: "6px 10px", borderRadius: 8, background: "var(--surface-2)", flexWrap: "wrap" }}>
               <strong>{d.label}</strong>
               <span style={{ color: "var(--ink-2)" }}>{d.last_ok ? `last delivered ${when(d.last_ok)}` : "nothing sent yet"}{d.last_error ? ` · last try failed: ${d.last_error}` : ""}</span>
-              <span style={{ marginLeft: "auto" }}>
-                <ConfirmButton label="Remove" name={`Remove ${d.label}`} question={`Stop notifications on ${d.label}?`} yes="Yes, remove it" no="Keep it" onConfirm={() => remove(d.id)} style={{ minHeight: 32, padding: "3px 9px" }} />
-              </span>
+              {(viewer.owner || (d.person_id != null && d.person_id === viewer.personId)) && (
+                <span style={{ marginLeft: "auto" }}>
+                  <ConfirmButton label="Remove" name={`Remove ${d.label}`} question={`Stop notifications on ${d.label}?`} yes="Yes, remove it" no="Keep it" onConfirm={() => remove(d.id)} style={{ minHeight: 32, padding: "3px 9px" }} />
+                </span>
+              )}
             </div>
           ))}
         </div>

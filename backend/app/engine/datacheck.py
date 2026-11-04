@@ -196,7 +196,7 @@ def findings(session: Session, today: date) -> list[dict[str, Any]]:
         for ref in session.exec(select(MessageRef).where(MessageRef.id.in_(list(waiting)), MessageRef.trust.in_(UNVOUCHED))).all():  # type: ignore[union-attr]
             out.append({"key": f"sender:{ref.id}", "kind": "sender", "severity": "crit" if ref.trust == "crit" else "warn",
                         "title": f"Check the sender: {ref.sender_name or ref.sender}",
-                        "why": f"{ref.trust_why} Its {len(waiting[ref.id])} waiting item{'s are' if len(waiting[ref.id]) != 1 else ' is'} kept out of “answer together”.",
+                        "why": f"{ref.trust_why} What it says waits for an answer here, and stays out of “Answer alike ones together”.",
                         "items": [_item(ref.subject or "(no subject)", f"from {ref.sender}" + (f", {ref.date:%a %b} {ref.date.day}" if ref.date else ""), f"message:{ref.id}", f"/mail?message={ref.id}")],
                         "actions": [{"id": "discard", "label": "Not genuine: discard what it says", "question": "Discard everything read from this email? Nothing from it is used."},
                                     {"id": "trust", "label": "It is genuine"}]})
@@ -328,8 +328,8 @@ def answer(session: Session, key: str, action: str, today: date) -> str:
 def recheck_senders(session: Session, *, limit: int = 300, client_factory: Any = None) -> int:
     """Judge the senders of waiting items that arrived before this check existed: their headers only, read-only."""
     from ..api.mail import mail_connector
-    from ..connectors.mail import account_password
-    from ..mail.trust import auth_header, judge
+    from ..connectors.mail import account_password, message_verdict
+    from ..mail.trust import auth_header
     from ..models import MailAccount
     import email
     from email import policy
@@ -341,7 +341,6 @@ def recheck_senders(session: Session, *, limit: int = 300, client_factory: Any =
         by_box[(r.account_id, r.folder)].append(r)
     judged = 0
     factory = client_factory or mail_connector().client_factory
-    learned = learned_senders(session)
     for (account_id, folder), refs in by_box.items():
         account = session.get(MailAccount, account_id)
         if account is None or not account.active:
@@ -357,7 +356,7 @@ def recheck_senders(session: Session, *, limit: int = 300, client_factory: Any =
                     continue
                 msg = email.message_from_bytes(raw, policy=policy.default)
                 results, reply_to = auth_header(msg)
-                r.trust, r.trust_why = judge(r.sender, r.sender_name, results, reply_to, learned)
+                r.trust, r.trust_why = message_verdict(session, account, r.sender, r.sender_name, results, reply_to)  # as a first reading judges, a second person's server included (sweep 25)
                 r.trust = r.trust or "unknown"
                 r.trust_why = r.trust_why[:300]
                 session.add(r)

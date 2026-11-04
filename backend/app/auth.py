@@ -482,6 +482,10 @@ def logout(request: Request, response: Response, session: Session = Depends(get_
         row.revoked_at = utcnow()
         session.add(row)
         session.commit()
+        # Signing out is ending this session: a borrowed computer's notifications stop with it, as from Settings › Clients.
+        from .webpush import drop_sessions
+
+        drop_sessions(session, [row.id])
     response.delete_cookie(COOKIE, path="/")
     if request_is_https(request):
         response.delete_cookie(HOST_COOKIE, path="/", secure=True, httponly=True, samesite="lax")

@@ -270,7 +270,7 @@ function ConnectedApps() {
                   </td>
                   <td className="num">{c.sessions}</td>
                   <td style={{ color: "var(--ink-2)", whiteSpace: "nowrap" }}>{c.last_used_at ? when(c.last_used_at) : "never"}</td>
-                  <td style={{ textAlign: "right" }}><ConfirmButton label="Revoke" question={`Sign ${c.name} out everywhere? It must connect again to read your plan.`} yes="Yes, revoke it" no="Keep it" onConfirm={() => revoke(c.client_id)} /></td>
+                  <td style={{ textAlign: "right" }}><ConfirmButton label="Revoke" question={`Sign ${c.name} out everywhere? It must connect again to read your plan.`} yes="Yes, revoke it" no="Keep it" onConfirm={() => revoke(c.client_id)} style={{ whiteSpace: "nowrap" }} /></td>
                 </tr>
               ))}
               {rows.length === 0 && <tr><td colSpan={6} style={{ color: "var(--ink-2)" }}>No app has signed in yet.</td></tr>}

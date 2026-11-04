@@ -341,6 +341,9 @@ def revoke_key(key_id: int, session: Session = Depends(get_session), principal: 
     key.revoked_at = utcnow()
     session.add(key)
     session.commit()
+    from .. import approvals
+
+    approvals.cancel_queued_by(session, key.name, "key revoked")
     return {"ok": True}
 
 

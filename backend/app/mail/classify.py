@@ -81,14 +81,22 @@ def parse_date_text(value: str, ref: date | None = None) -> date | None:
         except ValueError:
             pass
     if ref is not None:
-        for fmt in ("%b %d", "%B %d"):
+        # Read with a year: on its own "Feb 29" is read in 1900, which has none (sweep 25). This year's date unless that is
+        # long past, or does not exist, when it is next year's.
+        for fmt in ("%b %d %Y", "%B %d %Y"):
             try:
-                d = datetime.strptime(v, fmt).date().replace(year=ref.year)
-                if (d - ref).days < -200:
-                    d = d.replace(year=ref.year + 1)
-                return d
+                d = datetime.strptime(f"{v} {ref.year}", fmt).date()
             except ValueError:
-                pass
+                try:
+                    return datetime.strptime(f"{v} {ref.year + 1}", fmt).date()
+                except ValueError:
+                    continue
+            if (d - ref).days < -200:
+                try:
+                    return datetime.strptime(f"{v} {ref.year + 1}", fmt).date()
+                except ValueError:
+                    return d  # Feb 29 long past in a leap year: next year has none, so it is the one that was
+            return d
     return None
 
 

@@ -151,8 +151,9 @@ def handle_message(session: Session, account: MailAccount, folder: str, uid: int
     if parsed.message_id:
         # The same message under a new number (the server renumbered the folder) is one already read: its reference
         # follows the new number, and nothing it yielded is made twice.
-        same = session.exec(select(MessageRef).where(MessageRef.account_id == account.id, MessageRef.message_id == parsed.message_id[:255])).first()
-        if same is not None and _same_message(session, same, parsed):
+        rows = session.exec(select(MessageRef).where(MessageRef.account_id == account.id, MessageRef.message_id == parsed.message_id[:255])).all()
+        same = next((r for r in rows if _same_message(session, r, parsed)), None)
+        if same is not None:
             if same.folder == folder:
                 same.uid = uid
                 session.add(same)
@@ -163,17 +164,8 @@ def handle_message(session: Session, account: MailAccount, folder: str, uid: int
         subject=parsed.subject[:300], date=parsed.date, has_attachments=bool(parsed.attachments), attachment_names=", ".join(a.name for a in parsed.attachments)[:400],
         snippet=clean(parsed.text, 200), kind=kind,
     )
-    from ..mail.trust import judge, org_domain
-    from ..engine.datacheck import learned_senders
-
     # Only mail that yields something is looked up: a mailbox is mostly mail that does not, and this is a scan per message.
-    earlier = domains_under_name(session, parsed.sender_name, parsed.sender) if kind != "none" else set()
-    verdict, why = judge(parsed.sender, parsed.sender_name, parsed.auth_results, parsed.reply_to, learned_senders(session), earlier)
-    if verdict == "ok" and account.person_id is not None:
-        # The verdict is that server's word, and a second person chooses the server: on one of their own they write
-        # "dmarc=pass" for any From, a lender's statement among it, which lands with no tap (sweep 24). It is never "ok",
-        # so nothing is applied or learned from it and no app confirms it; they and the owner still can.
-        verdict, why = "warn", f"It came through a mailbox a second person connected, so nothing but that server says it is from {org_domain(parsed.sender)}."
+    verdict, why = message_verdict(session, account, parsed.sender, parsed.sender_name, parsed.auth_results, parsed.reply_to, yields=kind != "none")
     ref.trust, ref.trust_why = verdict or "unknown", why[:300]
     session.add(ref)
     session.flush()
@@ -254,15 +246,84 @@ def _same_message(session: Session, known: MessageRef, parsed: Parsed) -> bool:
     """Whether a message under a Message-ID already read is that message, renumbered. Anyone can write a Message-ID: under
     a verified message's own, a stranger's mail was dropped as "seen" and its reference moved to the stranger's number, so
     opening the verified message then showed the stranger's words (sweep 24). A renumbered copy has the same sender and
-    carries the same headers, so a verified one is verified again; one that says nothing about itself is not it."""
+    carries the same headers, so a verified one is verified again; one that says nothing about itself is not it.
+
+    It also says the same. Under a marked or a "warn" message's id, with its sender written in a forged From, any words
+    at all were this message: dropped as seen, they took the reference's number, so what the owner had marked or been
+    warned of then opened as the forger's (sweep 25)."""
     from ..engine.datacheck import learned_senders
     from ..mail.trust import judge
 
-    if known.sender != parsed.sender[:255]:
+    if known.sender != parsed.sender[:255] or known.subject != parsed.subject[:300] or known.attachment_names != ", ".join(a.name for a in parsed.attachments)[:400]:
+        return False
+    if known.snippet and known.snippet != clean(parsed.text, 200):
         return False
     if known.trust != "ok" or known.trust_why.startswith("You marked"):  # the owner's word on a message holds for its copies
         return True
     return judge(parsed.sender, parsed.sender_name, parsed.auth_results, parsed.reply_to, learned_senders(session))[0] == "ok"
+
+
+def message_verdict(session: Session, account: MailAccount, sender: str, sender_name: str, auth_results: str, reply_to: str, *, yields: bool = True) -> tuple[str, str]:
+    """The trust check as it applies to one message in one mailbox: on a first reading and on a later one alike."""
+    from ..engine.datacheck import learned_senders
+    from ..mail.trust import judge, org_domain
+
+    earlier = domains_under_name(session, sender_name, sender) if yields else set()
+    verdict, why = judge(sender, sender_name, auth_results, reply_to, learned_senders(session), earlier)
+    if verdict == "ok" and account.person_id is not None:
+        # The verdict is that server's word, and a second person chooses the server: on one of their own they write
+        # "dmarc=pass" for any From, a lender's statement among it, which lands with no tap (sweep 24). It is never "ok",
+        # so nothing is applied or learned from it and no app confirms it; they and the owner still can.
+        verdict, why = "warn", f"It came through a mailbox a second person connected, so nothing but that server says it is from {org_domain(sender)}."
+    return verdict, why
+
+
+GONE = "set aside: the mailbox it came through is gone"
+
+
+def set_aside_waiting(session: Session, account_id: int) -> int:
+    """What a second person's mailbox said stops waiting when the mailbox ends. A server of theirs is theirs to write, the
+    message can no longer be opened to check it, and the answer would be taken after their access ended."""
+    rows = session.exec(select(ExtractedFact).join(MessageRef, ExtractedFact.message_ref_id == MessageRef.id).where(MessageRef.account_id == account_id, ExtractedFact.status == "pending")).all()  # type: ignore[arg-type]
+    for f in rows:
+        f.status, f.applied_to, f.resolved_at, f.resolved_by = "rejected", GONE, utcnow(), "access ended"
+        session.add(f)
+    return len(rows)
+
+
+def forget_mailbox(session: Session, box: MailAccount) -> None:
+    """A removed person's mailbox: their mail's words go. What the owner confirmed from it stays as the source of the row
+    it became, without the snippet, as does a message the owner marked genuine, since the owner's word on its sender
+    stands. The mailbox's row stays for those to name, with no address on it. The old pages go at the next rebuild, and
+    restore points hold them until they are pruned; a restore forgets them again."""
+    from sqlalchemy import delete, not_, update
+
+    from ..models import Paystub
+
+    box.active, box.password_enc, box.label, box.username, box.host, box.last_error, box.folders = False, "", "A removed person's mailbox", "", "", "", ""
+    session.add(box)
+    session.flush()
+    theirs = select(MessageRef.id).where(MessageRef.account_id == box.id)
+    session.exec(delete(ExtractedFact).where(ExtractedFact.message_ref_id.in_(theirs), ExtractedFact.status.not_in(("applied", "confirmed")),  # type: ignore[union-attr,attr-defined]
+                                             ExtractedFact.id.not_in(select(Paystub.fact_id).where(Paystub.fact_id != None))))  # type: ignore[union-attr]  # noqa: E711
+    named = select(ExtractedFact.message_ref_id).where(ExtractedFact.message_ref_id != None)  # noqa: E711
+    session.exec(delete(MessageRef).where(MessageRef.account_id == box.id, MessageRef.id.not_in(named), not_(MessageRef.trust_why.like("You marked%"))))  # type: ignore[union-attr,attr-defined]
+    session.exec(update(MessageRef).where(MessageRef.account_id == box.id).values(snippet="", attachment_names="", message_id=""))
+    session.expire_all()
+
+
+def forget_ended_mailboxes(session: Session) -> None:
+    """After a restore: the mailboxes are as they are now, the mail as it was then. A removed person's words and whatever
+    an ended mailbox left waiting would otherwise come back with the older copy."""
+    from ..models import Person
+
+    living = set(session.exec(select(Person.id)).all())
+    for box in session.exec(select(MailAccount).where(MailAccount.person_id != None)).all():  # noqa: E711
+        if box.person_id not in living:
+            forget_mailbox(session, box)
+        elif not box.active and not box.password_enc:
+            set_aside_waiting(session, box.id)
+    session.commit()
 
 
 def vouched_domains(session: Session) -> set[str]:
@@ -283,15 +344,18 @@ def vouched_domains(session: Session) -> set[str]:
 def domains_under_name(session: Session, name: str, sender: str) -> set[str]:
     """The domains earlier verified mail came from under this same display name, for the trust check (empty for a name
     too short to mean anything, or when a person has already answered for this sender's domain)."""
-    from sqlalchemy import func
-
     from ..mail.trust import fold, org_domain
 
-    plain, folded = (name or "").strip().lower(), fold((name or "").strip())
-    if len(folded) < 4:
+    def said(text: str) -> str:
+        # As the owner reads a name: one more space, a dot or a hyphen draws the same name, and took the "warn" away (sweep 25).
+        return " ".join(re.sub(r"[\W_]+", " ", fold(text)).split())
+
+    wanted = said(name)
+    if len(wanted) < 4:
         return set()
-    rows = session.exec(select(MessageRef.sender).where(MessageRef.trust == "ok", func.lower(MessageRef.sender_name).in_((plain, folded)))).all()
-    earlier = {org_domain(s) for s in rows if s}
+    # Each sender and name once: far fewer than the messages, and a name stored in any form is compared the same way.
+    rows = session.exec(select(MessageRef.sender_name, MessageRef.sender).where(MessageRef.trust == "ok", MessageRef.sender_name != "").distinct()).all()
+    earlier = {org_domain(s) for n, s in rows if s and said(n) == wanted}
     org = org_domain(sender or "")
     if not earlier or org in earlier or org in vouched_domains(session):
         return set()

@@ -54,7 +54,7 @@ def _subs(session: Session) -> list[dict[str, Any]]:
 
 def subscriptions(session: Session) -> list[dict[str, Any]]:
     """What the screens see: a label and dates, never the address."""
-    return [{"id": s["id"], "label": s.get("label", "A device"), "created": s.get("created"), "last_ok": s.get("last_ok"), "last_error": s.get("last_error", "")} for s in _subs(session)]
+    return [{"id": s["id"], "label": s.get("label", "A device"), "created": s.get("created"), "last_ok": s.get("last_ok"), "last_error": s.get("last_error", ""), "person_id": s.get("person_id")} for s in _subs(session)]
 
 
 def drop_person(session: Session, person_id: int) -> int:

@@ -7,7 +7,8 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { ConfirmButton } from "../components/ConfirmButton";
-import { Figures, Said, Show } from "../components/State";
+import { useViewer } from "../components/OwnerLocked";
+import { Figures, Said, Show, useFocusOnSaid } from "../components/State";
 import { SeverityTag } from "../components/Status";
 import { amountClass, shortDate, when } from "../format";
 
@@ -25,6 +26,7 @@ interface CheckOut {
 }
 
 function FindingCard({ f, onAnswered }: { f: Finding; onAnswered: (text: string) => void }) {
+  const viewer = useViewer();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   async function send(action: string) {
@@ -57,7 +59,10 @@ function FindingCard({ f, onAnswered }: { f: Finding; onAnswered: (text: string)
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         {f.actions.map((a) =>
-          a.question ? (
+          // Saying a sender is genuine is the owner's (the server refuses anyone else); discarding what it says is not.
+          a.id === "trust" && !viewer.owner ? (
+            <span key={a.id} style={{ fontSize: 13, color: "var(--ink-2)" }}>Only {viewer.ownerWord} can say this sender is genuine.</span>
+          ) : a.question ? (
             <ConfirmButton key={a.id} label={<Figures text={a.label} />} name={a.label} question={a.question} yes="Yes" no="Not yet" onConfirm={() => send(a.id)} />
           ) : (
             <button key={a.id} type="button" className="btn" disabled={busy} onClick={() => send(a.id)}><Figures text={a.label} /></button>
@@ -74,6 +79,8 @@ export function DataCheck() {
   const state = useApi<CheckOut>("/api/v1/data-check", { live: true });
   const [said, setSaid] = useState<{ text: string; tone: "info" | "error" } | null>(null);
   const [running, setRunning] = useState(false);
+  // An answered finding leaves the page with the control that answered it: the focus goes to what the app said.
+  const saidRef = useFocusOnSaid(said);
   async function again() {
     setRunning(true);
     setSaid(null);
@@ -98,7 +105,7 @@ export function DataCheck() {
       <p style={{ margin: 0, fontSize: 13, color: "var(--ink-2)" }}>
         The app looks over everything it keeps for anything counted twice, bills that look alike, the same purchase from two sources, and mail that may not be from who it says. It runs on its own every six hours, with no model. Nothing changes until you answer.
       </p>
-      <Said text={said?.text ?? null} tone={said?.tone} />
+      <div ref={saidRef} tabIndex={-1}><Said text={said?.text ?? null} tone={said?.tone} /></div>
       <Show state={state} what="the data check">
         {(d) => {
           const top = Math.max(1, ...d.kinds.map((k) => k.count));

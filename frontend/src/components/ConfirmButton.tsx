@@ -40,6 +40,22 @@ export function ConfirmButton({
     if (wasShown.current && !shown) trigger.current?.focus();
     wasShown.current = Boolean(shown);
   }, [shown]);
+  // An answer that removes the row removes this button too: the focus goes on to the next thing on the page, so a
+  // keyboard or a screen reader is not dropped at the top of the document.
+  const group = useRef<HTMLSpanElement>(null);
+  const after = useRef<{ next: HTMLElement | null; until: number } | null>(null);
+  useEffect(() => () => {
+    if (!after.current || performance.now() > after.current.until || document.activeElement !== document.body) return;
+    const { next } = after.current;
+    (next?.isConnected ? next : document.getElementById("main"))?.focus();
+  }, []);
+  function nextAfterRow(): HTMLElement | null {
+    const here = group.current;
+    if (!here) return null;
+    const row = here.closest("tr, li, section") ?? here;
+    const all = [...document.querySelectorAll<HTMLElement>("main a[href], main button:not(:disabled), main input:not(:disabled), main select:not(:disabled), main textarea:not(:disabled), main summary")];
+    return all.find((el) => !row.contains(el) && (row.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0) ?? null;
+  }
   const onKey = (e: KeyboardEvent) => {
     if (e.key === "Escape" && !busy) {
       e.stopPropagation();
@@ -49,8 +65,10 @@ export function ConfirmButton({
   async function go() {
     setBusy(true);
     setError(null);
+    const next = nextAfterRow();
     try {
       await onConfirm();
+      after.current = { next, until: performance.now() + 3000 };
       setAsking(false);
     } catch (e) {
       setError((e as Error).message || "That did not work. Try again.");
@@ -68,7 +86,7 @@ export function ConfirmButton({
     );
   }
   return (
-    <span role="group" aria-label={question} onKeyDown={onKey} style={{ display: "inline-flex", flexWrap: "wrap", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 10, background: "var(--warning-soft)", color: "var(--warning-ink)", fontSize: 13, fontWeight: 700 }}>
+    <span ref={group} role="group" aria-label={question} onKeyDown={onKey} style={{ display: "inline-flex", flexWrap: "wrap", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 10, background: "var(--warning-soft)", color: "var(--warning-ink)", fontSize: 13, fontWeight: 700 }}>
       <span>{question}</span>
       <button type="button" className="btn dark" disabled={busy} onClick={go} style={{ minHeight: 32, padding: "5px 12px" }}>{busy ? "Working…" : yes}</button>
       <button type="button" className="btn" disabled={busy} onClick={cancel} style={{ minHeight: 32, padding: "5px 12px" }} autoFocus>{no}</button>

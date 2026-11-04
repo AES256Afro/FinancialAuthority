@@ -12,7 +12,7 @@ from sqlmodel import Session, select
 
 from ..models import Bill, Goal, Income
 from .billdates import bill_dates
-from .cadence import next_unpaid_payday, paydays_through
+from .cadence import next_unpaid_payday, pay_schedule
 
 RARE = ("quarterly", "semiannual", "yearly")
 LOOK_DAYS = 400
@@ -34,8 +34,8 @@ def sinking_funds(session: Session, today: date) -> dict[str, Any]:
         if due is None:
             continue
         if upcoming:
-            first, income = upcoming[0]
-            checks = len([d for d in paydays_through(first, income.cadence or "biweekly", due - timedelta(days=1), at_least=0) if d < due])
+            # Every paycheck's, on its own days: without them a check on the 31st counted Jan 30 before a bill due the 31st (sweep 25).
+            checks = sum(1 for d in pay_schedule(session, incomes, today, due - timedelta(days=1), 0)["paydays"] if d < due)
         else:
             checks = max(0, math.floor((due - today).days / 14))
         per_check = _money(b.amount / checks) if checks else _money(b.amount)

@@ -484,12 +484,14 @@ class PlaidConnector(Connector):
             count += 1
         return count
 
-    def connect(self, session: Session, api: PlaidClient, public_token: str, institution: str) -> BankLink:
+    def connect(self, session: Session, api: PlaidClient, public_token: str, institution: str, person_id: int | None = None) -> BankLink:
         access_token, item_id = api.exchange(public_token)
         link = session.exec(select(BankLink).where(BankLink.provider == "plaid", BankLink.external_id == item_id)).first()
         institution = clean_text(institution, MAX_NAME_CHARS)
         if link is None:
             link = BankLink(provider="plaid", external_id=item_id, institution=institution, environment=api.environment)
+        if not link.active or link.id is None:
+            link.person_id = person_id  # whoever made it live; the same sign-in linked again does not take a live link from its maker
         link.institution = institution or link.institution
         link.access_token_enc = crypto.encrypt(access_token)
         link.active = True
