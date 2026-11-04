@@ -12,6 +12,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from sqlmodel import Session, select
 
+from ..mail.trust import KNOWN, UNVOUCHED, org_domain
 from ..models import Account, Advance, Approval, Bill, Debt, ExtractedFact, Income, InstallmentPlan, MessageRef, RecurringSeries, Transaction
 from ..store import get_setting
 from .cadence import income_net, next_paydays, next_unpaid_payday, pay_schedule, payday_position, paydays_through, scheduled_payday  # noqa: F401
@@ -68,16 +69,17 @@ def _mail_facts(session: Session, today: date) -> dict:
     alert_rows = session.exec(select(ExtractedFact).where(ExtractedFact.kind == "bank_alert", ExtractedFact.created_at >= since).order_by(ExtractedFact.created_at.desc()).limit(20)).all()
     ids = [f.message_ref_id for f in [*pending_rows, *alert_rows] if f.message_ref_id]
     refs = {r.id: r for r in session.exec(select(MessageRef).where(MessageRef.id.in_(ids))).all()} if ids else {}
-    # An alert from a sender the trust check found forged (mail/trust.py) never reaches the brief: a message is data, and a
+    # An alert from a sender the trust check could not vouch for (mail/trust.py) never reaches the brief: a message is data, and a
     # forged "you are overdrawn" is the bait, not a fact about the account.
-    alert_rows = [f for f in alert_rows if not (f.message_ref_id in refs and refs[f.message_ref_id].trust == "crit")]
+    alert_rows = [f for f in alert_rows if not (f.message_ref_id in refs and refs[f.message_ref_id].trust in UNVOUCHED)]
 
     def out(f: ExtractedFact) -> dict:
         r = refs.get(f.message_ref_id)
         fields = json.loads(f.fields or "{}")
         return {"id": f.id, "kind": f.kind, "fields": fields, "confidence": f.confidence, "status": f.status, "sender_name": _from_mail(r.sender_name if r else fields.get("sender_name", ""), 60),
                 "subject": _from_mail(r.subject if r else "", 100), "date": r.date.date().isoformat() if r and r.date else fields.get("message_date"), "source": f"fact:{f.id}", "from_mail": True,
-                "forged": bool(r and r.trust == "crit")}  # the brief leaves a forged sender's notice to the data check
+                "forged": bool(r and r.trust in UNVOUCHED),  # the brief leaves such a sender's notice to the data check
+                "domain": _unlisted_domain(r)}  # a signed name the common senders do not hold: the brief says where it came from
 
     return {"pending": [out(f) for f in pending_rows], "pending_count": pending_count, "alerts": [out(f) for f in alert_rows]}
 
@@ -482,6 +484,13 @@ def _explain_safe(session: Session, accounts: list, before: list[dict], advances
     return {"by_account": by_account, "steps": steps, "left_out": left_out}
 
 
+def _unlisted_domain(ref: MessageRef | None) -> str:
+    """The sending domain, unless it is one of the table's common senders: anyone can register a domain and sign with it,
+    so a name no table holds is never said alone."""
+    org = org_domain(ref.sender) if ref is not None and "@" in (ref.sender or "") else ""
+    return "" if not org or any(org in domains for domains in KNOWN.values()) else org
+
+
 def _from_mail(text: str | None, limit: int) -> str:
     """A name or subject from an email, on one line and short: it is data, shown as written, never instructions."""
     import re as _re
@@ -560,7 +569,7 @@ def _in_flight(session: Session, today: date) -> dict:
     names = {a.id: a.name for a in session.exec(select(Account)).all()}
     since = datetime.combine(today - timedelta(days=7), datetime.min.time(), tzinfo=timezone.utc)  # the injected day, never the wall clock
     alerts = session.exec(select(ExtractedFact).where(ExtractedFact.kind == "bank_alert", ExtractedFact.created_at >= since)).all()
-    forged = set(session.exec(select(MessageRef.id).where(MessageRef.id.in_([f.message_ref_id for f in alerts if f.message_ref_id]), MessageRef.trust == "crit")).all()) if alerts else set()  # type: ignore[union-attr]
+    forged = set(session.exec(select(MessageRef.id).where(MessageRef.id.in_([f.message_ref_id for f in alerts if f.message_ref_id]), MessageRef.trust.in_(UNVOUCHED))).all()) if alerts else set()  # type: ignore[union-attr]
     seen = []
     for f in alerts:
         try:

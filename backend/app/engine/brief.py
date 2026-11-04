@@ -28,6 +28,12 @@ def _first_three(names: list[str], total: int | None = None) -> str:
     return f"{', '.join(names[:3])} and {total - 3} more"
 
 
+def _said_by(fact: dict, fallback: str = "") -> str:
+    """Who a mail notice is from, with its domain when the common senders do not hold it: a name is what the sender wrote."""
+    name = fact.get("sender_name") or fallback or fact.get("subject") or ""
+    return f"{name} ({fact['domain']})" if fact.get("domain") else name
+
+
 def build_brief(snap: dict) -> list[dict]:
     items: list[dict] = []
     pay = snap["next_paycheck"]
@@ -68,12 +74,12 @@ def build_brief(snap: dict) -> list[dict]:
         what = alert["fields"].get("alert", "balance")
         if what in ("overdraft", "declined"):
             amount = alert["fields"].get("amount")
-            items.append({"severity": "critical", "text": f"{alert['sender_name'] or 'The bank'} sent {'an overdraft' if what == 'overdraft' else 'a declined-charge'} alert on {when(alert['date']) if alert.get('date') else 'a recent day'}{f' for {money(amount)}' if amount else ''}.", "link": "/mail"})
+            items.append({"severity": "critical", "text": f"{_said_by(alert, 'The bank')} sent {'an overdraft' if what == 'overdraft' else 'a declined-charge'} alert on {when(alert['date']) if alert.get('date') else 'a recent day'}{f' for {money(amount)}' if amount else ''}.", "link": "/mail"})
     # A notice from a sender the trust check found forged is not said by name (the brief, and the reviewer's prompt
     # built from it): a forged "you are past due" is the bait. The data check raises it, with the reason.
     past_due_notices = [f for f in mail.get("pending", []) if f["kind"] == "past_due" and not f.get("forged")]
     if past_due_notices:
-        names = ", ".join(f["sender_name"] or f["subject"] for f in past_due_notices[:3])
+        names = ", ".join(_said_by(f) for f in past_due_notices[:3])
         items.append({"severity": "critical", "text": f"Past-due notice{'s' if len(past_due_notices) > 1 else ''} in the mail from {names}.", "link": "/confirm"})
     for stub in snap.get("paystubs", {}).get("short", [])[:1]:
         moved = "; ".join((f"hours {m['before']:g} to {m['after']:g}" if m["name"] == "Hours" else f"{m['name'].lower()} {money(m['before'])} to {money(m['after'])}") for m in (stub.get("moved") or [])[:3])  # PLAN 7: with the lines that moved

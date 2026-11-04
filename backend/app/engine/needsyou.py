@@ -118,6 +118,7 @@ def plan_many(session: Session, facts: list[ExtractedFact], today: date, *, loos
     """What confirming these together would do, each one: apply it, set it aside (with why), or leave it for its own
     card. Newest is judged against every notice for the same bill, waiting or already answered, so sending them in
     parts gives the same result as sending them at once."""
+    from ..mail.trust import UNVOUCHED
     from .borrowing import older_than_listing
     from .recurring import bill_named, merchant_key
 
@@ -135,9 +136,11 @@ def plan_many(session: Session, facts: list[ExtractedFact], today: date, *, loos
     # The newest day seen for each bill, across every notice the app holds (rejected ones aside).
     newest: dict[str, tuple[date, int]] = {}
     for other in session.exec(select(ExtractedFact).where(ExtractedFact.kind.in_(BILL_NOTICES), ExtractedFact.status != "rejected")).all():  # type: ignore[attr-defined]
+        if (other_ref := ref_of(other)) is not None and other_ref.trust in UNVOUCHED:
+            continue  # a notice nobody can vouch for never makes a real one the older
         fields = json.loads(other.fields or "{}")
-        day = _notice_day(other, fields, ref_of(other))
-        key = merchant_key(notice_name(fields, ref_of(other)))
+        day = _notice_day(other, fields, other_ref)
+        key = merchant_key(notice_name(fields, other_ref))
         if day is not None and (key not in newest or (day, other.id or 0) > newest[key]):
             newest[key] = (day, other.id or 0)
 
@@ -148,7 +151,7 @@ def plan_many(session: Session, facts: list[ExtractedFact], today: date, *, loos
         ref = ref_of(f)
         if f.status != "pending":
             step.update(do="skip", why="already answered")
-        elif ref is not None and ref.trust == "crit":
+        elif ref is not None and ref.trust in UNVOUCHED:
             step.update(do="own_card", why=f"check the sender first: {ref.trust_why}")
         elif f.kind == "installment" and older_than_listing(session, fields):
             step.update(do="apply", record=True)  # the lender's own newer list of open loans already has what it says

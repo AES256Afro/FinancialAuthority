@@ -50,6 +50,7 @@ export interface PaymentRow {
 
 export interface MailAccountRow {
   id: number;
+  person_id?: number | null;
   label: string;
   kind: "proton" | "gmail" | "imap";
   host: string;
