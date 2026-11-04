@@ -46,6 +46,7 @@ from .banks import (
     upsert_account,
     upsert_transaction,
 )
+from . import health
 from .base import Connector, SyncResult
 
 log = logging.getLogger("fa.teller")
@@ -58,10 +59,22 @@ DEBITS_NEGATIVE = True
 ClientFactory = Callable[[str], httpx.Client]
 
 
+SIGN_IN_CODES = ("enrollment.disconnected", "401", "unauthorized")
+
+
 class TellerError(RuntimeError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(f"{code}: {message}")
         self.code = code
+
+
+def failure_of(error: Exception) -> str:
+    """Which kind of failure a read ended in: a refused sign-in waits, a network failure mends itself."""
+    if isinstance(error, TellerError):
+        if error.code in SIGN_IN_CODES:
+            return health.SIGNIN
+        return health.NETWORK if error.code == "BAD_RESPONSE" or error.code == "429" or error.code.startswith("5") else health.OTHER
+    return health.NETWORK if isinstance(error, httpx.HTTPError) else health.OTHER
 
 
 _FOLDER: Path | None = None
@@ -225,13 +238,14 @@ class TellerConnector(Connector):
                     inserted, updated = inserted + n_ins, updated + n_upd
                     flush(session)
                     finish_link(session, link, ok=True, accounts=account_ids)
+                    health.note_ok(session, health.bank_key(link.id))
                     notes.append(f"{link.institution}: {n_ins} new, {n_upd} changed" + "".join(f"; {n}" for n in session.info.pop(LINK_NOTES, [])))
                 except Exception as error:  # noqa: BLE001 - one link's failure is recorded on it and never stops the others
                     session.rollback()
                     session.info.pop(LINK_NOTES, None)
                     session.info.pop(SEEN, None)
                     ok = False
-                    if isinstance(error, TellerError) and error.code in ("enrollment.disconnected", "401", "unauthorized"):
+                    if isinstance(error, TellerError) and error.code in SIGN_IN_CODES:
                         link.needs_login = True
                     if isinstance(error, TellerError):
                         message = str(error)
@@ -241,6 +255,7 @@ class TellerConnector(Connector):
                     else:
                         message = f"{type(error).__name__}: {error}"
                     finish_link(session, link, ok=False, error=message[:300])
+                    health.note_failure(session, health.bank_key(link.id), failure_of(error), health.now_utc())
                     notes.append(f"{link.institution}: {message[:120]}")
         flush(session)
         session.commit()

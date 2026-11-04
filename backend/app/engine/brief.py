@@ -107,6 +107,13 @@ def build_brief(snap: dict) -> list[dict]:
     series = pending.get("series", pending["confirmations"])
     if series:
         items.append({"severity": "warning", "text": f"{series} recurring charge{'s' if series != 1 else ''} need{'s' if series == 1 else ''} a name.", "link": "/confirm"})
+    # A mailbox or bank link that needs the owner, with the step; one that came back since the last brief says so.
+    health = snap.get("source_health") or {}
+    for card in health.get("down", []):
+        since = f" Since {when(card['since_day'])}." if card.get("since_day") else ""
+        items.append({"severity": card["severity"], "text": f"{card['text']}{since} {card['step']}", "link": "/confirm#sources"})
+    for came in health.get("back", []):
+        items.append({"severity": "info", "text": came["text"], "link": "/settings/connectors"})
     mail_pending = [f for f in mail.get("pending", []) if f["kind"] != "past_due"]
     if mail_pending:
         bills = [f for f in mail_pending if f["kind"] == "bill_due"]

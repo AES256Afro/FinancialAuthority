@@ -205,7 +205,7 @@ export interface Snapshot {
   usual_pace: { per_day: number; per_window: number; basis_days: number; transactions: number; over_safe: number | null };
   board: { problems: { total: number; items: PaymentRow[] }; due_7: { total: number; items: Event[] }; later: { total: number; items: Event[] }; paid: { total: number; items: PaymentRow[] } };
   debts: { id: number; name: string; kind: string; balance: number; apr: number | null; minimum: number | null; due_day: number | null; source?: string }[];
-  pending: { total: number; confirmations: number; series: number; facts: number; pairs?: number; approvals: number; past_due: number };
+  pending: { total: number; confirmations: number; sources?: number; series: number; facts: number; pairs?: number; approvals: number; past_due: number };
   /** Everything owed (cards, loans, pay-later plans and advance apps, each once): the Debts page's own total. */
   debts_total: number;
   /** What debts_total counts, in the engine's words. */

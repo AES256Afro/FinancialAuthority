@@ -26,6 +26,8 @@ def get_triage(session: Session = Depends(get_session), principal: auth.Principa
         from ..mail.box import MAIL_WORDS, box_fields
 
         out = {**out, "groups": box_fields(out["groups"], "waiting mail"), "how": MAIL_WORDS}
+    if not principal.full:  # what a server said about a source can name the server: the words and the step go without it
+        out = {**out, "sources": [{k: v for k, v in c.items() if k != "detail"} for c in out["sources"]]}
     return out
 
 

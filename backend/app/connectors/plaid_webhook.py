@@ -123,6 +123,7 @@ def handle(notice: dict[str, Any], start_sync: Callable[[int], None], session_fa
     from sqlmodel import select
 
     from ..models import BankLink
+    from . import health
 
     kind, code, item_id = str(notice.get("webhook_type", "")), str(notice.get("webhook_code", "")), str(notice.get("item_id", ""))
     if not item_id:
@@ -136,8 +137,20 @@ def handle(notice: dict[str, Any], start_sync: Callable[[int], None], session_fa
             link.last_error = f"Plaid says this bank needs you to sign in again ({code.lower().replace('_', ' ')})."
             session.add(link)
             session.commit()
+            # The record of the outage, without a wait: a notice is no refused try, and some of these (an expiry on its
+            # way) still read until the day comes.
+            health.note_failure(session, health.bank_key(link.id), health.SIGNIN, health.now_utc(), back_off=False)
             return "needs a new sign-in"
         link_id = link.id
+        if kind == "ITEM" and code == "LOGIN_REPAIRED":
+            # Plaid says the sign-in is mended (the owner signed in through another app on Plaid): no wait, read it now.
+            # The card leaves when that read succeeds, not on the notice's word alone.
+            link.needs_login = False
+            session.add(link)
+            session.commit()
+            health.allow_now(session, health.bank_key(link_id))
+            start_sync(link_id)
+            return "sign-in repaired; sync started"
     if kind == "TRANSACTIONS" and code in SYNC_CODES:
         now = time.monotonic()
         with _lock:
