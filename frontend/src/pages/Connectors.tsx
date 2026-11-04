@@ -1,7 +1,7 @@
 // Connectors: live banks through Plaid and Teller, the mailboxes, and the Rocket Money export in and out. All read-only.
 import { useViewer } from "../components/OwnerLocked";
 import { OctagonAlert } from "lucide-react";
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { when } from "../format";
@@ -28,6 +28,36 @@ interface Preset {
 }
 
 type Note = { text: string; tone: "info" | "error" } | null;
+
+/** A password that changed: typed here and tried at once. The mailbox keeps everything already read. */
+function NewPassword({ id, label, onSaved }: { id: number; label: string; onSaved: () => void }) {
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState<{ text: string; tone: "info" | "error" } | null>(null);
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setSaid(null);
+    try {
+      await api(`/api/v1/mail/accounts/${id}`, { method: "PUT", body: JSON.stringify({ password }) });
+      const r = await api<{ ok: boolean; summary: string }>(`/api/v1/mail/accounts/${id}/sync`, { method: "POST" });
+      setSaid({ text: r.summary, tone: r.ok ? "info" : "error" });
+      setPassword("");
+      onSaved();
+    } catch (error) {
+      setSaid({ text: (error as Error).message, tone: "error" });
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <form onSubmit={save} style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center" }}>
+      <input type="password" autoComplete="off" aria-label={`New password for ${label}`} placeholder="New password" value={password} onChange={(e) => setPassword(e.target.value)} />
+      <button type="submit" className="btn" disabled={busy || !password}>{busy ? "Trying…" : "Change and try"}</button>
+      {said && <div style={{ width: "100%", textAlign: "left" }}><Said text={said.text} tone={said.tone} /></div>}
+    </form>
+  );
+}
 
 const KIND_TITLE = { proton: "Proton Mail, through the Bridge", gmail: "Gmail, app password", imap: "Another IMAP mailbox" } as const;
 
@@ -229,6 +259,7 @@ export function Connectors() {
                         {(viewer.owner || (a.person_id != null && a.person_id === viewer.personId)) && <ConfirmButton label="Remove" name={`Remove ${a.label}`} question={`Stop reading ${a.label}? Its password is forgotten; mail already read stays.`} yes="Yes, remove it" no="Keep it" onConfirm={() => remove(a.id)} />}
                       </span>
                       {mailNote?.id === a.id && <div style={{ marginTop: 4, textAlign: "left" }}><Said text={mailNote.text} tone={mailNote.tone} /></div>}
+                      {a.last_error && (viewer.owner || (a.person_id != null && a.person_id === viewer.personId)) && <NewPassword id={a.id} label={a.label} onSaved={accounts.reload} />}
                     </td>
                   </tr>
                 ))}

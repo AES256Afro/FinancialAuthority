@@ -304,6 +304,9 @@ def _finance_snapshot(session: Session, today: date) -> dict:
     from .reports import owed
 
     everything_owed = owed(session, today, accounts)  # the Debts page's and Accounts' own list and total
+    from .sources import snapshot_part
+
+    source_health = snapshot_part(session)  # the mailboxes and bank links that need the owner, and any that came back
     snap = {
         "version": "snapshot.v0",
         "as_of": today.isoformat(),
@@ -353,8 +356,9 @@ def _finance_snapshot(session: Session, today: date) -> dict:
         "debts_cards_loans_total": _money(sum((d.balance or 0.0) for d in debts)),
         # "confirmations" is what the Needs you page lists (the series to name, the facts, the pairs, the bills with no
         # payment seen), so its badge and the page's own count agree.
-        "pending": {"total": unconfirmed + facts["pending_count"] + pairs_waiting + past_due_waiting + approvals_waiting, "confirmations": unconfirmed + facts["pending_count"] + pairs_waiting + past_due_waiting, "series": unconfirmed, "facts": facts["pending_count"], "pairs": pairs_waiting, "approvals": approvals_waiting, "past_due": past_due_waiting},
+        "pending": {"total": unconfirmed + facts["pending_count"] + pairs_waiting + past_due_waiting + approvals_waiting + len(source_health["down"]), "confirmations": unconfirmed + facts["pending_count"] + pairs_waiting + past_due_waiting + len(source_health["down"]), "sources": len(source_health["down"]), "series": unconfirmed, "facts": facts["pending_count"], "pairs": pairs_waiting, "approvals": approvals_waiting, "past_due": past_due_waiting},
         "mail": facts,
+        "source_health": source_health,
         "projection": projection,
         "projection_words": PATH_WORDS,
         "not_advice": "Computed by the engine from the registers above. Not financial advice.",

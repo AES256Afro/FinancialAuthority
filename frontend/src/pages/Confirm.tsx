@@ -42,7 +42,8 @@ const alreadyDone = (e: unknown): Done | null => ((e as ApiError).status === 409
 
 // What waits, as the app groups it (M44). Every count here is the app's; the screen only lays them out.
 interface NeedsGroup { kind: string; words: string; count: number; complete: number; one_at_a_time: boolean; items: (FactRow & { complete: boolean })[] }
-interface NeedsYouOut { as_of: string; groups: NeedsGroup[]; past_due: PastDueRow[]; total: number; word: string }
+interface SourceCard { key: string; label: string; severity: string; text: string; step: string; action: string; link: string; detail?: string; since: string | null; retry_at: string | null; retry: string }
+interface NeedsYouOut { as_of: string; groups: NeedsGroup[]; past_due: PastDueRow[]; total: number; word: string; sources?: SourceCard[] }
 interface ManyOut { done: { id: number; applied_to: string }[]; failed: { id: number; error: string }[]; said: string }
 interface ManyPlan { apply: number; set_aside: number; own_card: number; updates: string[]; adds: string[]; said: string }
 // A long list goes in parts, so one answer never waits on a hundred mail fetches; the server judges each part
@@ -51,13 +52,60 @@ const PART = 25;
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
+/** A mailbox or bank link that cannot be read: one card each, with the app's exact step and a try right now. It leaves
+ * by itself once a read succeeds. */
+function SourceCards({ state, onAnswered }: { state: Loaded<NeedsYouOut>; onAnswered: () => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [said, setSaid] = useState<Done | null>(null);
+  const cards = state.data?.sources ?? [];
+  async function tryNow(c: SourceCard) {
+    setBusy(c.key);
+    setSaid(null);
+    try {
+      const r = await api<{ ok: boolean; summary: string }>(c.retry, { method: "POST" });
+      setSaid({ text: r.summary, tone: r.ok ? "info" : "error" });
+      onAnswered();
+    } catch (e) {
+      setSaid({ text: (e as Error).message, tone: "error" });
+    } finally {
+      setBusy(null);
+    }
+  }
+  if (cards.length === 0 && !said) return null;
+  return (
+    <section id="sources" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <h2 className="lab" style={{ margin: 0 }}>Sources to fix · {cards.length}</h2>
+      <DoneLine done={said} />
+      {cards.map((c) => (
+        <article key={c.key} className="card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+            <SeverityTag severity={c.severity} />
+            <strong style={{ overflowWrap: "anywhere" }}>{c.text}</strong>
+          </div>
+          <div style={{ fontSize: 14 }}>{c.step}</div>
+          {c.detail && <div style={{ fontSize: 12, color: "var(--ink-2)", overflowWrap: "anywhere" }}>{c.detail}</div>}
+          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>
+            {c.since && <>Since {when(c.since)}. </>}
+            {c.retry_at && <>The next try by itself is {when(c.retry_at)}.</>}
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Link className="btn dark" to={c.link}>{c.action}</Link>
+            <button type="button" className="btn" disabled={busy !== null} onClick={() => tryNow(c)}>{busy === c.key ? "Trying…" : "Try now"}</button>
+          </div>
+        </article>
+      ))}
+    </section>
+  );
+}
+
 /** The picture first: one bar per kind of thing that waits, as long as how many wait, each with its words and its
  * count, then the app's own sentence. */
 function NeedsPicture({ state }: { state: Loaded<NeedsYouOut> }) {
   if (state.error && !state.data) return <Failed error={state.error} what="what waits for you" onRetry={state.reload} />;
   if (!state.data) return <Loading what="what waits for you" />;
   const { groups, past_due, total, word } = state.data;
-  const bars = [...groups.map((g) => ({ key: g.kind, words: g.words, count: g.count, fill: "var(--paycheck)" })), { key: "past-due", words: PAST_DUE_WORDS, count: past_due.length, fill: "var(--bill)" }];
+  const sourceBar = state.data.sources?.length ? [{ key: "sources", words: "Sources to fix", count: state.data.sources.length, fill: "var(--bill)" }] : [];
+  const bars = [...sourceBar, ...groups.map((g) => ({ key: g.kind, words: g.words, count: g.count, fill: "var(--paycheck)" })), { key: "past-due", words: PAST_DUE_WORDS, count: past_due.length, fill: "var(--bill)" }];
   const top = Math.max(1, ...bars.map((b) => b.count));
   return (
     <section className="card" style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -833,7 +881,7 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
     }
   }
   // A next step links to #approvals, #facts or #series: the jump waits until all three lists are on the page.
-  useJumpToHash(data && facts.data && approvalsWaiting !== null);
+  useJumpToHash(data && facts.data && needs.data && approvalsWaiting !== null);
   // Your own emails waiting are counted from the list below, as the tab badge does; the rest is the engine's count.
   const total = snap.data && approvalsWaiting !== null ? snap.data.pending.confirmations + approvalsWaiting : null;
 
@@ -875,6 +923,7 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
       <NeedsPicture state={needs} />
       <DataCheckLine />
       <p style={{ margin: 0, color: "var(--ink-2)", fontSize: 13 }}>First: emails waiting for your OK. Then: details read from your mail and from documents you added. Then: bills with no payment seen. Then: money that moved between your accounts. Then: repeating charges found in your transactions. Once you answer one, every screen uses it.</p>
+      <SourceCards state={needs} onAnswered={() => { needs.reload(); onChanged(); }} />
       <Approvals onChanged={onChanged} onCount={setApprovalsWaiting} />
       {facts.error && !facts.data && <Failed error={facts.error} what="what was read from your mail and documents" onRetry={facts.reload} />}
       {facts.data && facts.data.facts.length > 0 && (
@@ -937,7 +986,7 @@ export function Confirm({ onChanged }: { onChanged: () => void }) {
       ) : (
         <DoneLine done={seriesSaid} />
       )}
-      {data && data.series.length === 0 && facts.data && facts.data.facts.length === 0 && needs.data && needs.data.past_due.length === 0 && pairs.data && pairs.data.waiting.length === 0 && approvalsWaiting === 0 && (
+      {data && data.series.length === 0 && facts.data && facts.data.facts.length === 0 && needs.data && needs.data.past_due.length === 0 && !needs.data.sources?.length && pairs.data && pairs.data.waiting.length === 0 && approvalsWaiting === 0 && (
         <Empty to="/today" action="Back to Today">Nothing needs you. No email is waiting for your OK, every repeating charge in your transactions has a name, the mail has nothing new, every bill has a payment seen or an answer from you, and no money between your accounts is waiting for a yes or no.</Empty>
       )}
     </div>

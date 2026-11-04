@@ -175,6 +175,11 @@ def update_account(account_id: int, body: MailAccountIn, session: Session = Depe
     session.add(account)
     session.commit()
     session.refresh(account)
+    if changes.get("password") or moved:
+        # A new password may have mended a refused sign-in: the next read need not wait out the old one's back-off.
+        from ..connectors import health
+
+        health.allow_now(session, health.mail_key(account.id))
     return account_out(account)
 
 
@@ -192,6 +197,9 @@ def remove_account(account_id: int, session: Session = Depends(get_session), pri
 
         set_aside_waiting(session, account.id)  # the owner's mail stays waiting; a server a second person chose speaks no further
     session.commit()
+    from ..connectors import health
+
+    health.note_ok(session, health.mail_key(account.id))  # nothing is read from it now, so nothing is owed a wait
     return {"ok": True}
 
 

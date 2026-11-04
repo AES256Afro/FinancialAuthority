@@ -48,6 +48,7 @@ from .banks import (
     upsert_holding,
     upsert_transaction,
 )
+from . import health
 from .base import Connector, SyncResult
 
 log = logging.getLogger("fa.plaid")
@@ -70,6 +71,8 @@ ClientFactory = Callable[[], httpx.Client]
 # Item errors only a new sign-in on the same link mends; Sync now cannot. NO_ACCOUNTS is an item whose every
 # account was withdrawn, at the bank's OAuth page or by closing them.
 SIGN_IN_CODES = {"ITEM_LOGIN_REQUIRED", "NO_ACCOUNTS"}
+# Plaid's side or the bank's, and gone by itself: no sign-in mends these, and asking again locks nothing out.
+PASSING_CODES = {"BAD_RESPONSE", "INTERNAL_SERVER_ERROR", "INSTITUTION_DOWN", "INSTITUTION_NOT_RESPONDING", "INSTITUTION_NOT_AVAILABLE", "PLANNED_MAINTENANCE", "RATE_LIMIT_EXCEEDED", "PRODUCT_NOT_READY", "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION"}
 MUTATION_RETRIES = 3
 
 
@@ -77,6 +80,15 @@ class PlaidError(RuntimeError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(f"{code}: {message}")
         self.code = code
+
+
+def failure_of(error: Exception) -> str:
+    """Which kind of failure a read ended in: a refused sign-in waits, a network failure mends itself."""
+    if isinstance(error, PlaidError):
+        if error.code in SIGN_IN_CODES:
+            return health.SIGNIN
+        return health.NETWORK if error.code in PASSING_CODES or error.code.startswith("5") else health.OTHER
+    return health.NETWORK if isinstance(error, httpx.HTTPError) else health.OTHER
 
 
 class PlaidClient:
@@ -302,6 +314,7 @@ class PlaidConnector(Connector):
                     inserted, updated, removed = inserted + n_ins, updated + n_upd, removed + n_rem
                     flush(session)
                     finish_link(session, link, ok=True, accounts=account_ids)
+                    health.note_ok(session, health.bank_key(link.id))
                     notes.append(f"{link.institution}: {n_ins} new, {n_upd} changed, {n_rem} removed" + "".join(f"; {n}" for n in session.info.pop(LINK_NOTES, [])))
                 except Exception as error:  # noqa: BLE001 - one link's failure is recorded on it and never stops the others
                     session.rollback()
@@ -319,6 +332,7 @@ class PlaidConnector(Connector):
                     else:
                         message = f"{type(error).__name__}: {error}"
                     finish_link(session, link, ok=False, error=message[:300])
+                    health.note_failure(session, health.bank_key(link.id), failure_of(error), health.now_utc())
                     notes.append(f"{link.institution}: {message[:120]}")
         flush(session)
         session.commit()
