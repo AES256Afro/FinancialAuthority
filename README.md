@@ -84,6 +84,10 @@ Advances, pay-later plans and cards, read from your transactions and the lenders
 <td width="50%"><img src="docs/screenshots/borrowing.png" alt="Borrowing plan"></td>
 <td width="50%"><img src="docs/screenshots/debts.png" alt="Debts"></td>
 </tr>
+<tr>
+<td align="center"><b>Borrowing</b>: each plan's own monthly figure, and what each month's due dates take.</td>
+<td align="center"><b>Debts</b>: what is owed, on one scale.</td>
+</tr>
 </table>
 
 ### Bills, cover and the move
@@ -91,7 +95,7 @@ Advances, pay-later plans and cards, read from your transactions and the lenders
 <table>
 <tr>
 <td width="33%"><img src="docs/screenshots/bills.png" alt="Bills"><br><b>Bills</b>: due dates, autopay, what is paid, and which dates could move.</td>
-<td width="33%"><img src="docs/screenshots/cover.png" alt="Cover"><br><b>Cover</b>: whether each account holds what will come out of it.</td>
+<td width="33%"><img src="docs/screenshots/cover.png" alt="Cover"><br><b>Cover</b>: whether each account holds what will come out of it, and what the next window needs set aside.</td>
 <td width="33%"><img src="docs/screenshots/move.png" alt="Move"><br><b>Move</b>: notice to give, move-in costs, the next lease and its utilities.</td>
 </tr>
 </table>

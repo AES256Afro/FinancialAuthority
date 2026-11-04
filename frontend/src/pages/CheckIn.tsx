@@ -96,7 +96,7 @@ export function CheckIn() {
         {d.cards.length === 0 ? <div style={{ fontSize: 13, color: "var(--ink-2)" }}>No statement day in the next ten days.</div> : d.cards.map((c) => (
           <div key={c.id} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 13 }}>
             <StatusPill status={c.status} />
-            <span>{c.name}: statement {shortDate(c.statement_on)}{c.statement_balance !== null ? `, about ${money(c.statement_balance)}` : ""}{c.to_target ? `; pay ${money(c.to_target)} by ${c.pay_by ? shortDate(c.pay_by) : "then"} to report under 30% of your limit` : ""}</span>
+            <span>{c.name}: statement {shortDate(c.statement_on)}{c.statement_balance !== null ? <>, about <span className="num">{money(c.statement_balance)}</span></> : ""}{c.to_target ? <>; pay <span className="num">{money(c.to_target)}</span> by {c.pay_by ? shortDate(c.pay_by) : "then"} to report under 30% of your limit</> : ""}</span>
           </div>
         ))}
         {d.cards.length > 0 && <Choice label="Card paid" value={card} onChange={setCard} options={[{ v: true, text: "Paid" }, { v: false, text: "Not yet" }]} />}

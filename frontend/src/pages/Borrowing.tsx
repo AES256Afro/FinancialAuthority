@@ -105,7 +105,7 @@ function CycleChart({ cycle }: { cycle: Cycle[] }) {
             <title>{`${shortDate(x.payday)}: ${x.advances} advance${x.advances !== 1 ? "s" : ""} taken before it (${money(x.advanced)}), ${money(x.repaid_on_payday)} repaid on it, ${money(x.fees)} of that fees`}</title>
             <rect x={left} y={base - ha} width={bw} height={ha} rx={4} fill={c.debt} />
             <rect x={left + bw + 2} y={base - hr} width={bw} height={hr} rx={4} fill={c.bill} />
-            {x.fees > 0 && feeFits && <text x={left + bw + 1} y={base - Math.max(ha, hr) - 6} textAnchor="middle" fontSize={11} fontWeight={800} fill={c.ink}>{money(x.fees)} fees</text>}
+            {x.fees > 0 && feeFits && <text x={left + bw + 1} y={base - Math.max(ha, hr) - 6} textAnchor="middle" fontSize={11} fontWeight={800} fill={c.ink} className="num">{money(x.fees)} fees</text>}
             {dateFits && <text x={left + bw + 1} y={h - 10} textAnchor="middle" fontSize={11} fontWeight={700} fill={c.ink2}>{monthDay(x.payday)}</text>}
           </g>
         );
@@ -261,7 +261,7 @@ export function Borrowing() {
             <button type="button" className="btn" aria-pressed={cycleTable} style={{ marginLeft: "auto", minHeight: 32, padding: "4px 10px" }} onClick={() => setCycleTable((t) => !t)}>{cycleTable ? "Show the chart" : "Show as a table"}</button>
           </div>
           {cycleTable ? <CycleTable cycle={d.cycle} /> : <CycleChart cycle={d.cycle} />}
-          {d.typical_per_period > 0 && <div style={{ fontSize: 13 }}>About <strong>{money(d.typical_per_period)}</strong> is advanced each pay period. Keeping that much of one check unspent is what ends the cycle; the next period is paid from it instead of from an advance.</div>}
+          {d.typical_per_period > 0 && <div style={{ fontSize: 13 }}>About <strong className="num">{money(d.typical_per_period)}</strong> is advanced each pay period. Keeping that much of one check unspent is what ends the cycle; the next period is paid from it instead of from an advance.</div>}
         </section>
       )}
 
@@ -274,7 +274,7 @@ export function Borrowing() {
         <div className="card" style={{ padding: 14, borderTop: "4px solid var(--later)" }}>
           <div className="lab">Owed back from your next paycheck</div>
           <div className="num" style={{ fontSize: 28, fontWeight: 800 }}>{money(d.outstanding_total)}</div>
-          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{d.outstanding.length === 0 ? "nothing outstanding right now" : d.outstanding.map((o) => `${o.provider} ${money(o.amount)} due ${shortDate(o.repay_date)}`).join(" · ")}</div>
+          <div className={d.outstanding.length === 0 ? undefined : "num"} style={{ fontSize: 12, color: "var(--ink-2)" }}>{d.outstanding.length === 0 ? "nothing outstanding right now" : d.outstanding.map((o) => `${o.provider} ${money(o.amount)} due ${shortDate(o.repay_date)}`).join(" · ")}</div>
         </div>
         <div className="card" style={{ padding: 14, borderTop: "4px solid var(--bill)" }}>
           <div className="lab">Installments a month</div>
@@ -314,7 +314,7 @@ export function Borrowing() {
             </tbody>
           </table>
           </div>
-          {d.cost.tips_90d > 0 && <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 6 }}>Tips and membership charges with no advance behind them: {money(d.cost.tips_90d)}, counted in the fees.</div>}
+          {d.cost.tips_90d > 0 && <div style={{ fontSize: 12, color: "var(--ink-2)", marginTop: 6 }}>Tips and membership charges with no advance behind them: <span className="num">{money(d.cost.tips_90d)}</span>, counted in the fees.</div>}
         </div>
         <div className="card" style={{ padding: "16px 20px" }} id="installments">
           <h2 className="lab" style={{ margin: "0 0 6px" }}>Pay-later plans</h2>

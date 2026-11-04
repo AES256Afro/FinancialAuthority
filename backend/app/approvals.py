@@ -66,11 +66,18 @@ def disallow(session: Session, recipient: str, person_id: int | None = None) -> 
     return current
 
 
-def sending_account(session: Session, account_id: int | None) -> MailAccount | None:
+def sending_account(session: Session, account_id: int | None, person_id: int | None = None) -> MailAccount | None:
+    """The mailbox a draft goes through: the one chosen, or the sender's own first active one that can send. A second
+    person's mailbox is theirs alone: the owner's approved text never goes through a server a second person chose (with
+    no mailbox of the owner's able to send, or one named on the draft by a model, it did). A second person with none of
+    their own sends through the owner's, which is pushed to the owner."""
     if account_id:
         account = session.get(MailAccount, account_id)
-        return account if account and account.active else None
-    return session.exec(select(MailAccount).where(MailAccount.active == True, MailAccount.smtp_host != "").order_by(MailAccount.id)).first()  # noqa: E712
+        if account is None or not account.active or (account.person_id is not None and account.person_id != person_id):
+            return None
+        return account
+    rows = session.exec(select(MailAccount).where(MailAccount.active == True, MailAccount.smtp_host != "").order_by(MailAccount.id)).all()  # noqa: E712
+    return next((a for a in rows if a.person_id == person_id), None) or next((a for a in rows if a.person_id is None), None)
 
 
 def check_draft(to: str, subject: str, body: str) -> None:
@@ -172,7 +179,7 @@ def deny(session: Session, row: Approval, *, decided_by: str = "owner") -> Appro
 
 def send(session: Session, row: Approval) -> Approval:
     """Send an approved draft through the chosen mailbox; record the message id or the failure."""
-    account = sending_account(session, row.account_id)
+    account = sending_account(session, row.account_id, row.for_person_id)
     try:
         check_draft(row.to, row.subject, row.body)
     except ValueError as error:

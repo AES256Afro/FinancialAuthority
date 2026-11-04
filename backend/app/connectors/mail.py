@@ -152,7 +152,7 @@ def handle_message(session: Session, account: MailAccount, folder: str, uid: int
         # The same message under a new number (the server renumbered the folder) is one already read: its reference
         # follows the new number, and nothing it yielded is made twice.
         same = session.exec(select(MessageRef).where(MessageRef.account_id == account.id, MessageRef.message_id == parsed.message_id[:255])).first()
-        if same is not None:
+        if same is not None and _same_message(session, same, parsed):
             if same.folder == folder:
                 same.uid = uid
                 session.add(same)
@@ -163,10 +163,17 @@ def handle_message(session: Session, account: MailAccount, folder: str, uid: int
         subject=parsed.subject[:300], date=parsed.date, has_attachments=bool(parsed.attachments), attachment_names=", ".join(a.name for a in parsed.attachments)[:400],
         snippet=clean(parsed.text, 200), kind=kind,
     )
-    from ..mail.trust import judge
+    from ..mail.trust import judge, org_domain
     from ..engine.datacheck import learned_senders
 
-    verdict, why = judge(parsed.sender, parsed.sender_name, parsed.auth_results, parsed.reply_to, learned_senders(session))
+    # Only mail that yields something is looked up: a mailbox is mostly mail that does not, and this is a scan per message.
+    earlier = domains_under_name(session, parsed.sender_name, parsed.sender) if kind != "none" else set()
+    verdict, why = judge(parsed.sender, parsed.sender_name, parsed.auth_results, parsed.reply_to, learned_senders(session), earlier)
+    if verdict == "ok" and account.person_id is not None:
+        # The verdict is that server's word, and a second person chooses the server: on one of their own they write
+        # "dmarc=pass" for any From, a lender's statement among it, which lands with no tap (sweep 24). It is never "ok",
+        # so nothing is applied or learned from it and no app confirms it; they and the owner still can.
+        verdict, why = "warn", f"It came through a mailbox a second person connected, so nothing but that server says it is from {org_domain(parsed.sender)}."
     ref.trust, ref.trust_why = verdict or "unknown", why[:300]
     session.add(ref)
     session.flush()
@@ -241,6 +248,54 @@ def handle_message(session: Session, account: MailAccount, folder: str, uid: int
     session.add(ExtractedFact(kind=kind, message_ref_id=ref.id, fields=json.dumps(fields), confidence=confidence, status=status, excerpt=excerpt_for(parsed.text, fields), produced_by=produced_by, resolved_at=utcnow() if status == "auto" else None, resolved_by="rule" if status == "auto" else ""))
     outcome["fact"] = status
     return outcome
+
+
+def _same_message(session: Session, known: MessageRef, parsed: Parsed) -> bool:
+    """Whether a message under a Message-ID already read is that message, renumbered. Anyone can write a Message-ID: under
+    a verified message's own, a stranger's mail was dropped as "seen" and its reference moved to the stranger's number, so
+    opening the verified message then showed the stranger's words (sweep 24). A renumbered copy has the same sender and
+    carries the same headers, so a verified one is verified again; one that says nothing about itself is not it."""
+    from ..engine.datacheck import learned_senders
+    from ..mail.trust import judge
+
+    if known.sender != parsed.sender[:255]:
+        return False
+    if known.trust != "ok" or known.trust_why.startswith("You marked"):  # the owner's word on a message holds for its copies
+        return True
+    return judge(parsed.sender, parsed.sender_name, parsed.auth_results, parsed.reply_to, learned_senders(session))[0] == "ok"
+
+
+def vouched_domains(session: Session) -> set[str]:
+    """The domains the owner has answered for: marked genuine on the data check, or a message from them confirmed. A
+    domain the sender only registered and signed is not among them, however long it has been writing, and neither is one
+    a second person confirmed: as with marking a sender genuine, what lets an app go on confirming a sender is the
+    owner's to say, and it would outlast their access."""
+    from ..engine.datacheck import TRUSTED
+    from ..mail.trust import org_domain
+
+    marked = {str(d).lower() for domains in (get_setting(session, TRUSTED, {}) or {}).values() for d in domains}
+    genuine = session.exec(select(MessageRef.sender).where(MessageRef.trust_why.like("You marked%"))).all()  # type: ignore[attr-defined]
+    answered = session.exec(select(MessageRef.sender).join(ExtractedFact, ExtractedFact.message_ref_id == MessageRef.id).where(  # type: ignore[arg-type]
+        ExtractedFact.status.in_(("applied", "confirmed")), ExtractedFact.resolved_by == "owner")).all()
+    return marked | {org_domain(s) for s in [*genuine, *answered]}
+
+
+def domains_under_name(session: Session, name: str, sender: str) -> set[str]:
+    """The domains earlier verified mail came from under this same display name, for the trust check (empty for a name
+    too short to mean anything, or when a person has already answered for this sender's domain)."""
+    from sqlalchemy import func
+
+    from ..mail.trust import fold, org_domain
+
+    plain, folded = (name or "").strip().lower(), fold((name or "").strip())
+    if len(folded) < 4:
+        return set()
+    rows = session.exec(select(MessageRef.sender).where(MessageRef.trust == "ok", func.lower(MessageRef.sender_name).in_((plain, folded)))).all()
+    earlier = {org_domain(s) for s in rows if s}
+    org = org_domain(sender or "")
+    if not earlier or org in earlier or org in vouched_domains(session):
+        return set()
+    return earlier
 
 
 def receipt_fields(fields: dict, parsed: Parsed, today: date) -> None:

@@ -4,7 +4,7 @@ import { CalendarDays, Copy, Gauge, Inbox, Receipt, Wallet } from "lucide-react"
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
-import { money, shortDate, when } from "../format";
+import { amountClass, money, moneyOr, shortDate, when } from "../format";
 import type { Status } from "../guide";
 import { ConfirmButton } from "../components/ConfirmButton";
 import { Failed, Loading, Said } from "../components/State";
@@ -78,7 +78,8 @@ function CopyButton({ text, label }: { text: string; label: string }) {
 /** What GET /api/v1/ha answers: the figures a Home Assistant dashboard reads, each by name. */
 interface HaSensors {
   as_of: string;
-  safe_to_spend: number;
+  /** null when no bank has reported a balance: a dashboard shows it as unknown, never as $0. */
+  safe_to_spend: number | null;
   safe_through: string | null;
   payday: string | null;
   days_to_payday: number | null;
@@ -153,7 +154,7 @@ const STATUSES: Status[] = ["good", "warn", "crit"];
 function HaPreview({ s }: { s: HaSensors }) {
   const days = (n: number) => `${n} ${n === 1 ? "day" : "days"}`;
   const rows: { Icon: typeof Wallet; name: string; value: ReactNode; sub?: string }[] = [
-    { Icon: Wallet, name: "Safe to spend", value: money(s.safe_to_spend), sub: s.safe_through ? `through ${shortDate(s.safe_through)}` : undefined },
+    { Icon: Wallet, name: "Safe to spend", value: moneyOr(s.safe_to_spend), sub: s.safe_through ? `through ${shortDate(s.safe_through)}` : undefined },
     { Icon: CalendarDays, name: "Days to payday", value: s.days_to_payday === null ? "not known yet" : days(s.days_to_payday), sub: s.payday ? `the ${shortDate(s.payday)} check` : undefined },
     { Icon: Receipt, name: "Next bill", value: s.next_bill_name ?? "none coming", sub: s.next_bill_amount !== null && s.next_bill_date ? `${money(s.next_bill_amount)} on ${shortDate(s.next_bill_date)}` : undefined },
     { Icon: Inbox, name: "Money needs you", value: String(s.needs_you) },
@@ -168,7 +169,7 @@ function HaPreview({ s }: { s: HaSensors }) {
             <r.Icon size={18} aria-hidden="true" style={{ color: "var(--ink-2)" }} />
             <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
               <span>{r.name}</span>
-              {r.sub && <span style={{ fontSize: 11, color: "var(--muted)" }}>{r.sub}</span>}
+              {r.sub && <span className={amountClass(r.sub)} style={{ fontSize: 11, color: "var(--muted)" }}>{r.sub}</span>}
             </span>
             <strong className="num" style={{ textAlign: "right" }}>{r.value}</strong>
           </div>

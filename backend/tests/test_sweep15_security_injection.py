@@ -20,6 +20,7 @@ from sqlmodel import Session, select
 from app import approvals, crypto, notify
 from app.connectors import CONNECTORS
 from app.db import engine, session_scope
+from app.engine.datacheck import TRUSTED
 from app.engine.documents import save_text
 from app.engine.household import seed
 from app.llm import reviewer, roles
@@ -78,6 +79,7 @@ def hostile_household() -> dict:
     with Session(engine) as session:
         seed(session)
         session.exec(select(ExtractedFact)).all()
+        set_setting(session, TRUSTED, {"electric co": ["electric.example"]})  # the owner has answered for this one sender: a confirm-scoped app may go on confirming it (sweep 24)
         account = MailAccount(label="Proton", kind="proton", host="bridge", port=1143, username="owner@example.test", password_enc=crypto.encrypt("app-pass"), use_ssl=False, starttls=True, active=True)
         session.add(account)
         session.commit()

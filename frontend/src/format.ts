@@ -26,6 +26,12 @@ export function amountClass(text: string | null | undefined): string | undefined
   return text && /\$\s?\d/.test(text) ? "num" : undefined;
 }
 
+/** A long text (a message, an instruction) cut around its dollar figures: the odd pieces are the figures. A screen
+ * blurs only those for "Hide amounts", so the words around them can still be read. */
+export function splitFigures(text: string): string[] {
+  return text.split(/([\u2212+-]?\$\s?\d[\d,]*(?:\.\d+)?)/);
+}
+
 const CONNECTOR_WORDS: Record<string, string> = { plaid: "Plaid", teller: "Teller", rocketmoney: "Rocket Money export", demo: "demo data", manual: "entered by hand", mail: "mail", owner: "the value you set", file: "a file you imported" };
 
 /** Where an account's figures come from, in words: "plaid" is "Plaid", "manual" is "entered by hand". */

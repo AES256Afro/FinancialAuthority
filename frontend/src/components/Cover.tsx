@@ -77,7 +77,7 @@ function SpendGauge({ a, paydays }: { a: CoverAccount; paydays: [string, string]
             <span className="num" style={{ fontSize: 12, color: "var(--ink-2)" }}>
               Has {money(w.has)}{w.inflow ? ` (+${money(w.inflow)} paycheck)` : ""} · Needs: bills {money(w.bills)}, everyday {money(w.everyday)}{w.buffer ? `, cushion ${money(w.buffer)}` : ""}{aside > 0 ? `, set aside ${money(aside)} for the ${shortDate(paydays[1])} window` : ""} ·{" "}
               <strong style={{ color: asideOnly ? "var(--warning-ink)" : short ? "var(--critical-ink)" : "var(--ink)", whiteSpace: "nowrap" }}>
-                {short ? <>{asideOnly ? <TriangleAlert size={13} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 3 }} /> : <OctagonAlert size={13} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 3 }} />}{money(Math.abs(left))} short{asideOnly ? " of the set-aside" : ""}</> : `${money(left)} to spare`}
+                {short ? <>{asideOnly ? <TriangleAlert size={13} aria-hidden="true" style={{ display: "inline-block", verticalAlign: -2, marginRight: 3 }} /> : <OctagonAlert size={13} aria-hidden="true" style={{ display: "inline-block", verticalAlign: -2, marginRight: 3 }} />}{money(Math.abs(left))} short{asideOnly ? " of the set-aside" : ""}</> : `${money(left)} to spare`}
               </strong>
             </span>
           </div>
@@ -143,7 +143,7 @@ function Gauges({ cover }: { cover: Cover }) {
 }
 
 function ShortWord() {
-  return <><OctagonAlert size={14} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 4 }} />Short: </>;
+  return <><OctagonAlert size={14} aria-hidden="true" style={{ display: "inline-block", verticalAlign: -2, marginRight: 4 }} />Short: </>;
 }
 
 function Sheet({ rows, onTick }: { rows: SheetRow[]; onTick?: (row: SheetRow, done: boolean) => void }) {
@@ -303,7 +303,7 @@ export function CoverPanel({ cover, mode, onTicked }: { cover: Cover; mode: Cove
 
 /** Cover with nothing to measure: no account yet, or no account with a balance (an imported file brings none). The
  * engine then counts each account from $0, so its verdicts are not shown as fact. */
-function coverUnknown(cover: Cover): string | null {
+export function coverUnknown(cover: Cover): string | null {
   if (cover.accounts.length === 0) return "No account yet: link your bank or import its file";
   // The engine marks each spending account it has no balance for; an older server is read from the balances instead.
   const spend = cover.accounts.filter((a) => a.role === "spend");

@@ -104,8 +104,16 @@ def get_banks(session: Session = Depends(get_session), _: auth.Principal = Depen
     return overview(session)
 
 
+def _owner_says(principal: auth.Principal) -> None:
+    """Whose vendor account the bank data comes through is the owner's: a second person's keys broke every link the
+    owner made, sent the next one through an account of theirs, and stayed after their access ended (sweep 24)."""
+    if principal.kind != "owner":
+        raise HTTPException(403, "Only the owner, signed in, sets the bank keys")
+
+
 @router.put("/plaid/settings")
-def put_plaid(body: PlaidSettingsIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+def put_plaid(body: PlaidSettingsIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
+    _owner_says(principal)
     if body.environment and body.environment not in ("sandbox", "production"):
         raise HTTPException(400, "environment is sandbox or production")
     try:
@@ -133,7 +141,8 @@ def record_key_check(session: Session, api) -> dict[str, str]:  # noqa: ANN001
 
 
 @router.put("/teller/settings")
-def put_teller(body: TellerSettingsIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+def put_teller(body: TellerSettingsIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
+    _owner_says(principal)
     if body.environment and body.environment not in ("sandbox", "development", "production"):
         raise HTTPException(400, "environment is sandbox, development or production")
     try:

@@ -308,7 +308,7 @@ function Rules() {
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <button className="btn dark" type="button" disabled={busy || !data} onClick={save}>{busy ? "Saving…" : "Save"}</button>
         {note && <Said text={note.text} tone={note.tone} />}
-        {data && <span style={{ fontSize: 12, color: "var(--ink-2)" }}>Your <Link to="/glossary#buffer">safety cushion (buffer)</Link> is {money(data.buffer)}. Change it on <Link to="/settings">Settings</Link>; the reviewer can also propose another, and you apply it with one tap.</span>}
+        {data && <span style={{ fontSize: 12, color: "var(--ink-2)" }}>Your <Link to="/glossary#buffer">safety cushion (buffer)</Link> is <span className="num">{money(data.buffer)}</span>. Change it on <Link to="/settings">Settings</Link>; the reviewer can also propose another, and you apply it with one tap.</span>}
       </div>
     </section>
   );

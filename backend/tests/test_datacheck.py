@@ -19,7 +19,7 @@ TODAY = date(2026, 10, 14)
 
 
 def test_a_sender_is_judged_by_the_mail_servers_verdict_its_name_and_its_domain():
-    passed = "mx.example.test; dkim=pass header.d=affirm.com; spf=pass; dmarc=pass header.from=affirm.com"
+    passed = "mx.example.test; dkim=pass; spf=pass; dmarc=pass"  # names no domain, so it stands for each sender below
     assert judge("notices@affirm.com", "Affirm", passed)[0] == "ok"
     assert judge("alerts@capital0ne-alerts.test", "Capital One", passed) == ("crit", "It comes from capital0ne-alerts.test, a look-alike of capitalone.com.")
     assert judge("alerts@example-mailer.test", "Capital One", passed) == ("crit", "It calls itself Capital One, but it comes from example-mailer.test, not capitalone.com.")

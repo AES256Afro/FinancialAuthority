@@ -12,9 +12,11 @@ from sqlmodel import Session, select
 
 from app import auth
 from app.db import engine
+from app.engine.datacheck import TRUSTED
 from app.engine.household import seed
 from app.main import app
 from app.models import Account, AuditEntry, Bill, ExtractedFact, Invoice, MailAccount, MessageRef, OAuthClient, OAuthToken, PlannedPayment, Transaction, utcnow
+from app.store import set_setting
 
 APP_TOKEN = "fa_oa_example_access"
 
@@ -26,6 +28,7 @@ def _fact(session: Session, kind: str, fields: dict, uid: int = 1) -> int:
         session.add(box)
         session.flush()
     ref = MessageRef(account_id=box.id, folder="INBOX", uid=uid, sender="notices@example.test", sender_name="Example Power", subject="A notice", trust="ok")
+    set_setting(session, TRUSTED, {"example power": ["example.test"]})  # a sender the owner has answered for: an app may go on confirming it (sweep 24)
     session.add(ref)
     session.flush()
     fact = ExtractedFact(kind=kind, message_ref_id=ref.id, fields=json.dumps(fields), confidence=0.9)

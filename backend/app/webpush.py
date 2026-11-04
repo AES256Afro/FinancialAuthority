@@ -65,14 +65,23 @@ def drop_person(session: Session, person_id: int) -> int:
     return len(subs) - len(kept)
 
 
-def subscribe(session: Session, *, endpoint: str, p256dh: str, auth: str, label: str, origin: str, person_id: int | None = None) -> dict[str, Any]:
+def drop_sessions(session: Session, session_ids: list[int]) -> int:
+    """The devices subscribed from these signed-in sessions, removed when the session is ended on Settings › Clients."""
+    subs = _subs(session)
+    kept = [s for s in subs if s.get("session_id") not in session_ids]
+    if len(kept) != len(subs):
+        set_setting(session, SUBS, kept)
+    return len(subs) - len(kept)
+
+
+def subscribe(session: Session, *, endpoint: str, p256dh: str, auth: str, label: str, origin: str, person_id: int | None = None, session_id: int | None = None) -> dict[str, Any]:
     if not endpoint.startswith("https://") or len(endpoint) > 1000 or not p256dh or not auth or len(p256dh) > 200 or len(auth) > 100:
         raise ValueError("That is not a push subscription")
     subs = [s for s in _subs(session) if crypto.decrypt(s["endpoint_enc"]) != endpoint]
     if len(subs) >= MAX_SUBS:
         raise ValueError(f"At most {MAX_SUBS} devices; remove one first")
     row = {"id": secrets.token_hex(6), "endpoint_enc": crypto.encrypt(endpoint), "p256dh": p256dh, "auth_enc": crypto.encrypt(auth), "label": (label or "A device")[:60],
-           "origin": origin[:200], "created": datetime.now(timezone.utc).isoformat(), "last_ok": None, "person_id": person_id}
+           "origin": origin[:200], "created": datetime.now(timezone.utc).isoformat(), "last_ok": None, "person_id": person_id, "session_id": session_id}
     set_setting(session, SUBS, [*subs, row])
     return {k: row[k] for k in ("id", "label", "created")}
 

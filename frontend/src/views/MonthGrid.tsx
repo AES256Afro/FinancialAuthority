@@ -73,7 +73,7 @@ export function MonthGrid({ snapshot }: ViewProps) {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, flexWrap: "wrap", padding: "6px 8px", borderRadius: 8, background: bad ? "var(--warning-soft)" : "var(--surface-2)" }}>
                 <span className="lab">Week of {shortDate(w.start)}</span>
                 <span style={{ fontSize: 12, color: bad ? "var(--warning-ink)" : "var(--ink-2)", fontWeight: bad ? 700 : 500 }}>
-                  {bad && <TriangleAlert size={13} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 4 }} />}
+                  {bad && <TriangleAlert size={13} aria-hidden="true" style={{ display: "inline-block", verticalAlign: -2, marginRight: 4 }} />}
                   Lowest left to spend <strong className="num">{lowFigure(w)}</strong>{w.low_date ? ` · ${lowWords(w)}` : ""}
                 </span>
               </div>
@@ -120,7 +120,7 @@ export function MonthGrid({ snapshot }: ViewProps) {
               <div key={`low-${w.start}`} style={{ display: "flex", flexDirection: "column", justifyContent: "center", gap: 2, padding: "6px 8px", borderRadius: 10, background: bad ? "var(--warning-soft)" : "var(--surface-2)" }}>
                 <span className="lab">lowest left</span>
                 <span className="num" style={{ fontSize: 18, fontWeight: 800 }}>{lowFigure(w)}</span>
-                <span style={{ fontSize: 11, color: bad ? "var(--warning-ink)" : "var(--muted)", fontWeight: bad ? 700 : 400 }}>{bad && <TriangleAlert size={12} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 3 }} />}{lowWords(w)}</span>
+                <span style={{ fontSize: 11, color: bad ? "var(--warning-ink)" : "var(--muted)", fontWeight: bad ? 700 : 400 }}>{bad && <TriangleAlert size={12} aria-hidden="true" style={{ display: "inline-block", verticalAlign: -2, marginRight: 3 }} />}{lowWords(w)}</span>
               </div>,
             ];
           })}

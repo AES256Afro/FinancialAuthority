@@ -35,10 +35,12 @@ KEEP_SETTINGS = {"auth.totp", "auth.totp.last_step", "crypto.canary",  # the fir
 
 # What the chat's model sees at each level the owner can choose on Models.
 ADVISOR_SEES = {
-    "full": "Your questions, the plan's figures and names, and, when you ask, your mail and your documents (boxed as data, never as instructions). Never account numbers.",
-    "merchants": "Your questions, the plan's figures and who was paid. Never descriptions or notes, mail, documents or account numbers.",
-    "aggregates": "Your questions and the plan's amounts, dates and categories only. Never a name, mail, documents or account numbers.",
+    "full": "Your questions, the plan's figures and names, your rules and goals, and, when you ask, your mail and your documents (boxed as data, never as instructions). Never account numbers.",
+    "merchants": "Your questions, the plan's figures and who was paid, and your rules and goals. Never descriptions or notes, mail, documents or account numbers.",
+    "aggregates": "Your questions and the plan's amounts, dates and categories only. Never a name, mail, documents, your rules or goals, or account numbers.",
 }
+# A model off this network is never offered the mail or the documents, whatever the level says (advisor.BODY_TOOLS).
+AWAY_FULL = "Your questions, the plan's figures and names, and your rules and goals. A sender's name where the brief quotes one, a receipt's store and a kept file's title. Never the mail itself, a document's words or account numbers."
 ROLE_WORDS = {
     "advisor": ("The chat", ADVISOR_SEES["full"]),
     "reviewer": ("Notes on your plan after payday", "The plan's figures, your rules and goals, and alert summaries. Never mail, attachments or account numbers."),
@@ -52,15 +54,20 @@ def privacy(session: Session = Depends(get_session), _: auth.Principal = Depends
     from ..models import ApiKey, BankLink, OAuthClient
     from ..notify import has_devices, push_state
 
+    from ..netguard import stays_home
+
     roles = role_settings(session)
     models = []
     for role, (what, sees) in ROLE_WORDS.items():
         provider = roles[role]["provider"]
+        # "Ollama" is what the role is set to, not where it is: an address on the internet is told apart from one at home.
+        local = provider == "ollama" and stays_home(roles[role].get("base_url") or settings.ollama_url)
         if role == "advisor":
-            sees = ADVISOR_SEES.get(str(roles[role].get("sees") or "full"), sees)
+            level = str(roles[role].get("sees") or "full")
+            sees = AWAY_FULL if level == "full" and provider != "none" and not local else ADVISOR_SEES.get(level, sees)
         models.append({"role": role, "what": what, "on": provider != "none", "provider": provider, "model": roles[role]["model"] if provider != "none" else None,
-                       "local": provider == "ollama", "sees": sees,
-                       "where": "on your own computer (Ollama)" if provider == "ollama" else "off" if provider == "none" else "Anthropic, by API" if provider == "anthropic" else "an OpenAI-compatible server you set"})
+                       "local": local, "sees": sees,
+                       "where": "on your own computer (Ollama)" if local else "an Ollama server at an address on the internet you set" if provider == "ollama" else "off" if provider == "none" else "Anthropic, by API" if provider == "anthropic" else "an OpenAI-compatible server you set"})
     links = session.exec(select(BankLink).where(BankLink.active == True)).all()  # noqa: E712
     push = push_state(session)
     leaves = [
@@ -68,6 +75,7 @@ def privacy(session: Session = Depends(get_session), _: auth.Principal = Depends
         {"service": "Teller", "on": any(l.provider == "teller" for l in links), "gets": "The same, for banks linked through Teller.", "why": "bank data"},
         {"service": "Anthropic", "on": any(m["provider"] == "anthropic" for m in models), "gets": "What the models above say they see, when that role uses Claude.", "why": "a model"},
         {"service": "An OpenAI-compatible server", "on": any(m["provider"] == "openai" for m in models), "gets": "What the models above say they see, when that role uses it.", "why": "a model"},
+        {"service": "An Ollama server on the internet", "on": any(m["provider"] == "ollama" and not m["local"] for m in models), "gets": "What the models above say they see, when that role uses it.", "why": "a model"},
         {"service": "ntfy or Gotify", "on": bool(push.get("configured")), "gets": "The text of each notification: the brief, reminders.", "why": "notifications"},
         {"service": "Your browser's push service", "on": has_devices(session), "gets": "Each notification's text, end-to-end encrypted to your device.", "why": "notifications"},
     ]
@@ -94,6 +102,8 @@ def switch_model(role: str, body: SwitchIn, session: Session = Depends(get_sessi
     a model chosen on Models."""
     from ..llm.roles import save_role
 
+    if principal.kind != "owner":  # where the models are is the owner's to say (api/llm.py), and "on" points the chat somewhere
+        raise HTTPException(403, "Only the owner, signed in, turns a model on or off")
     if role not in ROLE_WORDS:
         raise HTTPException(404, "No such feature")
     if body.on and role == "reviewer":

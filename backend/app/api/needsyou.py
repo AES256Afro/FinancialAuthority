@@ -61,6 +61,11 @@ def answer_many(body: ManyIn, session: Session = Depends(get_session), principal
 
         kinds = {f.id: f.kind for f in chosen}
         told_owner(principal.name, [(kinds.get(row["id"], "fact"), row["id"], row.get("applied_to", "")) for row in confirmed])
+    if body.action == "reject" and principal.kind == "key":
+        from .mail import told_owner_discarded
+
+        kinds = {f.id: f.kind for f in chosen}
+        told_owner_discarded(principal.name, [(kinds.get(row["id"], "fact"), row["id"]) for row in done])
     if done:
         from ..llm.reviewer import mark_pending
 
@@ -87,6 +92,11 @@ def _answer_one(session: Session, fid: int, action: str, steps: dict, principal:
         done.append({"id": fid, "applied_to": ""})
         return
     step = steps.get(fid, {"do": "own_card", "why": "needs your answer on its own card"})
+    if step["do"] == "set_aside" and not principal.full:
+        # "An older notice; the newest counts" discards it. A key or an app steered by a newer notice from an attacker
+        # discarded the real one that way, even when the attacker's own was refused (sweep 24): a person decides.
+        failed.append({"id": fid, "error": "An older notice waits for a person: only a person sets one aside"})
+        return
     if step["do"] == "set_aside":
         facts.resolve_fact(session, fact, "rejected", applied_to=f"set aside: {step['why']}"[:200], by=facts.who(principal))
         session.commit()
@@ -102,7 +112,7 @@ def _answer_one(session: Session, fid: int, action: str, steps: dict, principal:
         from .mail import refuse_forged
 
         try:
-            refuse_forged(ref, owner=principal.full)
+            refuse_forged(ref, owner=principal.full, session=session)
         except HTTPException as error:
             failed.append({"id": fid, "error": str(error.detail)})
             return

@@ -8,7 +8,9 @@ from __future__ import annotations
 import re
 from datetime import date, datetime
 
-PERIOD = re.compile(r"Loans Statement for\s+([A-Za-z]+ \d{1,2})\s*-\s*([A-Za-z]+ \d{1,2}),\s*(\d{4})", re.IGNORECASE)
+from . import plain_spaces
+
+PERIOD = re.compile(r"Loans Statement for\s+([A-Za-z]+ \d{1,2})\s*[-\u2013\u2014]\s*([A-Za-z]+ \d{1,2}),\s*(\d{4})", re.IGNORECASE)
 LOAN_ID = re.compile(r"^[A-Z0-9]{4}-[A-Z0-9]{4}$")
 MONEY = re.compile(r"^-?\$?([\d,]+\.\d{2})$")
 DATE = re.compile(r"^(\d{2}/\d{2}/\d{4})$")
@@ -18,7 +20,7 @@ MAX_AMOUNT = 100_000.0
 
 
 def looks_like_affirm_statement(text: str) -> bool:
-    low = (text or "").lower()
+    low = plain_spaces(text).lower()
     return "affirm loans statement" in low and "loans summary" in low
 
 
@@ -35,6 +37,7 @@ def parse_affirm_statement(text: str) -> dict | None:
     "interest_ytd", "transactions": [...]} or None when the layout is not there."""
     if not looks_like_affirm_statement(text):
         return None
+    text = plain_spaces(text)
     lines = [re.sub(r"\s+", " ", ln).strip() for ln in text.splitlines()]
     lines = [ln for ln in lines if ln]
     out: dict = {"loans": [], "interest": {}, "transactions": []}
@@ -49,6 +52,8 @@ def parse_affirm_statement(text: str) -> dict | None:
             out["period_start"], out["period_end"] = start.isoformat(), end.isoformat()
         except ValueError:
             pass
+    if "period_end" not in out:
+        return None  # undated, it can't be told from an older one: applied as of today it reopened closed loans and added its interest on every read
 
     def section(name: str, stop: tuple[str, ...]) -> list[str]:
         try:

@@ -229,7 +229,7 @@
    "stranger": 401
   },
   "DELETE /api/v1/keys/{key_id}": {
-   "everything": 200,
+   "everything": 403,
    "key_confirm": 403,
    "key_confirm_aggregates": 403,
    "key_read": 403,
@@ -253,7 +253,7 @@
    "stranger": 401
   },
   "DELETE /api/v1/mail/accounts/{account_id}": {
-   "everything": 200,
+   "everything": 403,
    "key_confirm": 403,
    "key_confirm_aggregates": 403,
    "key_read": 403,
@@ -265,7 +265,7 @@
    "stranger": 401
   },
   "DELETE /api/v1/oauth/clients/{client_id}": {
-   "everything": 200,
+   "everything": 403,
    "key_confirm": 403,
    "key_confirm_aggregates": 403,
    "key_read": 403,
@@ -2677,7 +2677,7 @@
    "stranger": 401
   },
   "POST /api/v1/models/catalog": {
-   "everything": 200,
+   "everything": 403,
    "key_confirm": 403,
    "key_confirm_aggregates": 403,
    "key_read": 403,
@@ -2845,7 +2845,7 @@
    "stranger": 401
   },
   "POST /api/v1/privacy/models/{role}": {
-   "everything": 200,
+   "everything": 403,
    "key_confirm": 403,
    "key_confirm_aggregates": 403,
    "key_read": 403,
@@ -3205,7 +3205,7 @@
    "stranger": 401
   },
   "PUT /api/v1/accounts/{account_id}/sharing": {
-   "everything": 200,
+   "everything": 403,
    "key_confirm": 403,
    "key_confirm_aggregates": 403,
    "key_read": 403,
@@ -3265,7 +3265,7 @@
    "stranger": 401
   },
   "PUT /api/v1/banks/plaid/settings": {
-   "everything": 200,
+   "everything": 403,
    "key_confirm": 403,
    "key_confirm_aggregates": 403,
    "key_read": 403,
@@ -3277,7 +3277,7 @@
    "stranger": 401
   },
   "PUT /api/v1/banks/teller/settings": {
-   "everything": 200,
+   "everything": 403,
    "key_confirm": 403,
    "key_confirm_aggregates": 403,
    "key_read": 403,
@@ -3493,7 +3493,7 @@
    "stranger": 401
   },
   "PUT /api/v1/mail/accounts/{account_id}": {
-   "everything": 200,
+   "everything": 403,
    "key_confirm": 403,
    "key_confirm_aggregates": 403,
    "key_read": 403,
@@ -3505,7 +3505,7 @@
    "stranger": 401
   },
   "PUT /api/v1/models/secrets": {
-   "everything": 200,
+   "everything": 403,
    "key_confirm": 403,
    "key_confirm_aggregates": 403,
    "key_read": 403,
@@ -3517,7 +3517,7 @@
    "stranger": 401
   },
   "PUT /api/v1/models/{role}": {
-   "everything": 200,
+   "everything": 403,
    "key_confirm": 403,
    "key_confirm_aggregates": 403,
    "key_read": 403,
@@ -3553,7 +3553,7 @@
    "stranger": 401
   },
   "PUT /api/v1/oauth/clients/{client_id}": {
-   "everything": 200,
+   "everything": 403,
    "key_confirm": 403,
    "key_confirm_aggregates": 403,
    "key_read": 403,

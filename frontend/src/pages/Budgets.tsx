@@ -246,7 +246,7 @@ export function Budgets() {
                           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                             {b.suggested > 0 && b.suggested !== b.per_paycheck && (
                               <button type="button" className="btn" style={SMALL_BTN} disabled={busy === b.category} title={`What you spent on ${b.category} in an average paycheck over the last eight weeks`} onClick={() => use(b.category, b.suggested, b.rollover, setListSaid)}>
-                                Use {money(b.suggested, { cents: true })} (your usual)
+                                Use <span className="num">{money(b.suggested, { cents: true })}</span> (your usual)
                               </button>
                             )}
                             <button type="button" className="btn" style={SMALL_BTN} onClick={() => startEdit(b.category, b.per_paycheck, b.rollover)}>Change</button>
@@ -296,7 +296,7 @@ export function Budgets() {
                       <div key={s.category} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: "8px 0", borderTop: i === 0 ? 0 : "1px solid var(--surface-2)" }}>
                         <span style={{ flex: "1 1 160px", minWidth: 0, fontSize: 14 }}>{s.category}</span>
                         <button type="button" className="btn dark" style={SMALL_BTN} disabled={busy === s.category} onClick={() => use(s.category, s.per_paycheck, "next", setSuggestSaid)}>
-                          Use {money(s.per_paycheck, { cents: true })}
+                          Use <span className="num">{money(s.per_paycheck, { cents: true })}</span>
                         </button>
                       </div>
                     ))}

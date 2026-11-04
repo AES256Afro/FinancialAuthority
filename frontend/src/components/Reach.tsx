@@ -7,7 +7,7 @@ import { api, useApi } from "../api";
 import { DEMO } from "../demo/shim";
 import { amountClass, when } from "../format";
 import { ConfirmButton } from "./ConfirmButton";
-import { Failed, Loading, Said } from "./State";
+import { Failed, Figures, Loading, Said } from "./State";
 
 interface Devices {
   public_key: string;
@@ -190,7 +190,7 @@ export function ReminderSwitches() {
       {r.data.today.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13 }}>
           <span className="lab">Due today</span>
-          {r.data.today.map((t, i) => <Link key={i} to={t.link} style={{ color: "var(--ink)" }}>{t.title}</Link>)}
+          {r.data.today.map((t, i) => <Link key={i} to={t.link} style={{ color: "var(--ink)" }}><Figures text={t.title} /></Link>)}
         </div>
       )}
     </section>

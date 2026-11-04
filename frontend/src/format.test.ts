@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { daysWord, money, monthDay, shortDate } from "./format";
+import { daysWord, money, monthDay, shortDate, splitFigures } from "./format";
 
 describe("money", () => {
   it("formats whole dollars with a true minus sign", () => {
@@ -42,5 +42,12 @@ describe("typed and server values", () => {
     expect(when(null)).toBe("never");
     expect(when("2026-10-16")).toBe("Fri Oct 16");
     expect(when("2026-10-16T12:00:00")).toMatch(/^(Fri|Thu|Sat) Oct 1[5-7], \d{1,2}:\d{2} (am|pm)$/);
+  });
+});
+
+describe("splitFigures", () => {
+  it("puts each dollar figure on an odd piece, the words on the even ones", () => {
+    expect(splitFigures("Pay $1,920.00 by Friday, then \u2212$88 is left.")).toEqual(["Pay ", "$1,920.00", " by Friday, then ", "\u2212$88", " is left."]);
+    expect(splitFigures("no figure here, 30% of it")).toEqual(["no figure here, 30% of it"]);
   });
 });

@@ -22,12 +22,16 @@ def test_moving_a_mailbox_to_another_server_needs_its_password_again(owner: Test
         session.commit()
         box_id = box.id
     person = _join(_invite(owner, "alex", "everything"))
-    r = person.put(f"/api/v1/mail/accounts/{box_id}", json={"host": "imap.elsewhere.test"})
-    assert r.status_code == 400 and "password again" in r.json()["detail"]
-    r = person.put(f"/api/v1/mail/accounts/{box_id}", json={"smtp_host": "smtp.elsewhere.test"})
-    assert r.status_code == 400
-    assert person.put(f"/api/v1/mail/accounts/{box_id}", json={"label": "Renamed"}).status_code == 200  # not where it connects
-    assert person.put(f"/api/v1/mail/accounts/{box_id}", json={"host": "imap.elsewhere.test", "password": "a-new-pass"}).status_code == 200
+    # A second person changes only a mailbox they added, with or without a password (sweep 24).
+    assert person.put(f"/api/v1/mail/accounts/{box_id}", json={"host": "imap.elsewhere.test", "password": "a-new-pass"}).status_code == 403
+    theirs = person.post("/api/v1/mail/accounts", json={"kind": "imap", "host": "imap.example.test", "username": "alex@example.test", "password": "their-pass"}).json()["id"]
+    for who, mailbox in ((owner, box_id), (person, theirs)):
+        r = who.put(f"/api/v1/mail/accounts/{mailbox}", json={"host": "imap.elsewhere.test"})
+        assert r.status_code == 400 and "password again" in r.json()["detail"]
+        r = who.put(f"/api/v1/mail/accounts/{mailbox}", json={"smtp_host": "smtp.elsewhere.test"})
+        assert r.status_code == 400
+        assert who.put(f"/api/v1/mail/accounts/{mailbox}", json={"label": "Renamed"}).status_code == 200  # not where it connects
+        assert who.put(f"/api/v1/mail/accounts/{mailbox}", json={"host": "imap.elsewhere.test", "password": "a-new-pass"}).status_code == 200
 
 
 def test_a_model_key_goes_only_to_the_address_it_was_saved_for(owner: TestClient):

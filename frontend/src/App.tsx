@@ -111,9 +111,11 @@ export default function App() {
   }), [askMe]);
 
   if (joining) return <Suspense fallback={<Loading text="Opening…" />}><Join /></Suspense>;
-  if (me.loading) return <Loading text="Opening…" />;
+  // Only the first answer holds the app back: asked again mid-session, the page stays (with what the person typed and
+  // what it said) until the answer says the sign-in is gone.
+  if (me.loading && !me.data) return <Loading text="Opening…" />;
   if (me.error && me.error.status === 401) return <SignIn ended={ended} onDone={() => { setEnded(false); me.reload(); }} />;
-  if (me.error) return <div style={{ padding: 24, maxWidth: 640 }}><Failed error={me.error} what="the app" onRetry={me.reload} /></div>;
+  if (me.error && !me.data) return <div style={{ padding: 24, maxWidth: 640 }}><Failed error={me.error} what="the app" onRetry={me.reload} /></div>;
 
   if (role === "shared") {
     return (

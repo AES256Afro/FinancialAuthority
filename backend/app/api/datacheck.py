@@ -39,6 +39,9 @@ class AnswerIn(In):
 @under_writer
 def answer(body: AnswerIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     """Settle one finding. Only an answer the finding offers now is accepted, so nothing else can be changed here."""
+    if body.action == "trust" and principal.kind != "owner":
+        # Marking a sender genuine is what lets a connected app go on confirming its mail: the owner's to say.
+        raise HTTPException(403, "Only the owner marks a sender genuine")
     try:
         said = datacheck.answer(session, body.key, body.action, today())
     except LookupError as error:

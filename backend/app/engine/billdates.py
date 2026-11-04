@@ -12,6 +12,7 @@ from datetime import date, timedelta
 DAY_STEPS = {"weekly": 7, "biweekly": 14}
 MONTH_STEPS = {"monthly": 1, "quarterly": 3, "semiannual": 6, "yearly": 12}
 PER_YEAR = {"weekly": 52, "biweekly": 26, "monthly": 12, "quarterly": 4, "semiannual": 2, "yearly": 1}
+NO_ANCHOR_FROM = date(2000, 1, 1)  # where a weekly bill with no next date, first date or day it was added counts its weeks from
 
 
 def _add_months(d: date, n: int, day: int) -> date:
@@ -50,9 +51,10 @@ def _bill_dates(bill, start: date, end: date, *, due_day: int | None = None) -> 
     # with its next date three months out, is not due again today).
     if cadence in DAY_STEPS:
         step = timedelta(days=DAY_STEPS[cadence])
-        d = anchor or _next_on_day(day, start)
-        while d < start:
-            d += step
+        # With no next date on file, its weeks count from its first due day: from a day that stays put. Counted from the
+        # day asked about, its next charge jumped a month the day after its day passed, and its weeks left the plan (sweep 24).
+        d = anchor or _next_on_day(day, getattr(bill, "starts_on", None) or getattr(bill, "created_on", None) or NO_ANCHOR_FROM)
+        d += step * max(0, -((d - start).days // step.days))
         while d <= end:
             out.append(d)
             d += step

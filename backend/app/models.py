@@ -728,6 +728,7 @@ class MailAccount(SQLModel, table=True):
     smtp_port: int = 0
     smtp_ssl: bool = False
     smtp_starttls: bool = True
+    person_id: int | None = None  # the second person who added it: it ends with their access (none: the owner's)
 
 
 class MessageRef(SQLModel, table=True):

@@ -326,14 +326,18 @@ def create_key(body: KeyIn, session: Session = Depends(get_session), principal: 
         key, token = auth.create_key(session, body.name, set(body.scopes), body.redaction, person_id=principal.person_id)
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
+    if principal.kind == "person":  # a credential that reads from outside the app: the owner hears of it, as of a person's send
+        auth.tell_owner(f"{principal.name[:60]} made an API key", f"{key.name[:60]}, {', '.join(sorted(key.scope_set))}. It ends with their access; Settings › Apps and keys revokes it sooner.")
     return {"id": key.id, "name": key.name, "prefix": key.prefix, "scopes": sorted(key.scope_set), "token": token, "note": "Shown once. Keep it in the client, not in chat."}
 
 
 @router.delete("/keys/{key_id}")
-def revoke_key(key_id: int, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+def revoke_key(key_id: int, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     key = session.get(ApiKey, key_id)
     if key is None:
         raise HTTPException(404, "No such key")
+    if principal.kind != "owner" and key.person_id != principal.person_id:
+        raise HTTPException(403, "A second person revokes only the keys they made")
     key.revoked_at = utcnow()
     session.add(key)
     session.commit()
@@ -356,9 +360,11 @@ def list_oauth_clients(session: Session = Depends(get_session), _: auth.Principa
 
 
 @router.delete("/oauth/clients/{client_id}")
-def revoke_oauth_client(client_id: str, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+def revoke_oauth_client(client_id: str, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     from ..oauth import revoke_client
 
+    if principal.kind != "owner":  # the apps are the owner's to connect, so the owner's to change: their phone, their watch, what each sees
+        raise HTTPException(403, "Only the owner, signed in, revokes a connected app")
     return {"ok": True, "tokens_revoked": revoke_client(session, client_id)}
 
 
@@ -367,9 +373,11 @@ class ClientRedactionIn(In):
 
 
 @router.put("/oauth/clients/{client_id}")
-def set_oauth_client_redaction(client_id: str, body: ClientRedactionIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+def set_oauth_client_redaction(client_id: str, body: ClientRedactionIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     from ..models import OAuthClient
 
+    if principal.kind != "owner":
+        raise HTTPException(403, "Only the owner, signed in, sets what a connected app sees")
     if body.redaction not in ("full", "merchants", "aggregates"):
         raise HTTPException(400, "redaction must be full, merchants or aggregates")
     row = session.exec(select(OAuthClient).where(OAuthClient.client_id == client_id)).first()

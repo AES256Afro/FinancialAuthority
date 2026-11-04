@@ -221,7 +221,7 @@ function WhereToPut({ retireIn }: { retireIn: number | null }) {
           {data.basis && (
             <div className={data.basis.per_paycheck === null ? undefined : "num"} style={{ fontSize: 12, color: data.basis.per_paycheck === null ? "var(--warning-ink)" : "var(--ink-2)" }}>
               {data.basis.per_paycheck === null
-                ? <><TriangleAlert size={13} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 4 }} />{data.basis.note}. <Link to="/confirm">Needs you</Link> · <Link to="/paystubs">Paystubs</Link></>
+                ? <><TriangleAlert size={13} aria-hidden="true" style={{ display: "inline-block", verticalAlign: -2, marginRight: 4 }} />{data.basis.note}. <Link to="/confirm">Needs you</Link> · <Link to="/paystubs">Paystubs</Link></>
                 : <>Your {data.basis.kind === "gross" ? "gross" : "take-home"} pay on file is {money(data.basis.per_paycheck, { cents: true })} a paycheck ({data.basis.note}), {data.paychecks_per_year ?? 24} paychecks a year{data.basis.kind === "gross" ? `; ${money(data.take_home_per_paycheck)} of take-home for the after-tax places` : ""}.</>}
             </div>
           )}

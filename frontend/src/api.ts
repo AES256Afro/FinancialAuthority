@@ -27,10 +27,11 @@ export function onWrite(fn: () => void): () => void {
 
 // A session that ends while a screen is open (signed out elsewhere, expired): the next answer is a 401, and every
 // screen would otherwise keep showing what it last loaded with a "not signed in" note under it. The app is told, so
-// it asks who is signed in again and shows the sign-in page. Sign-in's own calls answer 401 for a wrong password,
-// so they are not a sign that the session ended.
+// it asks who is signed in again and shows the sign-in page. Sign-in's own calls answer 401 for a wrong password, and
+// so does Delete everything, which asks for the password again: neither is a sign that the session ended, and the
+// screen that asked says the refusal itself.
 const SIGNED_OUT = "fa-signed-out";
-const SIGN_IN_CALL = /^\/api\/auth\/(me|login|join|passkeys\/login)(\/|$)/;
+const OWN_401 = /^\/api\/(auth\/(me|login|join|passkeys\/login)(\/|$)|v1\/privacy\/erase$)/;
 
 /** Calls `fn` when a call answers 401 mid-session. Returns the way to stop listening. */
 export function onSignedOut(fn: () => void): () => void {
@@ -73,7 +74,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
       if (response.status >= 500) detail = `The app is not answering right now (the server in front of it said ${response.status}). Try again in a moment.`;
     }
     if (response.status === 409 && /try again in a moment/i.test(detail)) detail = BUSY_WORDS;
-    if (response.status === 401 && !DEMO && !SIGN_IN_CALL.test(path.split("?")[0])) window.dispatchEvent(new Event(SIGNED_OUT));
+    if (response.status === 401 && !DEMO && !OWN_401.test(path.split("?")[0])) window.dispatchEvent(new Event(SIGNED_OUT));
     throw new ApiError(response.status, detail);
   }
   if (writes && !READ_ONLY_POST.test(path.split("?")[0])) {

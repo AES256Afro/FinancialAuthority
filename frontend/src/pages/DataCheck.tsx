@@ -7,7 +7,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { ConfirmButton } from "../components/ConfirmButton";
-import { Said, Show } from "../components/State";
+import { Figures, Said, Show } from "../components/State";
 import { SeverityTag } from "../components/Status";
 import { amountClass, shortDate, when } from "../format";
 
@@ -49,7 +49,7 @@ function FindingCard({ f, onAnswered }: { f: Finding; onAnswered: (text: string)
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))", gap: 8 }}>
         {f.items.map((i) => (
           <div key={i.source} style={{ padding: "8px 10px", borderRadius: 10, background: "var(--surface-2)", display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-            <strong style={{ fontSize: 13, overflowWrap: "anywhere" }}>{i.label}</strong>
+            <strong className={amountClass(i.label)} style={{ fontSize: 13, overflowWrap: "anywhere" }}>{i.label}</strong>
             <span className="num" style={{ fontSize: 12, color: "var(--ink-2)", overflowWrap: "anywhere" }}>{i.detail}</span>
             {i.link && <Link to={i.link} aria-label={`Open ${i.label}`} style={{ fontSize: 12, alignSelf: "flex-start" }}>Open</Link>}
           </div>
@@ -58,9 +58,9 @@ function FindingCard({ f, onAnswered }: { f: Finding; onAnswered: (text: string)
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         {f.actions.map((a) =>
           a.question ? (
-            <ConfirmButton key={a.id} label={a.label} question={a.question} yes="Yes" no="Not yet" onConfirm={() => send(a.id)} />
+            <ConfirmButton key={a.id} label={<Figures text={a.label} />} name={a.label} question={a.question} yes="Yes" no="Not yet" onConfirm={() => send(a.id)} />
           ) : (
-            <button key={a.id} type="button" className="btn" disabled={busy} onClick={() => send(a.id)}>{a.label}</button>
+            <button key={a.id} type="button" className="btn" disabled={busy} onClick={() => send(a.id)}><Figures text={a.label} /></button>
           ),
         )}
         {f.fix_on && <Link to={f.fix_on} style={{ fontSize: 13 }}>Settle it where it was linked</Link>}

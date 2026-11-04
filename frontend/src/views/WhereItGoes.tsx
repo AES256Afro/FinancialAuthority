@@ -62,9 +62,10 @@ export function WhereItGoes({ snapshot }: ViewProps) {
     leaves.push({ label: `${e.name}${(e.share ?? 1) < 1 ? ", half" : ""} · ${money(kept)} · ${eventDay(e)}`, amount: kept, fill: c.surface, stroke: c.bill, group: "aside" });
   }
   const leafPlaced: (typeof leaves[number] & { y: number; h: number; fromY: number })[] = [];
+  let below = 0; // where the group before ended: a long list of bills must not run into the next group's labels
   for (const g of placed) {
     const mine = leaves.filter((l) => l.group === g.id);
-    let y = g.yMid;
+    let y = Math.max(g.yMid, below);
     let from = g.yMid;
     for (const l of mine) {
       const h = Math.max(6, l.amount * scale);
@@ -72,6 +73,7 @@ export function WhereItGoes({ snapshot }: ViewProps) {
       y += Math.max(15, h) + 3; // a label needs its own line even when the bar is thin
       from += h;
     }
+    below = y;
   }
 
   return (
@@ -83,7 +85,7 @@ export function WhereItGoes({ snapshot }: ViewProps) {
       <section className="card" style={{ padding: "16px 20px", display: "flex", flexWrap: "wrap", gap: 20 }}>
         {/* On a phone the picture keeps a readable size and scrolls sideways; the list beside it has every part as words. */}
         <div style={{ flex: "1 1 600px", minWidth: 0, maxWidth: 860, overflowX: "auto" }}>
-          <svg viewBox={`0 0 ${W} 500`} width="100%" style={{ display: "block", height: "auto", minWidth: 640 }} role="img" aria-label="Flow of the paycheck into advance apps, bills, what is kept for the next paycheck, the safety cushion and safe to spend">
+          <svg viewBox={`0 0 ${W} ${Math.max(500, below + 10)}`} width="100%" style={{ display: "block", height: "auto", minWidth: 640 }} role="img" aria-label="Flow of the paycheck into advance apps, bills, what is kept for the next paycheck, the safety cushion and safe to spend">
             <rect x={40} y={TOP} width={150} height={srcHeight} rx={6} fill={c.paycheck} />
             <text x={115} y={TOP + srcHeight / 2 - 4} textAnchor="middle" fill={inkOn(c.paycheck)} fontSize={15} fontWeight={800}>Paycheck</text>
             <text className="num" x={115} y={TOP + srcHeight / 2 + 16} textAnchor="middle" fill={inkOn(c.paycheck)} fontSize={13} fontWeight={700}>{money(w.paycheck)}{carriedIn !== null && carriedIn > 0 ? ` + ${money(carriedIn)}` : ""}</text>
@@ -99,9 +101,9 @@ export function WhereItGoes({ snapshot }: ViewProps) {
             ))}
             {leafPlaced.map((l, i) => (
               <g key={i}>
-                <path d={ribbon(570, l.fromY, l.h, 790, l.y, l.h)} fill={l.stroke ?? l.fill} fillOpacity={l.stroke ? 0.1 : 0.22} />
-                <rect x={790} y={l.y} width={14} height={l.h} rx={3} fill={l.fill} stroke={l.stroke} strokeWidth={l.stroke ? 2 : 0} />
-                <text className="num" x={814} y={l.y + Math.min(l.h, 14) / 2 + 4} fontSize={12} fontWeight={700} fill={c.ink}>{l.label}</text>
+                <path d={ribbon(570, l.fromY, l.h, 690, l.y, l.h)} fill={l.stroke ?? l.fill} fillOpacity={l.stroke ? 0.1 : 0.22} />
+                <rect x={690} y={l.y} width={14} height={l.h} rx={3} fill={l.fill} stroke={l.stroke} strokeWidth={l.stroke ? 2 : 0} />
+                <text className="num" x={714} y={l.y + Math.min(l.h, 14) / 2 + 4} fontSize={12} fontWeight={700} fill={c.ink}>{l.label}</text>
               </g>
             ))}
           </svg>

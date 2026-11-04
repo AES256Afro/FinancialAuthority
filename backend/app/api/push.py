@@ -79,9 +79,10 @@ def subscribe_device(body: SubscribeIn, request: Request, session: Session = Dep
     from .. import webpush
 
     origin = str(request.base_url).rstrip("/")
+    signed_in = auth.session_row(request, session)  # ending this session on Settings › Clients ends these notifications too
     try:
         row = webpush.subscribe(session, endpoint=body.endpoint, p256dh=body.keys.get("p256dh", ""), auth=body.keys.get("auth", ""), label=body.label, origin=origin,
-                                person_id=principal.person_id)
+                                person_id=principal.person_id, session_id=signed_in.id if signed_in is not None else None)
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
     except crypto.DataKeyMissing as error:

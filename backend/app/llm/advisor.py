@@ -26,10 +26,16 @@ UNTRUSTED_TOOLS = {"mail_search", "mail_read", "mail_attachment", "facts_pending
 CHAT_TOOLS = ["finance_snapshot", "accounts_list", "transactions_search", "spending_summary", "debts_list", "borrowing", "scenario_run", "readiness", "accounts_cover", "saving_plan", "today_one_thing", "weekly_checkin", "paycheck_views", "billing_date_check", "glance", "account_move", "investments_list", "outlook", "where_to_put", "purchase_check", "billing_dates_suggest", "watchlist", "recurring_list", "bills_list", "payments_list", "paystubs_list", "brief_today", "next_steps", "mail_search", "mail_read", "mail_attachment", "facts_pending", "jobs_status", "housing_overview", "documents_search", "document_read", "receipts_list"]
 # Tools that hand over a message's body, an attachment or a document's text. A model behind a cloud key (Anthropic,
 # an OpenAI-compatible server) is never offered them: the owner was told those servers get the plan and never the
-# mail (docs/SECURITY.md, the BoxPilot manifest), and at "full" the chat sent whole messages there (sweep 23).
-BODY_TOOLS = {"mail_read", "mail_attachment", "document_read", "documents_search"}
+# mail (docs/SECURITY.md, the BoxPilot manifest), and at "full" the chat sent whole messages there (sweep 23). The
+# search and the waiting facts are mail too: each message's sender, subject and first 200 characters, each fact's
+# excerpt (sweep 24).
+BODY_TOOLS = {"mail_read", "mail_attachment", "document_read", "documents_search", "mail_search", "facts_pending"}
 CLOUD_PROVIDERS = {"anthropic", "openai"}
+# Tools whose words name this server: a mailbox's host, the published address, the last errors. A model off this network
+# gets them as a client that hides details does: the state, not the names.
+HOSTS_IN_WORDS = {"jobs_status", "next_steps"}
 MAX_ROUNDS = 6
+MAX_CALLS_PER_ROUND = 24  # one answer asks for a few; a provider asking for thousands (2 MB of them fit one stream) gets the first
 MAX_TOOL_CHARS = 14000
 
 SYSTEM = """You are the advisor inside FinancialAuthority, the owner's own financial planner, running on their own server.
@@ -102,8 +108,8 @@ def _sees(session: Session | None = None) -> str:
         return str(role_settings(own)["advisor"].get("sees") or "full")
 
 
-async def run_tool(name: str, arguments: dict) -> Any:
-    token = mcp.CALLER.set(("advisor", _sees()))
+async def run_tool(name: str, arguments: dict, level: str | None = None) -> Any:
+    token = mcp.CALLER.set(("advisor", level or _sees()))
     try:
         result = await mcp.mcp_server.call_tool(name, arguments)
     finally:
@@ -126,6 +132,18 @@ def _refused(name: str, arguments: Any) -> None:
     args = {k: v for k, v in (arguments or {}).items() if isinstance(v, (int, float, str, bool)) or v is None} if isinstance(arguments, dict) else {}
     with session_scope() as session:
         services.audit(session, client="advisor", client_kind="key", tool=f"{str(name)[:60]}_refused", args=args, rows=0, redaction=_sees(session))
+
+
+def off_the_box(provider: Provider) -> bool:
+    """Whether what this model is sent leaves the owner's own network. Anthropic and an OpenAI-compatible server count
+    as cloud; Ollama counts by where it is, since provider "ollama" with an address on the internet is any server at all,
+    and it was offered the mail because of its name (sweep 24)."""
+    from ..netguard import stays_home
+
+    if provider.id in CLOUD_PROVIDERS:
+        return True
+    url = getattr(provider, "url", "")
+    return bool(url) and not stays_home(url)
 
 
 def rules_block(session: Session) -> str:
@@ -167,7 +185,9 @@ def system_prompt_and_quotes(session: Session, today: date) -> tuple[str, set[fl
     # brief_today tool's text, so a client that sees totals only sees totals in the prompt too.
     plan["brief"] = [mcp.redact({"text": line}, level)["text"] for line in plan["brief"]]
     allowed = engine_numbers(plan, quoted=quotes)
-    return SYSTEM.format(rules=rules_block(session), as_of=snap["as_of"], plan=json.dumps(plan, separators=(",", ":"))), allowed, quotes
+    # The owner's rules and goals are free text, with names in them: "totals only" holds them back too (sweep 24).
+    rules = rules_block(session) if level != "aggregates" else ""
+    return SYSTEM.format(rules=rules, as_of=snap["as_of"], plan=json.dumps(plan, separators=(",", ":"))), allowed, quotes
 
 
 async def advise(
@@ -181,13 +201,13 @@ async def advise(
     """Run one turn of the chat: the model, its tool calls, its reply; yield events for the screen."""
     import asyncio
 
-    def prepare() -> tuple[str, set[float], set[str]]:
+    def prepare() -> tuple[str, set[float], set[str], bool]:
         with session_factory() as session:
-            return system_prompt_and_quotes(session, today)
+            return (*system_prompt_and_quotes(session, today), off_the_box(provider))
 
-    system, allowed, quotes = await asyncio.to_thread(prepare)  # the plan is worked out off the event loop
+    system, allowed, quotes, away = await asyncio.to_thread(prepare)  # the plan is worked out off the event loop, and a name is looked up there
     messages: list[dict] = [{"role": "system", "content": system}, *history]
-    offered = [t for t in CHAT_TOOLS if provider.id not in CLOUD_PROVIDERS or t not in BODY_TOOLS]
+    offered = [t for t in CHAT_TOOLS if not away or t not in BODY_TOOLS]
     specs = tool_specs(offered) if tools else []
     reply_parts: list[str] = []
     used: list[dict] = []
@@ -213,25 +233,33 @@ async def advise(
             return
         if not calls:
             break
+        if len(calls) > MAX_CALLS_PER_ROUND:
+            await asyncio.to_thread(_refused, "too_many_tool_calls", {"asked": len(calls)})  # one row, not a row per call
+            calls = calls[:MAX_CALLS_PER_ROUND]
         messages.append({
             "role": "assistant",
             "content": "".join(text_parts) or None,
             "tool_calls": [{"id": c.id, "type": "function", "function": {"name": c.name, "arguments": json.dumps(c.arguments)}} for c in calls],
         })
         for call in calls:
+            ran = False
             if call.name not in offered:
                 payload: Any = {"error": f"{call.name} is not available in the chat"}
                 await asyncio.to_thread(_refused, call.name, call.arguments)  # an attempt is in the activity log, whatever the tool
             else:
                 try:
-                    payload = slim(call.name, await run_tool(call.name, call.arguments))
+                    payload = slim(call.name, await run_tool(call.name, call.arguments, "aggregates" if away and call.name in HOSTS_IN_WORDS else None))
+                    ran = True
                 except Exception as error:  # noqa: BLE001 - the model gets the failure as data
                     payload = {"error": f"{type(error).__name__}: {error}"}
-            if call.name not in UNTRUSTED_TOOLS:
+            # A refusal or a failure repeats the model's own words back to it: a "tool" called "$9,999.00" made that figure
+            # the engine's, so the invented one went unmarked, and the owner's screen said the send tool had run (sweep 24).
+            if ran and call.name not in UNTRUSTED_TOOLS:
                 allowed |= engine_numbers(payload, quoted=quotes)  # a figure in third-party text (mail, a document, a merchant's or a sender's name) is not the engine's
-            rows = len(payload) if isinstance(payload, list) else next((len(v) for v in payload.values() if isinstance(v, list)), 1) if isinstance(payload, dict) else 1
-            used.append({"name": call.name, "arguments": call.arguments, "rows": rows})
-            yield {"type": "tool", "name": call.name, "arguments": call.arguments, "rows": rows}
+            rows = 0 if not ran else len(payload) if isinstance(payload, list) else next((len(v) for v in payload.values() if isinstance(v, list)), 1) if isinstance(payload, dict) else 1
+            shown = str(call.name)[:60]
+            used.append({"name": shown, "arguments": call.arguments, "rows": rows})
+            yield {"type": "tool", "name": shown, "arguments": call.arguments, "rows": rows}
             text = json.dumps(payload, default=str)
             if len(text) > MAX_TOOL_CHARS:
                 text = text[:MAX_TOOL_CHARS] + '... (truncated; ask with a narrower query)"}'

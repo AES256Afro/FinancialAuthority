@@ -7,7 +7,7 @@ import { api, useApi } from "../api";
 import { when } from "../format";
 import { ownerName } from "../types-people";
 import { ConfirmButton } from "./ConfirmButton";
-import { Failed, Loading, Said } from "./State";
+import { Failed, Figures, Loading, Said } from "./State";
 
 interface ApprovalRow {
   id: number;
@@ -93,7 +93,7 @@ export function Approvals({ onChanged, onCount }: { onChanged?: () => void; onCo
           <div style={{ fontSize: 12, color: "var(--ink-2)" }}>Asked for by <strong>{who(a)}</strong>{KIND_WORD[a.created_kind] ?? ""}{a.reason ? ` · ${a.reason}` : ""} · {when(a.created_at)}</div>
           <div style={{ fontSize: 13 }}><span style={{ color: "var(--muted)" }}>To</span> <strong>{a.to}</strong></div>
           <div style={{ fontSize: 14, fontWeight: 700 }}>{a.subject}</div>
-          <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 13, lineHeight: 1.45, color: "var(--ink-2)", maxHeight: 160, overflow: "auto" }}>{a.body}</pre>
+          <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 13, lineHeight: 1.45, color: "var(--ink-2)", maxHeight: 160, overflow: "auto" }}><Figures text={a.body} /></pre>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             <button className="btn dark" type="button" disabled={busy === a.id} onClick={() => decide(a, "approve")}>{busy === a.id ? "Working…" : "Approve and send"}</button>
             <button className="btn" type="button" disabled={busy === a.id} onClick={() => decide(a, "deny")}>Deny</button>

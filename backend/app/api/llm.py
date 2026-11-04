@@ -78,8 +78,17 @@ def get_models(session: Session = Depends(get_session), _: auth.Principal = Depe
     return models_out(session)
 
 
+def _owner_says(principal: auth.Principal) -> None:
+    """Which server gets the plan, the questions and (at "full", locally) the mail, is the owner's to say. A second person
+    pointing "Ollama" at a server of their own read every question and could read the mail, and it stayed that way after
+    their access ended (sweep 24), as the notifications' address did (sweep 23)."""
+    if principal.kind != "owner":
+        raise HTTPException(403, "Only the owner, signed in, chooses where the models are and what they see")
+
+
 @router.put("/models/secrets")
-def put_secret(body: SecretIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+def put_secret(body: SecretIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
+    _owner_says(principal)
     if body.name not in SECRET_NAMES:
         raise HTTPException(404, "No such secret")
     try:
@@ -90,7 +99,8 @@ def put_secret(body: SecretIn, session: Session = Depends(get_session), _: auth.
 
 
 @router.put("/models/{role}")
-def put_role(role: str, body: RoleIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+def put_role(role: str, body: RoleIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
+    _owner_says(principal)
     if role not in ROLES:
         raise HTTPException(404, "No such role")
     try:
@@ -107,8 +117,7 @@ class CatalogIn(In):
 
 @router.post("/models/catalog")
 async def catalog(body: CatalogIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
-    if not principal.full:
-        raise HTTPException(403, "Only a person signed in lists models")
+    _owner_says(principal)  # a typed address is fetched from inside the box, and the answer's words come back
     provider, base_url = body.provider, body.base_url.strip()
     if provider not in PROVIDER_IDS or provider == "none":
         raise HTTPException(400, "Choose a provider")

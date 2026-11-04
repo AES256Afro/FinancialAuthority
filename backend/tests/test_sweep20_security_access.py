@@ -71,6 +71,11 @@ OWNER_ONLY = {
     ("DELETE", "/api/v1/people/{person_id}"), ("POST", "/api/v1/privacy/erase"), ("POST", "/api/v1/restore-points/{name}/restore"),
     ("PUT", "/api/v1/restore-points/offbox"), ("POST", "/api/v1/restore-points/offbox/copy"),
     ("PUT", "/api/v1/push"),  # where the owner's notifications go (sweep 23)
+    # Where the models are and what they see, which server the mail comes through (the run's mailbox and key are the
+    # owner's; a second person changes only their own), the connected apps, and who sees an account (sweep 24).
+    ("PUT", "/api/v1/models/{role}"), ("PUT", "/api/v1/models/secrets"), ("POST", "/api/v1/models/catalog"), ("PUT", "/api/v1/mail/accounts/{account_id}"), ("DELETE", "/api/v1/mail/accounts/{account_id}"),
+    ("PUT", "/api/v1/oauth/clients/{client_id}"), ("DELETE", "/api/v1/oauth/clients/{client_id}"), ("DELETE", "/api/v1/keys/{key_id}"), ("PUT", "/api/v1/accounts/{account_id}/sharing"),
+    ("POST", "/api/v1/privacy/models/{role}"), ("PUT", "/api/v1/banks/plaid/settings"), ("PUT", "/api/v1/banks/teller/settings"),  # the models' switch and whose bank keys (sweep 24)
 }
 # Deciding on a send queued by someone else: the approval the run sends is the owner's draft, so a second person is
 # refused it ("each person approves only their own sends").

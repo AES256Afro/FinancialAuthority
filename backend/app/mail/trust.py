@@ -66,23 +66,72 @@ def fold(name: str) -> str:
     return plain.translate(CONFUSABLE).lower()
 
 
+def _forms(brand: str) -> tuple[str, ...]:
+    """A brand as a display name writes it: its words ("t mobile", once the hyphen is a space, as the name's own is),
+    and run together ("tmobile", "capitalone", "att"). A forger who signs a domain of their own writes "CapitalOne"."""
+    spaced = re.sub(r"[^a-z0-9&]+", " ", brand).strip()
+    return tuple(dict.fromkeys((spaced, spaced.replace(" ", ""), spaced.replace(" ", "").replace("&", ""))))
+
+
+_BRANDS = [(brand, _forms(brand)) for brand in sorted(KNOWN, key=len, reverse=True)]
+
+
 def brand_of(name: str) -> str | None:
-    """The common sender a display name claims to be, if any: "Capital One" in "Capital One Alerts"."""
-    low = f" {re.sub(r'[^a-z0-9&]+', ' ', fold(name))} "
-    for brand in sorted(KNOWN, key=len, reverse=True):
-        if f" {brand} " in low:
-            return brand
+    """The common sender a display name claims to be, if any: "Capital One" in "Capital One Alerts", "CapitalOne",
+    "T-Mobile", or "Capita1 One" with a digit for a letter."""
+    plain = fold(name)
+    for text in dict.fromkeys((plain, plain.translate(LEET))):
+        low = f" {re.sub(r'[^a-z0-9&]+', ' ', text)} "
+        for brand, forms in _BRANDS:
+            if any(f" {form} " in low for form in forms):
+                return brand
     return None
 
 
 def _results(auth_results: str) -> dict[str, str]:
-    """dmarc, dkim and spf from the receiving server's Authentication-Results (the first header is its own)."""
+    """dmarc, dkim and spf from the receiving server's Authentication-Results, each the first result it states for that
+    method. Only a clause that begins with the method counts: the words anywhere in the line let an envelope address of
+    "dmarc=pass@attacker.test", which servers quote in a comment and in smtp.mailfrom, stand as the server's verdict
+    (sweep 24)."""
     out: dict[str, str] = {}
     for method in ("dmarc", "dkim", "spf"):
-        m = re.search(rf"\b{method}=(\w+)", auth_results or "", re.I)
-        if m:
-            out[method] = m.group(1).lower()
+        for clause in _clauses(auth_results, method):
+            found = re.match(rf"\s*{method}\s*=\s*(\w+)", clause, re.I)
+            if found:
+                out[method] = found.group(1).lower()
+                break
     return out
+
+
+def _clauses(auth_results: str, method: str) -> list[str]:
+    """Each result of one method in the receiving server's Authentication-Results, as written. Comments go first (a
+    comment may hold a semicolon, "(2048-bit key; unprotected)", or a sender's own words, and comments nest), and a
+    semicolon inside a quoted address ends nothing."""
+    plain, before = auth_results or "", None
+    for _ in range(8):
+        if plain == before:
+            break
+        plain, before = re.sub(r"\([^()]{0,300}\)", " ", plain), plain
+    plain = re.sub(r'"[^"]{0,300}"', lambda m: m.group(0).replace(";", " "), plain)
+    return [c.strip() for c in plain.split(";") if re.match(rf"\s*{method}\s*=", c, re.I)]
+
+
+def _about(clause: str, *properties: str) -> str:
+    """The organisation a result speaks for (header.from, header.d, header.i=@...), or "" when it does not say."""
+    found = re.search(rf"\b(?:{'|'.join(re.escape(p) for p in properties)})\s*=\s*\"?([^\s;\"]+)", clause, re.I)
+    return org_domain(found.group(1)) if found else ""
+
+
+def _dkim_vouches(auth_results: str, org: str) -> bool:
+    """A DKIM signature that passed and speaks for the sender's own organisation. Anyone can sign a message with a
+    domain of their own and write someone else's address in From: a pass under another domain says nothing about the
+    From (sweep 24). A result that names no domain is taken as it stands; it is the receiving server's own line."""
+    for clause in _clauses(auth_results, "dkim"):
+        if re.match(r"\s*dkim\s*=\s*pass\b", clause, re.I):
+            about = _about(clause, "header.d", "header.i")
+            if not about or about == org:
+                return True
+    return False
 
 
 def _owns(org: str, own: str) -> bool:
@@ -123,8 +172,9 @@ def lookalike(domain: str) -> str | None:
     return None
 
 
-def judge(sender: str, sender_name: str, auth_results: str = "", reply_to: str = "", learned: dict[str, set[str]] | None = None) -> tuple[str, str]:
-    """The verdict and why, in plain words."""
+def judge(sender: str, sender_name: str, auth_results: str = "", reply_to: str = "", learned: dict[str, set[str]] | None = None, name_domains: set[str] | None = None) -> tuple[str, str]:
+    """The verdict and why, in plain words. `name_domains` are the domains earlier verified mail under this same display
+    name came from, for a name the table of common senders does not hold (the owner's own lender, say)."""
     sender = (sender or "").lower()
     if "@" not in sender:
         return "", ""
@@ -136,6 +186,10 @@ def judge(sender: str, sender_name: str, auth_results: str = "", reply_to: str =
         return "crit", f"It comes from {org}, a look-alike of {looks}."
     if res.get("dmarc") == "fail" or (res.get("dkim") == "fail" and res.get("spf") == "fail"):
         return "crit", f"The mail server could not confirm it came from {org}: its domain did not vouch for it."
+    verified_as = next((about for clause in _clauses(auth_results, "dmarc") if (about := _about(clause, "header.from"))), "")
+    if res.get("dmarc") == "pass" and verified_as and verified_as != org:
+        # The server checked one From and this reader took another (a message with two): the pass is about someone else.
+        return "crit", f"The mail server's check was for {verified_as}, but the message says it comes from {org}."
     if brand:
         own = set(KNOWN[brand]) | (learned or {}).get(brand, set())
         if not any(_owns(org, d) for d in own):
@@ -144,8 +198,12 @@ def judge(sender: str, sender_name: str, auth_results: str = "", reply_to: str =
             # A name that starts like the brand's is anyone's to register and sign: never "confirmed" (and so never
             # learned as the brand's), until the owner marks it genuine.
             return "warn", f"It calls itself {sender_name.strip()} and comes from {org}, which is not one of its known domains ({', '.join(sorted(own)[:2])}). Mark it genuine if it is."
-    if res.get("dmarc") == "pass" or res.get("dkim") == "pass":
-        if reply_to and "@" in reply_to and org_domain(reply_to) != org and brand and not any(_owns(org_domain(reply_to), d) for d in set(KNOWN[brand]) | (learned or {}).get(brand, set())):
+    if not brand and name_domains and org not in name_domains:
+        # A name the table does not hold is judged by what it used before: a lender's own name on a domain the attacker
+        # registered and signed was "confirmed", and only the table's brands were looked at (sweep 24).
+        return "warn", f"It calls itself {sender_name.strip()} and comes from {org}, but earlier mail under that name came from {', '.join(sorted(name_domains)[:2])}."
+    if res.get("dmarc") == "pass" or _dkim_vouches(auth_results, org):
+        if reply_to and "@" in reply_to and org_domain(reply_to) != org and not (brand and any(_owns(org_domain(reply_to), d) for d in set(KNOWN[brand]) | (learned or {}).get(brand, set()))):
             return "warn", f"It is from {org}, but replies would go to {org_domain(reply_to)}."
         return "ok", f"Confirmed from {org} by the mail server."
     if res:
@@ -153,10 +211,35 @@ def judge(sender: str, sender_name: str, auth_results: str = "", reply_to: str =
     return "", ""
 
 
+MAX_RESULT_HEADERS = 8  # a server writes one header, or one per method (dkim, spf, arc, dmarc)
+
+
 def auth_header(msg) -> tuple[str, str]:  # noqa: ANN001 - an email.message.Message
-    """The receiving server's Authentication-Results (the first, topmost header, which is its own) and the
-    Reply-To address."""
-    first = msg.get("Authentication-Results") or msg.get("ARC-Authentication-Results")  # the first only: parsing every one cost a second per thousand
-    results = [first] if first else []
+    """The receiving server's Authentication-Results and the Reply-To address. The server's own lines are the topmost
+    ones, and the first is its own for certain. Some servers (Proton among them) write one header per method, so that
+    first may say only "dkim=pass" for a signature of the attacker's, with the "dmarc=fail" on the next line: the lines
+    below it that name the same server are read for what goes against the message, and never for a pass. Anyone can
+    write "Authentication-Results: <that server's name>; dmarc=pass" among their own headers, right under the server's,
+    and the first word on a method only helps when the server stated that method (sweep 24). A lower line naming anyone
+    else is the sender's own words; the headers are read raw, so a thousand of them cost nothing."""
+    first = ""
+    against: list[str] = []
+    server = ""
+    seen = 0
+    for name, value in msg.raw_items():
+        if name.lower() != "authentication-results":
+            continue
+        line = " ".join(str(value).split())[:1000]
+        who = line.split(";", 1)[0].strip().lower()
+        if seen and who != server:
+            break
+        seen += 1
+        if seen == 1:
+            first, server = line, who
+        else:
+            against += [c for method in ("dmarc", "dkim", "spf") for c in _clauses(line, method) if not re.match(rf"{method}\s*=\s*pass\b", c, re.I)]
+        if seen >= MAX_RESULT_HEADERS:
+            break
+    results = "; ".join([first, *against]) if first else str(msg.get("ARC-Authentication-Results") or "")
     reply = getaddresses([msg.get("Reply-To", "") or ""])
-    return (str(results[0])[:1000] if results else ""), (reply[0][1].lower()[:320] if reply and reply[0][1] else "")
+    return results[:4000], (reply[0][1].lower()[:320] if reply and reply[0][1] else "")

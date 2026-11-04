@@ -54,9 +54,13 @@ def verify(token: str, body: bytes, fetch_key: Callable[[str], dict[str, Any]], 
         signature = _b64(sig_b64)
     except (ValueError, json.JSONDecodeError) as error:
         raise Refused(f"not a token: {error}") from error
+    if not isinstance(header, dict) or not isinstance(claims, dict):  # "[]" decodes too, and answered a stranger 500 with a traceback in the log
+        raise Refused("not a token: its parts are not objects")
     if header.get("alg") != "ES256" or not header.get("kid"):
         raise Refused("not ES256 or no key id")
     kid = str(header["kid"])
+    if len(kid) > 64:  # the note of an unknown key keeps sixty-four characters; a longer one was fetched from Plaid every time
+        raise Refused("a key id that long is no key of Plaid's")
     jwk = _key(kid, fetch_key, now)
     if jwk.get("kty") != "EC" or jwk.get("crv") != "P-256":
         raise Refused("not a P-256 key")

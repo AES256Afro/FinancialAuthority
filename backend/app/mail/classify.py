@@ -11,6 +11,8 @@ import re
 from dataclasses import dataclass
 from datetime import date, datetime
 
+from ..parsers import plain_spaces
+
 AMOUNT = re.compile(r"\$\s?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?|\d+(?:\.\d{2})?)")
 DATE_WORDS = re.compile(r"\b((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4})\b", re.IGNORECASE)
 DATE_WORDS_NOYEAR = re.compile(r"\b((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?)\b", re.IGNORECASE)
@@ -55,7 +57,8 @@ RULES: list[Rule] = [
 
 
 def classify(sender: str, subject: str, text: str = "") -> tuple[str, float, str]:
-    s, j = (sender or "").lower(), (subject or "").lower()
+    # A subject or a body from an HTML mail may hold "Your&nbsp;pay&nbsp;statement": the rules are written with plain spaces.
+    s, j = (sender or "").lower(), plain_spaces(subject).lower()
     for rule in RULES:
         if rule.sender and not re.search(rule.sender, s):
             continue
@@ -64,7 +67,7 @@ def classify(sender: str, subject: str, text: str = "") -> tuple[str, float, str
         if rule.unless and re.search(rule.unless, j):
             continue
         return rule.kind, rule.confidence, f"rule:{rule.name}"
-    body = (text or "")[:4000].lower()
+    body = plain_spaces((text or "")[:4000]).lower()
     if re.search(r"amount due|total due|minimum (payment )?due|payment due", body) and re.search(r"\bdue\b", body):
         return "bill_due", 0.6, "rule:body-due"
     return "none", 0.0, ""

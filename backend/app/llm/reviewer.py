@@ -14,6 +14,7 @@ import hashlib
 import json
 import logging
 import math
+import re
 from contextlib import AbstractContextManager
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable
@@ -21,7 +22,7 @@ from typing import Any, Callable
 from sqlmodel import Session, select
 
 from ..engine.snapshot import finance_snapshot
-from ..models import ReviewRun, utcnow
+from ..models import Account, ReviewRun, utcnow
 from ..store import get_setting, set_setting
 from .advisor import compact_plan, quoted_in
 from .citations import engine_numbers, unverified
@@ -34,6 +35,8 @@ KINDS = ("disagree", "tighten", "ask", "ok")
 ACTIONS = ("rule", "buffer", "ask", "none")
 MAX_BUFFER = 100_000.0  # dollars; the owner's buffer is a few hundred
 MAX_ACTION_CHARS = 500  # a proposed rule or question is a sentence, and it lands in the advisor's prompt once applied
+MAX_NOTE_CHARS = 1000  # a note is one or two sentences; what the reviewer sends is stored and shown as it comes
+_UNPRINTED = re.compile("[\x00-\x1f\x7f-\x9f\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]")
 
 PROMPT = """You are the reviewer inside FinancialAuthority, the owner's own financial planner. A deterministic engine computed the plan below from the owner's registers; the advisor explains it. You are the second opinion: say where you would decide differently, what you would tighten, and what you would ask the owner.
 
@@ -66,17 +69,38 @@ def mark_pending(session: Session, reason: str) -> None:
     set_setting(session, "review.pending", {"reason": reason, "at": utcnow().isoformat()})
 
 
+def _accounts_unnamed(session: Session, value: Any) -> Any:
+    """The same structure with every account's and bank's name replaced by its kind, wherever it rides: a card's name is
+    the debt's name, the card payment's name and the brief's words, and "never account names" held only for the one list
+    of accounts (sweep 24)."""
+    kinds = {word.strip(): a.kind or "account" for a in session.exec(select(Account)).all() for word in (a.name, a.institution) if word and len(word.strip()) >= 3}
+    if not kinds:
+        return value
+    names = re.compile("|".join(re.escape(n) for n in sorted(kinds, key=len, reverse=True)))
+
+    def walk(v: Any) -> Any:
+        if isinstance(v, str):
+            return names.sub(lambda m: kinds[m.group(0)], v)
+        if isinstance(v, list):
+            return [walk(x) for x in v]
+        if isinstance(v, dict):
+            return {k: walk(x) for k, x in v.items()}
+        return v
+
+    return walk(value)
+
+
 def packet(session: Session, today: date) -> dict:
     snap = finance_snapshot(session, today)
     plan = compact_plan(snap, names=False)
     last = session.exec(select(ReviewRun).where(ReviewRun.ok == True).order_by(ReviewRun.created_at.desc())).first()  # noqa: E712
     previous = [n["text"] for n in json.loads(last.notes)] if last else []
     return {
-        "plan": plan,
+        "plan": _accounts_unnamed(session, plan),
         "rules": (get_setting(session, "rules", "") or "").strip(),
         "goals": (get_setting(session, "goals", "") or "").strip(),
-        "alerts": [b["text"] for b in snap["brief"] if b["severity"] != "info"],
-        "previous": previous,
+        "alerts": _accounts_unnamed(session, [b["text"] for b in snap["brief"] if b["severity"] != "info"]),
+        "previous": _accounts_unnamed(session, previous),
         "as_of": snap["as_of"],
         "quoted": sorted(quoted_in(snap)),  # a sender's or a merchant's words in an alert line: their figures are not the plan's
     }
@@ -114,7 +138,7 @@ def parse_notes(text: str, allowed: set[float]) -> list[dict]:
         if a_type in ("rule", "ask"):
             # One line: a proposed rule lands in the advisor's prompt as one bullet under the owner's rules, and a
             # line break inside it could draw a second paragraph that reads as something other than a rule.
-            clean["text"] = " ".join((str(action.get("text", "")).strip() or str(n["text"]).strip()).split())[:MAX_ACTION_CHARS]
+            clean["text"] = " ".join(_UNPRINTED.sub(" ", str(action.get("text", "")).strip() or str(n["text"]).strip()).split())[:MAX_ACTION_CHARS]
         if a_type == "buffer":
             # A buffer is a whole number of dollars that makes sense; a model's "nan", a negative or a billion is no proposal.
             try:
@@ -122,7 +146,8 @@ def parse_notes(text: str, allowed: set[float]) -> list[dict]:
             except (TypeError, ValueError):
                 value = float("nan")
             clean = {"type": "buffer", "value": value} if math.isfinite(value) and 0 <= value <= MAX_BUFFER else {"type": "none"}
-        text_value = str(n["text"]).strip()
+        # Plain and bounded: no direction override that redraws a sentence, and no two megabytes kept and shown each load.
+        text_value = " ".join(_UNPRINTED.sub(" ", str(n["text"])).split())[:MAX_NOTE_CHARS]
         # The note's text must cite the plan; the action is a proposal, so its value is the reviewer's own.
         notes.append({"n": i, "kind": kind, "text": text_value, "action": clean, "status": "open", "unverified": unverified(text_value, allowed)})
     if not notes:

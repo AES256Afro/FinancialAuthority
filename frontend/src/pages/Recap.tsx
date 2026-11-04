@@ -5,7 +5,7 @@
 import { Minus, TrendingDown, TrendingUp, Wallet } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useApi } from "../api";
-import { Empty, Failed, Loading, Show } from "../components/State";
+import { Empty, Failed, Figures, Loading, Show } from "../components/State";
 import { SeverityTag, StatusPill } from "../components/Status";
 import { money, shortDate } from "../format";
 import type { RecapOut, RecapWindow, Snapshot } from "../types";
@@ -175,7 +175,7 @@ function Week({ r }: { r: RecapOut }) {
         <Bar label="Went out these seven days" value={wk.spent} scale={scale} fill={HAPPENED} />
         <Bar label="A usual week" value={wk.usual_week} scale={scale} fill={PLAN} />
       </div>
-      <div style={{ fontSize: 14 }}>{wk.text}</div>
+      <div style={{ fontSize: 14 }}><Figures text={wk.text} /></div>
       {wk.top.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <h3 style={SUB}>Where it went</h3>
