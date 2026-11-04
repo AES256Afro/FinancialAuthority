@@ -12,7 +12,13 @@ import { palette } from "../looks";
 import { inkOn } from "../paychecks";
 import { getPrefs } from "../prefs";
 
+/** Nothing to keep from yet: no paycheck leaves anything, so a share of it would be a row of made-up $0 checks. */
+function noChecks(s: SavingData): boolean {
+  return s.per_check.every((p) => !p.left && !p.keep);
+}
+
 function Ladder({ s, etas }: { s: SavingData; etas: (string | null)[] }) {
+  const noCheck = noChecks(s);
   const c = palette(getPrefs().look);
   const top = Math.max(...s.rungs.map((r) => r.target), 1);
   return (
@@ -26,13 +32,13 @@ function Ladder({ s, etas }: { s: SavingData; etas: (string | null)[] }) {
           <div key={r.n} role="listitem" style={{ display: "grid", gridTemplateColumns: "min(36%, 230px) minmax(0, 1fr) min(24%, 150px)", gap: 10, alignItems: "center" }}>
             <div style={{ fontSize: 13, fontWeight: here ? 800 : 700, lineHeight: 1.2 }}>
               {r.n} · {r.name}
-              <div className="num" style={{ fontWeight: 600, color: "var(--ink-2)", fontSize: 12 }}>{money(r.target)}</div>
+              <div className="num" style={{ fontWeight: 600, color: "var(--ink-2)", fontSize: 12 }}>{r.target === 0 ? "not sized yet" : money(r.target)}</div>
             </div>
-            <div style={{ position: "relative", width: `${width}%`, height: 26, borderRadius: 7, background: "var(--surface-2)", overflow: "hidden", outline: here ? "2px solid var(--ink)" : "none", outlineOffset: 1 }} role="img" aria-label={`${Math.round(r.progress * 100)}% of ${money(r.target)}`}>
+            <div style={{ visibility: r.target === 0 ? "hidden" : undefined, position: "relative", width: `${width}%`, height: 26, borderRadius: 7, background: "var(--surface-2)", overflow: "hidden", outline: here ? "2px solid var(--ink)" : "none", outlineOffset: 1 }} role="img" aria-label={`${Math.round(r.progress * 100)}% of ${money(r.target)}`}>
               <div style={{ position: "absolute", inset: "0 auto 0 0", width: `${Math.round(r.progress * 100)}%`, background: c.saving }} />
             </div>
             <div className="num" style={{ fontSize: 12, textAlign: "right", color: r.reached && r.target > 0 ? "var(--safe-ink)" : "var(--ink-2)", fontWeight: here ? 800 : 600, minWidth: 0, overflowWrap: "anywhere" }}>
-              {r.target === 0 ? "sized once bills are in" : r.reached ? "reached" : eta ? (here ? shortDate(eta) : monthYear(eta)) : "not within six years"}
+              {r.target === 0 ? "sized once bills are in" : r.reached ? "reached" : eta ? (here ? shortDate(eta) : monthYear(eta)) : noCheck ? "dated once a paycheck is in" : "not within six years"}
             </div>
           </div>
         );
@@ -120,6 +126,7 @@ export function Saving() {
   // A rung's target is the engine's figure on the ladder; the sentence under it names the same one, not the sum it
   // was rounded up from.
   const rungTarget = (n: number) => s.rungs.find((r) => r.n === n)?.target;
+  const noCheck = noChecks(s);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 1000 }}>
       <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -129,7 +136,7 @@ export function Saving() {
         </div>
         <Ladder s={s} etas={etas} />
         <div style={{ fontSize: 12, color: "var(--ink-2)", maxWidth: "75ch" }}>
-          Each <Link to="/glossary#rung">rung</Link> is one savings goal. Rung 1 is a first cushion, so a surprise comes out of savings instead of an advance. Rung 2 is <span className="num">{money(rungTarget(2) ?? s.must_pays)}</span>: the bills, card payments and advances of your heavier next check, <span className="num">{money(s.must_pays)}</span>, rounded up. A month here is <span className="num">{money(s.month)}</span> of bills and usual everyday spending; rung 3 rounds it up to <span className="num">{money(rungTarget(3) ?? s.month)}</span>.
+          Each <Link to="/glossary#rung">rung</Link> is one savings goal. Rung 1 is a first cushion, so a surprise comes out of savings instead of an advance. {noCheck && !rungTarget(2) ? "The other rungs are sized from your bills once they are in." : <>Rung 2 is <span className="num">{money(rungTarget(2) ?? s.must_pays)}</span>: the bills, card payments and advances of your heavier next check, <span className="num">{money(s.must_pays)}</span>, rounded up. A month here is <span className="num">{money(s.month)}</span> of bills and usual everyday spending; rung 3 rounds it up to <span className="num">{money(rungTarget(3) ?? s.month)}</span>.</>}
         </div>
       </section>
 
@@ -146,8 +153,8 @@ export function Saving() {
         <label htmlFor="share" style={{ fontSize: 13, color: "var(--ink-2)" }}>Keep <strong className="num" style={{ color: "var(--ink)" }}>{share}%</strong></label>
         <input id="share" type="range" min={0} max={60} step={5} value={share} onChange={(e) => setShare(Number(e.target.value))} style={{ width: "100%", maxWidth: 520, accentColor: "var(--paycheck)" }} />
         <div style={{ display: "flex", gap: 18, flexWrap: "wrap", fontSize: 14 }}>
-          {row ? <span className="num">About <strong>{money(row.per_check)}</strong> a check</span> : <span style={{ color: "var(--ink-2)" }}>The amount a check shows for shares in steps of 5%; move the slider to one.</span>}
-          {nextIdx === null
+          {noCheck ? <span style={{ color: "var(--ink-2)" }}>Add <Link to="/paystubs#paycheck" style={{ fontWeight: 700 }}>your paycheck</Link> and <Link to="/bills" style={{ fontWeight: 700 }}>your bills</Link>, and this shows what each check could keep and when each rung comes.</span> : row ? <span className="num">About <strong>{money(row.per_check)}</strong> a check</span> : <span style={{ color: "var(--ink-2)" }}>The amount a check shows for shares in steps of 5%; move the slider to one.</span>}
+          {noCheck ? null : nextIdx === null
             ? <span>Every rung reached</span>
             : <span>Rung {nextIdx + 1} on <strong>{etas[nextIdx] ? shortDate(etas[nextIdx] as string) : "no date within six years"}</strong></span>}
         </div>
@@ -157,12 +164,12 @@ export function Saving() {
           {note?.where === "share" && <Said text={note.text} tone={note.tone} />}
           {note?.where === "share" && note.cover && <Link to="/cover" style={{ fontSize: 13, fontWeight: 700 }}>Open Cover</Link>}
         </div>
-        <div style={{ overflowX: "auto" }}>
+        {!noCheck && <div style={{ overflowX: "auto" }}>
           <table className="ledger">
             <thead><tr><th>Paycheck</th><th style={{ textAlign: "right" }}>Leaves after bills and everyday spending</th><th style={{ textAlign: "right" }}>Keep at {s.share_used}%</th></tr></thead>
             <tbody>{s.per_check.map((p) => <tr key={p.date}><td>{shortDate(p.date)}</td><td className={p.left === null ? undefined : "num"} style={{ textAlign: "right", color: p.left !== null && p.left < 0 ? "var(--critical-ink)" : "inherit" }}>{p.left === null ? "no balance yet" : money(p.left)}</td><td className="num" style={{ textAlign: "right", fontWeight: 800 }}>{money(p.keep)}</td></tr>)}</tbody>
           </table>
-        </div>
+        </div>}
         <Why label="How the share is worked out" text={`${s.basis} A check that leaves nothing keeps nothing. Nothing moves until you move it.`} />
       </section>
 

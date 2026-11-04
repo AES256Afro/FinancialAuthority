@@ -7,7 +7,7 @@ import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { money, shortDate } from "../format";
 import { ConfirmButton } from "./ConfirmButton";
-import { Said } from "./State";
+import { Failed, Said } from "./State";
 import { Where } from "./Where";
 
 interface SampleRow {
@@ -315,6 +315,7 @@ export function FileImport({ onDone }: { onDone?: (summary: string) => void }) {
           {preview.kind !== "bills" && !affirm && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(160px, 100%), 1fr))", gap: 8 }}>
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span className="lab">Into</span>
+              {accounts.error && !accounts.data && <Failed error={accounts.error} what="your accounts" onRetry={accounts.reload} card={false} />}
               <select className="input" value={into} onChange={(e) => setInto(e.target.value)}>
                 <option value="new">A new account, or the one with this name</option>
                 {(accounts.data?.accounts ?? []).filter((a) => a.active !== false).map((a) => <option key={a.id} value={String(a.id)}>{a.name}{a.institution ? ` · ${a.institution}` : ""}</option>)}

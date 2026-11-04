@@ -14,6 +14,7 @@ import hashlib
 import hmac
 import logging
 import secrets
+import threading
 import time
 from dataclasses import dataclass, field
 
@@ -44,6 +45,7 @@ LOCK_SECONDS = 15 * 60
 SEEN_EVERY = 300  # a session's last-seen time is written at most this often
 
 _failures: dict[str, list[float]] = {}
+_counting = threading.RLock()  # the counts are read, trimmed and added to from every request thread at once
 
 
 def auth_enabled() -> bool:
@@ -151,9 +153,10 @@ def _client_ip(request: Request) -> str:
 
 def _locked(ip: str, now: float | None = None) -> bool:
     now = now or time.time()
-    recent = [t for t in _failures.get(ip, []) if now - t < LOCK_SECONDS]
-    _failures[ip] = recent
-    return len(recent) >= LOCK_AFTER
+    with _counting:
+        recent = [t for t in _failures.get(ip, []) if now - t < LOCK_SECONDS]
+        _failures[ip] = recent
+        return len(recent) >= LOCK_AFTER
 
 
 def _bucket(username: str) -> str:
@@ -161,20 +164,45 @@ def _bucket(username: str) -> str:
     return "u:" + (username or "").strip().lower()
 
 
-def _record_failure(ip: str, now: float | None = None, username: str | None = None) -> None:
+def _record_failure(ip: str, now: float | None = None, username: str | None = None) -> float:
     """A wrong try: counted against the address, and against the username it named (none for a link or a passkey)."""
     t = now or time.time()
-    _failures.setdefault(ip, []).append(t)
-    if username is not None:
-        _failures.setdefault(_bucket(username), []).append(t)
+    with _counting:
+        _failures.setdefault(ip, []).append(t)
+        if username is not None:
+            _failures.setdefault(_bucket(username), []).append(t)
+    return t
+
+
+def begin_try(ip: str, username: str) -> tuple[float | None, float]:
+    """A guess at a password or a code, counted before it is checked: (when it was counted, 0), or (None, seconds to wait)
+    when it may not be tried. The check is slow (scrypt), so a count taken afterwards let every guess sent in the same
+    moment pass a lockout that had seen none of the others, and the right one among them signed in (sweep 26). A try
+    that turns out right gives its count back or clears the counts."""
+    with _counting:
+        if _locked(ip):
+            return None, float(LOCK_SECONDS)
+        wait = _account_wait(username)
+        if wait > 0:
+            return None, wait
+        return _record_failure(ip, username=username), 0.0
+
+
+def give_back(ip: str, username: str, counted: float) -> None:
+    """The try counted by begin_try was right, and clears nothing yet (the password before its second step)."""
+    with _counting:
+        for key in (ip, _bucket(username)):
+            if counted in _failures.get(key, []):
+                _failures[key].remove(counted)
 
 
 def clear_failures(ip: str, username: str | None = None) -> None:
     """A success clears its own address and its own username's count, never another username's: one person signing
     in must not reset the wait on guesses at someone else's password."""
-    _failures.pop(ip, None)
-    if username is not None:
-        _failures.pop(_bucket(username), None)
+    with _counting:
+        _failures.pop(ip, None)
+        if username is not None:
+            _failures.pop(_bucket(username), None)
 
 
 def _account_wait(username: str | None = None, now: float | None = None) -> float:
@@ -182,8 +210,9 @@ def _account_wait(username: str | None = None, now: float | None = None) -> floa
     first few failures, then doubling, at most a minute. Guessing stays hopeless; the person waits a minute at worst."""
     now = now or time.time()
     key = _bucket(username if username is not None else settings.username)
-    recent = [t for t in _failures.get(key, []) if now - t < LOCK_SECONDS]
-    _failures[key] = recent
+    with _counting:
+        recent = [t for t in _failures.get(key, []) if now - t < LOCK_SECONDS]
+        _failures[key] = recent
     if len(recent) < 5:
         return 0.0
     wait = min(60.0, 2.0 ** (len(recent) - 5))
@@ -225,6 +254,11 @@ def lookup_key(session: Session, token: str) -> ApiKey | None:
     session.add(key)
     session.commit()
     return key
+
+
+def credential_alive(session: Session, token: str) -> bool:
+    """Whether a bearer token (an API key or a connected app's) still stands."""
+    return (principal_from_oauth(session, token) if token.startswith("fa_oa_") else lookup_key(session, token)) is not None
 
 
 # ---- principals ----------------------------------------------------------------------------
@@ -413,11 +447,9 @@ def login(body: LoginIn, request: Request, response: Response, session: Session 
     if not auth_enabled():
         return {"ok": True, "user": settings.username, "note": "sign-in is off: FA_PASSWORD is not set"}
     ip = _client_ip(request)
-    if _locked(ip):
-        raise HTTPException(429, "Too many failed sign-ins. Try again in fifteen minutes.")
-    wait = _account_wait(body.username)
-    if wait > 0:
-        raise HTTPException(429, f"Too many failed sign-ins. Try again in {int(wait) + 1} seconds.")
+    counted, wait = begin_try(ip, body.username)
+    if counted is None:
+        raise HTTPException(429, "Too many failed sign-ins. Try again in fifteen minutes." if _locked(ip) else f"Too many failed sign-ins. Try again in {int(wait) + 1} seconds.")
     user_ok = hmac.compare_digest(body.username.encode(), settings.username.encode())
     pass_ok = hmac.compare_digest(body.password.encode(), settings.password.encode())
     from .factors import second_step_on, ticket_for
@@ -439,10 +471,10 @@ def login(body: LoginIn, request: Request, response: Response, session: Session 
         if not pass_ok:
             person = None
     if not ((user_ok or person is not None) and pass_ok):
-        _record_failure(ip, username=body.username)
-        raise HTTPException(401, "Wrong username or password")
+        raise HTTPException(401, "Wrong username or password")  # counted already, by begin_try
     if second_step_on(session, person.id if person else None):
         # The password was right; the session waits for the code.
+        give_back(ip, body.username, counted)
         return {"ok": False, "second_step": "code", "ticket": ticket_for(person)}
     clear_failures(ip, body.username)
     if person is not None:

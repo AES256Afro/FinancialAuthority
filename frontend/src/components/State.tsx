@@ -1,7 +1,7 @@
 // Loading, failed and empty: the same three states on every screen, each saying what happened and what to do.
 // A failure always has a Try again; an empty list always says how to fill it.
 import { Hourglass, Inbox, Loader, OctagonAlert } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { BUSY_WORDS, isBusy, type ApiError, type Loaded } from "../api";
 import { DEMO } from "../demo/shim";
@@ -111,6 +111,19 @@ export function useFocusOnSaid(said: unknown): RefObject<HTMLDivElement | null> 
 /** A long text from the server or a message, with only its dollar figures blurred by "Hide amounts". */
 export function Figures({ text }: { text: string }) {
   return <>{splitFigures(text).map((part, i) => (i % 2 ? <span key={i} className="num">{part}</span> : part))}</>;
+}
+
+/** A very long sentence from the server (every bill by name, with hundreds of them) stays a few lines until asked for. */
+const LONG_TEXT = 320;
+export function LongText({ text, className, style }: { text: string; className?: string; style?: CSSProperties }) {
+  const [open, setOpen] = useState(false);
+  const long = text.length > LONG_TEXT;
+  return (
+    <div className={className} style={style}>
+      {long && !open ? `${text.slice(0, LONG_TEXT).replace(/\s+\S*$/, "")}…` : text}
+      {long && <>{" "}<button type="button" onClick={() => setOpen(!open)} style={{ border: 0, background: "none", padding: 0, font: "inherit", fontWeight: 700, color: "var(--paycheck-ink)", cursor: "pointer", textDecoration: "underline" }}>{open ? "Show less" : "Show all"}</button></>}
+    </div>
+  );
 }
 
 /** A save's outcome, next to the button that caused it. */

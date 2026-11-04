@@ -5,7 +5,7 @@ import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { AdvanceExit } from "../components/AdvanceExit";
 import { BorrowingPlan } from "../components/BorrowingPlan";
-import { Failed, Loading, Said, useJumpToHash, useWidth } from "../components/State";
+import { Empty, Failed, Loading, Said, useJumpToHash, useWidth } from "../components/State";
 import { SeverityTag, StatusPill } from "../components/Status";
 import { amountClass, money, monthDay, shortDate } from "../format";
 import { palette } from "../looks";
@@ -231,6 +231,7 @@ export function Borrowing() {
   const d = data;
   const active = d.installments.filter((s) => s.active);
   const unknown = active.filter((s) => s.status !== "plan").length;
+  const nothingSeen = active.length === 0 && d.outstanding.length === 0 && !d.cost.advances_90d && !d.cost.fees_month && !d.cost.installments_month;
   async function setCards(mode: string) {
     setSaving(true);
     setCardsNote(null);
@@ -265,7 +266,8 @@ export function Borrowing() {
         </section>
       )}
 
-      <section className="grid grid-cols-2 xl:grid-cols-4" style={{ gap: 12 }}>
+      {nothingSeen && <Empty>No advances or pay-later plans in your transactions from the last {d.window_days} days. When they appear, what they cost and what is owed back show here.</Empty>}
+      {!nothingSeen && <section className="grid grid-cols-2 xl:grid-cols-4" style={{ gap: 12 }}>
         <div className="card" style={{ padding: 14, borderTop: "4px solid var(--debt)" }}>
           <div className="lab">Lost to borrowing, a month</div>
           <div className="num" style={{ fontSize: 28, fontWeight: 800 }}>{money(d.cost.fees_month)}</div>
@@ -292,7 +294,7 @@ export function Borrowing() {
             <div style={{ fontSize: 12, color: "var(--ink-2)" }}>no fees in the last {d.window_days} days</div>
           )}
         </div>
-      </section>
+      </section>}
 
       <section className="grid grid-cols-1 xl:grid-cols-2" style={{ gap: 16, alignItems: "start" }}>
         <div className="card" style={{ padding: "16px 20px" }}>
@@ -402,7 +404,7 @@ export function Borrowing() {
           {d.steps.map((s) => <li key={s.n}><span className={amountClass(s.text)}>{s.text}</span> <Link to={s.link} style={{ whiteSpace: "nowrap" }}>{s.action} →</Link></li>)}
         </ol>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", fontSize: 13, borderTop: "1px solid var(--surface-2)", paddingTop: 8 }}>
-          <label htmlFor="cards-pay-from">Hold the card balance of <strong className="num">{money(d.cost.card_balance)}</strong> back from:</label>
+          <label htmlFor="cards-pay-from">{d.cost.card_balance ? <>Hold the card balance of <strong className="num">{money(d.cost.card_balance)}</strong> back from:</> : "When a card has a balance, hold it back from:"}</label>
           <select id="cards-pay-from" className="input" value={d.settings.cards_pay_from} disabled={saving} onChange={(e) => setCards(e.target.value)} style={{ minHeight: 36, maxWidth: "100%", minWidth: 0 }}>
             <option value="auto">Automatic: two paychecks, or the minimum if Debts has it</option>
             <option value="split">Half from each of the next two paychecks</option>

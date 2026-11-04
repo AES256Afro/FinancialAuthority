@@ -171,11 +171,17 @@ function Week({ r }: { r: RecapOut }) {
         <h2 id="week-title" style={TITLE}>This week</h2>
         <span style={{ fontSize: 13, color: "var(--ink-2)" }}>{shortDate(wk.from)} to {shortDate(wk.to)}</span>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 560 }}>
-        <Bar label="Went out these seven days" value={wk.spent} scale={scale} fill={HAPPENED} />
-        <Bar label="A usual week" value={wk.usual_week} scale={scale} fill={PLAN} />
-      </div>
-      <div style={{ fontSize: 14 }}><Figures text={wk.text} /></div>
+      {wk.spent === 0 && wk.usual_week === 0 ? (
+        <div style={{ fontSize: 14, color: "var(--ink-2)" }}>No spending in your transactions yet. <Link to="/settings/connectors#import" style={{ fontWeight: 700 }}>Import a file</Link> or link your bank, and this week fills in.</div>
+      ) : (
+        <>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 560 }}>
+            <Bar label="Went out these seven days" value={wk.spent} scale={scale} fill={HAPPENED} />
+            <Bar label="A usual week" value={wk.usual_week} scale={scale} fill={PLAN} />
+          </div>
+          <div style={{ fontSize: 14 }}><Figures text={wk.text} /></div>
+        </>
+      )}
       {wk.top.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <h3 style={SUB}>Where it went</h3>

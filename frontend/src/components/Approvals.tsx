@@ -10,6 +10,7 @@ import { ConfirmButton } from "./ConfirmButton";
 import { Failed, Figures, Loading, Said } from "./State";
 
 interface ApprovalRow {
+  version?: string;
   id: number;
   status: "pending" | "approved" | "denied" | "sent" | "failed";
   to: string;
@@ -67,7 +68,7 @@ export function Approvals({ onChanged, onCount }: { onChanged?: () => void; onCo
     setBusy(a.id);
     setNote(null);
     try {
-      const r = await api<ApprovalRow>(`/api/v1/approvals/${a.id}/${action}`, { method: "POST", body: JSON.stringify({ allow_always: Boolean(always[a.id]) }) });
+      const r = await api<ApprovalRow>(`/api/v1/approvals/${a.id}/${action}`, { method: "POST", headers: a.version ? { "If-Match": a.version } : undefined, body: JSON.stringify({ allow_always: Boolean(always[a.id]) }) });
       setNote(r.status === "sent" ? { text: `Sent to ${r.to}.`, tone: "info" } : r.status === "failed" ? { text: `Not sent: ${r.error}. Once that is fixed, queue it again from where it came.`, tone: "error" } : r.status === "denied" ? { text: "Denied. Nothing was sent.", tone: "info" } : { text: `Now ${STATUS_WORD[r.status] ?? r.status}.`, tone: "info" });
       state.reload();
       onChanged?.();

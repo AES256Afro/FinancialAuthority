@@ -3,11 +3,11 @@ own: the owner approves the owner's, a second person their own, and neither appr
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlmodel import Session, select
 
 from .inputs import In
-from .. import approvals, auth, services
+from .. import approvals, auth, people, services
 from ..db import get_session
 from ..models import Approval, MailAccount
 
@@ -70,7 +70,7 @@ def list_approvals(status: str = "pending", limit: int = 50, session: Session = 
 
 
 @router.post("")
-def queue(body: ApprovalIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_scope("confirm"))) -> dict:
+def queue(body: ApprovalIn, request: Request, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_scope("confirm"))) -> dict:
     if body.account_id is not None and session.get(MailAccount, body.account_id) is None:
         raise HTTPException(400, "No such mailbox to send from; leave it out to use the first one connected.")
     try:
@@ -78,6 +78,13 @@ def queue(body: ApprovalIn, session: Session = Depends(get_session), principal: 
                                for_person_id=_mine(principal))
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
+    # The revoke (or the end of a person's access) denies what its holder left waiting. One queued in that moment landed
+    # after the sweep, one tap from going out; read after the commit, so one or the other always sees it.
+    gone = auth.principal_from_request(request, session) is None if principal.kind == "key" else people.access_ended(session, principal)
+    if gone:
+        if row.status == "pending":
+            approvals.deny(session, row, decided_by="access ended")
+        raise HTTPException(401, "This credential has ended; the draft was not kept.")
     _audit(session, principal, "approval_queued", row)
     return approvals.out(row)
 
@@ -109,15 +116,18 @@ def edit(approval_id: int, body: EditIn, session: Session = Depends(get_session)
 
 
 @router.post("/{approval_id}/approve")
-def approve(approval_id: int, body: DecideIn | None = None, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_owner)) -> dict:
+def approve(approval_id: int, request: Request, body: DecideIn | None = None, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_owner)) -> dict:
     row = session.get(Approval, approval_id)
     if row is None:
         raise HTTPException(404, "No such approval")
     _check_mine(row, principal)
     try:
-        row = approvals.approve(session, row, decided_by=principal.name, allow_always=bool(body and body.allow_always))
+        # If-Match: the version of the draft the screen read. Left out, the tap approves what is there.
+        row = approvals.approve(session, row, decided_by=principal.name, allow_always=bool(body and body.allow_always), seen=request.headers.get("if-match") or None)
     except ValueError as error:
         raise HTTPException(409, str(error)) from error
+    if body and body.allow_always and people.access_ended(session, principal):
+        approvals.disallow(session, row.to, principal.person_id)  # added after the end of access swept their list
     _audit(session, principal, "approval_approved", row)
     return approvals.out(row)
 

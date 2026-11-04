@@ -65,8 +65,9 @@ def next_steps(session: Session, today: date, *, person_id: int | None = None) -
     from .sources import down
 
     for card in down(session):
-        said = f" ({card['detail'][:90]})" if card["failure"] == "other" and card["detail"] else ""
-        steps.append(_step(card["card_id"], card["severity"], f"{card['text']}{said} {card['step']}", card["action"], card["link"], card["source"]))
+        # The source's name and fixed words: these steps reach the models and the brief, and what a server said (the card's
+        # detail) stays on Needs you and Connectors (sweep 26).
+        steps.append(_step(card["card_id"], card["severity"], f"{card['text']} {card['step']}", card["action"], card["link"], card["source"]))
 
     investments = session.exec(select(Account).where(Account.active == True, Account.kind == "investment")).all()  # noqa: E712
     if not investments:

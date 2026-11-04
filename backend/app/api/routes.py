@@ -10,7 +10,7 @@ from fastapi.responses import PlainTextResponse
 from sqlmodel import Session, select
 
 from .inputs import In
-from .. import auth, services
+from .. import auth, people, services
 from ..config import settings
 from ..connectors import CONNECTORS
 from ..connectors.rocketmoney import export_csv
@@ -326,6 +326,11 @@ def create_key(body: KeyIn, session: Session = Depends(get_session), principal: 
         key, token = auth.create_key(session, body.name, set(body.scopes), body.redaction, person_id=principal.person_id)
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
+    if people.access_ended(session, principal):
+        key.revoked_at = utcnow()
+        session.add(key)
+        session.commit()
+        raise HTTPException(403, "Your access has ended.")
     if principal.kind == "person":  # a credential that reads from outside the app: the owner hears of it, as of a person's send
         auth.tell_owner(f"{principal.name[:60]} made an API key", f"{key.name[:60]}, {', '.join(sorted(key.scope_set))}. It ends with their access; Settings › Apps and keys revokes it sooner.")
     return {"id": key.id, "name": key.name, "prefix": key.prefix, "scopes": sorted(key.scope_set), "token": token, "note": "Shown once. Keep it in the client, not in chat."}
@@ -396,11 +401,13 @@ def set_oauth_client_redaction(client_id: str, body: ClientRedactionIn, session:
 
 
 @router.get("/jobs")
-def list_jobs(_: auth.Principal = Depends(auth.require_read)) -> dict:
+def list_jobs(principal: auth.Principal = Depends(auth.require_read)) -> dict:
+    from ..engine.sources import run_words
+
     runs = jobs.recent()
     return {
         "jobs": [{"name": s.name, "every_seconds": s.seconds, "description": s.description} for s in jobs.specs.values()],
-        "runs": [{"id": r.id, "name": r.name, "started_at": r.started_at.isoformat(), "finished_at": r.finished_at.isoformat() if r.finished_at else None, "ok": r.ok, "summary": r.summary} for r in runs],
+        "runs": [{"id": r.id, "name": r.name, "started_at": r.started_at.isoformat(), "finished_at": r.finished_at.isoformat() if r.finished_at else None, "ok": r.ok, "summary": run_words(r.name, r.ok, r.summary) if principal.kind == "key" else r.summary} for r in runs],
         "scheduler": "running" if jobs.scheduler else "stopped",
     }
 
@@ -417,8 +424,13 @@ def run_job(name: str, _: auth.Principal = Depends(auth.require_admin)) -> dict:
 
 
 @router.get("/settings")
-def read_settings(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
-    return {key: get_setting(session, key) for key in ("buffer", "appearance", "selfcheck")}
+def read_settings(session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
+    from ..engine.sources import check_words
+
+    out = {key: get_setting(session, key) for key in ("buffer", "appearance", "selfcheck")}
+    if principal.kind == "key":  # what a server said is for the owner's screens (engine/sources.py)
+        out["selfcheck"] = check_words(out["selfcheck"] or {})
+    return out
 
 
 class SettingIn(In):

@@ -69,7 +69,10 @@ function MonthBars({ months }: { months: Spending["months"] }) {
             <title>{`${monthName(m.month)}: spent ${money(m.spent)}, income ${money(m.income)}${m.partial ? " (so far)" : ""}`}</title>
             <rect x={cx - bar - 1} y={y(m.income)} width={bar} height={Math.max(0, y(0) - y(m.income))} rx={4} fill="var(--paycheck)" opacity={m.partial ? 0.55 : 1} />
             <rect x={cx + 1} y={y(m.spent)} width={bar} height={Math.max(0, y(0) - y(m.spent))} rx={4} fill="var(--bill)" opacity={m.partial ? 0.55 : 1} />
-            {i === last && (
+            {i === last && w < 480 && (
+              <text x={w - pad.r} y={12} textAnchor="end" fontSize={11} fontWeight={700} fill="var(--ink-2)" className="num">{monthName(m.month)}: {money(m.income)} in, {money(m.spent)} out</text>
+            )}
+            {i === last && w >= 480 && (
               <>
                 <text x={cx - 3} y={y(m.income) - 6} textAnchor="end" fontSize={11} fontWeight={700} fill="var(--paycheck-ink)" className="num">{money(m.income)}</text>
                 <text x={cx + 3} y={y(m.spent) - 6} textAnchor="start" fontSize={11} fontWeight={700} fill="var(--bill-ink)" className="num">{money(m.spent)}</text>

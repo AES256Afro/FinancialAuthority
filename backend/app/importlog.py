@@ -14,7 +14,7 @@ from sqlmodel import Session, select
 
 from . import restore
 from .jobs.writing import one_writer
-from .models import Account, Bill, Document, ImportBatch, Invoice, PlannedPayment, Transaction, utcnow
+from .models import Account, BalanceSnapshot, Bill, Document, ImportBatch, Invoice, PlannedPayment, Transaction, utcnow
 
 log = logging.getLogger(__name__)
 BILL_FIELDS = ("amount", "cadence", "due_day", "anchor_date", "autopay", "category")
@@ -90,6 +90,9 @@ def _undo(session: Session, batch_id: int, today: date) -> dict[str, Any]:
         session.delete(doc)
     bills_removed = bills_restored = 0
     for c in json.loads(batch.changes or "[]"):
+        if c.get("op") == "balance_set":
+            _put_balance_back(session, c)
+            continue
         bill = session.get(Bill, int(c.get("id", 0)))
         if bill is None:
             continue
@@ -131,6 +134,29 @@ def _undo(session: Session, batch_id: int, today: date) -> dict[str, Any]:
         sync_borrowing(session, today)  # an advance the undone rows showed goes with them
     match_payments(session, today)
     return {"id": batch.id, "removed": len(rows), "bills_removed": bills_removed, "bills_restored": bills_restored, "accounts_closed": accounts_closed, "documents_removed": len(kept)}
+
+
+def _put_balance_back(session: Session, change: dict[str, Any]) -> None:
+    """The balance a statement set goes back, and its line for that day; a balance typed or read since stays, as everything since does."""
+    from datetime import datetime
+
+    from .connectors.banks import sync_card_debt
+
+    account = session.get(Account, int(change["id"]))
+    if account is None or account.balance != (change.get("after") or {}).get("balance"):
+        return
+    before = change.get("before") or {}
+    account.balance = before.get("balance")
+    account.balance_at = datetime.fromisoformat(before["balance_at"]) if before.get("balance_at") else None
+    session.add(account)
+    day = session.exec(select(BalanceSnapshot).where(BalanceSnapshot.account_id == account.id, BalanceSnapshot.date == date.fromisoformat(change["day"]))).first()
+    if day is not None and change.get("day_before") is None:
+        session.delete(day)
+    elif day is not None:
+        day.balance = change["day_before"]
+        session.add(day)
+    if account.kind == "card":
+        sync_card_debt(session, account)
 
 
 def history(session: Session, limit: int = 30) -> list[dict[str, Any]]:

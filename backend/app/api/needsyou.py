@@ -11,7 +11,7 @@ from .inputs import In
 from .. import auth, services
 from ..db import get_session
 from ..engine import facts
-from ..engine.needsyou import AlreadyAnswered, answer_payment, plan_many, triage
+from ..engine.needsyou import AlreadyAnswered, answer_payment, plan_many, triage, undo_payment_answer
 from ..jobs.writing import one_writer
 from ..models import ExtractedFact, MessageRef, Payment
 from .routes import today
@@ -152,4 +152,18 @@ def answer_one_payment(payment_id: int, body: PaidIn, session: Session = Depends
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
     services.audit(session, client=principal.name, client_kind=principal.kind, tool="payment_answer", args={"payment": payment_id, "answer": body.answer}, rows=1)
+    return {"said": said, "triage": triage(session, today())}
+
+
+@router.post("/payments/{payment_id}/undo")
+def undo_one_payment(payment_id: int, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
+    """A mark taken back: a bill marked paid, or linked to the wrong row, or stopped by mistake. Without it, one wrong tap held for good."""
+    payment = session.get(Payment, payment_id)
+    if payment is None:
+        raise HTTPException(404, "No such payment")
+    try:
+        said = undo_payment_answer(session, payment, today())
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    services.audit(session, client=principal.name, client_kind=principal.kind, tool="payment_answer_undo", args={"payment": payment_id}, rows=1)
     return {"said": said, "triage": triage(session, today())}

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { daysWord, money, monthDay, shortDate, splitFigures } from "./format";
+import { maskFigures } from "./quietmask";
+import { amountClass, daysWord, money, monthDay, shortDate, splitFigures } from "./format";
 
 describe("money", () => {
   it("formats whole dollars with a true minus sign", () => {
@@ -49,5 +50,16 @@ describe("splitFigures", () => {
   it("puts each dollar figure on an odd piece, the words on the even ones", () => {
     expect(splitFigures("Pay $1,920.00 by Friday, then \u2212$88 is left.")).toEqual(["Pay ", "$1,920.00", " by Friday, then ", "\u2212$88", " is left."]);
     expect(splitFigures("no figure here, 30% of it")).toEqual(["no figure here, 30% of it"]);
+  });
+});
+
+describe("Hide amounts", () => {
+  it("puts a figure in a tooltip or label in words", () => {
+    expect(maskFigures("Rent: $1,295.00, due −$40 and +$5.5k")).toBe("Rent: hidden amount, due hidden amount and hidden amount");
+    expect(maskFigures("Open Bills")).toBe("Open Bills");
+  });
+  it("blurs a sentence whose figure has no dollar sign", () => {
+    expect(amountClass("3 subscriptions: 38.00 a month together")).toBe("num");
+    expect(amountClass("3 subscriptions, one could go")).toBeUndefined();
   });
 });

@@ -160,6 +160,7 @@ function GroupPlan({ g }: { g: NeedsGroup }) {
 function DataCheckLine() {
   const check = useApi<{ findings: { severity: string }[]; said: string }>("/api/v1/data-check", { live: true });
   const n = check.data?.findings.length ?? 0;
+  if (check.error && !check.data) return <Failed error={check.error} what="the data check" onRetry={check.reload} />;
   if (!n) return null;
   const crit = check.data?.findings.some((f) => f.severity === "crit");
   return (

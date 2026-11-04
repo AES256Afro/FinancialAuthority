@@ -72,7 +72,27 @@ class PersonEdit(In):
     active: bool | None = None
 
 
-@router.put("/people/{person_id}")
+def _signed_out_on_removal(person_id: int, session: Session = Depends(get_session), _: auth.Principal = Depends(_owner)) -> None:
+    """Ending someone's access is not made to wait. A dependency runs before the writer lock, so while a sync holds it and
+    the route answers 409, they are already out: a long read of a bank must not leave them signed in until a retry works."""
+    person = session.get(Person, person_id)
+    if person is not None:
+        person.active = False
+        session.add(person)
+        session.commit()
+        people.end_sessions(session, person_id)
+
+
+def _signed_out_on_change(person_id: int, body: PersonEdit, session: Session = Depends(get_session), _: auth.Principal = Depends(_owner)) -> None:
+    """The same for an edit that ends access or changes what they may see: a role takes a new sign-in, so the old one goes now."""
+    if body.active is False:
+        _signed_out_on_removal(person_id, session, _)
+    elif body.role is not None and session.get(Person, person_id) is not None:
+        people.end_sessions(session, person_id)
+
+
+@router.put("/people/{person_id}", dependencies=[Depends(_signed_out_on_change)])
+@under_writer
 def change_person(person_id: int, body: PersonEdit, session: Session = Depends(get_session), principal: auth.Principal = Depends(_owner)) -> dict:
     person = session.get(Person, person_id)
     if person is None:
@@ -94,6 +114,7 @@ def change_person(person_id: int, body: PersonEdit, session: Session = Depends(g
 
 
 @router.post("/people/{person_id}/invite")
+@under_writer
 def reinvite(person_id: int, request: Request, session: Session = Depends(get_session), principal: auth.Principal = Depends(_owner)) -> dict:
     """A new one-time link. Their password, second step and passkeys are cleared and every session ends, so this
     is also how a lost password, phone or passkey is put right."""
@@ -105,11 +126,15 @@ def reinvite(person_id: int, request: Request, session: Session = Depends(get_se
     return {**_overview(session), "invite": {"person_id": person.id, "link": _link(request, token), "expires_at": person.invite_expires_at.isoformat()}}
 
 
-@router.delete("/people/{person_id}")
+@router.delete("/people/{person_id}", dependencies=[Depends(_signed_out_on_removal)])
+@under_writer
 def remove_person(person_id: int, session: Session = Depends(get_session), principal: auth.Principal = Depends(_owner)) -> dict:
     person = session.get(Person, person_id)
     if person is None:
         raise HTTPException(404, "No such person")
+    person.active = False  # committed before the sweep: a request of theirs under way sees it, or the sweep finds what it made
+    session.add(person)
+    session.commit()
     people.end_access(session, person.id)
     for key in session.exec(select(Passkey).where(Passkey.person_id == person.id)).all():
         session.delete(key)

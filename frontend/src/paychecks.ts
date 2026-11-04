@@ -101,5 +101,8 @@ export function inkOn(hex: string): string {
   const h = hex.replace("#", "");
   const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
   const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  return (lum + 0.05) / 0.05 >= 1.05 / (lum + 0.05) ? "#141518" : "#ffffff";
+  const onInk = (lum + 0.05) / (0.0074 + 0.05); // 0.0074: #141518's own luminance
+  const onWhite = 1.05 / (lum + 0.05);
+  // On a middle blue neither reaches 4.5:1; pure black does.
+  return Math.max(onInk, onWhite) < 4.5 ? "#000000" : onInk >= onWhite ? "#141518" : "#ffffff";
 }

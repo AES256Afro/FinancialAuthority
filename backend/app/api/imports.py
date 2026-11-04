@@ -142,7 +142,7 @@ def import_file(
         from .. import services
 
         # The statement's own balance: an owner with files only then gets a real safe to spend, not "no balance yet".
-        services.apply_statement_balances(session, text, (result.details or {}).get("account_id"))
+        services.apply_statement_balances(session, text, (result.details or {}).get("account_id"), (result.details or {}).get("import_id"))
     from ..jobs.detect import run_detection
 
     if raw.startswith(b"%PDF") and result.details.get("account_id") and result.inserted and result.details.get("import_id"):
@@ -155,15 +155,20 @@ def import_file(
         from ..engine.documents import save_document
         from ..models import Document
 
+        from ..jobs.writing import one_writer
+        from ..models import ImportBatch
+
         attach = f"account:{result.details['account_id']}"
-        if session.exec(select(Document).where(Document.sha256 == hashlib.sha256(raw).hexdigest(), Document.attach_to == attach)).first() is None:
-            last = max((r["date"] for r in rows if r.get("date")), default=None)
-            month = (last.isoformat() if hasattr(last, "isoformat") else str(last or today()))[:7]
-            try:
-                save_document(session, raw, filename=file.filename or "statement.pdf", title=f"Statement · {name} · {month}", kind="statement",
-                              attach_to=attach, period=month, source=f"import:{result.details['import_id']}")
-            except ValueError:
-                pass
+        with one_writer():  # an undo in this moment found no file to take, and it stayed kept for an import that no longer was
+            batch = session.get(ImportBatch, result.details["import_id"], populate_existing=True)
+            if batch is not None and batch.status != "undone" and session.exec(select(Document).where(Document.sha256 == hashlib.sha256(raw).hexdigest(), Document.attach_to == attach)).first() is None:
+                last = max((r["date"] for r in rows if r.get("date")), default=None)
+                month = (last.isoformat() if hasattr(last, "isoformat") else str(last or today()))[:7]
+                try:
+                    save_document(session, raw, filename=file.filename or "statement.pdf", title=f"Statement · {name} · {month}", kind="statement",
+                                  attach_to=attach, period=month, source=f"import:{result.details['import_id']}")
+                except ValueError:
+                    pass
     detection = run_detection(session, today()) if result.inserted else {}
     return {"ok": True, "summary": result.summary, "inserted": result.inserted, "duplicates": result.duplicates, "merged": result.details.get("merged", 0), "accounts_created": result.accounts,
             "account_id": result.details.get("account_id"), "import_id": result.details.get("import_id"), "detection": detection}

@@ -348,10 +348,12 @@ def restore(name: str) -> dict[str, Any]:
     """Put the whole database back as it was at a restore point. The moment before is kept as its own point, and
     with it the files of documents added since, so the restore can itself be undone."""
     from .db import engine, init_db
-    from .jobs.writing import one_writer
+    from .jobs.writing import one_writer, replacing_data
 
     path = _path(name)
-    with one_writer():  # no job or sync writes while the database file is replaced
+    # No job or sync writes while the database file is replaced, and no request: what the restore keeps "as it is now" is
+    # read below, so a key revoked or a send approved after that line was undone by the copy.
+    with one_writer(), replacing_data():
         before = make_point("before-restore", f"Before restoring the point of {name[:15]}")
         # The point is made whole beside the database first (this version's columns, today's sign-ins, keys and
         # links carried in), then put in place in one step: a restore killed or failing half way leaves the

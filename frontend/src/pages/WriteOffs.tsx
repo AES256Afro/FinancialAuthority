@@ -6,7 +6,7 @@ import { useState, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { ConfirmButton } from "../components/ConfirmButton";
-import { Said, Show } from "../components/State";
+import { Failed, Said, Show } from "../components/State";
 import { amountClass, money } from "../format";
 import type { Business as BusinessRow, Finder, FinderGroup } from "../types-business";
 import { BusinessPick, CARD, FIELD, H2, INLINE_ICON, NeedsBusiness, NeverList, NotAdvice, PageHead, SMALL, SourceLine, dayWithYear, useChosenBusiness } from "./Business";
@@ -22,6 +22,7 @@ export function WriteOffs() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <PageHead back title="Write-offs" sub="Purchases that could be business costs, if they were for your business." />
+      {overview.error && !overview.data && <Failed error={overview.error} what="your business" onRetry={overview.reload} />}
       {overview.data && !business && (
         <NeedsBusiness>There is no business on file yet. Add it on Business first; a purchase can be marked as the business's once there is one. You can already say which were personal.</NeedsBusiness>
       )}

@@ -233,6 +233,17 @@ def end_access(session: Session, person_id: int) -> dict:
     return {"sessions": ended, "keys": keys, "devices": drop_person(session, person_id), "feed": feed_ended, "sends_cancelled": cancelled, "mailboxes": boxes, "banks": _end_bank_links(session, person_id)}
 
 
+def access_ended(session: Session, principal) -> bool:  # noqa: ANN001 - an auth.Principal
+    """Whether a person's access ended after their request was let in. Read after what the request made has committed, and
+    the end of access sweeps after it has committed its own change (the role, the switch, the password): so either this
+    sees it, and the request undoes what it made, or the sweep finds what was made. A key made in that moment had no person
+    behind it, was never looked at again, and read everything for good (sweep 26)."""
+    if principal.kind != "person":
+        return False
+    person = session.get(Person, principal.person_id, populate_existing=True)
+    return person is None or not person.active or person.role != principal.role or not person.password_hash
+
+
 def reset_sign_in(session: Session, person: Person) -> str:
     """Everything the person signs in with is cleared, every session ended, and a new invitation made. Under the
     invitation lock: a join on the old link in the same instant either lands first and is undone here, or finds the

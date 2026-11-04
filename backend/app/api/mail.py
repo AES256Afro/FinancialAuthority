@@ -20,7 +20,7 @@ from ..engine.recurring import merchant_key
 from ..mail.box import MAIL_WORDS, box_fields, box_untrusted
 from ..mail.imap import check_credential, parse_message
 from ..models import Account, Bill, ExtractedFact, InstallmentPlan, MailAccount, MessageRef
-from .routes import today
+from .routes import today, under_writer
 
 router = APIRouter(prefix="/api/v1", tags=["mail"])
 
@@ -101,8 +101,11 @@ def presets(_: auth.Principal = Depends(auth.require_read)) -> dict:
 
 
 @router.get("/mail/accounts")
-def list_accounts(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
-    return {"accounts": [account_out(a) for a in session.exec(select(MailAccount).order_by(MailAccount.id)).all() if a.person_id is None or a.person_id >= 0]}  # a removed person's is kept only for what names it
+def list_accounts(session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
+    out = [account_out(a) for a in session.exec(select(MailAccount).order_by(MailAccount.id)).all() if a.person_id is None or a.person_id >= 0]  # a removed person's is kept only for what names it
+    if principal.kind == "key":  # what the server said is for the owner's screen (engine/sources.py)
+        out = [{**a, "last_error": "could not be read" if a["last_error"] else ""} for a in out]
+    return {"accounts": out}
 
 
 def _may_change(account: MailAccount, principal: auth.Principal) -> None:
@@ -141,6 +144,13 @@ def create_account(body: MailAccountIn, session: Session = Depends(get_session),
     session.add(account)
     session.commit()
     session.refresh(account)
+    from .. import people
+
+    if people.access_ended(session, principal):
+        account.active, account.password_enc = False, ""
+        session.add(account)
+        session.commit()
+        raise HTTPException(403, "Your access has ended.")
     if principal.kind == "person":
         auth.tell_owner(f"{principal.name[:60]} connected a mailbox", f"{account.label[:60]} at {account.host[:80]}. Its mail is read into the plan until it is removed on Connectors; it stops when their access ends.")
     return account_out(account)
@@ -184,6 +194,7 @@ def update_account(account_id: int, body: MailAccountIn, session: Session = Depe
 
 
 @router.delete("/mail/accounts/{account_id}")
+@under_writer
 def remove_account(account_id: int, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     account = session.get(MailAccount, account_id)
     if account is None:

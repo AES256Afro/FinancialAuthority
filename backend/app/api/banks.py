@@ -207,6 +207,7 @@ def plaid_exchange(body: ExchangeIn, session: Session = Depends(get_session), pr
         raise HTTPException(502, _unreachable(error)) from error
     except crypto.DataKeyMissing as error:
         raise HTTPException(409, str(error)) from error
+    _ended_while_linking(session, principal, link)
     result = plaid().sync(session, link_id=link.id)
     session.refresh(link)
     if result.ok and only_duplicates(session, link):
@@ -214,6 +215,20 @@ def plaid_exchange(body: ExchangeIn, session: Session = Depends(get_session), pr
     detection = detect_after(session, result)
     session.refresh(link)
     return {"link": link_out(session, link), "sync": {"ok": result.ok, "summary": result.summary, "inserted": result.inserted}, "detection": detection}
+
+
+def _ended_while_linking(session: Session, principal: auth.Principal, link: BankLink) -> None:
+    """The vendor's exchange takes a moment over the network, the widest window a person's request has. A link landing after
+    their access ended was swept by nothing, and went on reading their bank through the owner's keys for good."""
+    from .. import people
+
+    if not people.access_ended(session, principal):
+        return
+    if link.provider == "plaid":
+        plaid().disconnect(session, plaid().api(session), link)
+    else:
+        teller().disconnect(session, link)
+    raise HTTPException(403, "Your access has ended.")
 
 
 def _undo_duplicate(session: Session, link: BankLink, result) -> dict:  # noqa: ANN001 - a SyncResult
@@ -239,6 +254,7 @@ def teller_enroll(body: EnrollIn, session: Session = Depends(get_session), princ
         raise HTTPException(400, str(error)) from error
     except crypto.DataKeyMissing as error:
         raise HTTPException(409, str(error)) from error
+    _ended_while_linking(session, principal, link)
     result = teller().sync(session, link_id=link.id)
     session.refresh(link)
     if result.ok and only_duplicates(session, link):
@@ -260,6 +276,7 @@ def sync_link(link_id: int, session: Session = Depends(get_session), _: auth.Pri
 
 
 @router.delete("/{link_id}")
+@under_writer
 def remove_link(link_id: int, accounts: str = "keep", session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
     """Remove a bank link. Its accounts stay as they are with `accounts=keep` (the default: linking the bank again
     takes them over, history and all), or become history with `accounts=history`: kept with their rows, no longer
@@ -298,7 +315,7 @@ TRIAL_ITEMS = 10
 
 
 @router.get("/freshness")
-def freshness(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+def freshness(session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
     """How fresh the bank data is, how often the app reads it, every call it has made, and what that costs."""
     from datetime import UTC, datetime, timedelta
 
@@ -323,7 +340,7 @@ def freshness(session: Session = Depends(get_session), _: auth.Principal = Depen
         out_links.append({"id": link.id, "provider": link.provider, "institution": link.institution, "last_sync_at": last.isoformat() if last else None,
                           "bank_updated_at": bank_at.isoformat() if bank_at else None,
                           "next_sync_at": (last + every).isoformat() if last else datetime.now(UTC).isoformat(), "newest_transaction": newest.isoformat() if newest else None,
-                          "error": link.last_error or None, "needs_login": link.needs_login})
+                          "error": ("could not be read" if link.last_error and principal.kind == "key" else link.last_error) or None, "needs_login": link.needs_login})
     environment = bank_state(session, "plaid")["environment"]
     production_items = [link for link in links if link.provider == "plaid" and (link.environment or environment) == "production"]
     active_plaid = [link for link in production_items if link.active]

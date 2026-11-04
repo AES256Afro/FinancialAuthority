@@ -7,6 +7,7 @@ import { api } from "./api";
 import { DEMO } from "./demo/shim";
 import { applyLook, setColourOverrides, type ColourOverrides, type LookId } from "./looks";
 import { getPrefs, setPrefs } from "./prefs";
+import { setQuietMask } from "./quietmask";
 import { onShowAsChange, setServerShowAs } from "./showas";
 
 export interface Section {
@@ -82,6 +83,7 @@ function apply(a: AppearanceState): void {
   root.dataset.density = a.density;
   if (a.quiet && !viewOnly) root.dataset.quiet = "1";
   else delete root.dataset.quiet;
+  setQuietMask(root.dataset.quiet === "1");
   if (a.calm) root.dataset.calm = "1";
   else delete root.dataset.calm;
   root.dataset.font = a.font ?? "regular";

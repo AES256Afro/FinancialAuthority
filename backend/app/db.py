@@ -10,6 +10,7 @@ from sqlalchemy import event
 from sqlmodel import Session, SQLModel, create_engine
 
 from .config import settings
+from .jobs.writing import refuse_if_outlived
 
 settings.ensure_dirs()
 engine = create_engine(f"sqlite:///{settings.db_path}", connect_args={"check_same_thread": False})
@@ -103,6 +104,11 @@ def _engine_reads(obj) -> bool:  # noqa: ANN001
     return True
 
 
+@event.listens_for(Session, "before_flush")
+def _no_write_from_before_a_replacement(_session, _context, _instances) -> None:  # noqa: ANN001
+    refuse_if_outlived()  # a job begun before an erase or a restore puts nothing of the old data back (jobs/writing.py)
+
+
 @event.listens_for(Session, "after_flush")
 def _after_flush(session, _context) -> None:  # noqa: ANN001
     if any(_engine_reads(o) for o in (*session.new, *session.dirty, *session.deleted)):
@@ -127,6 +133,7 @@ def _after_rollback(session, _previous) -> None:  # noqa: ANN001
 def _bulk_write(state) -> None:  # noqa: ANN001
     # A bulk update or delete never passes through a flush.
     if state.is_update or state.is_delete or state.is_insert:
+        refuse_if_outlived()
         tables = {getattr(m.class_, "__tablename__", "") for m in state.all_mappers} if state.all_mappers else set()
         if not tables or tables - QUIET_TABLES:
             bump_version()

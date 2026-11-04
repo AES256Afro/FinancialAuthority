@@ -155,11 +155,11 @@ def erase(body: EraseIn, request: Request, session: Session = Depends(get_sessio
     session.close()
     from ..connectors.teller import forget_cert_files
     from ..engine.documents import folder as documents_folder
-    from ..jobs.writing import one_writer
+    from ..jobs.writing import one_writer, replacing_data
     from ..restore import folder
 
     erased: dict[str, int] = {}
-    with one_writer():  # never beside a sync, a detection or an import: a job mid-write would put half its rows back
+    with one_writer(), replacing_data():  # never beside a sync, a detection or an import: a job mid-write would put half its rows back
         with engine.begin() as connection:
             connection.execute(text("PRAGMA foreign_keys=OFF"))
             connection.execute(text("PRAGMA secure_delete=ON"))  # a deleted row's bytes are overwritten in its page, not left in the free space

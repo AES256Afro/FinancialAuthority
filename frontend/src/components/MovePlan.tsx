@@ -174,7 +174,7 @@ function Letter({ plan, setPlan }: { plan: Plan; setPlan: (p: Plan) => void }) {
     }
   }
   if (!open) {
-    return <div><button type="button" className="btn" style={SMALL} aria-expanded={false} onClick={() => setOpen(true)}><Mail size={15} aria-hidden="true" />Show the notice letter</button></div>;
+    return <div><button type="button" className="btn" style={{ ...SMALL, whiteSpace: "normal", height: "auto", textAlign: "left" }} aria-expanded={false} onClick={() => setOpen(true)}><Mail size={15} aria-hidden="true" />Show the notice letter</button></div>;
   }
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 10, borderRadius: 10, background: "var(--surface-2)" }}>

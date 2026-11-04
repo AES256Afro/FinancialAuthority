@@ -546,7 +546,10 @@ export function Accounts() {
       <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Accounts</h1>
       {error && !data && <Failed error={error} what="your accounts" onRetry={reload} />}
       {!data && !error && <Loading what="your accounts" />}
-      {data && (
+      {data && data.assets.items.length === 0 && data.debts.items.length === 0 && data.net === 0 && (
+        <Empty to="/settings/connectors#banks" action="Connect a bank">No accounts yet, so there is no net worth to show. Connect a bank or import its file, and what you have and what you owe start here.</Empty>
+      )}
+      {data && (data.assets.items.length > 0 || data.debts.items.length > 0 || data.net !== 0) && (
         <>
           <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
             <WhereBar data={data} />

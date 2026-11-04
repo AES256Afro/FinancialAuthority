@@ -202,3 +202,22 @@ def keep(session: Session, state: dict[str, Any], ended: list[dict[str, Any]], n
     if ended:
         kept = [b for b in (get_setting(session, BACK, []) or []) if b.get("key") not in {e["key"] for e in ended} and (at := health.moment(b.get("at"))) is not None and now - at < timedelta(hours=BACK_HOURS)]
         set_setting(session, BACK, kept + ended)
+
+
+def run_words(name: str, ok: bool | None, summary: str) -> str:
+    """A job run's line for a model or a key. A failed run's summary is the failure as it was said, a mail server's or a
+    vendor's words among it, and the self-check's lists its problems the same way. The Jobs page keeps them for the owner;
+    a model, which would read them as part of its context, gets the name of the run and fixed words (sweep 26)."""
+    if ok is False:
+        return "this run did not go through; the Jobs page says why"
+    if name == "self_check":
+        return summary.split(": ", 1)[0]
+    return summary
+
+
+def check_words(check: dict[str, Any]) -> dict[str, Any]:
+    """The self-check for a model or a key: each source's name and how it is, each problem without what was said."""
+    sources = check.get("sources") or []
+    named = {f"{s.get('name')}: {s.get('error')}" for s in sources if s.get("error")}
+    problems = [f"{s.get('name')}: could not be read" for s in sources if s.get("error")] + [p.split(": ", 1)[0] for p in check.get("problems") or [] if p not in named]
+    return {**check, "problems": problems, "sources": [{**s, "error": "could not be read" if s.get("error") else ""} for s in sources]}

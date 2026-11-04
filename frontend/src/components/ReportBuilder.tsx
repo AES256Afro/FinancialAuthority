@@ -258,7 +258,7 @@ function Bars({ items, share, limit = 12, noun = ["transaction", "transactions"]
         return (
           <div key={i.name} style={{ display: "grid", gridTemplateColumns: "minmax(0, 11rem) minmax(40px, 1fr) minmax(5.5rem, auto)", gap: 10, alignItems: "center", fontSize: 13 }}>
             <span style={{ minWidth: 0, display: "flex", flexDirection: "column" }}>
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={i.name}>{i.name}</span>
+              <span style={{ overflowWrap: "anywhere" }} title={i.name}>{i.name}</span>
               <span style={{ fontSize: 11, color: "var(--muted)" }}>{many(i.count, noun[0], noun[1])}</span>
             </span>
             <div aria-hidden="true" style={{ height: 14, background: "var(--surface-2)", borderRadius: 4 }}>

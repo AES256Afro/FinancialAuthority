@@ -129,14 +129,18 @@ def record_paystub(session: Session, fields: dict, source: str, fact_id: int | N
         same = [p.net for p in recent if (len(incomes) <= 1 or _income_of(incomes, p.employer, p.net) is income) and (not position or payday_position(p.pay_date) == position)][:3]
         target = "expected_net_end" if position == "end" else "expected_net"
         current = getattr(income, target)
+        moved_to = None
         if position and len(same) == 1 and (current is None or abs(same[0] - current) > TOLERANCE):
-            setattr(income, target, round(same[0], 2))
-            session.add(income)
+            moved_to = round(same[0], 2)
         elif (len(same) >= 2 if position else len(same) >= 3):
             median = round(statistics.median(same), 2)
             if current is None or abs(median - current) > 1:
-                setattr(income, target, median)
-                session.add(income)
+                moved_to = median
+        if moved_to is not None:
+            setattr(income, target, moved_to)
+            session.add(income)
+            stub.income_before = json.dumps({"id": income.id, "field": target, "before": current, "after": moved_to})
+            session.add(stub)
     session.commit()
     session.refresh(stub)
     return stub

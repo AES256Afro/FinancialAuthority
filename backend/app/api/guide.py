@@ -158,11 +158,13 @@ def firstrun_update(body: FirstRunIn, session: Session = Depends(get_session), _
 
 
 @router.get("/setup/check")
-def setup_check(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_read)) -> dict:
+def setup_check(session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_read)) -> dict:
     """Each setup step's state now, from what the app already records (M29)."""
     from ..engine import setup_check as sc
 
     items = sc.checks(session)
+    if principal.kind == "key":  # what a server said is for the owner's screens (engine/sources.py)
+        items = [{**i, "detail": "The last read failed."} if str(i.get("detail", "")).startswith("Last read failed") else i for i in items]
     return {"checks": items, "summary": sc.summary(items)}
 
 
