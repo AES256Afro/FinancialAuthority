@@ -105,8 +105,16 @@ def list_accounts(session: Session = Depends(get_session), _: auth.Principal = D
     return {"accounts": [account_out(a) for a in session.exec(select(MailAccount).order_by(MailAccount.id)).all()]}
 
 
+def _may_change(account: MailAccount, principal: auth.Principal) -> None:
+    """Where the mail is read from and sent through is the owner's: a second person changes or removes only a mailbox
+    they added. Moved to a server of theirs, with any password typed, the owner's approved sends went there and mail
+    they wrote, with a "dmarc=pass" they wrote, was read as the owner's, long after their access ended (sweep 24)."""
+    if principal.kind != "owner" and (account.person_id is None or account.person_id != principal.person_id):
+        raise HTTPException(403, "Only the owner changes or removes a mailbox; a second person only one they added")
+
+
 @router.post("/mail/accounts")
-def create_account(body: MailAccountIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+def create_account(body: MailAccountIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     kind = body.kind or "imap"
     if kind not in PRESETS:
         raise HTTPException(400, "kind must be proton, gmail or imap")
@@ -128,18 +136,22 @@ def create_account(body: MailAccountIn, session: Session = Depends(get_session),
         folders=_folders(body.folders), active=body.active if body.active is not None else True,
         smtp_host=body.smtp_host if body.smtp_host is not None else preset["smtp_host"], smtp_port=body.smtp_port if body.smtp_port is not None else preset["smtp_port"],
         smtp_ssl=body.smtp_ssl if body.smtp_ssl is not None else preset["smtp_ssl"], smtp_starttls=body.smtp_starttls if body.smtp_starttls is not None else preset["smtp_starttls"],
+        person_id=principal.person_id,
     )
     session.add(account)
     session.commit()
     session.refresh(account)
+    if principal.kind == "person":
+        auth.tell_owner(f"{principal.name[:60]} connected a mailbox", f"{account.label[:60]} at {account.host[:80]}. Its mail is read into the plan until it is removed on Connectors; it stops when their access ends.")
     return account_out(account)
 
 
 @router.put("/mail/accounts/{account_id}")
-def update_account(account_id: int, body: MailAccountIn, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+def update_account(account_id: int, body: MailAccountIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     account = session.get(MailAccount, account_id)
     if account is None:
         raise HTTPException(404, "No such mailbox")
+    _may_change(account, principal)
     changes = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
     # The stored password is sent only to the servers it was saved for: moving the mailbox to another server, port
     # or encryption (for reading or for sending) needs the password typed again.
@@ -167,10 +179,11 @@ def update_account(account_id: int, body: MailAccountIn, session: Session = Depe
 
 
 @router.delete("/mail/accounts/{account_id}")
-def remove_account(account_id: int, session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_admin)) -> dict:
+def remove_account(account_id: int, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
     account = session.get(MailAccount, account_id)
     if account is None:
         raise HTTPException(404, "No such mailbox")
+    _may_change(account, principal)
     account.active = False
     account.password_enc = ""
     session.add(account)
@@ -388,13 +401,28 @@ class ConfirmIn(In):
     warranty_until: date | None = None
 
 
-def refuse_forged(ref: MessageRef | None, *, owner: bool) -> None:
+def refuse_forged(ref: MessageRef | None, *, owner: bool, session: Session | None = None) -> None:
     """A message judged forged (mail/trust.py) waits for the owner: a key or a connected app never confirms what it
     says, since the model behind it may be reading that very message's instructions. Nor one the trust check could
     not vouch for ("warn": a brand's name from a domain that only looks like its own, replies sent elsewhere, a
-    server that could not confirm the sender): a look-alike that passes DMARC is exactly that (sweep 23)."""
-    if not owner and ref is not None and ref.trust in ("crit", "warn"):
+    server that could not confirm the sender): a look-alike that passes DMARC is exactly that (sweep 23).
+
+    Nor one nothing vouches for at all (no verdict), nor the first from a sender: DMARC says a domain sent it, not that
+    the domain is the lender's, and anyone can register a domain, sign with it, write the lender's name and mail for a
+    month. A key or an app confirms only a verified message from a table's own domain, or from a domain a person has
+    already answered for (marked genuine, or a message of theirs confirmed), and the first is the owner's (sweep 24)."""
+    if owner or ref is None:
+        return
+    if ref.trust in ("crit", "warn"):
         raise HTTPException(403, "Only the owner confirms what a message that may be forged says: the trust check could not vouch for its sender. It waits on Needs you with the reason")
+    if session is None:
+        return
+    from ..connectors.mail import vouched_domains
+    from ..mail.trust import KNOWN, org_domain
+
+    org = org_domain(ref.sender or "")
+    if ref.trust != "ok" or not (any(org in domains for domains in KNOWN.values()) or org in vouched_domains(session)):
+        raise HTTPException(403, "Only the owner confirms the first message from a sender, or one the mail server could not vouch for. It waits on Needs you; once the owner has confirmed one from this sender, a connected app may keep it current")
 
 
 def apply_fact(session: Session, fact: ExtractedFact, ref: MessageRef | None, body: ConfirmIn, *, owner: bool = False) -> str:
@@ -404,12 +432,14 @@ def apply_fact(session: Session, fact: ExtractedFact, ref: MessageRef | None, bo
     more: no export is fetched, no name is overridden, an amount may move a quarter at most and a date six weeks
     at most, and only a bill of exactly the same name is updated."""
     fields = json.loads(fact.fields or "{}")
-    refuse_forged(ref, owner=owner)
+    refuse_forged(ref, owner=owner, session=session)
     if not owner:
         if fact.kind == "export":
             raise HTTPException(403, "Only the owner, signed in, imports an export from mail")
         if body.name:
             raise HTTPException(403, "Only the owner renames what a message says")
+        if body.autopay is not None:  # a bill marked as paying itself stops being named as one to pay by hand
+            raise HTTPException(403, "Only the owner says a bill pays itself")
         said = fields.get("amount") if fields.get("amount") is not None else fields.get("net")
         if body.amount is not None and (not isinstance(said, (int, float)) or said <= 0 or not (0.75 * said <= body.amount <= 1.25 * said)):
             raise HTTPException(403, "Only the owner changes an amount by more than a quarter of what the message said")
@@ -605,6 +635,15 @@ def told_owner(client: str, confirmed: list[tuple[str, int, str]]) -> None:
         logging.getLogger(__name__).warning("could not push the confirmation of fact %s", fact_id)
 
 
+def told_owner_discarded(client: str, discarded: list[tuple[str, int]]) -> None:
+    """Facts a key or a connected app discarded: a past-due notice set aside by an app the mail steered is one the owner
+    no longer sees anywhere, so it is pushed as a confirmation is (sweep 24)."""
+    if not discarded:
+        return
+    which = ", ".join(str(i) for _k, i in discarded[:20]) + ("" if len(discarded) <= 20 else ", and more")
+    auth.tell_owner(f"{(client or 'A connected app')[:60]} discarded {'an item' if len(discarded) == 1 else f'{len(discarded)} items'} from the mail", f"Fact {which}. It no longer waits on Needs you; the activity log lists every call.")
+
+
 @router.post("/facts/{fact_id}/confirm")
 def confirm_fact(fact_id: int, body: ConfirmIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_scope("confirm"))) -> dict:
     from ..jobs.writing import one_writer
@@ -617,7 +656,7 @@ def confirm_fact(fact_id: int, body: ConfirmIn, session: Session = Depends(get_s
         if fact.status != "pending":
             raise HTTPException(409, f"This one was {fact.status} already; nothing changed.")
         ref = session.get(MessageRef, fact.message_ref_id) if fact.message_ref_id else None
-        refuse_forged(ref, owner=principal.full)
+        refuse_forged(ref, owner=principal.full, session=session)
         b = facts.watermark(session)
         applied = apply_fact(session, fact, ref, body, owner=principal.full) if body.apply else ""
         facts.resolve_fact(session, fact, "applied" if applied else "confirmed", applied_to=applied, by=facts.who(principal), before=b)
@@ -675,5 +714,8 @@ def reject_fact(fact_id: int, session: Session = Depends(get_session), principal
         if fact.status != "pending":
             raise HTTPException(409, f"This one was {fact.status} already; nothing changed.")
         facts.resolve_fact(session, fact, "rejected", by=facts.who(principal))
+        kind = fact.kind
         session.commit()
+    if principal.kind == "key":  # a key or a connected app buried it: the owner hears, as of a confirmation
+        told_owner_discarded(principal.name, [(kind, fact_id)])
     return {"ok": True}

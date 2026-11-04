@@ -1042,7 +1042,7 @@ def build_server() -> MCPServer:
             body = ConfirmIn(apply=apply, name=name, amount=amount, due_date=_date.fromisoformat(due_date) if due_date else None)
             b = facts.watermark(session)
             try:
-                refuse_forged(ref, owner=False)
+                refuse_forged(ref, owner=False, session=session)
                 applied = apply_fact(session, fact, ref, body, owner=False) if apply else ""
             except HTTPException as error:
                 session.rollback()

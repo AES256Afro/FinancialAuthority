@@ -116,7 +116,9 @@ def saving_plan(session: Session, today: date, *, snap: dict | None = None) -> d
 
     # The rollover: a plan's payment, freed when it ends, keeps going into the ladder.
     check_days = 365.0 / CHECKS_PER_YEAR.get(cadence, 26)
-    plans = session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all()  # noqa: E712
+    from .projection import paid_by_household
+
+    plans = paid_by_household(session, session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all())  # noqa: E712 - a second person's payment is never freed into the owner's ladder (sweep 24)
     roll = []
     for p in plans:
         last = _last_payment(p)

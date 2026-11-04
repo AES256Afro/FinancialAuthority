@@ -77,8 +77,10 @@ def account_cover(session: Session, today: date, *, saving: dict | None = None) 
     from .scenario import assembled, load_inputs
 
     inp = load_inputs(session, today, horizon_days=60)
+    if len(inp["paydays"]) > 1 and (inp["paydays"][1] - today).days > 60:
+        inp = load_inputs(session, today, horizon_days=(inp["paydays"][1] - today).days)  # the second window runs to the second payday: a monthly check landed early puts it past sixty days (sweep 24)
     accounts = inp["accounts"]
-    plan = assembled(inp, 60)
+    plan = assembled(inp, inp["horizon_days"])
     math, card_bills, payoffs = plan["math"], plan["card_bills"], plan["payoffs"]
     paydays = inp["paydays"]
     p1 = paydays[0] if paydays else today + timedelta(days=14)

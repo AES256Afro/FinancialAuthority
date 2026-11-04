@@ -383,6 +383,19 @@ require_admin = require_scope("admin")
 require_owner = require_scope("approve")
 
 
+def tell_owner(title: str, body: str) -> None:
+    """A push about something done on the owner's behalf or beside them (a second person's new key or mailbox, a key's
+    discard). In a session of its own; a push that fails never fails what it is about."""
+    from . import notify
+    from .db import session_scope
+
+    try:
+        with session_scope() as session:
+            notify.send(session, title, body, tags=["memo"], link=None)
+    except Exception as error:  # noqa: BLE001
+        log.warning("could not push a notice to the owner: %s", type(error).__name__)
+
+
 # ---- routes --------------------------------------------------------------------------------
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -513,6 +526,7 @@ def end_sessions(body: EndIn, request: Request, session: Session = Depends(get_s
         raise HTTPException(403, "Missing the request header the app sends")
     here = session_row(request, session)
     ended = 0
+    gone: list[int] = []
     query = select(WebSession).where(WebSession.revoked_at == None)  # noqa: E711
     if principal.kind == "person":
         query = query.where(WebSession.person_id == principal.person_id)  # a person ends only their own
@@ -521,7 +535,13 @@ def end_sessions(body: EndIn, request: Request, session: Session = Depends(get_s
             r.revoked_at = utcnow()
             session.add(r)
             ended += 1
+            gone.append(r.id)
     session.commit()
+    if gone:
+        # A lost phone's lock screen goes on showing the brief and the sends waiting until its notifications stop too.
+        from .webpush import drop_sessions
+
+        drop_sessions(session, gone)
     return {"ended": ended}
 
 

@@ -85,7 +85,8 @@ export function SafeSentence({ s }: { s: Snapshot }) {
 
 /** What the plan does not know yet, said under the figure it affects (the engine's own caveats). */
 export function PlanCaveats({ s }: { s: Snapshot }) {
-  const list = s.caveats ?? [];
+  // The engine's own no-balance caveat repeats what the pill and SafeSentence already say; one note for one state.
+  const list = (s.caveats ?? []).filter((c) => !(noBalance(s) && c.startsWith("No bank has reported a balance")));
   if (list.length === 0) return null;
   return (
     <div role="note" style={{ display: "flex", flexDirection: "column", gap: 4, padding: "8px 10px", borderRadius: 8, background: "var(--warning-soft)", color: "var(--warning-ink)", fontSize: 12, fontWeight: 600 }}>

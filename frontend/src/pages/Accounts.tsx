@@ -503,7 +503,7 @@ function OtherAssets({ state, onChanged }: { state: Loaded<Assets>; onChanged: (
                     <span className="num" style={{ fontSize: 20, fontWeight: 800 }}>{money(a.value_now)}</span>
                     <span style={{ fontSize: 12, color: "var(--muted)" }}>now</span>
                   </div>
-                  <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
+                  <div className="num" style={{ fontSize: 13, color: "var(--ink-2)" }}>
                     You set it at {money(a.value_set)} on {shortDate(a.value_on)}. {changeWords(a)} {rateWords(a)}
                   </div>
                   {a.owed_against > 0 && (

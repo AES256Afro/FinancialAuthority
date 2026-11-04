@@ -5,6 +5,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefO
 import { Link, useLocation } from "react-router-dom";
 import { BUSY_WORDS, isBusy, type ApiError, type Loaded } from "../api";
 import { DEMO } from "../demo/shim";
+import { amountClass, splitFigures } from "../format";
 
 const box = { padding: 14, display: "flex", alignItems: "flex-start", gap: 10, fontSize: 13 } as const;
 
@@ -97,7 +98,6 @@ export function useJumpToHash(ready: unknown = true): void {
   }, [hash, key, ready]);
 }
 
-/** A save's outcome, next to the button that caused it. */
 /** A write that takes its card off the page would drop keyboard focus to the body; this moves it to the line that
  * says what happened (give that element the ref and tabIndex -1), so a keyboard or a screen reader carries on there. */
 export function useFocusOnSaid(said: unknown): RefObject<HTMLDivElement | null> {
@@ -108,6 +108,12 @@ export function useFocusOnSaid(said: unknown): RefObject<HTMLDivElement | null> 
   return ref;
 }
 
+/** A long text from the server or a message, with only its dollar figures blurred by "Hide amounts". */
+export function Figures({ text }: { text: string }) {
+  return <>{splitFigures(text).map((part, i) => (i % 2 ? <span key={i} className="num">{part}</span> : part))}</>;
+}
+
+/** A save's outcome, next to the button that caused it. */
 // The live region is on the page before it has anything to say (empty and out of the layout), so a screen reader
 // announces the sentence when it arrives; a region that appears with its text already in it is often not read.
 export function Said({ text, tone = "info" }: { text: string | null; tone?: "info" | "error" }) {
@@ -116,14 +122,14 @@ export function Said({ text, tone = "info" }: { text: string | null; tone?: "inf
   if (isBusy(text)) {
     return (
       <span role="status" aria-live="polite" style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-2)" }}>
-        <Hourglass size={13} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 4 }} />
+        <Hourglass size={13} aria-hidden="true" style={{ display: "inline-block", verticalAlign: -2, marginRight: 4 }} />
         {BUSY_WORDS}
       </span>
     );
   }
   return (
-    <span role={tone === "error" ? "alert" : "status"} aria-live="polite" style={{ fontSize: 12, fontWeight: 700, color: tone === "error" ? "var(--critical-ink)" : "var(--safe-ink)" }}>
-      {tone === "error" ? <OctagonAlert size={13} aria-hidden="true" style={{ verticalAlign: -2, marginRight: 4 }} /> : null}
+    <span role={tone === "error" ? "alert" : "status"} aria-live="polite" className={amountClass(text)} style={{ fontSize: 12, fontWeight: 700, color: tone === "error" ? "var(--critical-ink)" : "var(--safe-ink)" }}>
+      {tone === "error" ? <OctagonAlert size={13} aria-hidden="true" style={{ display: "inline-block", verticalAlign: -2, marginRight: 4 }} /> : null}
       {text}
     </span>
   );

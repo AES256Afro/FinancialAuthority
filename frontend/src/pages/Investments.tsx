@@ -306,7 +306,7 @@ export function Investments() {
             <div><div className="lab">Invested in all</div><div className="num" style={{ fontSize: 34, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.1 }}>{money(d.total)}</div></div>
             <div><div className="lab">Retirement</div><div className="num" style={{ fontSize: 22, fontWeight: 800, color: "var(--paycheck-ink)" }}>{money(d.retirement)}</div></div>
             <div><div className="lab">Taxable</div><div className="num" style={{ fontSize: 22, fontWeight: 800 }}>{money(d.taxable)}</div></div>
-            {d.contributions.per_paycheck > 0 && <div><div className="lab">From each paycheck</div><div className="num" style={{ fontSize: 22, fontWeight: 800, color: "var(--safe-ink)" }}>{money(d.contributions.per_paycheck)}</div><div style={{ fontSize: 11, color: "var(--muted)" }}>{d.contributions.items.map((c) => `${c.name} ${money(c.last)}`).join(" · ")}</div></div>}
+            {d.contributions.per_paycheck > 0 && <div><div className="lab">From each paycheck</div><div className="num" style={{ fontSize: 22, fontWeight: 800, color: "var(--safe-ink)" }}>{money(d.contributions.per_paycheck)}</div><div className="num" style={{ fontSize: 11, color: "var(--muted)" }}>{d.contributions.items.map((c) => `${c.name} ${money(c.last)}`).join(" · ")}</div></div>}
             {returns && anyKnown && (
               <div>
                 <div className="lab">Gain against cost</div>
@@ -338,7 +338,7 @@ export function Investments() {
                 <span className="num" style={{ fontSize: 20, fontWeight: 800 }}>{a.balance === null ? "—" : money(a.balance)}</span>
                 {a.balance_at && a.stale_days !== null && a.stale_days > 35
                   ? <StatusPill status="warn">as of {balanceWhen(a.balance_at)}, over a month old</StatusPill>
-                  : <span style={{ fontSize: 12, color: "var(--muted)" }}>{a.balance_at ? `as of ${balanceWhen(a.balance_at)}` : "no balance yet"}</span>}
+                  : <span style={{ fontSize: 12, color: "var(--muted)" }}>{a.balance_at ? `as of ${balanceWhen(a.balance_at)}` : a.balance === null ? "no balance yet" : "date not given"}</span>}
               </div>
               <GainLine r={gainOf.get(a.id)} loading={!gains.data && !gains.error} />
               {a.history.length > 1 && <Line points={a.history} />}

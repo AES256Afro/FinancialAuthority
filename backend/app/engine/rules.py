@@ -33,21 +33,56 @@ def forget(session: Session) -> None:
     session.info.pop(CACHE_KEY, None)
 
 
-NESTED_QUANTIFIER = re.compile(r"\([^)]*(?:[*+?}]|\|)[^)]*\)[*+?{]")  # the quantifier right after the group: one after a space quantifies the space (sweep 23)
+def _holds_choice(items) -> bool:  # noqa: ANN001 - a parsed pattern
+    """Whether a parsed pattern can match one text more than one way: an alternation or a quantifier anywhere in it."""
+    for op, arg in items:
+        name = str(op)
+        if name == "BRANCH" or (name.endswith("_REPEAT") and arg[0] != arg[1]):
+            return True
+        if any(_holds_choice(body) for body in _bodies(name, arg)):
+            return True
+    return False
+
+
+def _bodies(name: str, arg) -> list:  # noqa: ANN001 - what the parser keeps for one node
+    if name.endswith("_REPEAT"):
+        return [arg[2]]
+    if name == "SUBPATTERN":
+        return [arg[3]]
+    if name == "BRANCH":
+        return list(arg[1])
+    if name in ("ASSERT", "ASSERT_NOT"):
+        return [arg[1]]
+    if name == "ATOMIC_GROUP":
+        return [arg]
+    if name == "GROUPREF_EXISTS":
+        return [b for b in arg[1:] if b is not None]
+    return []
+
+
+def _repeats_a_choice(items) -> bool:  # noqa: ANN001 - a parsed pattern
+    """A group that can run more than once over a choice: the shape that backtracks without end. An optional group runs
+    at most once, so `(amzn|amazon)?` is linear; read from the parsed pattern, a space or an inline flag cannot hide it."""
+    for op, arg in items:
+        name = str(op)
+        if name in ("MAX_REPEAT", "MIN_REPEAT") and arg[1] > 1 and _holds_choice(arg[2]):
+            return True
+        if any(_repeats_a_choice(body) for body in _bodies(name, arg)):
+            return True
+    return False
 
 
 @lru_cache(maxsize=256)
 def _rule_regex(source: str) -> re.Pattern | None:
-    """A saved rule's pattern, compiled once. A quantified group that holds a quantifier or an alternation (the shape
-    that backtracks without end) is refused, as is one that does not compile."""
-    shape = re.sub(r"\(\?(?:[:>=!]|<[=!]|P?<\w+>)", "(", source)  # a group's own "(?:" is no quantifier (sweep 23)
-    if re.search(r"\(\?[a-zA-Z]*x", source):
-        shape = re.sub(r"\s+", "", shape)  # verbose mode: a space between the group and its quantifier is no space
-    if NESTED_QUANTIFIER.search(shape):
-        return None
+    """A saved rule's pattern, compiled once. One that repeats a group holding a quantifier or an alternation is refused,
+    as is one that does not compile."""
+    from re import _parser
+
     try:
+        if _repeats_a_choice(_parser.parse(source)):
+            return None
         return re.compile(source, re.IGNORECASE)
-    except re.error:
+    except (re.error, RecursionError, OverflowError):  # nested too deep or a repeat too large is no error of re's own: one such rule stopped every rule run
         return None
 
 

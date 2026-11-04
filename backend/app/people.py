@@ -159,7 +159,7 @@ def end_access(session: Session, person_id: int) -> dict:
     """Everything a person set up that reaches the household from outside the app: their sessions, the API keys they
     made, their phones and computers for notifications, the calendar feed if they made it. Their pending sends are
     cancelled, so no draft of theirs can be sent by anyone after them."""
-    from .models import ApiKey, Approval
+    from .models import ApiKey, Approval, MailAccount
     from .store import get_setting, set_setting
     from .webpush import drop_person
 
@@ -169,6 +169,11 @@ def end_access(session: Session, person_id: int) -> dict:
         key.revoked_at = utcnow()
         session.add(key)
         keys += 1
+    boxes = 0
+    for box in session.exec(select(MailAccount).where(MailAccount.person_id == person_id, MailAccount.active == True)).all():  # noqa: E712
+        box.active, box.password_enc = False, ""  # read no further: mail from a server of theirs is theirs to write
+        session.add(box)
+        boxes += 1
     feed = get_setting(session, "calendar.feed", {}) or {}
     feed_ended = bool(feed.get("hash")) and feed.get("person_id") == person_id
     if feed_ended:
@@ -183,7 +188,7 @@ def end_access(session: Session, person_id: int) -> dict:
             continue
         cancelled += 1
     session.commit()
-    return {"sessions": ended, "keys": keys, "devices": drop_person(session, person_id), "feed": feed_ended, "sends_cancelled": cancelled}
+    return {"sessions": ended, "keys": keys, "devices": drop_person(session, person_id), "feed": feed_ended, "sends_cancelled": cancelled, "mailboxes": boxes}
 
 
 def reset_sign_in(session: Session, person: Person) -> str:

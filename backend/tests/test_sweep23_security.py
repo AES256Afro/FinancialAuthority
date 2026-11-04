@@ -30,7 +30,7 @@ from app.models import Bill, ExtractedFact, MailAccount, MessageRef
 from app.store import get_setting, set_setting
 
 APPLE = Path(__file__).resolve().parents[2] / "apple"
-PASSED = "mx.example.test; dmarc=pass header.from=capitalonebank.test; dkim=pass; spf=pass"
+PASSED = "mx.example.test; dmarc=pass; dkim=pass; spf=pass"  # names no domain, so it stands for each sender
 H = {"X-Requested-With": "FinancialAuthority"}
 
 

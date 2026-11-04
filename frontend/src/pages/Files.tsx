@@ -170,7 +170,7 @@ function MatchIt({ r, onDone, onClose }: { r: ReceiptRow; onDone: (text: string)
       ) : !list ? (
         <Loading what="the purchases it may belong to" card={false} />
       ) : list.length === 0 ? (
-        <span style={{ fontSize: 13, color: "var(--ink-2)" }}>No purchase of {money(r.amount ?? 0, { cents: true })} was found from two days before {r.bought_on ? shortDate(r.bought_on) : "the day bought"} to ten days after. A card charge can take a few days to show; try again later.</span>
+        <span style={{ fontSize: 13, color: "var(--ink-2)" }}>No purchase of <span className="num">{money(r.amount ?? 0, { cents: true })}</span> was found from two days before {r.bought_on ? shortDate(r.bought_on) : "the day bought"} to ten days after. A card charge can take a few days to show; try again later.</span>
       ) : (
         <PurchaseChoices name={`match-${r.id}`} legend="Which purchase is it?" list={list} value={chosen} onPick={setPick} />
       )}
@@ -410,7 +410,7 @@ function AddReceipt({ onAdded, onClose }: { onAdded: (text: string) => void; onC
       ) : !list ? (
         <Loading what="the purchases it may belong to" card={false} />
       ) : list.length === 0 ? (
-        <span style={{ fontSize: 13, color: "var(--ink-2)" }}>No purchase of {money(amount ?? 0, { cents: true })} was found near {shortDate(bought)}. It is kept without a purchase; match it later.</span>
+        <span style={{ fontSize: 13, color: "var(--ink-2)" }}>No purchase of <span className="num">{money(amount ?? 0, { cents: true })}</span> was found near {shortDate(bought)}. It is kept without a purchase; match it later.</span>
       ) : (
         <PurchaseChoices name="add-receipt-purchase" legend="The purchase it is for" list={list} value={chosen} onPick={setPick} none="Keep it without a purchase" />
       )}

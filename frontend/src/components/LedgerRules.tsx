@@ -141,7 +141,7 @@ export function LedgerRules({ onChanged }: { onChanged: () => void }) {
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
             <span className="num" style={{ fontSize: 26, fontWeight: 800, lineHeight: 1 }}>{preview.count}</span>
             <span style={{ fontSize: 13 }}>
-              row{preview.count === 1 ? "" : "s"} from {span(preview.days)} would change{preview.count > 0 ? `, ${money(preview.total, { cents: true })} in all` : ""}.
+              row{preview.count === 1 ? "" : "s"} from {span(preview.days)} would change{preview.count > 0 ? <>, <span className="num">{money(preview.total, { cents: true })}</span> in all</> : ""}.
             </span>
           </div>
           {preview.count === 0 && (

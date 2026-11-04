@@ -156,6 +156,14 @@ def _hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+def _own_feed(session: Session, principal: auth.Principal) -> None:
+    """A second person replaces or turns off only a feed they made: replacing the owner's left their calendar silently
+    stale and the new address theirs."""
+    feed = get_setting(session, FEED_KEY, {}) or {}
+    if principal.kind != "owner" and feed.get("hash") and feed.get("person_id") != principal.person_id:
+        raise HTTPException(403, "The calendar feed on file is the owner's; a second person replaces only one they made")
+
+
 @router.get("/api/v1/calendar/feed")
 def feed_status(session: Session = Depends(get_session), _: auth.Principal = Depends(auth.require_owner)) -> dict:
     feed = get_setting(session, FEED_KEY, {}) or {}
@@ -165,6 +173,7 @@ def feed_status(session: Session = Depends(get_session), _: auth.Principal = Dep
 @router.post("/api/v1/calendar/feed")
 def feed_create(body: FeedIn, request: Request, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_owner)) -> dict:
     """A new feed address; the old one stops working. The address is shown once."""
+    _own_feed(session, principal)
     token = secrets.token_urlsafe(32)
     set_setting(session, FEED_KEY, {"hash": _hash(token), "amounts": body.amounts, "created": datetime.now(timezone.utc).isoformat(), "person_id": principal.person_id})
     services.audit(session, client=principal.name, client_kind=principal.kind, tool="calendar_feed_create", args={"amounts": body.amounts}, rows=1)
@@ -174,6 +183,7 @@ def feed_create(body: FeedIn, request: Request, session: Session = Depends(get_s
 
 @router.delete("/api/v1/calendar/feed")
 def feed_revoke(session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_owner)) -> dict:
+    _own_feed(session, principal)
     set_setting(session, FEED_KEY, {})
     services.audit(session, client=principal.name, client_kind=principal.kind, tool="calendar_feed_revoke", rows=0)
     return {"active": False}

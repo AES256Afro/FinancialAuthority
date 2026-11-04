@@ -1,7 +1,7 @@
 // An action that cannot be taken back asks first, in place: the button becomes the question and two answers.
 // A failure is said next to it, never swallowed. With `open`, the question is shown by the caller (after a choice
 // in a select, say) and has no button of its own; "no" calls `onCancel`.
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 
 export function ConfirmButton({
   label,
@@ -15,7 +15,7 @@ export function ConfirmButton({
   onCancel,
   name,
 }: {
-  label: string;
+  label: ReactNode;
   question: string;
   yes: string;
   no?: string;

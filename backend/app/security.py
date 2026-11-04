@@ -116,6 +116,10 @@ class SecurityMiddleware:
                 headers += COMMON
                 if api:
                     headers = [(k, v) for k, v in headers if k.lower() != b"cross-origin-resource-policy"] + API_ONLY
+                if (api or path.startswith("/oauth/")) and not any(k.lower() == b"cache-control" for k, _ in headers):
+                    # The figures and the mail are never kept by a cache on the way or on disk: a phone's URLSession and a
+                    # browser both keep an answer that does not say otherwise, past the sign-out that forgot the token.
+                    headers.append((b"cache-control", b"no-store"))
                 if https:
                     headers.append((b"strict-transport-security", b"max-age=15552000; includeSubDomains"))
                 if own_csp:

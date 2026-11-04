@@ -1,7 +1,7 @@
 // Cover: how much each account needs, and by when. Three pictures of the same result, and the payday sheet.
 import { Link } from "react-router-dom";
 import { useApi } from "../api";
-import { COVER_MODES, CoverPanel, coverSummary, coverTone, type CoverMode } from "../components/Cover";
+import { COVER_MODES, CoverPanel, coverSummary, coverTone, coverUnknown, type CoverMode } from "../components/Cover";
 import { ModeSwitch } from "../components/ModeSwitch";
 import { Failed, Loading } from "../components/State";
 import { StatusPill } from "../components/Status";
@@ -33,7 +33,8 @@ export function CoverPage() {
         </p>
         <CoverPanel cover={c} mode={mode} onTicked={cover.reload} />
       </section>
-      {mode !== "sheet" && (
+      {/* With nothing to measure the panel above has said so; the sheet would only say it again. */}
+      {mode !== "sheet" && !coverUnknown(c) && (
         <section className="card" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
           <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>The payday sheet</h2>
           <CoverPanel cover={c} mode="sheet" onTicked={cover.reload} />

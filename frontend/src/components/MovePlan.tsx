@@ -6,7 +6,7 @@ import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { shortDate } from "../format";
-import { Said, Show } from "./State";
+import { Figures, Said, Show } from "./State";
 import { SeverityTag } from "./Status";
 
 interface Step {
@@ -90,7 +90,7 @@ function PlanBody({ plan, setPlan }: { plan: Plan; setPlan: (p: Plan) => void })
           <span><strong>{done}</strong> of {total} done</span>
           {(plan.counts.late ?? 0) > 0 && <span style={{ color: "var(--critical-ink)" }}><OctagonAlert size={13} aria-hidden="true" style={{ display: "inline-block", verticalAlign: -2 }} /> {plan.counts.late} late</span>}
           {(plan.counts.soon ?? 0) > 0 && <span style={{ color: "var(--warning-ink)" }}><TriangleAlert size={13} aria-hidden="true" style={{ display: "inline-block", verticalAlign: -2 }} /> {plan.counts.soon} this week</span>}
-          {plan.next && <span>Next: {plan.next.title}{plan.next.date ? `, ${shortDate(plan.next.date)}` : ""}</span>}
+          {plan.next && <span>Next: <Figures text={plan.next.title} />{plan.next.date ? `, ${shortDate(plan.next.date)}` : ""}</span>}
         </div>
       </div>
 
@@ -123,10 +123,10 @@ function StepRow({ step, setPlan, letter }: { step: Step; setPlan: (p: Plan) => 
       <div style={{ fontSize: 13, fontWeight: 700, color: step.state === "late" ? "var(--critical-ink)" : "var(--ink)" }}>{step.date ? shortDate(step.date) : "No date"}</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
-          <strong style={{ fontSize: 14, textDecoration: step.done ? "line-through" : "none", color: step.done ? "var(--ink-2)" : "var(--ink)" }}>{step.title}</strong>
+          <strong style={{ fontSize: 14, textDecoration: step.done ? "line-through" : "none", color: step.done ? "var(--ink-2)" : "var(--ink)" }}><Figures text={step.title} /></strong>
           <SeverityTag severity={look.severity} word={look.word} />
         </div>
-        {!step.done && <div style={{ fontSize: 13, color: "var(--ink-2)" }}>{step.words}</div>}
+        {!step.done && <div style={{ fontSize: 13, color: "var(--ink-2)" }}><Figures text={step.words} /></div>}
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
           {byApp ? (
             <span style={{ fontSize: 12, color: "var(--safe-ink)", display: "inline-flex", alignItems: "center", gap: 4 }}><CircleCheck size={14} aria-hidden="true" />The app saw this done</span>

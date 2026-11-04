@@ -78,6 +78,39 @@ async def _lines(response: httpx.Response) -> AsyncIterator[str]:
         yield line
 
 
+MAX_LIST_BYTES = 2_000_000  # a list of models is a few kilobytes
+LIST_SECONDS = 60.0
+MAX_MODELS = 500
+
+
+async def _get_json(client: httpx.AsyncClient, url: str, *, headers: dict[str, str] | None = None, params: dict[str, Any] | None = None) -> Any:
+    """A GET whose answer is read to at most MAX_LIST_BYTES and LIST_SECONDS. The chat's own stream has had its caps
+    since the eighth sweep; the model list did not, and the chat asks for it by itself after a "no such model" answer, so
+    whatever answers on Ollama's port could fill the app's memory or hold the request without end (sweep 24)."""
+    import time
+
+    started, seen, got = time.monotonic(), 0, []
+    async with client.stream("GET", url, headers=headers, params=params) as response:
+        response.raise_for_status()
+        async for chunk in response.aiter_bytes():
+            seen += len(chunk)
+            if seen > MAX_LIST_BYTES:
+                raise StreamTooLong(f"the list of models passed {MAX_LIST_BYTES // 1_000_000} MB and was cut off")
+            if time.monotonic() - started > LIST_SECONDS:
+                raise StreamTooLong(f"the list of models did not finish in {int(LIST_SECONDS)} seconds and was cut off")
+            got.append(chunk)
+    try:
+        return json.loads(b"".join(got))
+    except RecursionError as error:  # 2 MB of "[" is not a ValueError, and nothing above expects it
+        raise ValueError("the list of models is nested too deep") from error
+
+
+def _names_in(rows: Any, key: str) -> list[str]:
+    """The model names in a list as a server gave it: strings only, of a sane length and number."""
+    names = [m.get(key) for m in rows if isinstance(m, dict)] if isinstance(rows, list) else []
+    return [n for n in names if isinstance(n, str) and 0 < len(n) <= 200][:MAX_MODELS]
+
+
 async def _head(response: httpx.Response, limit: int = MAX_ERROR_BYTES) -> str:
     """The first bytes of an error body, without reading a body of any size into memory."""
     got = b""
@@ -229,10 +262,8 @@ class OpenAICompatible(Provider):
 
     async def list_models(self) -> list[str]:
         async with self.client() as client:
-            response = await client.get(f"{self.base_url}/models", headers=self.headers())
-            response.raise_for_status()
-            data = response.json().get("data", [])
-            return sorted(m.get("id", "") for m in data if m.get("id"))
+            body = await _get_json(client, f"{self.base_url}/models", headers=self.headers())
+            return sorted(_names_in(body.get("data") if isinstance(body, dict) else None, "id"))
 
 
 class Ollama(OpenAICompatible):
@@ -246,9 +277,8 @@ class Ollama(OpenAICompatible):
 
     async def list_models(self) -> list[str]:
         async with self.client() as client:
-            response = await client.get(f"{self.url}/api/tags")
-            response.raise_for_status()
-            return sorted(m.get("name", "") for m in response.json().get("models", []) if m.get("name"))
+            body = await _get_json(client, f"{self.url}/api/tags")
+            return sorted(_names_in(body.get("models") if isinstance(body, dict) else None, "name"))
 
     async def chat(self, messages: list[dict], tools: list[ToolSpec] | None = None, *, max_tokens: int = 1024) -> AsyncIterator[Event]:
         """As the OpenAI-compatible chat, with one difference: when the chosen model is not on this server,
@@ -259,7 +289,7 @@ class Ollama(OpenAICompatible):
             if event.type == "error" and not retried and any(w in event.message.lower() for w in ("not found", "does not exist", "no model called")):
                 try:
                     available = await self.list_models()
-                except httpx.HTTPError:
+                except (httpx.HTTPError, StreamTooLong, ValueError):
                     available = []
                 if available and self.model not in available:
                     self.model = available[0]
@@ -368,10 +398,9 @@ class Anthropic(Provider):
             return list(ANTHROPIC_MODELS)
         try:
             async with self.client() as client:
-                response = await client.get(f"{self.base_url}/v1/models", params={"limit": 100}, headers=self.headers())
-                response.raise_for_status()
-                ids = [m.get("id", "") for m in response.json().get("data", []) if m.get("id")]
-        except (httpx.HTTPError, ValueError):
+                body = await _get_json(client, f"{self.base_url}/v1/models", params={"limit": 100}, headers=self.headers())
+                ids = _names_in(body.get("data") if isinstance(body, dict) else None, "id")
+        except (httpx.HTTPError, StreamTooLong, ValueError):
             return list(ANTHROPIC_MODELS)
         return ids or list(ANTHROPIC_MODELS)
 

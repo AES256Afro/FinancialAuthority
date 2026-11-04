@@ -10,7 +10,7 @@ import { ConfirmButton } from "../components/ConfirmButton";
 import { Documents } from "../components/Documents";
 import { Empty, Failed, Loading, Said, useJumpToHash } from "../components/State";
 import { StatusPill } from "../components/Status";
-import { localToday, money, ordinal, parseIso, parseMoney, shortDate } from "../format";
+import { amountClass, localToday, money, ordinal, parseIso, parseMoney, shortDate } from "../format";
 import { palette } from "../looks";
 import { inkOn } from "../paychecks";
 import { getPrefs } from "../prefs";
@@ -133,7 +133,7 @@ function Facts({ rows }: { rows: [string, ReactNode][] }) {
       {rows.map(([k, v]) => (
         <Fragment key={k}>
           <dt style={{ color: "var(--ink-2)" }}>{k}</dt>
-          <dd style={{ margin: 0, fontWeight: 600, overflowWrap: "anywhere" }}>{v}</dd>
+          <dd className={typeof v === "string" ? amountClass(v) : undefined} style={{ margin: 0, fontWeight: 600, overflowWrap: "anywhere" }}>{v}</dd>
         </Fragment>
       ))}
     </dl>
@@ -300,7 +300,7 @@ function MoveTimeline({ data, move }: { data: HousingOut; move: HousingMove }) {
           <li key={p.key} style={{ display: "flex", gap: 8, alignItems: "flex-start", minWidth: 0 }}>
             <Dot n={i + 1} ring={p.ring} />
             <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-start" }}>
-              <span style={{ fontSize: 13, fontWeight: 700, overflowWrap: "anywhere" }}>{p.label}</span>
+              <span className={amountClass(p.label)} style={{ fontSize: 13, fontWeight: 700, overflowWrap: "anywhere" }}>{p.label}</span>
               <span style={{ fontSize: 12, color: "var(--ink-2)" }}>{shortDate(p.date)}</span>
               {p.notice && <StatusPill status={p.notice.status}>{p.notice.word}</StatusPill>}
             </div>
@@ -345,7 +345,7 @@ function Bar({ groups, total }: { groups: Seg[][]; total: number }) {
             const labelled = s.amount / Math.max(1, total) >= 0.2;
             return (
               <div key={s.key} title={`${s.name}: ${amountWord(s)}`} style={{ flex: `${Math.max(s.amount, 0.0001)} 1 0px`, minWidth: 6, borderRadius: 5, background: s.fill, color: inkOn(s.fill), display: "flex", alignItems: "center", padding: labelled ? "0 8px" : 0, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis", fontSize: 11, fontWeight: 800 }}>
-                {labelled ? `${s.name} ${money(s.amount)}` : ""}
+                {labelled ? <span className="num">{s.name} {money(s.amount)}</span> : ""}
               </div>
             );
           })}
@@ -1107,8 +1107,8 @@ function AdoptCard({ bill, ctx, onDone }: { bill: HousingOut["rent_bills_to_adop
     ctx.reload();
   }
   const sub = homes.length
-    ? <>{money(bill.amount, { cents: true })} due on the {ordinal(bill.due_day)}, on your bills list but not held by any home here. If it is the rent of {homes.join(" or ")}, it is counted twice now: once as this bill and once as the home's rent. Take it off your bills list. If it is another place, make it a home of its own below.</>
-    : <>{money(bill.amount, { cents: true })} due on the {ordinal(bill.due_day)}, already on your bills list. Its amount becomes this home's rent, and it stays the one bill that counts.</>;
+    ? <><span className="num">{money(bill.amount, { cents: true })}</span> due on the {ordinal(bill.due_day)}, on your bills list but not held by any home here. If it is the rent of {homes.join(" or ")}, it is counted twice now: once as this bill and once as the home's rent. Take it off your bills list. If it is another place, make it a home of its own below.</>
+    : <><span className="num">{money(bill.amount, { cents: true })}</span> due on the {ordinal(bill.due_day)}, already on your bills list. Its amount becomes this home's rent, and it stays the one bill that counts.</>;
   return (
     <Card level={2} title={homes.length ? `${bill.name} on your bills list is not held by a home` : `Make ${bill.name} your home`} sub={sub}>
       {homes.length > 0 && (
@@ -1204,7 +1204,7 @@ function AddHomeForm({ ctx, onDone }: { ctx: Ctx; onDone: (text: string) => void
       {ctx.data.rent_bills_to_adopt.length > 0 && rent.trim() !== "" && (
         <div style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, color: "var(--warning-ink)", fontWeight: 600 }}>
           <TriangleAlert size={14} aria-hidden="true" style={{ flexShrink: 0, marginTop: 1 }} />
-          <span>Your bills list already has {ctx.data.rent_bills_to_adopt.map((b) => `${b.name} (${money(b.amount, { cents: true })} on the ${ordinal(b.due_day)})`).join(" and ")}. If this is the same place, make that bill your home instead, so the rent is not counted twice.</span>
+          <span>Your bills list already has <span className="num">{ctx.data.rent_bills_to_adopt.map((b) => `${b.name} (${money(b.amount, { cents: true })} on the ${ordinal(b.due_day)})`).join(" and ")}</span>. If this is the same place, make that bill your home instead, so the rent is not counted twice.</span>
         </div>
       )}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>

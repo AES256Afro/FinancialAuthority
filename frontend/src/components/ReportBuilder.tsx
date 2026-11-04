@@ -5,7 +5,7 @@ import { ChartColumn, ChartLine, CircleCheck, CircleDashed, Download, Table2 } f
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { api, useApi, type Loaded } from "../api";
-import { localToday, money, shortDate } from "../format";
+import { amountClass, localToday, money, shortDate } from "../format";
 import { ROLES, VALIDATED_ORDER } from "../looks";
 import { ConfirmButton } from "./ConfirmButton";
 import { DEMO } from "../demo/shim";
@@ -95,7 +95,7 @@ function TaxPackParts({ data }: { data: TaxTotals }) {
   const sub = { margin: 0, fontSize: 14, fontWeight: 800 } as const;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, borderTop: "1px solid var(--surface-2)", paddingTop: 12 }}>
-      {data.said && <span style={{ fontSize: 14, fontWeight: 700 }}>{data.said}</span>}
+      {data.said && <span className={amountClass(data.said)} style={{ fontSize: 14, fontWeight: 700 }}>{data.said}</span>}
       {pay && pay.count > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <h3 style={sub}>Pay for the year, from {many(pay.count, "paystub", "paystubs")}</h3>

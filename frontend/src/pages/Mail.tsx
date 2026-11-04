@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api, useApi } from "../api";
-import { Empty, Failed, Loading } from "../components/State";
+import { Empty, Failed, Figures, Loading } from "../components/State";
 import { SeverityTag, StatusPill } from "../components/Status";
 import { money, when } from "../format";
 import type { FactRow, MessageRow } from "../types";
@@ -120,7 +120,7 @@ export function Mail() {
           {list.data?.messages.map((m) => (
             <button key={m.id} type="button" onClick={() => pick(m.id)} aria-current={open?.id === m.id ? "true" : undefined} style={{ textAlign: "left", font: "inherit", border: "1px solid transparent", borderRadius: 10, padding: "8px 10px", minHeight: 44, background: open?.id === m.id ? "var(--surface-2)" : "transparent", color: "var(--ink)", cursor: "pointer", display: "flex", flexDirection: "column", gap: 2 }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, color: "var(--ink-2)" }}><span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{m.sender_name || m.sender}</span><span style={{ flexShrink: 0 }}>{m.date ? when(m.date) : ""}</span></div>
-              <div style={{ fontWeight: 700, fontSize: 13 }}>{m.subject || "(no subject)"}</div>
+              <div style={{ fontWeight: 700, fontSize: 13 }}><Figures text={m.subject || "(no subject)"} /></div>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: 11 }}>
                 <span style={{ fontWeight: 800, padding: "1px 6px", borderRadius: 999, background: "var(--surface-2)", color: "var(--ink-2)" }}>{m.account}</span>
                 {/* What kind of message it is, as a plain tag; only a past-due notice carries a status, with its icon and word. */}
@@ -143,9 +143,9 @@ export function Mail() {
                   <span style={{ color: "var(--muted)" }}>From</span><span style={{ overflowWrap: "anywhere" }}>{open.sender_name} &lt;{open.sender}&gt;</span>
                   <span style={{ color: "var(--muted)" }}>Mailbox</span><span>{open.account} · {open.folder}</span>
                   <span style={{ color: "var(--muted)" }}>Date</span><span>{open.date ? when(open.date) : "—"}</span>
-                  <span style={{ color: "var(--muted)" }}>Subject</span><h2 style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>{open.subject || "(no subject)"}</h2>
+                  <span style={{ color: "var(--muted)" }}>Subject</span><h2 style={{ margin: 0, fontSize: 13, fontWeight: 700 }}><Figures text={open.subject || "(no subject)"} /></h2>
                 </div>
-                <pre style={{ margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere", font: "inherit", fontSize: 13, lineHeight: 1.55, borderTop: "1px solid var(--surface-2)", paddingTop: 10 }}>{open.boxed}</pre>
+                <pre style={{ margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere", font: "inherit", fontSize: 13, lineHeight: 1.55, borderTop: "1px solid var(--surface-2)", paddingTop: 10 }}><Figures text={open.boxed} /></pre>
                 {open.attachments.length > 0 && <div style={{ fontSize: 12, color: "var(--ink-2)", borderTop: "1px solid var(--surface-2)", paddingTop: 8 }}>Attached: {open.attachments.map((a) => `${a.name} · ${Math.round(a.size / 1024)} KB`).join(" · ")}</div>}
               </div>
               {open.facts.length === 0 && <div className="card" style={{ padding: 14, fontSize: 13, color: "var(--ink-2)" }}>The app took nothing from this message.</div>}

@@ -10,7 +10,7 @@ import { Approvals } from "../components/Approvals";
 import { ConfirmButton } from "../components/ConfirmButton";
 import { PurchaseChoices, dayWord } from "../components/Documents";
 import { PAST_DUE_WORDS, PaidQuestions, type PastDueRow } from "../components/PaidQuestions";
-import { Empty, Failed, Loading, Said, useFocusOnSaid, useJumpToHash } from "../components/State";
+import { Empty, Failed, Figures, Loading, Said, useFocusOnSaid, useJumpToHash } from "../components/State";
 import { SeverityTag } from "../components/Status";
 import { amountClass, money, ordinal, parseMoney, shortDate, when } from "../format";
 import type { DocumentTermsFields, FactRow, PairRow, PairSide, PairsOut, SeriesRow, Snapshot } from "../types";
@@ -238,7 +238,7 @@ function TermsTable({ fields, edits, onEdit }: { fields: DocumentTermsFields; ed
               <tr key={r.key} style={{ opacity: e.out ? 0.55 : 1 }}>
                 <td>
                   <strong>{r.what}</strong>
-                  <div style={{ fontSize: 11, color: "var(--muted)", overflowWrap: "anywhere" }}>“{t.quote}”</div>
+                  <div style={{ fontSize: 11, color: "var(--muted)", overflowWrap: "anywhere" }}>“<Figures text={String(t.quote)} />”</div>
                 </td>
                 <td className="num" style={{ fontWeight: 800, whiteSpace: "nowrap" }}>{r.show(t.value)}</td>
                 <td>
@@ -369,7 +369,7 @@ function FactCard({ f, onDone }: { f: FactRow; onDone: (done: Done) => void }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
         <div>
           <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>{FACT_LABEL[f.kind] ?? f.kind}{who ? ` · ${who}` : ""}</h3>
-          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{f.message ? `${f.message.subject}${f.message.date ? ` · ${when(f.message.date)}` : ""} · from mail` : `${String(f.fields.attachment || "a file")} · ${f.fields.source === "upload" ? "added here" : "from the import folder"}`}{via ? ` via ${via}` : ""} · {Math.round(f.confidence * 100)}% sure</div>
+          <div style={{ fontSize: 12, color: "var(--ink-2)" }}>{f.message ? <><Figures text={f.message.subject} />{f.message.date ? ` · ${when(f.message.date)}` : ""} · from mail</> : `${String(f.fields.attachment || "a file")} · ${f.fields.source === "upload" ? "added here" : "from the import folder"}`}{via ? ` via ${via}` : ""} · {Math.round(f.confidence * 100)}% sure</div>
         </div>
         {f.fields.amount !== undefined && <strong className="num" style={{ fontSize: 18 }}>{money(Number(f.fields.amount), { cents: true })}</strong>}
         {f.kind === "paystub" && f.fields.net !== undefined && <strong className="num" style={{ fontSize: 18 }}>{money(Number(f.fields.net), { cents: true })} take-home{f.fields.pay_date ? `, paid ${shortDate(String(f.fields.pay_date))}` : ""}</strong>}
@@ -384,7 +384,7 @@ function FactCard({ f, onDone }: { f: FactRow; onDone: (done: Done) => void }) {
         </div>
       ) : (
         <div style={{ background: "var(--surface-2)", borderRadius: 10, padding: "10px 12px", fontSize: 12, color: "var(--ink-2)", lineHeight: 1.45 }}>
-          <span className="lab" style={{ display: "block", marginBottom: 4 }}>Quoted from the {f.message ? "email" : "document"}. Anything it asks the app to do is ignored.</span>“{f.excerpt}”
+          <span className="lab" style={{ display: "block", marginBottom: 4 }}>Quoted from the {f.message ? "email" : "document"}. Anything it asks the app to do is ignored.</span>“<Figures text={f.excerpt} />”
         </div>
       )}
       {f.message?.trust === "crit" && (
@@ -495,7 +495,7 @@ function ReceiptCard({ f, onDone }: { f: FactWithCandidates; onDone: (done: Done
         ))}
       </dl>
       <div style={{ background: "var(--surface-2)", borderRadius: 10, padding: "10px 12px", fontSize: 12, color: "var(--ink-2)", lineHeight: 1.45 }}>
-        <span className="lab" style={{ display: "block", marginBottom: 4 }}>Quoted from the email. Anything it asks the app to do is ignored.</span>“{f.excerpt}”
+        <span className="lab" style={{ display: "block", marginBottom: 4 }}>Quoted from the email. Anything it asks the app to do is ignored.</span>“<Figures text={f.excerpt} />”
       </div>
       {candidates.length > 0 ? (
         <PurchaseChoices name={`fact-${f.id}-purchase`} legend="The purchase it is for" list={candidates} value={choice} onPick={setChoice} none="Keep it without a purchase" />

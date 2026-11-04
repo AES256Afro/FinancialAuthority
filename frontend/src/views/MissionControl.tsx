@@ -52,7 +52,7 @@ function Row({ left, right, tone }: { left: string; right: string; tone?: "ok" |
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, padding: "5px 0", borderTop: "1px solid var(--surface-2)", fontSize: 13 }}>
       <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{left}</span>
       <span style={{ fontWeight: 800, fontSize: 12, textAlign: "right", color: tone === "warn" ? "var(--warning-ink)" : tone === "ok" ? "var(--safe-ink)" : "var(--ink-2)" }}>
-        {Icon && <Icon size={12} aria-hidden="true" style={{ verticalAlign: -1, marginRight: 4 }} />}{right}
+        {Icon && <Icon size={12} aria-hidden="true" style={{ display: "inline-block", verticalAlign: -1, marginRight: 4 }} />}{right}
       </span>
     </div>
   );
@@ -128,7 +128,7 @@ export function MissionControl({ snapshot }: ViewProps) {
           {!jobs.data && !jobs.error && <Loading what="the jobs" card={false} />}
           {(jobs.data?.jobs ?? []).map((j) => {
             const r = lastRun(j.name);
-            return <Row key={j.name} left={jobWord(j.name)} right={r ? (r.ok === false ? "Failed" : r.summary.slice(0, 40) || "Ran fine") : "Not run yet"} tone={r ? (r.ok === false ? "warn" : "ok") : "warn"} />;
+            return <Row key={j.name} left={jobWord(j.name)} right={r ? (r.ok === false ? "Failed" : r.summary || "Ran fine") : "Not run yet"} tone={r ? (r.ok === false ? "warn" : "ok") : "warn"} />;
           })}
           <div style={{ fontSize: 12 }}><Link to="/settings/jobs">Open Jobs: every run</Link></div>
         </Tile>

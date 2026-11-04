@@ -288,7 +288,8 @@ def test_a_database_from_an_older_release_opens_runs_and_reads(owner: TestClient
         assert "business_id" in built["dropped"].get("transactions", []) and "trust" in built["dropped"].get("message_refs", []) and "businesses" not in built["tables"]
     else:
         # Since v0.9.x a fact keeps who answered it and what confirming it made (sweep 15): the upgrade adds them.
-        assert {k: sorted(v) for k, v in built["dropped"].items()} == {"extracted_facts": ["made", "resolved_by"]}, built["dropped"]
+        # So does who added a mailbox (sweep 24).
+        assert {k: sorted(v) for k, v in built["dropped"].items()} == {"extracted_facts": ["made", "resolved_by"], "mail_accounts": ["person_id"]}, built["dropped"]
     replace_live_database(old_db)
 
     # The upgrade: what the app does at start.

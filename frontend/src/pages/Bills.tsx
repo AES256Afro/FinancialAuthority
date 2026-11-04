@@ -9,7 +9,7 @@ import { ConfirmButton } from "../components/ConfirmButton";
 import { DateMoves } from "../components/DateMoves";
 import { PaidQuestions, type PastDueRow } from "../components/PaidQuestions";
 import { PlannedPayments } from "../components/PlannedPayments";
-import { Empty, Failed, Loading, Said, Show } from "../components/State";
+import { Empty, Failed, Loading, Said, Show, useJumpToHash } from "../components/State";
 import { isoDay, money, monthDay, ordinal, parseIso, parseMoney, shortDate } from "../format";
 import type { BillRow, Event, Snapshot } from "../types";
 
@@ -317,6 +317,8 @@ function watchWide(onChange: () => void): () => void {
 export function Bills({ onChanged }: { onChanged: () => void }) {
   const state = useApi<BillsOut>("/api/v1/bills");
   const { data, reload } = state;
+  // A next step's /bills#planned lands on the planned payments once the list above them is drawn.
+  useJumpToHash(data);
   const { data: accounts } = useApi<{ accounts: AccountRow[] }>("/api/v1/accounts");
   const choices = usePaidFromChoices(data);
   // Bills with no payment seen, to answer here: Today's "Pay X; it was due" opens this page.
@@ -372,10 +374,10 @@ export function Bills({ onChanged }: { onChanged: () => void }) {
       {data && ((data.one_time?.items.length ?? 0) > 0 || (data.starting_later?.items.length ?? 0) > 0) && (
         <div style={{ fontSize: 13, color: "var(--ink-2)", display: "flex", flexDirection: "column", gap: 2 }}>
           {data.one_time && data.one_time.items.length > 0 && (
-            <span>Not in the monthly figure, counted once on their day: {data.one_time.items.map((i) => `${i.name} ${money(i.amount, { cents: true })} on ${shortDate(i.date)}`).join("; ")}.</span>
+            <span>Not in the monthly figure, counted once on their day: <span className="num">{data.one_time.items.map((i) => `${i.name} ${money(i.amount, { cents: true })} on ${shortDate(i.date)}`).join("; ")}</span>.</span>
           )}
           {data.starting_later && data.starting_later.items.length > 0 && (
-            <span>Starting later, so not in today's figure: {data.starting_later.items.map((i) => `${i.name} ${money(i.per_month, { cents: true })} a month from ${shortDate(i.starts_on)}`).join("; ")}.</span>
+            <span>Starting later, so not in today's figure: <span className="num">{data.starting_later.items.map((i) => `${i.name} ${money(i.per_month, { cents: true })} a month from ${shortDate(i.starts_on)}`).join("; ")}</span>.</span>
           )}
         </div>
       )}

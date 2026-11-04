@@ -37,6 +37,26 @@ def check_url(url: str) -> str:
     return host
 
 
+def stays_home(url: str) -> bool:
+    """Whether an address the owner set (a model server) is on this box or its own network: the loopback, a private or
+    a tailnet address, Docker's name for the host, or a name that resolves only to such. Anything else, or a name that
+    does not resolve, is somewhere else on the internet. The address is the owner's choice and is used either way;
+    this only says how far what is sent there travels."""
+    host = (urlsplit(url).hostname or "").lower().rstrip(".")
+    if not host:
+        return False
+    if host in ("localhost", "host.docker.internal") or host.endswith(".localhost"):
+        return True
+    try:
+        addresses = [ipaddress.ip_address(host)]
+    except ValueError:
+        try:
+            addresses = [ipaddress.ip_address(info[4][0]) for info in socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)]
+        except OSError:
+            return False
+    return bool(addresses) and all(not a.is_global for a in addresses)
+
+
 def _check_peer(response: httpx.Response, host: str) -> None:
     """The address the connection really reached, checked like the name was: a name that answers differently the
     second time (DNS rebinding) is refused before anything is read."""

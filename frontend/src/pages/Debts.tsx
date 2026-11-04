@@ -618,7 +618,7 @@ export function Debts() {
                 {data.items.map((d) => (
                   <React.Fragment key={d.source}>
                     <tr>
-                      <td><strong>{d.name}</strong>{d.credit_limit ? <div style={{ fontSize: 11, color: "var(--muted)" }}>credit limit {money(d.credit_limit)}{d.statement_day ? ` · statement day ${d.statement_day}` : ""}{d.due_day ? ` · due day ${d.due_day}` : ""}</div> : null}{d.kind === "bnpl" ? <div style={{ fontSize: 11, color: "var(--muted)" }}>{d.ends ? `ends ${dayWord(d.ends)}` : ""}{d.finance_charge ? ` · ${money(d.finance_charge)} finance charge over its life` : " · 0% as far as your transactions show"}</div> : null}</td>
+                      <td><strong>{d.name}</strong>{d.credit_limit ? <div className="num" style={{ fontSize: 11, color: "var(--muted)" }}>credit limit {money(d.credit_limit)}{d.statement_day ? ` · statement day ${d.statement_day}` : ""}{d.due_day ? ` · due day ${d.due_day}` : ""}</div> : null}{d.kind === "bnpl" ? <div style={{ fontSize: 11, color: "var(--muted)" }}>{d.ends ? `ends ${dayWord(d.ends)}` : ""}{d.finance_charge ? ` · ${money(d.finance_charge)} finance charge over its life` : " · 0% as far as your transactions show"}</div> : null}</td>
                       <td style={{ color: "var(--ink-2)" }}>{KIND_WORD[d.kind] ?? d.kind}</td>
                       <td className="num" style={{ textAlign: "right" }}>{money(d.balance ?? 0)}</td>
                       <td className="num" style={{ textAlign: "right", color: "var(--ink-2)" }}>{d.apr !== null && d.apr !== undefined ? `${d.apr}%` : "—"}</td>

@@ -481,8 +481,10 @@ def borrowing_overview(session: Session, today: date) -> dict:
     advances_per_period = [c["advanced"] for c in cycle if c["payday"] <= today.isoformat()] or [c["advanced"] for c in cycle]
     typical_period = _money(statistics.median(advances_per_period)) if advances_per_period else 0.0
 
+    from .projection import paid_by_household
+
     streams = installment_streams(installment_rows, today)
-    plans = session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all()  # noqa: E712
+    plans = paid_by_household(session, session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all())  # noqa: E712 - a second person's own plan is theirs, as their advances and streams are (sweep 24)
     bills = session.exec(select(Bill).where(Bill.active == True)).all()  # noqa: E712
     series_rows = session.exec(select(RecurringSeries).where(RecurringSeries.confirmed == False)).all()  # noqa: E712
     installments = []
@@ -509,15 +511,31 @@ def borrowing_overview(session: Session, today: date) -> dict:
                              "first_date": None, "last_date": None, "next_date": p.next_date.isoformat(), "active": True, "paid_so_far": _money(p.installment * max(0, (p.count or 0) - (p.remaining or 0))), "sources": [f"plan:{p.id}"],
                              "status": "plan", "plan_id": p.id, "bill_id": None, "series_id": None, "remaining": p.remaining,
                              "ends": (p.next_date + timedelta(days=p.cadence_days * max(0, p.remaining - 1))).isoformat(), "per_month": _plan_month(p)})
+    # One plan, one row and one figure, whatever the ledger shows of it: two streams around a rounding edge counted its
+    # month twice, and a stream gone quiet (paid from an account the app cannot see) not at all, while the plan runs (sweep 24).
+    by_plan: dict[int, dict] = {}
+    rows: list[dict] = []
     for i in installments:
-        if i["plan_id"] and i["status"] == "plan":
-            plan = next(p for p in plans if p.id == i["plan_id"])
-            i["per_month"] = _plan_month(plan)  # the plan's own figure, the one Debts says
+        if not i["plan_id"]:
+            rows.append(i)
+            continue
+        first = by_plan.get(i["plan_id"])
+        if first is not None:
+            first["payments_seen"] += i["payments_seen"]
+            first["paid_so_far"] = _money(first["paid_so_far"] + i["paid_so_far"])
+            first["sources"] = first["sources"] + i["sources"]
+            continue
+        plan = next(p for p in plans if p.id == i["plan_id"])
+        i["per_month"] = _plan_month(plan)  # the plan's own figure, the one Debts says
+        i["active"], i["next_date"] = i["active"] or (plan.remaining or 0) > 0, plan.next_date.isoformat()
+        by_plan[i["plan_id"]] = i
+        rows.append(i)
+    installments = rows
     installments_month = _money(sum(i["per_month"] for i in installments if i["active"]))
     import json as _json
 
     loans = []
-    for p in session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all():  # noqa: E712
+    for p in plans:
         sched = sorted(_json.loads(p.schedule or "[]"), key=lambda r: r["date"])
         upcoming = sched[len(sched) - p.remaining:] if sched and p.remaining else []
         loans.append({
@@ -593,7 +611,7 @@ def borrowing_overview(session: Session, today: date) -> dict:
             steps.append({"n": len(steps) + 1, "text": f"{c['name']} carries ${c['balance']:,.0f}. Paid in full from the next checks, it costs nothing; carried, its APR applies. Enter the card's APR, credit limit and statement day on the Debts page and the cost and the use show here.", "action": "Debts", "link": "/debts"})
     steps.append({"n": len(steps) + 1, "text": "Credit: advance apps and pay-in-four plans do not build it, and a missed Affirm payment can hurt it. What moves a score is every card and loan payment on time, and the card balance kept well under its limit at statement time.", "action": "Accounts", "link": "/accounts"})
 
-    sources = sorted({src for p in pairs for src in p["sources"]} | {src for s in streams for src in s["sources"]} | {f"account:{a.id}" for a in cards} | {p["source"] for p in outstanding})
+    sources = sorted({src for p in pairs for src in p["sources"]} | {src for i in installments for src in i["sources"]} | {f"account:{a.id}" for a in cards} | {p["source"] for p in outstanding})
     return {
         "as_of": today.isoformat(), "window_days": WINDOW_DAYS,
         "cost": {"fees_90d": _money(fees), "fees_month": fees_month, "fees_year": fees_year, "advanced_90d": _money(advanced), "advances_90d": len(pairs), "tips_90d": _money(sum(t["amount"] for t in tips)), "installments_month": installments_month, "card_balance": card_balance, "card_interest_month": card_interest_month,
@@ -851,7 +869,7 @@ def refresh_plan_progress(session: Session, today: date, *, commit: bool = True)
                 continue
             if p.remaining <= 0:
                 break
-            if t.date < p.next_date - timedelta(days=5):
+            if t.date < p.next_date - timedelta(days=5) or (p.balance_at and t.date <= p.balance_at):  # on or before the lender's closing day: its balance and next date already count it
                 continue
             used_ids.add(t.id)
             p.remaining -= 1
@@ -905,28 +923,46 @@ def refresh_plan_progress(session: Session, today: date, *, commit: bool = True)
     return changed
 
 
+def _told_after(session: Session, plan: InstallmentPlan, day: date) -> bool:
+    """Whether a message sent after `day` made or set this plan. A statement closed on `day` lists the loans of that day,
+    so it has nothing to say of a purchase made since: that plan is no guess it has overtaken (sweep 24)."""
+    import json
+
+    from ..models import ExtractedFact
+
+    rows = session.exec(select(ExtractedFact.fields).where(ExtractedFact.applied_to == f"plan:{plan.id}", ExtractedFact.status == "applied")).all()
+    return any(str(json.loads(fields or "{}").get("message_date") or "") > day.isoformat() for fields in rows)
+
+
 def apply_affirm_statement(session: Session, parsed: dict, today: date, *, source: str = "statement", pay_from_account_id: int | None = None) -> dict:
     """Affirm's monthly statement into the register: each loan by its ID with its merchant, amount, APR, closing
     balance, next payment and status; the period's interest added to each loan's interest paid; a closed loan
     retired. A plan the ledger built from payments is matched by its installment amount and takes the ID."""
     import math
 
+    from .projection import paid_by_household
+
     period_end = date.fromisoformat(parsed["period_end"]) if parsed.get("period_end") else today
-    plans = session.exec(select(InstallmentPlan)).all()
+    plans = paid_by_household(session, session.exec(select(InstallmentPlan)).all())  # the owner's statement lists the owner's loans; a second person's own plan is not among them
     by_id = {p.loan_id: p for p in plans if p.loan_id}
     created = updated = retired = 0
+    stored = get_setting(session, "affirm", {}) or {}
+    # Read before, from the second mailbox, or older than the lender's latest list (mail is not read in date order): what
+    # it says is history. It would open what has closed since, undo the payments ticked since, retire what was typed since.
+    listed = lender_listed_on(session, "Affirm")
+    behind = bool(parsed.get("period_end")) and (parsed["period_end"] <= str(stored.get("period_end") or "") or (listed is not None and parsed["period_end"] < listed.isoformat()))
     for loan in parsed["loans"]:
         plan = by_id.get(loan["loan_id"])
-        if plan is None and loan.get("payment_amount"):
-            plan = next((p for p in plans if not p.loan_id and p.provider.lower() == "affirm" and abs(p.installment - loan["payment_amount"]) < 0.05), None)
+        if plan is None and not behind and loan.get("payment_amount"):
+            plan = next((p for p in plans if not p.loan_id and plan_provider(p).lower() == "affirm" and abs(p.installment - loan["payment_amount"]) < 0.05), None)  # a plan named after the bank's text is still Affirm's
         if plan is None:
-            if loan["status"] != "active":
+            if behind or loan["status"] != "active":
                 continue
             plan = InstallmentPlan(provider="Affirm", merchant=loan["merchant"], total=loan["amount"], installment=loan.get("payment_amount") or 0.0, count=0, remaining=0, next_date=today, cadence_days=30, loan_id=loan["loan_id"])
             created += 1
         else:
             updated += 1
-        if plan.schedule_as_of and period_end < plan.schedule_as_of:
+        if behind or (plan.schedule_as_of and period_end < plan.schedule_as_of):
             # An older statement than what the plan already knows from the lender: only its interest is added.
             if loan["loan_id"] in parsed.get("interest", {}) and set_setting_interest(session, loan["loan_id"], period_end, parsed["interest"][loan["loan_id"]]):
                 plan.interest_paid = round(plan.interest_paid + parsed["interest"][loan["loan_id"]], 2)
@@ -962,14 +998,14 @@ def apply_affirm_statement(session: Session, parsed: dict, today: date, *, sourc
     # a guess the statement has overtaken: it is retired, and the statement's loans stand in its place.
     unlisted = 0
     for p in plans:
-        if p.provider.lower() == "affirm" and not p.loan_id and p.active:
+        if not behind and plan_provider(p).lower() == "affirm" and not p.loan_id and p.active and not _told_after(session, p, period_end):
             p.active, p.remaining = False, 0
             session.add(p)
             unlisted += 1
-    stored = get_setting(session, "affirm", {}) or {}
     if parsed.get("period_end") and parsed.get("period_end") >= str(stored.get("period_end", "")):
         stored.update({"period_start": parsed.get("period_start"), "period_end": parsed.get("period_end"), "interest_period": parsed.get("interest_period"), "interest_ytd": parsed.get("interest_ytd"), "total_closing": parsed.get("total_closing"), "source": source, "at": today.isoformat()})
         _stage_setting(session, "affirm", stored)
+    refresh_plan_progress(session, today, commit=False)  # a payment the ledger already shows is made: never counted again until the next detection (sweep 24)
     session.commit()
     return {"created": created, "updated": updated, "retired": retired, "typed_retired": unlisted, "loans": len(parsed["loans"]), "period_end": parsed.get("period_end"), "interest_period": parsed.get("interest_period"), "interest_ytd": parsed.get("interest_ytd"), "total_closing": parsed.get("total_closing")}
 
@@ -991,7 +1027,7 @@ def statement_fact_from_file(session: Session, data: bytes, filename: str, today
     from ..parsers.affirm_statement import parse_affirm_statement
     from ..parsers.paystub import pdf_text
 
-    text = pdf_text(data) if filename.lower().endswith(".pdf") else data.decode("utf-8", errors="replace")
+    text = pdf_text(data) if filename.lower().endswith(".pdf") or data[:5] == b"%PDF-" else data.decode("utf-8", errors="replace")  # a PDF by its bytes: mail hands over one named "Loans Statement"
     parsed = parse_affirm_statement(text)
     if not parsed:
         return None

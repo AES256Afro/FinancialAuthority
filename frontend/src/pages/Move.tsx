@@ -9,7 +9,7 @@ import { Link } from "react-router-dom";
 import { api, useApi } from "../api";
 import { ConfirmButton } from "../components/ConfirmButton";
 import { MovePlan } from "../components/MovePlan";
-import { Empty, Failed, Loading, Said, useWidth } from "../components/State";
+import { Empty, Failed, Figures, Loading, Said, useWidth } from "../components/State";
 import { StatusPill } from "../components/Status";
 import { amountClass, localToday, money, monthDay, parseIso, parseMoney, shortDate } from "../format";
 import { palette } from "../looks";
@@ -166,7 +166,7 @@ function CostBar({ cost, widest }: { cost: HomeCost; widest: number }) {
           return (
             <div key={i} title={`${p.name}: ${money(p.amount, { cents: true })}${p.refundable ? " (comes back)" : ""}`}
               style={{ flex: `${Math.max(p.amount, 0.0001)} 1 0px`, minWidth: 6, borderRadius: 4, background: fill, color: inkOn(fill), display: "flex", alignItems: "center", gap: 4, padding: labelled ? "0 7px" : 0, overflow: "hidden", whiteSpace: "nowrap", fontSize: 11, fontWeight: 800 }}>
-              {labelled && <>{p.refundable && <Undo2 size={12} aria-hidden="true" style={{ flexShrink: 0 }} />}<span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{p.name} {money(p.amount)}</span></>}
+              {labelled && <>{p.refundable && <Undo2 size={12} aria-hidden="true" style={{ flexShrink: 0 }} />}<span className="num" style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{p.name} {money(p.amount)}</span></>}
             </div>
           );
         })}
@@ -366,11 +366,11 @@ function PathChart({ path, moveOn, low }: { path: MovePathPoint[]; moveOn: strin
         onPointerMove={(e) => setSel(dayAt(e))} onPointerDown={(e) => setSel(dayAt(e))} onPointerLeave={(e) => { if (e.pointerType === "mouse") setSel(null); }}
         onBlur={() => setSel(null)} onKeyDown={onKey}>
         <line x1={LEFT} x2={RIGHT} y1={y(hi)} y2={y(hi)} stroke={c.hairline} strokeWidth={1} />
-        <text x={LEFT - 6} y={y(hi) + 4} textAnchor="end" fontSize={11} fill={c.muted}>{money(hi)}</text>
+        <text className="num" x={LEFT - 6} y={y(hi) + 4} textAnchor="end" fontSize={11} fill={c.muted}>{money(hi)}</text>
         {lo < 0 && (
           <g>
             <line x1={LEFT} x2={RIGHT} y1={y(lo)} y2={y(lo)} stroke={c.hairline} strokeWidth={1} />
-            <text x={LEFT - 6} y={y(lo) + 4} textAnchor="end" fontSize={11} fill={c.muted}>{money(lo)}</text>
+            <text className="num" x={LEFT - 6} y={y(lo) + 4} textAnchor="end" fontSize={11} fill={c.muted}>{money(lo)}</text>
           </g>
         )}
         <line x1={LEFT} x2={RIGHT} y1={y(0)} y2={y(0)} stroke={c.buffer} strokeWidth={1.5} />
@@ -385,7 +385,7 @@ function PathChart({ path, moveOn, low }: { path: MovePathPoint[]; moveOn: strin
         {low && lowIdx >= 0 && (
           <g>
             <circle cx={x(lowIdx)} cy={y(low.at_pace)} r={4.5} fill={c.surface} stroke={c.ink} strokeWidth={2} />
-            <text x={flipLow ? x(lowIdx) - 8 : x(lowIdx) + 8} y={y(low.at_pace) + 16 <= BASE - 4 ? y(low.at_pace) + 16 : y(low.at_pace) - 10} textAnchor={flipLow ? "end" : "start"} fontSize={11} fontWeight={700} fill={c.ink2}>{lowText}</text>
+            <text className="num" x={flipLow ? x(lowIdx) - 8 : x(lowIdx) + 8} y={y(low.at_pace) + 16 <= BASE - 4 ? y(low.at_pace) + 16 : y(low.at_pace) - 10} textAnchor={flipLow ? "end" : "start"} fontSize={11} fontWeight={700} fill={c.ink2}>{lowText}</text>
           </g>
         )}
         {n > 0 && <text x={LEFT} y={H - 6} textAnchor="start" fontSize={11} fill={c.muted}>{monthDay(path[0].date)}</text>}
@@ -430,13 +430,13 @@ function MoveCheck({ homeId, version }: { homeId: number; version: string }) {
         <Loading what="the check against your paychecks" card={false} />
       ) : (
         <>
-          <div><StatusPill status={d.status === "unknown" ? "warn" : d.status}>{withDates(d.word)}</StatusPill></div>
+          <div><StatusPill status={d.status === "unknown" ? "warn" : d.status}><span><Figures text={withDates(d.word)} /></span></StatusPill></div>
           {d.path.length > 1 ? <PathChart path={d.path} moveOn={d.move_on} low={d.low} /> : <Empty card={false} to="/paystubs#paycheck" action="Add your paycheck">No days to draw yet.</Empty>}
           {d.caveats.length > 0 && (
             <ul style={{ margin: 0, paddingLeft: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 4 }}>
               {d.caveats.map((text) => (
                 <li key={text} style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, fontWeight: 600, color: "var(--warning-ink)" }}>
-                  <TriangleAlert size={14} aria-hidden="true" style={{ flexShrink: 0, marginTop: 1 }} /><span>{text}</span>
+                  <TriangleAlert size={14} aria-hidden="true" style={{ flexShrink: 0, marginTop: 1 }} /><span><Figures text={text} /></span>
                 </li>
               ))}
             </ul>
@@ -544,8 +544,8 @@ function Chart({ r }: { r: Result }) {
     <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h} role="img" aria-label={`Your balance day by day at your usual spending, with and without the move, over ${n} days; ${lowText} with the move`} style={{ display: "block", maxWidth: "100%" }}>
       <line x1={left} x2={w - right} y1={y(0)} y2={y(0)} stroke={c.ink} strokeWidth={1.2} />
       <text x={left - 6} y={y(0) + 4} textAnchor="end" fontSize={11} fill={c.ink2}>0</text>
-      <text x={left - 6} y={y(hi) + 4} textAnchor="end" fontSize={11} fill={c.ink2}>{money(hi)}</text>
-      {lo < 0 && <text x={left - 6} y={y(lo) + 4} textAnchor="end" fontSize={11} fill={c.ink2}>{money(lo)}</text>}
+      <text className="num" x={left - 6} y={y(hi) + 4} textAnchor="end" fontSize={11} fill={c.ink2}>{money(hi)}</text>
+      {lo < 0 && <text className="num" x={left - 6} y={y(lo) + 4} textAnchor="end" fontSize={11} fill={c.ink2}>{money(lo)}</text>}
       <path d={line(r.baseline.path)} fill="none" stroke={c.buffer} strokeWidth={2} strokeDasharray="5 4" />
       <path d={line(r.scenario.path)} fill="none" stroke={c.safe} strokeWidth={2.4} />
       {moveIdx >= 0 && (
@@ -557,7 +557,7 @@ function Chart({ r }: { r: Result }) {
       {lowIdx >= 0 && (
         <g>
           <circle cx={x(lowIdx)} cy={y(r.scenario.low.value)} r={5} fill={c.surface} stroke={c.ink} strokeWidth={2} />
-          <text x={x(lowIdx) > w / 2 ? x(lowIdx) - 8 : x(lowIdx) + 8} textAnchor={x(lowIdx) > w / 2 ? "end" : "start"} y={y(r.scenario.low.value) - 8 > top + 12 ? y(r.scenario.low.value) - 8 : y(r.scenario.low.value) + 18} fontSize={11} fontWeight={800} fill={c.ink}>{lowText}</text>
+          <text className="num" x={x(lowIdx) > w / 2 ? x(lowIdx) - 8 : x(lowIdx) + 8} textAnchor={x(lowIdx) > w / 2 ? "end" : "start"} y={y(r.scenario.low.value) - 8 > top + 12 ? y(r.scenario.low.value) - 8 : y(r.scenario.low.value) + 18} fontSize={11} fontWeight={800} fill={c.ink}>{lowText}</text>
         </g>
       )}
       {ticks.map((i) => <text key={i} x={x(i)} y={h - 8} textAnchor={i === 0 ? "start" : i === n - 1 ? "end" : "middle"} fontSize={11} fill={c.ink2}>{shortDate(r.scenario.path[i]?.date ?? r.move_date)}</text>)}
@@ -689,12 +689,12 @@ function WhatIf() {
           <div style={{ display: "flex", gap: 18, flexWrap: "wrap", fontSize: 13, color: "var(--ink-2)" }}>
             <span>monthly change <strong className="num" style={{ color: result.monthly_change > 0 ? "var(--critical-ink)" : "var(--safe-ink)" }}>{result.monthly_change >= 0 ? "+" : ""}{money(result.monthly_change)}</strong></span>
             <span>one-offs <strong className="num">{money(result.one_offs_total)}</strong></span>
-            <span>rent {money(result.old_rent)} → {money(result.new_rent)}</span>
-            <span>lowest balance with the move {money(result.scenario.low.value)} on {shortDate(result.scenario.low.date)}</span>
-            <span>lowest balance without the move {money(result.baseline.low.value)} on {shortDate(result.baseline.low.date)}</span>
+            <span>rent <span className="num">{money(result.old_rent)} → {money(result.new_rent)}</span></span>
+            <span>lowest balance with the move <span className="num">{money(result.scenario.low.value)}</span> on {shortDate(result.scenario.low.date)}</span>
+            <span>lowest balance without the move <span className="num">{money(result.baseline.low.value)}</span> on {shortDate(result.baseline.low.date)}</span>
           </div>
           <Chart r={result} />
-          {result.caveats.length > 0 && <div style={{ fontSize: 12, color: "var(--warning-ink)", fontWeight: 600, display: "flex", gap: 6, alignItems: "flex-start" }}><TriangleAlert size={14} aria-hidden="true" style={{ flexShrink: 0, marginTop: 1 }} /><span>{result.caveats.join(" ")}</span></div>}
+          {result.caveats.length > 0 && <div style={{ fontSize: 12, color: "var(--warning-ink)", fontWeight: 600, display: "flex", gap: 6, alignItems: "flex-start" }}><TriangleAlert size={14} aria-hidden="true" style={{ flexShrink: 0, marginTop: 1 }} /><span><Figures text={result.caveats.join(" ")} /></span></div>}
         </section>
       )}
 
@@ -764,7 +764,7 @@ function WhatIf() {
                   <td className="num" style={{ textAlign: "right" }}>{w.before_payday ? money(result.cash) : money(w.paycheck)}</td>
                   <td className="num" style={{ textAlign: "right" }}>{money(w.total)}</td>
                   <td className="num" style={{ textAlign: "right", fontWeight: 800, color: w.delta > 0 ? "var(--critical-ink)" : w.delta < 0 ? "var(--safe-ink)" : "var(--muted)" }}>{w.delta === 0 ? "—" : `${w.delta > 0 ? "+" : ""}${money(w.delta)}`}</td>
-                  <td style={{ fontSize: 12 }}>{w.items.slice(0, 4).map((i) => `${i.name} ${money(i.amount)}${i.scenario ? " (new)" : ""}`).join(" · ")}</td>
+                  <td className="num" style={{ fontSize: 12 }}>{w.items.slice(0, 4).map((i) => `${i.name} ${money(i.amount)}${i.scenario ? " (new)" : ""}`).join(" · ")}</td>
                 </tr>
               ))}
             </tbody>
@@ -784,7 +784,7 @@ function WhatIf() {
             <div key={i.key} style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto", gap: 10, alignItems: "start", fontSize: 13, borderTop: "1px solid var(--surface-2)", paddingTop: 6 }}>
               <StatusPill status={i.met ? "good" : "warn"}>{i.met ? "Met" : "Not yet"}</StatusPill>
               <div style={{ minWidth: 0 }}>
-                <div><strong>{plainReadiness(i.label)}</strong> <span style={{ color: "var(--ink-2)" }}>· {typeof i.value === "number" ? money(i.value) : i.value === null ? "no balance yet" : plainReadiness(i.value)} · target {typeof i.target === "number" ? money(i.target) : plainReadiness(i.target)}{i.projected && !i.met ? ` · on track for ${shortDate(i.projected)}` : ""}</span></div>
+                <div><strong>{plainReadiness(i.label)}</strong> <span style={{ color: "var(--ink-2)" }}>· {typeof i.value === "number" ? <span className="num">{money(i.value)}</span> : i.value === null ? "no balance yet" : <Figures text={plainReadiness(i.value)} />} · target {typeof i.target === "number" ? <span className="num">{money(i.target)}</span> : <Figures text={plainReadiness(i.target)} />}{i.projected && !i.met ? ` · on track for ${shortDate(i.projected)}` : ""}</span></div>
                 {plainReadiness(i.note) && <div style={{ fontSize: 12, color: "var(--muted)" }}>{plainReadiness(i.note)}</div>}
               </div>
               {i.key === "reconciled" && !i.met ? <span /> : <Link to={i.link} aria-label={`Go to: ${i.label}`} className="btn" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", minHeight: 32, padding: "2px 10px", fontSize: 12, whiteSpace: "nowrap" }}>Go →</Link>}

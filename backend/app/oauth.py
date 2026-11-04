@@ -99,7 +99,9 @@ class AuthorityProvider(OAuthAuthorizationServerProvider[AuthorizationCode, Refr
         with session_scope() as session:
             # An app that registered and was never allowed within the hour is forgotten; it holds nothing.
             unused = session.exec(select(OAuthClient).where(OAuthClient.created_at < utcnow() - _td(hours=1), OAuthClient.last_used_at == None, OAuthClient.revoked_at == None)).all()  # noqa: E711
-            held = {t.client_id for t in session.exec(select(OAuthToken).where(OAuthToken.client_id.in_([c.client_id for c in unused]))).all()} if unused else set()
+            # TokenRow: OAuthToken in this file is the SDK's reply shape, which has no column to select, so the first app
+            # left unused for an hour (a sign-in abandoned, or a stranger's one POST) made every later /register a 500.
+            held = {t.client_id for t in session.exec(select(TokenRow).where(TokenRow.client_id.in_([c.client_id for c in unused]))).all()} if unused else set()
             for c in unused:
                 if c.client_id not in held:
                     session.delete(c)
@@ -291,7 +293,7 @@ def _consent_body(data: dict, req: str, client_name: str, error: str = "") -> st
              f'<div class="err">After you allow it, you go back to <strong>{html.escape(host)}</strong>, which is not Claude. Allow it only if you started this connection yourself, from an app you trust; the name above is chosen by whoever asked.</div>')
     boxes = "".join(
         f'<label class="scope"><input type="checkbox" name="scope" value="{s}" {"checked" if s == "read" else ""} {"disabled" if s == "read" else ""}>'
-        f"{'Read the money: balances, bills, the plan, the mail' if s == 'read' else 'Confirm facts on your behalf (bills from mail, recurring charges)'}</label>"
+        f"{'Read the money: balances, bills, the plan, the mail' if s == 'read' else 'Confirm facts on your behalf (bills from senders you have confirmed before, recurring charges)'}</label>"
         for s in scopes if s in VALID_SCOPES
     )
     return (

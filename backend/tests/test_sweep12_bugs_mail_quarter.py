@@ -30,7 +30,7 @@ from app.store import get_setting
 
 END = START + timedelta(days=DAYS)
 PAYDAYS = [date(2026, 10, 16) + timedelta(days=14 * k) for k in range(7)]  # Oct 16 through Jan 8
-AUTH_OK = "mx.example.test; dmarc=pass header.from=example.test; dkim=pass; spf=pass"
+AUTH_OK = "mx.example.test; dmarc=pass; dkim=pass; spf=pass"  # names no domain, so it stands for each sender
 AUTH_FAIL = "mx.example.test; dmarc=fail header.from=bank.example.test; dkim=fail; spf=fail"
 CARDS = {"card": ("Rewards Card", "Example Bank", "statements@bank.example.test", 17, 45.0, "9012"), "store": ("Store Card", "Example Retail Bank", "statements@retailbank.example.test", 26, 25.0, "5678")}
 PLANS = {

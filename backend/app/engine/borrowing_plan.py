@@ -72,9 +72,10 @@ def _signed(v: float) -> str:
 
 
 def borrowing_plan(session: Session, today: date) -> dict[str, Any]:
+    from .projection import paid_by_household
     from .reports import _plan_month
 
-    plans = [p for p in session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all() if p.remaining > 0]  # noqa: E712
+    plans = [p for p in paid_by_household(session, session.exec(select(InstallmentPlan).where(InstallmentPlan.active == True)).all()) if p.remaining > 0]  # noqa: E712 - a second person's own is theirs (sweep 24)
     loans = []
     for p in plans:
         pays = _upcoming(p, today)

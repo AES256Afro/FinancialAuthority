@@ -20,12 +20,30 @@ def _position(income: Income | None, pay_date: date) -> str:
     return payday_position(pay_date) if income is not None and income.cadence == "semimonthly" else ""
 
 
-def expected_net(session: Session, before: date) -> float | None:
-    """The usual net for a check landing on `before`: the median of the last stubs in the same position of the
-    month (a semi-monthly paycheck's mid-month and end-of-month checks differ), else what the income says."""
-    income = session.exec(select(Income).where(Income.active == True)).first()  # noqa: E712
+def _income_of(incomes: list[Income], employer: str, net: float | None) -> Income | None:
+    """The paycheck a stub belongs to. One paycheck: that one, under whatever name the stub carries. Of several: the one
+    named most like the stub's employer, else the one whose net is nearest, within what a landed check may drift; else none.
+    Two jobs' stubs are never judged together: the median of both read each small check as short, and set the wrong
+    paycheck's expected net (sweep 24)."""
+    from .needsyou import _words
+
+    if len(incomes) <= 1:
+        return incomes[0] if incomes else None
+    words = _words(employer)
+    best = min(incomes, key=lambda i: (-len(words & _words(i.name)), abs(float(i.expected_net or 0.0) - float(net or 0.0))))
+    if words & _words(best.name) or net is None:
+        return best
+    return best if abs(float(best.expected_net or 0.0) - net) <= max(50.0, 0.4 * float(best.expected_net or 0.0)) else None
+
+
+def expected_net(session: Session, before: date, employer: str = "", net: float | None = None) -> float | None:
+    """The usual net for a check landing on `before`: the median of the last stubs of the same paycheck in the same
+    position of the month (a semi-monthly paycheck's mid-month and end-of-month checks differ), else what the income says."""
+    incomes = list(session.exec(select(Income).where(Income.active == True)).all())  # noqa: E712
+    income = _income_of(incomes, employer, net)
     position = _position(income, before)
-    recent = session.exec(select(Paystub).where(Paystub.pay_date < before).order_by(Paystub.pay_date.desc()).limit(8)).all()
+    recent = session.exec(select(Paystub).where(Paystub.pay_date < before).order_by(Paystub.pay_date.desc()).limit(8 if len(incomes) <= 1 else 32)).all()
+    recent = [p for p in recent if len(incomes) <= 1 or _income_of(incomes, p.employer, p.net) is income]
     nets = [p.net for p in recent if not position or payday_position(p.pay_date) == position][:4]
     if len(nets) >= 2:
         return round(statistics.median(nets), 2)
@@ -90,10 +108,11 @@ def record_paystub(session: Session, fields: dict, source: str, fact_id: int | N
     existing = session.exec(select(Paystub).where(Paystub.stub_hash == stub_hash)).first()
     if existing is not None:
         return existing
-    usual = expected_net(session, pay_date)
+    employer = str(fields.get("employer") or fields.get("sender_name") or "")
+    usual = expected_net(session, pay_date, employer, net)
     deposit = match_deposit(session, pay_date, net)
     stub = Paystub(
-        employer=str(fields.get("employer") or fields.get("sender_name") or ""), provider=str(fields.get("provider") or ""), pay_date=pay_date,
+        employer=employer, provider=str(fields.get("provider") or ""), pay_date=pay_date,
         period_start=date.fromisoformat(fields["period_start"]) if fields.get("period_start") else None, period_end=date.fromisoformat(fields["period_end"]) if fields.get("period_end") else None,
         gross=gross, net=net, hours=float(fields["hours"]) if fields.get("hours") is not None else None, deductions=json.dumps(fields.get("deductions") or []),
         source=source, fact_id=fact_id, transaction_id=deposit.id if deposit else None, expected_net=usual, difference=round(net - usual, 2) if usual is not None else None, stub_hash=stub_hash,
@@ -102,11 +121,12 @@ def record_paystub(session: Session, fields: dict, source: str, fact_id: int | N
     session.flush()  # one commit below with the paycheck's figure: a stub kept without it would never update it, a retry finds the stub
     # Keep the paycheck's expected net current. A semi-monthly paycheck keeps one figure per position of the
     # month: the first stub in a position sets it, and from two stubs the median does.
-    income = session.exec(select(Income).where(Income.active == True)).first()  # noqa: E712
+    incomes = list(session.exec(select(Income).where(Income.active == True)).all())  # noqa: E712
+    income = _income_of(incomes, employer, net)
     if income is not None:
         position = _position(income, pay_date)
-        recent = session.exec(select(Paystub).order_by(Paystub.pay_date.desc()).limit(8)).all()
-        same = [p.net for p in recent if not position or payday_position(p.pay_date) == position][:3]
+        recent = session.exec(select(Paystub).order_by(Paystub.pay_date.desc()).limit(8 if len(incomes) <= 1 else 32)).all()
+        same = [p.net for p in recent if (len(incomes) <= 1 or _income_of(incomes, p.employer, p.net) is income) and (not position or payday_position(p.pay_date) == position)][:3]
         target = "expected_net_end" if position == "end" else "expected_net"
         current = getattr(income, target)
         if position and len(same) == 1 and (current is None or abs(same[0] - current) > TOLERANCE):
@@ -160,13 +180,19 @@ def lines_moved(p: Paystub, before: Paystub | None) -> list[dict]:
     out = []
     if p.hours is not None and before.hours is not None and abs(p.hours - before.hours) >= 0.01:
         out.append({"name": "Hours", "before": before.hours, "after": p.hours, "change": round(p.hours - before.hours, 2)})
-    pairs = [("Gross pay", before.gross, p.gross)]
-    was = {str(d.get("name")): float(d.get("amount") or 0.0) for d in json.loads(before.deductions or "[]")}
-    now = {str(d.get("name")): float(d.get("amount") or 0.0) for d in json.loads(p.deductions or "[]")}
-    pairs += [(name, was.get(name), now.get(name)) for name in dict.fromkeys([*was, *now])]
+
+    def lines(stub: Paystub) -> dict[str, float]:
+        kept: dict[str, float] = {}
+        for d in json.loads(stub.deductions or "[]"):
+            kept[str(d.get("name"))] = kept.get(str(d.get("name")), 0.0) + float(d.get("amount") or 0.0)  # two lines of one name (a pre-tax and a Roth 401(k)) add up
+        return kept
+
+    # A stub read without a figure, or without its lines, says nothing of them: never a move from or to $0 (sweep 24).
+    pairs = [("Gross pay", before.gross, p.gross)] if before.gross is not None and p.gross is not None else []
+    was, now = lines(before), lines(p)
+    if was and now:
+        pairs += [(name, was.get(name), now.get(name)) for name in dict.fromkeys([*was, *now])]
     for name, a, b in pairs:
-        if a is None and b is None:
-            continue
         a, b = a or 0.0, b or 0.0
         if abs(b - a) >= 1.0:  # cents of rounding are not a line that moved
             out.append({"name": name, "before": round(a, 2), "after": round(b, 2), "change": round(b - a, 2)})
@@ -174,20 +200,21 @@ def lines_moved(p: Paystub, before: Paystub | None) -> list[dict]:
 
 
 def paystubs_overview(session: Session, limit: int = 8) -> dict:
-    rows = session.exec(select(Paystub).order_by(Paystub.pay_date.desc(), Paystub.id.desc()).limit(limit + 4)).all()
-    income = session.exec(select(Income).where(Income.active == True)).first()  # noqa: E712
+    incomes = list(session.exec(select(Income).where(Income.active == True)).all())  # noqa: E712
+    rows = session.exec(select(Paystub).order_by(Paystub.pay_date.desc(), Paystub.id.desc()).limit(limit + (4 if len(incomes) <= 1 else 16))).all()
     older = rows[1:]
     rows = rows[:limit]
     out = []
     for i, p in enumerate(rows):
         row = paystub_out(p)
-        # Against the last stub in the same position of the month, as expected_net judges it: a semi-monthly end check
-        # read against the mid check named the lines that differ every month (sweep 23).
-        before = next((o for o in older[i:] if _position(income, o.pay_date) == _position(income, p.pay_date)), None)
+        income = _income_of(incomes, p.employer, p.net)
+        # Against the last stub of the same paycheck in the same position of the month, as expected_net judges it: a
+        # semi-monthly end check read against the mid check named the lines that differ every month (sweep 23).
+        before = next((o for o in older[i:] if (len(incomes) <= 1 or _income_of(incomes, o.employer, o.net) is income) and _position(income, o.pay_date) == _position(income, p.pay_date)), None)
         row["moved"] = lines_moved(p, before)  # PLAN 7: a discrepancy is flagged with the lines that moved
         kept = session.exec(select(Document).where(Document.attach_to == f"paystub:{p.id}")).first()
         row["document_id"] = kept.id if kept else None
-        usual = expected_net(session, p.pay_date)  # judged afresh, by position of the month, against what is known now
+        usual = expected_net(session, p.pay_date, p.employer, p.net)  # judged afresh, by position of the month, against what is known now
         if usual is not None:
             row["expected_net"], row["difference"] = usual, round(p.net - usual, 2)
         row["verdict"] = verdict(row["difference"])

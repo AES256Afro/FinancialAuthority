@@ -12,6 +12,7 @@ import re
 from datetime import date
 
 from ..mail.classify import AMOUNT, DATE_NUM, DATE_WORDS, parse_date_text
+from . import plain_spaces
 
 NET_LABELS = r"net pay|net amount|net check|take[- ]home( pay)?|net earnings|total net|net:"
 GROSS_LABELS = r"gross pay|gross earnings|total gross|gross wages|gross amount|total earnings|gross:"
@@ -104,7 +105,7 @@ def pdf_text(data: bytes) -> str:
 
 
 def looks_like_paystub(text: str) -> bool:
-    low = (text or "").lower()
+    low = plain_spaces(text).lower()
     return bool(re.search(NET_LABELS, low)) and bool(re.search(GROSS_LABELS, low) or re.search(PERIOD_LABELS, low) or "earnings" in low)
 
 
@@ -257,6 +258,7 @@ def parse_columns_layout(text: str, ref: date | None = None) -> dict | None:
 
 
 def parse_paystub_text(text: str, ref: date | None = None) -> dict | None:
+    text = plain_spaces(text)
     columns = parse_columns_layout(text, ref)
     if columns is not None:
         return columns

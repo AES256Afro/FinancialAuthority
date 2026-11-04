@@ -13,6 +13,7 @@ import statistics
 from datetime import date
 
 from ..mail.classify import DATE_WORDS, parse_date_text
+from . import plain_spaces
 
 MONEY = r"\$\s?([\d,]+\.\d{2})"
 LOAN_AMOUNT = re.compile(MONEY + r"[^\S\n]*\n\s*+Loan amount", re.IGNORECASE)
@@ -29,7 +30,7 @@ def _money(m: str) -> float:
 
 
 def looks_like_loan_confirmation(text: str) -> bool:
-    low = (text or "").lower()
+    low = plain_spaces(text).lower()
     return "loan confirmation" in low and "payment schedule" in low
 
 
@@ -37,6 +38,7 @@ def parse_loan_confirmation(text: str, ref: date | None = None) -> dict | None:
     """The loan as a plan: schedule, totals, merchant, loan ID; None when the layout is not there."""
     if not looks_like_loan_confirmation(text):
         return None
+    text = plain_spaces(text)
     schedule: list[dict] = []
     for m in ENTRY.finditer(text):
         when = parse_date_text(m.group(1), ref)
@@ -82,7 +84,7 @@ EVERY = re.compile(r"\$\s?([\d,]+\.\d{2})\s+every\s+(month|2 weeks|two weeks|wee
 
 def parse_autopay(subject: str, text: str, ref: date | None = None) -> dict | None:
     """An AutoPay notice: on (with its schedule when the email lists it) or off. None when it is not one."""
-    blob = f"{subject}\n{text or ''}"
+    blob = plain_spaces(f"{subject}\n{text or ''}")
     if AUTOPAY_OFF.search(blob):
         return {"provider": "Affirm", "notice": "autopay", "autopay": False}
     if not AUTOPAY_ON.search(blob):
@@ -106,8 +108,9 @@ def parse_autopay(subject: str, text: str, ref: date | None = None) -> dict | No
 
 def parse_plan_approved(subject: str, text: str) -> dict | None:
     """"Your payment plan at Amazon is approved ... $83.76 every month for 3 months": the plan, before its dates are set."""
-    store = APPROVED.search(subject or "") or APPROVED.search(text or "")
-    every = EVERY.search(text or "")
+    subject, text = plain_spaces(subject), plain_spaces(text)
+    store = APPROVED.search(subject) or APPROVED.search(text)
+    every = EVERY.search(text)
     if not (store and every):
         return None
     amount, unit_every, n, unit_for = _money(every.group(1)), every.group(2).lower(), int(every.group(3)), every.group(4).lower()

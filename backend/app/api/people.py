@@ -135,9 +135,11 @@ class SharingIn(In):
 @router.put("/accounts/{account_id}/sharing")
 @under_writer
 def account_sharing(account_id: int, body: SharingIn, session: Session = Depends(get_session), principal: auth.Principal = Depends(auth.require_admin)) -> dict:
-    """Mark an account shared, or whose it is (the owner's or the second person's)."""
-    if not principal.full:
-        raise HTTPException(403, "Only a person signed in marks accounts")
+    """Mark an account shared, or whose it is (the owner's or the second person's). Who sees what is the owner's to
+    say: marked by a person with "everything", an account stayed theirs to read after the owner moved them to "shared",
+    since a new role ends what they set up but not these marks (sweep 24)."""
+    if principal.kind != "owner":
+        raise HTTPException(403, "Only the owner marks who sees an account")
     account = session.get(Account, account_id)
     if account is None:
         raise HTTPException(404, "No such account")

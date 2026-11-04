@@ -101,12 +101,13 @@ export function Today({ snapshot }: { snapshot: Snapshot }) {
         {s.usual_pace.per_day > 0 && <> You usually spend <span className="num">{money(s.usual_pace.per_day)}</span> a day.</>}
       </div>
       <PlanCaveats s={s} />
-      {s.fresh && (
+      {/* With no balance the pill and the sentence above already say so; a figure with no report date is not "no balance". */}
+      {s.fresh && (!noBalance(s) || s.fresh.newest_transaction) && (
         <div style={{ display: "flex", alignItems: "flex-start", gap: 6, fontSize: 12, color: "var(--ink-2)" }}>
           <Clock size={13} aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }} />
           <span>
-            {s.fresh.balances_as_of ? `As of ${when(s.fresh.balances_as_of)}: balances as your banks last reported them (the oldest report among your accounts).` : "No bank has reported a balance yet."}
-            {s.fresh.newest_transaction ? ` Newest transaction ${when(s.fresh.newest_transaction)}.` : ""}
+            {s.fresh.balances_as_of ? `As of ${when(s.fresh.balances_as_of)}: balances as your banks last reported them (the oldest report among your accounts).` : noBalance(s) ? "" : "Balance date not given."}
+            {s.fresh.newest_transaction ? `${s.fresh.balances_as_of || !noBalance(s) ? " " : ""}Newest transaction ${when(s.fresh.newest_transaction)}.` : ""}
           </span>
         </div>
       )}

@@ -408,6 +408,10 @@ export function Transactions() {
     // Only an answer arriving moves this on: the page it was asked for is the page in state then.
   }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
   const rows = data?.transactions ?? NO_ROWS;
+  // A write can take the last rows off the last page (hidden, or no longer spending): the page before it is the end.
+  useEffect(() => {
+    if (data && page > 0 && shownPage.current === page && data.transactions.length === 0) setPage(page - 1);
+  }, [data, page]);
   const onPage = rows;
   const total = data?.total ?? rows.length;
 
