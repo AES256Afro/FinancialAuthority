@@ -1,0 +1,84 @@
+{
+  "after_the_mailbox_is_back": {
+    "back": [
+      "Example Mail is being read again after 24 hours."
+    ],
+    "brief": [
+      {
+        "link": "/confirm#sources",
+        "severity": "critical",
+        "text": "Example Bank wants a new sign-in before it can be read again. Since Oct 14. Press Sign in again on Connectors; the bank's own page opens. The app never sees the password."
+      },
+      {
+        "link": "/settings/connectors",
+        "severity": "info",
+        "text": "Example Mail is being read again after 24 hours."
+      }
+    ],
+    "cards": [
+      {
+        "action": "Sign in again",
+        "failure": "signin",
+        "key": "bank:1",
+        "link": "/settings/connectors?signin=1",
+        "retry_at": "2026-10-15T17:00:00+00:00",
+        "severity": "critical",
+        "since": "2026-10-14T12:00:00+00:00",
+        "step": "Press Sign in again on Connectors; the bank's own page opens. The app never sees the password.",
+        "text": "Example Bank wants a new sign-in before it can be read again."
+      }
+    ],
+    "pending_sources": 1,
+    "safe_to_spend": 55.0
+  },
+  "down": {
+    "back": [],
+    "brief": [
+      {
+        "link": "/confirm#sources",
+        "severity": "critical",
+        "text": "Example Bank wants a new sign-in before it can be read again. Since Oct 14. Press Sign in again on Connectors; the bank's own page opens. The app never sees the password."
+      },
+      {
+        "link": "/confirm#sources",
+        "severity": "critical",
+        "text": "Example Mail refused the sign-in. Since Oct 14. Check the username, then change the password for this mailbox on Connectors. Where the server gives app passwords, make a new one."
+      }
+    ],
+    "cards": [
+      {
+        "action": "Sign in again",
+        "failure": "signin",
+        "key": "bank:1",
+        "link": "/settings/connectors?signin=1",
+        "retry_at": "2026-10-15T17:00:00+00:00",
+        "severity": "critical",
+        "since": "2026-10-14T12:00:00+00:00",
+        "step": "Press Sign in again on Connectors; the bank's own page opens. The app never sees the password.",
+        "text": "Example Bank wants a new sign-in before it can be read again."
+      },
+      {
+        "action": "Fix the mailbox",
+        "failure": "signin",
+        "key": "mail:1",
+        "link": "/settings/connectors#mail",
+        "retry_at": "2026-10-15T17:00:00+00:00",
+        "severity": "critical",
+        "since": "2026-10-14T12:00:00+00:00",
+        "step": "Check the username, then change the password for this mailbox on Connectors. Where the server gives app passwords, make a new one.",
+        "text": "Example Mail refused the sign-in."
+      }
+    ],
+    "pending_sources": 2,
+    "safe_to_spend": 55.0
+  },
+  "pushes": [
+    "Needs you: Example Bank",
+    "Needs you: Example Mail",
+    "Back: Example Mail"
+  ],
+  "safe_to_spend_before": 55.0,
+  "tries": {
+    "mail": 4
+  }
+}

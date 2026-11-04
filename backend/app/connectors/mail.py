@@ -12,17 +12,19 @@ import json
 import logging
 import re
 from collections.abc import Callable
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime
 
 import httpx
 from sqlmodel import Session, select
 
 from .. import crypto
+from ..clock import zone
 from ..mail.box import clean
 from ..mail.classify import classify, excerpt_for, extract
 from ..mail.imap import ImapClient, Parsed, parse_message
 from ..models import ExtractedFact, MailAccount, MessageRef, utcnow
 from ..store import get_setting, set_setting
+from . import health
 from .base import Connector, SyncResult
 from .rocketmoney import import_rows, parse_csv
 
@@ -92,47 +94,66 @@ def explain_error(host: str, error: Exception) -> str:
 
 
 SIGN_IN_WORDS = re.compile(r"auth|login|credential|password|invalid|no such user", re.IGNORECASE)
-# After a refused sign-in the scheduled read waits an hour, then four, then a day between tries: the server
-# answered, so trying every quarter hour only trips its own lockout ("too many login attempts") and fills the
-# Jobs page. Sync now from Connectors always tries, and a read that succeeds clears the wait.
-BACKOFF_HOURS = (1, 4, 24)
+# What a server says when it means later, not no: "[UNAVAILABLE] Temporary authentication failure" is the usual one.
+COME_BACK_WORDS = re.compile(r"\[UNAVAILABLE\]|temporar|try again later", re.IGNORECASE)
+# After a refused sign-in the scheduled read waits an hour, then four, then a day between tries (connectors/health.py):
+# the server answered, so trying every quarter hour only trips its own lockout ("too many login attempts") and fills
+# the Jobs page. Sync now from Connectors always tries, and a read that succeeds clears the wait.
+BACKOFF_HOURS = health.BACKOFF_HOURS
+
+
+class ServerStopped(RuntimeError):
+    """The connection went while a folder was being read: the network, not the mailbox."""
 
 
 def signin_refused(error: Exception) -> bool:
-    """True when the mailbox answered and said no to the sign-in (never a network error: those pass)."""
-    return not isinstance(error, OSError) and bool(SIGN_IN_WORDS.search(str(error)))
+    """True when the mailbox answered and said no to the sign-in: never a network error, a dropped connection, a server
+    saying to come back later, or anything that went wrong once it had let the app in."""
+    if isinstance(error, (OSError, EOFError, imaplib.IMAP4.abort, ServerStopped)) or getattr(error, "signed_in", False):
+        return False
+    said = str(error)
+    return bool(SIGN_IN_WORDS.search(said)) and not COME_BACK_WORDS.search(said)
+
+
+def failure_of(error: Exception) -> str:
+    """Which kind of failure a read ended in: a refused sign-in waits, a network failure mends itself."""
+    if signin_refused(error):
+        return health.SIGNIN
+    if isinstance(error, (OSError, EOFError, imaplib.IMAP4.abort, ServerStopped)) or COME_BACK_WORDS.search(str(error)):
+        return health.NETWORK
+    return health.OTHER
 
 
 def backoff_key(account_id: int) -> str:
-    return f"mail.{account_id}.backoff"
+    return health.mail_key(account_id)
 
 
 def now_utc() -> datetime:
-    return datetime.now(timezone.utc)
+    return health.now_utc()
 
 
 def waiting_until(session: Session, account_id: int) -> datetime | None:
     """When the next scheduled read of this mailbox may try again, or None when it may try now."""
-    state = get_setting(session, backoff_key(account_id)) or {}
-    try:
-        until = datetime.fromisoformat(state["until"])
-    except (KeyError, TypeError, ValueError):
-        return None
-    return until if until > now_utc() else None
+    return health.waiting_until(session, backoff_key(account_id), now_utc())
 
 
-def note_refusal(session: Session, account_id: int) -> datetime:
-    """One more refused sign-in: the wait grows along BACKOFF_HOURS and the time it ends is returned."""
-    state = get_setting(session, backoff_key(account_id)) or {}
-    fails = int(state.get("fails", 0) or 0) + 1
-    until = now_utc() + timedelta(hours=BACKOFF_HOURS[min(fails, len(BACKOFF_HOURS)) - 1])
-    set_setting(session, backoff_key(account_id), {"fails": fails, "until": until.isoformat()})
-    return until
+def note_failure(session: Session, account: MailAccount, error: Exception) -> datetime | None:
+    """One more failed read of this mailbox, by its kind; when it was a refused sign-in, the time the wait ends."""
+    from ..engine.sources import bridge_state
+
+    failure = failure_of(error)
+    bridge = bridge_state(account.host, failure, str(error) or type(error).__name__)
+    return health.note_failure(session, backoff_key(account.id), failure, now_utc(), **({"bridge": bridge} if bridge else {}))
 
 
 def clear_refusals(session: Session, account_id: int) -> None:
-    if get_setting(session, backoff_key(account_id)):
-        set_setting(session, backoff_key(account_id), None)
+    health.note_ok(session, backoff_key(account_id))
+
+
+def at_words(until: datetime) -> str:
+    """When the next try is, in the owner's time; the day too, since the wait can be a day."""
+    local = until.astimezone(zone())
+    return local.strftime("%a %H:%M") if local.date() != now_utc().astimezone(zone()).date() else local.strftime("%H:%M")
 
 
 def uid_key(account_id: int, folder: str) -> str:
@@ -536,11 +557,13 @@ class MailConnector(Connector):
         notes: list[str] = []
         total_new = 0
         ok = True
+        waited = 0
         for account in accounts:
             if account_id is None and (until := waiting_until(session, account.id)) is not None:
                 # A scheduled run after a refused sign-in: nothing is tried until the wait ends, and nothing
                 # fails, since the mailbox's error is already on the row, the self-check and Needs you.
-                notes.append(f"{account.label}: the sign-in was refused; trying again at {until.astimezone().strftime('%H:%M')}")
+                notes.append(f"{account.label}: the sign-in was refused; trying again at {at_words(until)}")
+                waited += 1
                 continue
             try:
                 new, facts = self._sync_account(session, account, today)
@@ -554,14 +577,14 @@ class MailConnector(Connector):
                 session.rollback()
                 ok = False
                 account.last_error = explain_error(account.host, error)[:300]
-                if signin_refused(error):
-                    until = note_refusal(session, account.id)
-                    account.last_error = f"{account.last_error} Trying again at {until.astimezone().strftime('%H:%M')}."[:300]
+                until = note_failure(session, account, error)
+                if until is not None:
+                    account.last_error = f"{account.last_error} Trying again at {at_words(until)}."[:300]
                 notes.append(f"{account.label}: {account.last_error}")
                 log.warning("mail sync failed for %s: %s", account.label, error)
             session.add(account)
             session.commit()
-        return SyncResult(ok=ok, summary="; ".join(notes), inserted=total_new, at=utcnow())
+        return SyncResult(ok=ok, summary="; ".join(notes), inserted=total_new, at=utcnow(), details={"only_waited": waited == len(accounts)})
 
     def _sync_account(self, session: Session, account: MailAccount, today: date) -> tuple[int, int]:
         client = self.client_factory(account.host, account.port, account.username, account_password(account), account.use_ssl, account.starttls)
@@ -594,7 +617,7 @@ class MailConnector(Connector):
                         # The connection, not the message: a timeout or a dropped line. The folder stops at the last
                         # message read, so this one and the rest of the batch are read next time, and the run fails.
                         set_setting(session, uid_key(account.id, folder), last)
-                        raise RuntimeError(f"the mail server stopped answering in {folder} ({type(error).__name__}); the next sync reads on from there") from error
+                        raise ServerStopped(f"the mail server stopped answering in {folder} ({type(error).__name__}); the next sync reads on from there") from error
                     try:
                         outcome = handle_message(session, account, folder, uid, parse_message(raw), today, self.fetch)
                     except Exception as error:  # noqa: BLE001 - one unreadable message never blocks the mailbox
@@ -618,6 +641,9 @@ class MailConnector(Connector):
                     # finds the numbering still new next time and reads the folder again from the start.
                     set_setting(session, uid_key(account.id, folder) + ".validity", validity)
                 session.commit()
+        except Exception as error:
+            error.signed_in = True  # type: ignore[attr-defined]  # it let the app in: whatever this says, it is no refused sign-in
+            raise
         finally:
             client.close()
         return new, facts

@@ -612,7 +612,9 @@ def remove_transaction(session: Session, provider: str, tx_id: str, *, replaced_
 
 
 def finish_link(session: Session, link: BankLink, *, ok: bool, error: str = "", accounts: list[str] | None = None) -> None:
-    link.last_sync_at = datetime.now(timezone.utc)
+    from .health import now_utc
+
+    link.last_sync_at = now_utc()
     link.last_error = "" if ok else error[:500]
     if accounts is not None:
         link.accounts = ",".join(accounts)

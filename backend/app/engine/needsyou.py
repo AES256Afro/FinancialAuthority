@@ -318,11 +318,14 @@ def triage(session: Session, today: date) -> dict[str, Any]:
     # The page also lists the recurring charges to name and the pairs to settle: the count says so, as the badge does.
     series = len(session.exec(select(RecurringSeries.id).where(RecurringSeries.confirmed == False, RecurringSeries.active == True)).all())  # noqa: E712
     pairs = len(session.exec(select(TransactionPair.id).where(TransactionPair.status == "pending")).all())
-    total = read + len(past) + series + pairs
-    parts = (([f"{read} from your mail and documents"] if read else []) + ([f"{len(past)} bill{'s' if len(past) != 1 else ''} with no payment seen"] if past else [])
+    from .sources import down
+
+    sources = down(session)  # one card per mailbox or bank link that needs the owner, each with its step
+    total = read + len(past) + series + pairs + len(sources)
+    parts = (([f"{len(sources)} source{'s' if len(sources) != 1 else ''} to fix"] if sources else []) + ([f"{read} from your mail and documents"] if read else []) + ([f"{len(past)} bill{'s' if len(past) != 1 else ''} with no payment seen"] if past else [])
              + ([f"{series} recurring charge{'s' if series != 1 else ''} to name"] if series else []) + ([f"{pairs} pair{'s' if pairs != 1 else ''} of rows to settle"] if pairs else []))
     return {
-        "as_of": today.isoformat(), "groups": out_groups, "past_due": past, "total": total, "series": series, "pairs": pairs,
+        "as_of": today.isoformat(), "groups": out_groups, "past_due": past, "total": total, "series": series, "pairs": pairs, "sources": sources,
         "word": ("Nothing from your mail, documents or bills waits." if total == 0 else
                  f"{total} {'thing waits' if total == 1 else 'things wait'} here: {', '.join(parts[:-1]) + ' and ' + parts[-1] if len(parts) > 1 else parts[0]}."),
     }
