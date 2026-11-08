@@ -115,7 +115,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: meta
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/aes256afro/financialauthority
           tags: |
@@ -141,7 +141,7 @@ jobs:
       # The Bridge sidecar: the community image plus libfido2, which newer Bridge releases load after they update
       # themselves. Published beside the app so a catalog install runs the same thing the hand-run copy does.
       - id: bridge
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/aes256afro/financialauthority-bridge
           tags: |
