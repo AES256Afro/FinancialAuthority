@@ -133,7 +133,7 @@ jobs:
           build-args: VERSION=${{ github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ghcr.io/aes256afro/financialauthority
           subject-digest: ${{ steps.build.outputs.digest }}
@@ -157,7 +157,7 @@ jobs:
           labels: ${{ steps.bridge.outputs.labels }}
           cache-from: type=gha,scope=bridge
           cache-to: type=gha,mode=max,scope=bridge
-      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-name: ghcr.io/aes256afro/financialauthority-bridge
           subject-digest: ${{ steps.build-bridge.outputs.digest }}
