@@ -3,7 +3,7 @@
 # Run:    see deploy/compose/docker-compose.yml, or install from BoxPilot's catalog on BigBox.
 
 # ---- frontend build ----------------------------------------------------------
-FROM node:24-alpine@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f AS web
+FROM node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS web
 WORKDIR /web
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
