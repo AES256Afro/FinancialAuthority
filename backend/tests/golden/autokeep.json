@@ -1,0 +1,172 @@
+{
+  "kept": {
+    "advance": {
+      "kind": "advance",
+      "rule": "rule:borrowing_in_ledger",
+      "status": "confirmed",
+      "to": "advance",
+      "why": "Your ledger shows Earnin $100.00 on 2026-10-12, and the advance is on Borrowing."
+    },
+    "confirmation": {
+      "kind": "payment_confirmation",
+      "rule": "rule:confirmation_explained",
+      "status": "confirmed",
+      "to": "payment",
+      "why": "Internet's period due 2026-09-24 is already marked paid."
+    },
+    "earned": {
+      "kind": "statement",
+      "rule": "rule:earned_sender",
+      "status": "confirmed",
+      "to": "read",
+      "why": "You answered statements@examplelender.test the same way 3 times, and this is within what it usually says."
+    },
+    "older notice": {
+      "kind": "bill_due",
+      "rule": "rule:older_bill_notice",
+      "status": "rejected",
+      "to": "set aside",
+      "why": "A newer notice for Electricity came on 2026-10-14 from the same domain."
+    },
+    "receipt": {
+      "kind": "receipt",
+      "rule": "rule:receipt_matches_row",
+      "status": "applied",
+      "to": "document",
+      "why": "Its total $63.25 and store match the Example Garden Store row on 2026-10-13, the only one that fits."
+    },
+    "statement": {
+      "kind": "statement",
+      "rule": "rule:statement_matches_balance",
+      "status": "applied",
+      "to": "account",
+      "why": "$312.40 is within a dollar of the $312.00 your bank link read for Everyday Checking about 2026-10-14."
+    }
+  },
+  "older": {
+    "count": 1,
+    "kinds": [
+      {
+        "count": 1,
+        "kind": "statement",
+        "words": "Statements"
+      }
+    ],
+    "newest": "2026-08-05",
+    "oldest": "2026-08-05",
+    "said": "Older than two months: 1 fact, with nothing newer to replace it."
+  },
+  "pending": 6,
+  "plan_unmoved": {
+    "cash": true,
+    "debts_cards_loans_total": true,
+    "safe_to_spend": true
+  },
+  "receipt_row": true,
+  "rules": [
+    {
+      "kept": 1,
+      "name": "receipt_matches_row",
+      "on": true
+    },
+    {
+      "kept": 1,
+      "name": "statement_matches_balance",
+      "on": true
+    },
+    {
+      "kept": 1,
+      "name": "confirmation_explained",
+      "on": true
+    },
+    {
+      "kept": 1,
+      "name": "older_bill_notice",
+      "on": true
+    },
+    {
+      "kept": 1,
+      "name": "borrowing_in_ledger",
+      "on": true
+    },
+    {
+      "kept": 1,
+      "name": "earned_sender",
+      "on": true
+    }
+  ],
+  "run": {
+    "failed": 0,
+    "kept": {
+      "borrowing_in_ledger": 1,
+      "confirmation_explained": 1,
+      "earned_sender": 1,
+      "older_bill_notice": 1,
+      "receipt_matches_row": 1,
+      "statement_matches_balance": 1
+    },
+    "total": 6
+  },
+  "senders": [
+    {
+      "filed": 1,
+      "kinds": [
+        {
+          "answers": 3,
+          "kind": "statement",
+          "usual_high": 200.0,
+          "usual_low": 200.0,
+          "words": "Statements"
+        }
+      ],
+      "name": "Example Lender",
+      "off_why": "",
+      "on": true,
+      "sender": "statements@examplelender.test"
+    }
+  ],
+  "waits": {
+    "amount changed": {
+      "kind": "statement",
+      "rule": "",
+      "status": "pending",
+      "to": "",
+      "why": ""
+    },
+    "forged statement": {
+      "kind": "statement",
+      "rule": "",
+      "status": "pending",
+      "to": "",
+      "why": ""
+    },
+    "newest notice": {
+      "kind": "bill_due",
+      "rule": "",
+      "status": "pending",
+      "to": "",
+      "why": ""
+    },
+    "old statement": {
+      "kind": "statement",
+      "rule": "",
+      "status": "pending",
+      "to": "",
+      "why": ""
+    },
+    "paystub": {
+      "kind": "paystub",
+      "rule": "",
+      "status": "pending",
+      "to": "",
+      "why": ""
+    },
+    "unjudged receipt": {
+      "kind": "receipt",
+      "rule": "",
+      "status": "pending",
+      "to": "",
+      "why": ""
+    }
+  }
+}

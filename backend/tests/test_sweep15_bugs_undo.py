@@ -40,7 +40,8 @@ def tables() -> dict[str, Counter]:
         for t in SQLModel.metadata.sorted_tables:
             if t.name in NOISE:
                 continue
-            cols = [x.name for x in t.columns if not x.name.endswith("_at")]
+            # rule_hold (M62) is the one thing an undo leaves on purpose: taken back, no rule answers it again.
+            cols = [x.name for x in t.columns if not x.name.endswith("_at") and x.name != "rule_hold"]
             rows = c.execute(text(f'SELECT {", ".join(chr(34) + x + chr(34) for x in cols)} FROM "{t.name}"')).all()
             if t.name == "settings":
                 rows = [r for r in rows if r[0] not in NOISE_SETTINGS and not str(r[0]).startswith("watch.")]

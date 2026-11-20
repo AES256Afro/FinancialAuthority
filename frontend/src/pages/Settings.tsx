@@ -17,6 +17,7 @@ const ITEMS: Item[] = [
   { to: "/settings/clients", title: "Apps and keys", text: "Apps and keys that can read your plan, and what each can see.", person: { text: "Apps and keys that can read the plan, and what each can see. You make and revoke your own keys; only the owner changes the connected apps." } },
   { to: "/settings/notifications", title: "Notifications", text: "Notifications on this device, reminders, and the morning brief through ntfy or Gotify.", person: { text: "Notifications on this device and reminders. Only the owner sets the morning brief through ntfy or Gotify." } },
   { to: "/settings/backups", title: "Backups", text: "A copy of everything before each import and once a day; undo an import, or put everything back to a moment.", person: { text: "A copy of everything before each import and once a day. Only the owner puts everything back to a moment or sets the copy kept off this server." } },
+  { to: "/settings/rules", title: "Rules", text: "What answers the mail without a tap: each rule and each sender that earned it, with a switch, and everything they did, with Undo.", person: { text: "What answers the mail without a tap, and everything it did, with Undo. Only the owner changes a switch." } },
   { to: "/settings/jobs", title: "Jobs", text: "What the app does on its own, and whether it ran." },
   { to: "/data-check", title: "Data check", text: "Anything counted twice, and mail that may not be genuine." },
   { to: "/settings/audit", title: "Activity", text: "Every read a model, an app or a script made of your data." },
