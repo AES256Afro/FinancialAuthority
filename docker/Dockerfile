@@ -13,7 +13,7 @@ RUN npm run build
 # ---- uv, used to install the locked dependencies and never shipped ----------------------------------------------
 # Pinned by digest like the bases (Dependabot moves it); it used to be `pip install uv` at build time, the newest
 # release from PyPI with no version or hash, left in the image afterwards.
-FROM ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0 AS uv
+FROM ghcr.io/astral-sh/uv:0.13.10@sha256:a3ea1357342c1a4bf9a0c53a3deb1b55379aefa037338d8113d5771efa01774f AS uv
 
 # ---- backend -----------------------------------------------------------------
 FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS runtime
